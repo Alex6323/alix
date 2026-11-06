@@ -118,6 +118,7 @@ class PairedDeckState {
   final bool unpushed;
   final BigInt phoneSaves;
   final BigInt? phoneAtMs;
+  final BigInt phoneCards;
   final PairedConflict? conflict;
 
   const PairedDeckState({
@@ -126,6 +127,7 @@ class PairedDeckState {
     required this.unpushed,
     required this.phoneSaves,
     this.phoneAtMs,
+    required this.phoneCards,
     this.conflict,
   });
 
@@ -136,6 +138,7 @@ class PairedDeckState {
       unpushed.hashCode ^
       phoneSaves.hashCode ^
       phoneAtMs.hashCode ^
+      phoneCards.hashCode ^
       conflict.hashCode;
 
   @override
@@ -148,6 +151,7 @@ class PairedDeckState {
           unpushed == other.unpushed &&
           phoneSaves == other.phoneSaves &&
           phoneAtMs == other.phoneAtMs &&
+          phoneCards == other.phoneCards &&
           conflict == other.conflict;
 }
 

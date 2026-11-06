@@ -187,6 +187,7 @@ SyncDeckState _deckState(bridge.PairedDeckState deck) {
     unpushed: deck.unpushed,
     phoneSaves: deck.phoneSaves.toInt(),
     phoneAtMs: deck.phoneAtMs?.toInt(),
+    phoneCards: deck.phoneCards.toInt(),
     conflict: deck.conflict == null ? null : _conflict(deck.conflict!),
   );
 }

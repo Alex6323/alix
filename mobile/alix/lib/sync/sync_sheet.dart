@@ -54,7 +54,7 @@ Future<void> showSessionEndConflict(
 
 /// The sync report sheet: the non-empty categories from the last cycle,
 /// and, for every deck that currently needs a conflict choice, two buttons
-/// naming what each discards. [report] and [conflicts] are read once, when
+/// naming what each keeps. [report] and [conflicts] are read once, when
 /// the sheet opens; a resolve or an orphan removal updates this widget's
 /// own display immediately (its row is gone), independent of whether the
 /// caller ever hands down a fresher snapshot.
@@ -256,8 +256,8 @@ class _ConflictChoice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final keepWording = conflictKeepPhoneWording(conflict.conflict);
-    final takeWording = conflictTakeDesktopWording(conflict);
+    final keepWording = conflictKeepPhoneWording(conflict);
+    final takeWording = conflictKeepDesktopWording(conflict);
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -268,6 +268,12 @@ class _ConflictChoice extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "Both sides changed this deck since the last sync. The side you "
+            "don't keep is lost.",
+            style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
           _ConflictChoiceRow(
@@ -286,7 +292,7 @@ class _ConflictChoice extends StatelessWidget {
 }
 
 /// One conflict choice: a short title plus a subtitle naming what it
-/// discards, the whole row tappable. A sentence in a button's own label
+/// keeps, the whole row tappable. A sentence in a button's own label
 /// wraps and clips before the fact that distinguishes the two choices (the
 /// timestamp) ever reaches the reader; splitting it into title and subtitle
 /// gives the subtitle its own line for that fact. The subtitle carries no
@@ -312,7 +318,15 @@ class _ConflictChoiceRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(wording.title, style: theme.textTheme.titleSmall),
+          Row(
+            children: [
+              Expanded(
+                child: Text(wording.title, style: theme.textTheme.titleSmall),
+              ),
+              if (wording.newer)
+                Text('newer', style: theme.textTheme.labelSmall),
+            ],
+          ),
           const SizedBox(height: 2),
           Text(wording.subtitle, style: theme.textTheme.bodySmall),
         ],

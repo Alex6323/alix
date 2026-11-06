@@ -150,8 +150,8 @@ class SyncController extends ChangeNotifier {
               deckId: deck.deckId,
               label: _deckLabel(entry, deck),
               conflict: conflict,
-              phoneSaves: deck.phoneSaves,
               phoneAtMs: deck.phoneAtMs,
+              phoneCards: deck.phoneCards,
             ),
     ];
     final knownNames = entries.map((e) => e.entry).toSet();
@@ -320,10 +320,11 @@ class SyncController extends ChangeNotifier {
         pullReport.landed.map((id) => entryLabels[id] ?? '$name/$id'),
       );
       kept.addAll(pullReport.kept.map((id) => entryLabels[id] ?? '$name/$id'));
-      conflicts.addAll(
-        pullReport.conflicts.map((id) => entryLabels[id] ?? '$name/$id'),
-      );
-      conflictDeckIds.addAll(pullReport.conflicts);
+      for (final id in pullReport.conflicts) {
+        if (conflictDeckIds.contains(id)) continue;
+        conflicts.add(entryLabels[id] ?? '$name/$id');
+        conflictDeckIds.add(id);
+      }
       phoneOnly.addAll(pullReport.phoneOnly.map((rel) => '$name/$rel'));
       removed.addAll(pullReport.removed.map((rel) => '$name/$rel'));
       replaced.addAll(

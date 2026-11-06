@@ -177,6 +177,7 @@ pub struct DeckState {
     pub unpushed: bool,
     pub phone_saves: u64,
     pub phone_at_ms: Option<u64>,
+    pub phone_cards: u64,
     pub conflict: Option<Conflict>,
 }
 
@@ -198,6 +199,7 @@ enum DocumentPlan {
 struct DocumentHead {
     revision: u64,
     writer: Option<Writer>,
+    cards: u64,
 }
 
 pub fn root_dir(support: &Path, root_id: &str) -> Result<PathBuf> {
@@ -513,6 +515,7 @@ fn document_head(path: &Path, deck_id: &str) -> Result<Option<DocumentHead>> {
         Ok((revision, _, data)) => Ok(Some(DocumentHead {
             revision,
             writer: data.writer,
+            cards: data.cards.len() as u64,
         })),
         Err(
             store::StoreError::Format { .. }
@@ -667,12 +670,14 @@ pub fn pulled_entries(root: &PairedRoot) -> Result<Vec<PulledEntry>> {
             let phone_at_ms = head
                 .as_ref()
                 .and_then(|h| h.writer.as_ref().map(|w| w.at_ms));
+            let phone_cards = head.as_ref().map_or(0, |h| h.cards);
             decks.push(DeckState {
                 deck_id: deck.deck_id.clone(),
                 path: deck.path.clone(),
                 unpushed,
                 phone_saves,
                 phone_at_ms,
+                phone_cards,
                 conflict: marks.get(&deck.deck_id).cloned(),
             });
         }
@@ -1839,6 +1844,27 @@ mod tests {
     }
 
     #[test]
+    fn pulled_entries_count_the_cards_with_progress_in_the_phone_document() {
+        let (_tmp, root) = fresh_root();
+        apply(&root, &deck_bundle());
+        let doc = root.document_path(KIND_DECK, "physics.md", DECK_C);
+        let state = |root: &PairedRoot| pulled_entries(root).unwrap().remove(0).decks.remove(0);
+
+        bump_as(&doc, DECK_C, "phone");
+        assert_eq!(
+            state(&root).phone_cards,
+            0,
+            "a settings-only save holds no card progress"
+        );
+
+        let mut store = Store::open_deck(&doc, DECK_C, "subject").unwrap();
+        store.get_or_insert("card-a");
+        store.get_or_insert("card-b");
+        store.save().unwrap();
+        assert_eq!(state(&root).phone_cards, 2, "two cards with progress");
+    }
+
+    #[test]
     fn pulled_entries_count_a_never_pushed_phone_document_from_zero() {
         let (_tmp, root) = fresh_root();
         apply(&root, &workspace_bundle());
@@ -2170,6 +2196,7 @@ mod tests {
         let head = |revision| DocumentHead {
             revision,
             writer: None,
+            cards: 0,
         };
         let state = |desktop, phone| Pushed { desktop, phone };
         let rows = [

@@ -479,6 +479,44 @@ void main() {
       expect(seenZipPath, namedZip);
     });
 
+    test('a deck whose push conflicts and whose pull then conflicts is '
+        'counted once', () async {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      port.planPushesImpl = () => [item('deck-a')];
+      port.pushImpl = (deckId, _, _) async =>
+          SyncPushConflict(deckId: deckId, desktopRevision: 25);
+      port.entriesImpl = () async => const SyncEntries(
+        rootId: 'root-a',
+        entries: [
+          SyncEntry(
+            name: 'Biology',
+            kind: 'workspace',
+            members: 1,
+            unpackedBytes: 10,
+            digest: 'xxh64-0000000000000002',
+            leftOut: [],
+          ),
+        ],
+      );
+      port.applyPullImpl = (entry, zipPath) async => const SyncPullReport(
+        entry: 'Biology',
+        kind: 'workspace',
+        landed: [],
+        kept: [],
+        conflicts: ['deck-a'],
+        phoneOnly: [],
+        removed: [],
+      );
+      final controller = SyncController(port: port);
+
+      await controller.cycle(entry: 'Biology');
+
+      final report = controller.lastReport!;
+      expect(report.conflicts, hasLength(1), reason: 'conflicts: ${report.conflicts}');
+      expect(report.conflictDeckIds, ['deck-a'], reason: 'conflict ids');
+      expect(report.summary(), contains('1 conflict'), reason: 'status line');
+    });
+
     test('a deck whose unreadable phone progress the pull replaced is '
         'reported and marks the report unread', () async {
       final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);

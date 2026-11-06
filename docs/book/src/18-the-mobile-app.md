@@ -168,7 +168,10 @@ records for it stay attached after the next pull. A member the desktop deleted s
 progress is not yet pushed, listed as kept, so nothing you reviewed is
 lost before it reached the desktop. A conflicting deck, one whose progress changed on both sides
 since the last sync, stops review of that deck and asks: keep the phone's
-progress or take the desktop's, naming what each choice discards. A
+progress or keep the desktop's. Each choice names what it keeps (the
+phone side's number of cards with progress, or which desktop saved it, and
+when), marks the side that saved last as newer, and the side you don't keep
+is lost. A
 conflict that a background sync records while a review or a trace is
 running does not interrupt it: the choice opens when that session ends,
 whether you finish it or leave early. An entry

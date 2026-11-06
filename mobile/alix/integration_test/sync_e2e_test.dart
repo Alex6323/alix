@@ -314,7 +314,7 @@ void main() {
         () => tester.any(find.textContaining(_keepPhonePrefix)),
       );
       expect(
-        find.text("Take the desktop's"),
+        find.text("Keep the desktop's progress"),
         findsOneWidget,
         reason:
             'step 4b: the choice must name what taking the desktop discards',

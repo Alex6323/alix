@@ -146,7 +146,7 @@ void main() {
     WidgetTester tester,
     _MidSessionConflictController syncController,
   ) async {
-    await tester.tap(find.text("Take the desktop's"));
+    await tester.tap(find.text("Keep the desktop's progress"));
     await tester.pumpAndSettle();
     expect(syncController.resolved, 1, reason: 'the choice reaches resolve');
     expect(find.byType(SyncReportSheet), findsNothing);

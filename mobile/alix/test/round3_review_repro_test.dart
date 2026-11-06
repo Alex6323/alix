@@ -212,8 +212,7 @@ void main() {
       );
 
       final subtitle =
-          "discards the desktop's, last written by "
-          'alix-workstation-1a2b3cd at 2026-09-07 13:19';
+          'from alix-workstation-1a2b3cd, last saved 2026-09-07 13:19';
       final finder = find.text(subtitle);
       final text = tester.widget<Text>(finder);
       final paragraph = tester.renderObject<RenderParagraph>(finder);

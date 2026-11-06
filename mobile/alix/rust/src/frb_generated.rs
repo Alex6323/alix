@@ -4506,6 +4506,7 @@ impl SseDecode for crate::api::sync::PairedDeckState {
         let mut var_unpushed = <bool>::sse_decode(deserializer);
         let mut var_phoneSaves = <u64>::sse_decode(deserializer);
         let mut var_phoneAtMs = <Option<u64>>::sse_decode(deserializer);
+        let mut var_phoneCards = <u64>::sse_decode(deserializer);
         let mut var_conflict = <Option<crate::api::sync::PairedConflict>>::sse_decode(deserializer);
         return crate::api::sync::PairedDeckState {
             deck_id: var_deckId,
@@ -4513,6 +4514,7 @@ impl SseDecode for crate::api::sync::PairedDeckState {
             unpushed: var_unpushed,
             phone_saves: var_phoneSaves,
             phone_at_ms: var_phoneAtMs,
+            phone_cards: var_phoneCards,
             conflict: var_conflict,
         };
     }
@@ -6043,6 +6045,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::sync::PairedDeckState {
             self.unpushed.into_into_dart().into_dart(),
             self.phone_saves.into_into_dart().into_dart(),
             self.phone_at_ms.into_into_dart().into_dart(),
+            self.phone_cards.into_into_dart().into_dart(),
             self.conflict.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -7788,6 +7791,7 @@ impl SseEncode for crate::api::sync::PairedDeckState {
         <bool>::sse_encode(self.unpushed, serializer);
         <u64>::sse_encode(self.phone_saves, serializer);
         <Option<u64>>::sse_encode(self.phone_at_ms, serializer);
+        <u64>::sse_encode(self.phone_cards, serializer);
         <Option<crate::api::sync::PairedConflict>>::sse_encode(self.conflict, serializer);
     }
 }

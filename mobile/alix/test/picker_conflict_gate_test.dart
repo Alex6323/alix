@@ -214,7 +214,7 @@ void main() {
       await tester.tap(find.text('Recall'));
       await tester.pumpAndSettle();
       expect(find.byType(SyncReportSheet), findsOneWidget);
-      await tester.tap(find.text("Take the desktop's"));
+      await tester.tap(find.text("Keep the desktop's progress"));
       await tester.pumpAndSettle();
 
       expect(syncController.pendingConflicts, isEmpty);

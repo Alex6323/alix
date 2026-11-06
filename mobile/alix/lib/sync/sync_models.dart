@@ -56,6 +56,7 @@ class SyncDeckState {
     required this.unpushed,
     this.phoneSaves = 0,
     this.phoneAtMs,
+    this.phoneCards = 0,
     this.conflict,
   });
 
@@ -70,6 +71,9 @@ class SyncDeckState {
   /// The local document head's writer time, whenever it has one; null only
   /// when the phone holds no local copy to read a writer from.
   final int? phoneAtMs;
+
+  /// Cards with progress in the local document.
+  final int phoneCards;
   final PairedConflict? conflict;
 }
 
@@ -347,15 +351,15 @@ class SyncReport {
 
 /// One deck that currently needs a conflict choice, sourced live from
 /// `SyncPort.pairedEntries()` rather than a past cycle's report: a sheet
-/// asking "keep phone or take desktop" needs the actual [conflict] to word
+/// asking which side to keep needs the actual [conflict] to word
 /// its buttons, not just the report's display string.
 class SyncPendingConflict {
   const SyncPendingConflict({
     required this.deckId,
     required this.label,
     required this.conflict,
-    this.phoneSaves = 0,
     this.phoneAtMs,
+    this.phoneCards = 0,
   });
 
   final String deckId;
@@ -366,12 +370,11 @@ class SyncPendingConflict {
 
   final PairedConflict conflict;
 
-  /// Mirrors the conflicted deck's [SyncDeckState.phoneSaves] as of the
-  /// scan that found this conflict, for [conflictTakeDesktopWording].
-  final int phoneSaves;
-
   /// Mirrors the conflicted deck's [SyncDeckState.phoneAtMs].
   final int? phoneAtMs;
+
+  /// Mirrors the conflicted deck's [SyncDeckState.phoneCards].
+  final int phoneCards;
 }
 
 /// Resolves the deck id a local document path corresponds to, from the
@@ -401,40 +404,35 @@ String? deckIdForPath({
   return null;
 }
 
-/// A conflict choice row's short title, plus a subtitle naming what
-/// choosing it discards.
-typedef ConflictChoiceWording = ({String title, String subtitle});
+/// A conflict choice row: which side it keeps, what that side holds, and
+/// whether that side saved last.
+typedef ConflictChoiceWording = ({String title, String subtitle, bool newer});
 
-/// "Keep the phone's progress": names what it discards, and who last wrote
-/// the desktop side when known.
-ConflictChoiceWording conflictKeepPhoneWording(PairedConflict conflict) {
-  final writer = conflict.desktopSideWriter;
-  final subtitle = writer == null
-      ? "discards the desktop's version"
-      : "discards the desktop's, last written by ${writer.device} at "
-            '${_formatTime(writer.atMs)}';
-  return (title: "Keep the phone's progress", subtitle: subtitle);
+ConflictChoiceWording conflictKeepPhoneWording(SyncPendingConflict conflict) {
+  final cards = switch (conflict.phoneCards) {
+    0 => 'no card progress',
+    1 => '1 card with progress',
+    final n => '$n cards with progress',
+  };
+  final atMs = conflict.phoneAtMs;
+  final desktopAtMs = conflict.conflict.desktopSideWriter?.atMs;
+  return (
+    title: "Keep the phone's progress",
+    subtitle: atMs == null ? cards : '$cards, last saved ${_formatTime(atMs)}',
+    newer: atMs != null && desktopAtMs != null && atMs > desktopAtMs,
+  );
 }
 
-/// "Take the desktop's": names the phone saves this choice discards, with
-/// the last save's time when the local document carries a writer. A
-/// conflict with nothing unsynced (`phoneSaves == 0`) has nothing to name.
-ConflictChoiceWording conflictTakeDesktopWording(
-  SyncPendingConflict conflict,
-) {
-  final saves = conflict.phoneSaves;
-  if (saves <= 0) {
-    return (
-      title: "Take the desktop's",
-      subtitle: 'nothing to discard on the phone',
-    );
-  }
-  final noun = saves == 1 ? 'phone save' : 'phone saves';
-  final atMs = conflict.phoneAtMs;
-  final subtitle = atMs == null
-      ? 'discards $saves $noun'
-      : 'discards $saves $noun, last at ${_formatTime(atMs)}';
-  return (title: "Take the desktop's", subtitle: subtitle);
+ConflictChoiceWording conflictKeepDesktopWording(SyncPendingConflict conflict) {
+  final writer = conflict.conflict.desktopSideWriter;
+  final phoneAtMs = conflict.phoneAtMs;
+  return (
+    title: "Keep the desktop's progress",
+    subtitle: writer == null
+        ? 'from the desktop'
+        : 'from ${writer.device}, last saved ${_formatTime(writer.atMs)}',
+    newer: writer != null && phoneAtMs != null && writer.atMs > phoneAtMs,
+  );
 }
 
 // `YYYY-MM-DD HH:MM`, local time: date included, since a stale conflict can

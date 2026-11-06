@@ -106,80 +106,92 @@ void main() {
   });
 
   group('conflict wording', () {
-    test('keep-phone names the desktop writer and time when known', () {
-      final conflict = PairedConflictPush(
-        desktopRevision: 9,
-        desktopWriter: SyncWriter(
-          device: 'desk-1',
-          atMs: DateTime(2026, 1, 1, 9, 12).millisecondsSinceEpoch,
+    final morning = DateTime(2026, 1, 1, 9, 12).millisecondsSinceEpoch;
+    final evening = DateTime(2026, 1, 1, 19, 28).millisecondsSinceEpoch;
+    SyncPendingConflict pending({
+      PairedConflict conflict = const PairedConflictPull(),
+      int phoneCards = 0,
+      int? phoneAtMs,
+    }) =>
+        SyncPendingConflict(
+          deckId: 'deck-1',
+          label: 'German/Verbs.md',
+          conflict: conflict,
+          phoneAtMs: phoneAtMs,
+          phoneCards: phoneCards,
+        );
+
+    test('both rows keep a side and name what they keep', () {
+      final conflict = pending(
+        conflict: PairedConflictPull(
+          pulledWriter: SyncWriter(device: 'desk-1', atMs: evening),
         ),
+        phoneCards: 18,
+        phoneAtMs: morning,
       );
-      final wording = conflictKeepPhoneWording(conflict);
-      expect(wording.title, "Keep the phone's progress");
-      expect(
-        wording.subtitle,
-        "discards the desktop's, last written by desk-1 at 2026-01-01 09:12",
-      );
+      final phone = conflictKeepPhoneWording(conflict);
+      final desktop = conflictKeepDesktopWording(conflict);
+      expect(phone.title, "Keep the phone's progress", reason: 'phone title');
+      expect(desktop.title, "Keep the desktop's progress", reason: 'desktop title');
+      expect(phone.subtitle, '18 cards with progress, last saved 2026-01-01 09:12',
+          reason: 'phone subtitle');
+      expect(desktop.subtitle, 'from desk-1, last saved 2026-01-01 19:28',
+          reason: 'desktop subtitle');
     });
 
-    test('keep-phone omits the writer clause when none is known', () {
-      const conflict = PairedConflictPush();
-      expect(
-        conflictKeepPhoneWording(conflict).subtitle,
-        "discards the desktop's version",
-      );
-    });
-
-    test('a pull conflict names its own pulled-aside writer', () {
-      final conflict = PairedConflictPull(
-        pulledWriter: SyncWriter(
-          device: 'desk-2',
-          atMs: DateTime(2026, 1, 1, 8, 5).millisecondsSinceEpoch,
+    test('the later save is marked newer, on either side', () {
+      final desktopLater = pending(
+        conflict: PairedConflictPush(
+          desktopWriter: SyncWriter(device: 'desk-1', atMs: evening),
         ),
+        phoneAtMs: morning,
       );
       expect(
-        conflictKeepPhoneWording(conflict).subtitle,
-        "discards the desktop's, last written by desk-2 at 2026-01-01 08:05",
+        (conflictKeepPhoneWording(desktopLater).newer,
+            conflictKeepDesktopWording(desktopLater).newer),
+        (false, true),
+        reason: 'desktop saved later',
+      );
+      final phoneLater = pending(
+        conflict: PairedConflictPush(
+          desktopWriter: SyncWriter(device: 'desk-1', atMs: morning),
+        ),
+        phoneAtMs: evening,
+      );
+      expect(
+        (conflictKeepPhoneWording(phoneLater).newer,
+            conflictKeepDesktopWording(phoneLater).newer),
+        (true, false),
+        reason: 'phone saved later',
       );
     });
 
-    test('take-desktop names nothing to discard with no unsynced saves', () {
-      const conflict = SyncPendingConflict(
-        deckId: 'deck-1',
-        label: 'German/Verbs.md',
-        conflict: PairedConflictPull(),
-      );
-      final wording = conflictTakeDesktopWording(conflict);
-      expect(wording.title, "Take the desktop's");
-      expect(wording.subtitle, 'nothing to discard on the phone');
-    });
-
-    test('take-desktop names the save count without a time when none is '
-        'known', () {
-      const conflict = SyncPendingConflict(
-        deckId: 'deck-1',
-        label: 'German/Verbs.md',
-        conflict: PairedConflictPull(),
-        phoneSaves: 3,
-      );
+    test('no side is marked newer when either time is unknown', () {
+      final conflict = pending(phoneAtMs: morning);
       expect(
-        conflictTakeDesktopWording(conflict).subtitle,
-        'discards 3 phone saves',
+        (conflictKeepPhoneWording(conflict).newer,
+            conflictKeepDesktopWording(conflict).newer),
+        (false, false),
       );
     });
 
-    test('take-desktop names one save as singular, with the last save '
-        'time', () {
-      final conflict = SyncPendingConflict(
-        deckId: 'deck-1',
-        label: 'German/Verbs.md',
-        conflict: const PairedConflictPull(),
-        phoneSaves: 1,
-        phoneAtMs: DateTime(2026, 1, 1, 9, 12).millisecondsSinceEpoch,
-      );
+    test('a phone side without card progress says so', () {
       expect(
-        conflictTakeDesktopWording(conflict).subtitle,
-        'discards 1 phone save, last at 2026-01-01 09:12',
+        conflictKeepPhoneWording(pending(phoneAtMs: morning)).subtitle,
+        'no card progress, last saved 2026-01-01 09:12',
+      );
+    });
+
+    test('one card is singular and an unknown time is left out', () {
+      expect(conflictKeepPhoneWording(pending(phoneCards: 1)).subtitle,
+          '1 card with progress');
+    });
+
+    test('an unknown desktop writer still names the side', () {
+      expect(
+        conflictKeepDesktopWording(pending(conflict: const PairedConflictPush()))
+            .subtitle,
+        'from the desktop',
       );
     });
   });

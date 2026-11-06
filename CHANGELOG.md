@@ -179,6 +179,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The phone's sync conflict choice reads "Keep the phone's progress" and
+  "Keep the desktop's progress", each naming what it keeps (the phone side
+  says when it holds no card progress), with the later save marked newer and
+  one line saying the other side is lost.
+
 - An exam is now written ahead and taken later. Web: the drawer's **Generate
   exam** writes it in the background on the server (**Writing exam** shows
   the minutes and a rough wait, **Stop** cancels), a notice says when it is
@@ -753,6 +758,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- The phone's sync status no longer counts one conflicted deck twice when
+  its push and the pull right after it both find the conflict.
 
 - The phone's exam error screen now shows the desktop's reason (such as an
   unreadable `exam:` source) under "The exam backend failed.", as the web does.

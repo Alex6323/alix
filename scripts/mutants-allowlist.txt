@@ -116,7 +116,7 @@ src/cli/launch.rs: replace local_lan_ip -> Option<std::net::IpAddr> with None
 # `.` and `..` are the canonical traversal names on a guard that reads input
 # from another device, and stating them explicitly outlives a later narrowing
 # of the dotfile rule.
-src/paired.rs:286: replace || with && in check_entry_name
+src/paired.rs:288: replace || with && in check_entry_name
 
 # UNOBSERVABLE. `RawTable` is created only when `invocation_below` finds a
 # Cards invocation in its contiguous trailing zone. Every row overwrites

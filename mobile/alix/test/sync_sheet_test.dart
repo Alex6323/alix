@@ -1,5 +1,5 @@
 // Widget tests for lib/sync/sync_sheet.dart: the conflict choice row's exact
-// title/subtitle wording (what each side discards), that only non-empty
+// title/subtitle wording (what each side keeps, which saved last), that only non-empty
 // report sections render, and that a row tap calls onResolve with the right
 // deckId/keepPhone pair. Pure presentation, no bridge or dylib needed.
 import 'dart:async';
@@ -36,8 +36,8 @@ void main() {
     );
   }
 
-  testWidgets('a conflict names what each row discards, including the desktop '
-      "writer when the bridge reports one", (tester) async {
+  testWidgets('a conflict names what each row keeps, says the other side is '
+      'lost, and marks the later save newer', (tester) async {
     final conflict = SyncPendingConflict(
       deckId: 'deck-1',
       label: 'German/Verbs.md',
@@ -47,19 +47,34 @@ void main() {
           atMs: DateTime(2026, 9, 7, 8, 30).millisecondsSinceEpoch,
         ),
       ),
+      phoneAtMs: DateTime(2026, 9, 7, 7, 10).millisecondsSinceEpoch,
     );
     await pump(tester, conflicts: [conflict]);
 
-    expect(find.text("Keep the phone's progress"), findsOneWidget);
     expect(
       find.text(
-        "discards the desktop's, last written by desk-1 at "
-        '2026-09-07 08:30',
+        "Both sides changed this deck since the last sync. The side you "
+        "don't keep is lost.",
       ),
       findsOneWidget,
+      reason: 'explanation',
     );
-    expect(find.text("Take the desktop's"), findsOneWidget);
-    expect(find.text('nothing to discard on the phone'), findsOneWidget);
+    expect(find.text("Keep the phone's progress"), findsOneWidget);
+    expect(find.text('no card progress, last saved 2026-09-07 07:10'),
+        findsOneWidget, reason: 'phone subtitle');
+    expect(find.text("Keep the desktop's progress"), findsOneWidget);
+    expect(find.text('from desk-1, last saved 2026-09-07 08:30'),
+        findsOneWidget, reason: 'desktop subtitle');
+    expect(find.text('newer'), findsOneWidget, reason: 'one side is newer');
+    final desktopRow = find.ancestor(
+      of: find.text("Keep the desktop's progress"),
+      matching: find.byType(OutlinedButton),
+    );
+    expect(
+      find.descendant(of: desktopRow, matching: find.text('newer')),
+      findsOneWidget,
+      reason: 'the desktop saved later',
+    );
   });
 
   testWidgets(
@@ -77,10 +92,7 @@ void main() {
       await pump(tester, conflicts: [conflict]);
 
       expect(
-        find.text(
-          "discards the desktop's, last written by desk-1 at "
-          '2026-09-05 09:15',
-        ),
+        find.text('from desk-1, last saved 2026-09-05 09:15'),
         findsOneWidget,
       );
     },
@@ -108,8 +120,7 @@ void main() {
       await pump(tester, conflicts: [conflict]);
 
       final subtitleText =
-          "discards the desktop's, last written by "
-          'alix-workstation-1a2b3cd at 2026-09-07 13:19';
+          'from alix-workstation-1a2b3cd, last saved 2026-09-07 13:19';
       final finder = find.text(subtitleText);
       expect(finder, findsOneWidget);
       final subtitle = tester.widget<Text>(finder);
@@ -131,7 +142,7 @@ void main() {
   );
 
   testWidgets(
-    'a conflict with no known desktop writer keeps the keep-phone subtitle '
+    'a conflict with no known desktop writer keeps the desktop subtitle '
     'writer-free rather than inventing one',
     (tester) async {
       const conflict = SyncPendingConflict(
@@ -141,7 +152,7 @@ void main() {
       );
       await pump(tester, conflicts: const [conflict]);
 
-      expect(find.text("discards the desktop's version"), findsOneWidget);
+      expect(find.text('from the desktop'), findsOneWidget);
     },
   );
 
@@ -168,7 +179,7 @@ void main() {
     expect(resolvedKeepPhone, isTrue);
   });
 
-  testWidgets('tapping take-desktop resolves with keepPhone false', (
+  testWidgets('tapping keep-desktop resolves with keepPhone false', (
     tester,
   ) async {
     const conflict = SyncPendingConflict(
@@ -183,7 +194,7 @@ void main() {
       onResolve: (_, keepPhone) async => resolvedKeepPhone = keepPhone,
     );
 
-    await tester.tap(find.text(conflictTakeDesktopWording(conflict).title));
+    await tester.tap(find.text(conflictKeepDesktopWording(conflict).title));
     expect(resolvedKeepPhone, isFalse);
   });
 

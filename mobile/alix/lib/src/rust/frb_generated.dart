@@ -3655,15 +3655,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PairedDeckState dco_decode_paired_deck_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return PairedDeckState(
       deckId: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
       unpushed: dco_decode_bool(arr[2]),
       phoneSaves: dco_decode_u_64(arr[3]),
       phoneAtMs: dco_decode_opt_box_autoadd_u_64(arr[4]),
-      conflict: dco_decode_opt_box_autoadd_paired_conflict(arr[5]),
+      phoneCards: dco_decode_u_64(arr[5]),
+      conflict: dco_decode_opt_box_autoadd_paired_conflict(arr[6]),
     );
   }
 
@@ -5598,6 +5599,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_unpushed = sse_decode_bool(deserializer);
     var var_phoneSaves = sse_decode_u_64(deserializer);
     var var_phoneAtMs = sse_decode_opt_box_autoadd_u_64(deserializer);
+    var var_phoneCards = sse_decode_u_64(deserializer);
     var var_conflict = sse_decode_opt_box_autoadd_paired_conflict(deserializer);
     return PairedDeckState(
       deckId: var_deckId,
@@ -5605,6 +5607,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       unpushed: var_unpushed,
       phoneSaves: var_phoneSaves,
       phoneAtMs: var_phoneAtMs,
+      phoneCards: var_phoneCards,
       conflict: var_conflict,
     );
   }
@@ -7508,6 +7511,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.unpushed, serializer);
     sse_encode_u_64(self.phoneSaves, serializer);
     sse_encode_opt_box_autoadd_u_64(self.phoneAtMs, serializer);
+    sse_encode_u_64(self.phoneCards, serializer);
     sse_encode_opt_box_autoadd_paired_conflict(self.conflict, serializer);
   }
 

@@ -157,7 +157,7 @@ void main() {
 
   testWidgets(
     'a 409 on the summary push opens the same conflict choice the sync '
-    'report sheet uses, naming what each side discards',
+    'report sheet uses, naming what each side keeps',
     (tester) async {
       final tmp = tempDir('alix-sync-push-conflict-');
       final (root, port) = pairedDeck(tmp);
@@ -202,7 +202,7 @@ void main() {
 
       expect(find.byType(SyncReportSheet), findsOneWidget);
       expect(find.text("Keep the phone's progress"), findsOneWidget);
-      expect(find.text("discards the desktop's version"), findsOneWidget);
+      expect(find.text('from the desktop'), findsOneWidget);
     },
   );
 }
