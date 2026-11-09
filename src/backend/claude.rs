@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use serde_json::Value;
 
-use super::{Access, Backend, ProgressUpdate, PromptDelivery, RunOpts};
+use super::{Access, Backend, ProgressUpdate, RunOpts};
 
 pub struct ClaudeBackend;
 
@@ -75,10 +75,6 @@ impl Backend for ClaudeBackend {
         }
         argv.extend(opts.session_args.iter().cloned());
         argv
-    }
-
-    fn prompt_delivery(&self) -> PromptDelivery {
-        PromptDelivery::Stdin
     }
 
     fn extract(&self, stdout: &str) -> Result<String> {

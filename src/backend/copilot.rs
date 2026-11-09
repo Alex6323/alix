@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{Access, Backend, PromptDelivery, RunOpts};
+use super::{Access, Backend, RunOpts};
 
 /// The GitHub Copilot CLI backend.
 pub struct CopilotBackend;
@@ -48,16 +48,9 @@ impl Backend for CopilotBackend {
             argv.push(format!("--model={model}"));
         }
         argv.extend(opts.session_args.iter().cloned());
-
-        // `-p` must be the final flag so that `ask::run` (PromptDelivery::Arg)
-        // appends the prompt text as the very next argument.
-        argv.push("-p".to_string());
         argv
     }
 
-    fn prompt_delivery(&self) -> PromptDelivery {
-        PromptDelivery::Arg
-    }
 
     fn extract(&self, stdout: &str) -> Result<String> {
         // `-s` already strips stats/decoration; trim any surrounding whitespace.
@@ -70,7 +63,6 @@ impl Backend for CopilotBackend {
 
     fn required_help_flags(&self) -> &'static [&'static str] {
         &[
-            "-p",
             "-s",
             "--model",
             "--deny-tool",
@@ -193,8 +185,10 @@ mod tests {
             &[],
         ));
 
-        assert!(argv.iter().any(|a| a == "-p"), "must contain -p: {argv:?}");
-        assert_eq!(argv.last().unwrap(), "-p", "-p must be last: {argv:?}");
+        assert!(
+            !argv.iter().any(|a| a == "-p"),
+            "prompt is on stdin: {argv:?}"
+        );
 
         let denied = flag_value(&argv, "--deny-tool");
         assert!(
@@ -268,7 +262,6 @@ mod tests {
         let denied = flag_value(&argv, "--deny-tool");
         assert!(denied.contains("shell"));
         assert!(denied.contains("write"));
-        assert_eq!(argv.last().unwrap(), "-p");
     }
 
     #[test]
@@ -302,19 +295,10 @@ mod tests {
     fn copilot_caps_and_help_flags() {
         assert!(CopilotBackend.can_fetch_web());
         let flags = CopilotBackend.required_help_flags();
-        assert!(flags.contains(&"-p"));
         assert!(flags.contains(&"-s"));
         assert!(flags.contains(&"--model"));
         assert!(flags.contains(&"--deny-tool"));
         assert!(flags.contains(&"--available-tools"));
-    }
-
-    #[test]
-    fn copilot_prompt_delivery_is_arg() {
-        assert!(matches!(
-            CopilotBackend.prompt_delivery(),
-            PromptDelivery::Arg
-        ));
     }
 
     #[test]

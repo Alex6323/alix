@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    backend::{Access, Backend, PromptDelivery, RunOpts, backend_for},
+    backend::{Access, Backend, RunOpts, backend_for},
     card::Card,
     config::{AskConfig, Audience},
 };
@@ -623,15 +623,7 @@ fn run_supervised_inner(
         session_args,
         progress: config.progress,
     };
-    let mut argv = backend.build_argv(&opts);
-    // Arg-delivery backends take the prompt as a positional arg, not stdin, so it's appended here
-    // instead of in build_argv.
-    if matches!(
-        backend.prompt_delivery(),
-        PromptDelivery::Arg | PromptDelivery::ExecArg
-    ) {
-        argv.push(prompt.to_string());
-    }
+    let argv = backend.build_argv(&opts);
 
     let mut cmd = Command::new(&config.command);
     cmd.args(&argv);
@@ -663,22 +655,16 @@ fn run_supervised_inner(
         }
         *guard = ChildSlot::Running(child);
     }
-    match backend.prompt_delivery() {
-        PromptDelivery::Stdin => {
-            let mut stdin = stdin;
-            stdin
-                .write_all(prompt.as_bytes())
-                .context("cannot write the prompt")?;
-        }
-        // stdin is closed immediately here so the CLI (which takes the prompt as an arg) doesn't
-        // hang waiting on it.
-        PromptDelivery::Arg | PromptDelivery::ExecArg => drop(stdin),
-    }
-
     // Reader threads drain output so the child never deadlocks on a full pipe.
     let (pipe_tx, pipe_rx) = channel();
     let out = drain_pipe(stdout_pipe, Pipe::Stdout, pipe_tx.clone());
     let err = drain_pipe(stderr_pipe, Pipe::Stderr, pipe_tx);
+    {
+        let mut stdin = stdin;
+        stdin
+            .write_all(prompt.as_bytes())
+            .context("cannot write the prompt")?;
+    }
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(config.timeout_secs);
@@ -1691,7 +1677,7 @@ mod tests {
         assert!(extract_note_lines("  \n\n").is_empty());
     }
 
-    use crate::testutil::{exec_lock, fake_arg_reply, fake_cli, fake_reply};
+    use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
     fn config(command: &std::path::Path, timeout_secs: u64) -> AskConfig {
         AskConfig {
@@ -2029,43 +2015,29 @@ mod tests {
     }
 
     #[test]
-    fn arg_delivery_appends_the_prompt_and_reads_the_reply() {
+    fn every_backend_delivers_the_prompt_on_stdin_and_a_200_kib_prompt_starts() {
         use crate::config::BackendKind;
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_arg_reply(dir.path(), "the codex answer");
-        let config = AskConfig {
-            backend: BackendKind::Codex,
-            command: cli.to_str().unwrap().to_string(),
-            timeout_secs: 10,
-            ..AskConfig::default()
-        };
-        let answer = run(&config, "explain this card", &[]).unwrap();
-        assert_eq!("the codex answer", answer);
-    }
-
-    #[test]
-    fn arg_delivery_passes_the_prompt_as_the_final_argument() {
-        use crate::config::BackendKind;
-        let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = fake_cli(dir.path(), "echo \"$@\"");
-        let config = AskConfig {
-            backend: BackendKind::Codex,
-            command: cli.to_str().unwrap().to_string(),
-            timeout_secs: 10,
-            ..AskConfig::default()
-        };
-        let answer = run(&config, "the-prompt-text", &[]).unwrap();
-        assert!(answer.contains("exec"), "args were: {answer}");
-        assert!(
-            answer.contains("--sandbox read-only"),
-            "args were: {answer}"
-        );
-        assert!(
-            answer.trim().ends_with("the-prompt-text"),
-            "args were: {answer}"
-        );
+        let cli = fake_cli(dir.path(), "cat");
+        for kind in [
+            BackendKind::Claude,
+            BackendKind::Gemini,
+            BackendKind::Codex,
+            BackendKind::Copilot,
+        ] {
+            let config = AskConfig {
+                backend: kind,
+                ..ask_config(&cli)
+            };
+            let prompt = "x".repeat(200 * 1024);
+            let answer = run(&config, &prompt, &[]).unwrap_or_else(|e| panic!("{kind:?}: {e:#}"));
+            assert_eq!(
+                answer.trim_end(),
+                prompt,
+                "{kind:?}: the prompt did not arrive on stdin"
+            );
+        }
     }
 
     #[test]

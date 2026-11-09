@@ -759,6 +759,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Long prompts no longer fail to start on Codex and Copilot: every backend now
+  receives the prompt on stdin, where those two took it as one command-line
+  argument that Linux refuses past 128 KiB.
+
 - `alix doctor`'s long-section warning gives the current reason: the exam asks
   3 questions per section and a pass credits every card in it. It used to say
   the exam asks about every idea in a section.

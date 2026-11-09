@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 
-use super::{Access, Backend, PromptDelivery, RunOpts};
+use super::{Access, Backend, RunOpts};
 
 const FILE_TOOLS: &[&str] = &[
     "read_file",
@@ -53,10 +53,6 @@ impl Backend for GeminiBackend {
         }
         argv.extend(opts.session_args.iter().cloned());
         argv
-    }
-
-    fn prompt_delivery(&self) -> PromptDelivery {
-        PromptDelivery::Stdin
     }
 
     fn extract(&self, stdout: &str) -> Result<String> {

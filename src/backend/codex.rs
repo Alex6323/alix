@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use serde_json::Value;
 
-use super::{Backend, ProgressUpdate, PromptDelivery, RunOpts};
+use super::{Backend, ProgressUpdate, RunOpts};
 
 pub struct CodexBackend;
 
@@ -38,11 +38,8 @@ impl Backend for CodexBackend {
             argv.push(format!("model_reasoning_effort={effort}"));
         }
         argv.extend(opts.session_args.iter().cloned());
+        argv.push("-".to_string());
         argv
-    }
-
-    fn prompt_delivery(&self) -> PromptDelivery {
-        PromptDelivery::ExecArg
     }
 
     fn extract(&self, stdout: &str) -> Result<String> {
@@ -178,10 +175,7 @@ mod tests {
             },
             &[],
         ));
-        assert!(matches!(
-            CodexBackend.prompt_delivery(),
-            PromptDelivery::ExecArg
-        ));
+        assert_eq!(argv.last().map(String::as_str), Some("-"), "argv: {argv:?}");
         assert!(argv.iter().any(|a| a == "exec"), "argv: {argv:?}");
         assert_flag_value(&argv, "--sandbox", "read-only");
         assert_flag_value(&argv, "--ask-for-approval", "never");

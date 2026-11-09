@@ -11,12 +11,6 @@ pub use gemini::GeminiBackend;
 
 use crate::config::{AskConfig, BackendKind};
 
-pub enum PromptDelivery {
-    Stdin,
-    Arg,
-    ExecArg,
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Access {
     None,
@@ -69,8 +63,6 @@ pub trait Backend: Send + Sync {
     fn command(&self) -> &str;
 
     fn build_argv(&self, opts: &RunOpts) -> Vec<String>;
-
-    fn prompt_delivery(&self) -> PromptDelivery;
 
     fn extract(&self, stdout: &str) -> anyhow::Result<String>;
 

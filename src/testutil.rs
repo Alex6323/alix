@@ -58,14 +58,6 @@ pub(crate) fn fake_reply_calls(dir: &Path) -> usize {
         .unwrap_or(0)
 }
 
-/// Like [`fake_reply`] but for arg-delivery backends: doesn't drain stdin,
-/// since `ask::run` closes stdin immediately when the prompt arrives as an argument.
-pub(crate) fn fake_arg_reply(dir: &Path, reply: &str) -> PathBuf {
-    let out = dir.join("fake-arg-reply");
-    std::fs::write(&out, reply).unwrap();
-    fake_cli(dir, &format!("cat {}", out.display()))
-}
-
 pub(crate) fn ask_config(command: &Path) -> AskConfig {
     AskConfig {
         command: command.to_str().unwrap().to_string(),
