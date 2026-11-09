@@ -18,8 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   duplicated topic ID. Only blank lines may follow a topic marker before the
   topic's first card or the next `#`. `alix deck init` reports the topic IDs
   it assigned, a synced deck travels with its topic IDs minted, and
-  `alix workspace update` refuses a proposal that drops, copies, or invents
-  a topic ID.
+  `alix workspace update` may retire a topic but refuses a proposal that
+  copies or invents a topic ID, and a deck that already repeats one.
 
 - `[exam] effort` sets the backend effort for writing and grading exams,
   over `[ask] effort`; a workspace's `alix.local.toml` may set its own.

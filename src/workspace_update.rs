@@ -44,10 +44,11 @@ write the replacement as a new card WITHOUT an ID comment.
 not write a replacement unless the current source supports a useful new card.
 - New cards never carry an ID. Alix assigns their IDs after validation.
 - Never move, copy, invent, or reuse an existing ID.
-- Every existing `<!-- id: topic-... -->` line stays exactly once, directly \
-after its own `#` heading block (the heading and its prose), even when you \
-reword the heading or prose. Never delete, copy, or invent a topic ID; a new \
-`#` topic carries no ID line.
+- An existing `<!-- id: topic-... -->` line stays directly after its own `#` \
+heading block (the heading and its prose), even when you reword the heading or \
+prose. You may remove an obsolete topic whole, its ID line with it. Never \
+move, copy, invent, or reuse a topic ID line; a new `#` topic carries no ID \
+line.
 
 UPDATE RULES:
 - Preserve the frontmatter `id`, `title`, `description`, trace, requires, \
@@ -504,6 +505,7 @@ fn stage_member(
     } = against;
     let staged_path = staging.join(relative);
 
+    refuse_duplicated_topics(deck)?;
     let proposed = reconcile(&live_deck, deck, live_source, generate, ask)?;
     fs::write(&staged_path, proposed.as_bytes())
         .with_context(|| format!("cannot write {}", staged_path.display()))?;
@@ -857,6 +859,19 @@ fn topic_ids(deck: &Deck) -> Vec<String> {
         .collect()
 }
 
+fn refuse_duplicated_topics(deck: &Deck) -> Result<()> {
+    let findings = crate::topic::duplicated_topics(deck, None);
+    if !findings.is_empty() {
+        let findings: Vec<String> = findings.iter().map(ToString::to_string).collect();
+        bail!(
+            "{} repeats a topic id; fix it before updating:\n{}",
+            deck.path.display(),
+            findings.join("\n")
+        );
+    }
+    Ok(())
+}
+
 fn validate_topic_identity(current: &Deck, candidate: &Deck) -> Result<()> {
     let live = topic_ids(current).into_iter().collect::<BTreeSet<_>>();
     let mut kept = BTreeSet::new();
@@ -869,9 +884,6 @@ fn validate_topic_identity(current: &Deck, candidate: &Deck) -> Result<()> {
                 "proposal copies topic ID `{id}` onto a second topic; keep it on its own topic only"
             );
         }
-    }
-    if let Some(id) = live.difference(&kept).next() {
-        bail!("proposal drops topic ID `{id}`; keep every existing topic ID line on its own topic");
     }
     Ok(())
 }
@@ -1609,15 +1621,10 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_proposal_that_drops_copies_or_invents_a_topic_id_is_refused() {
+    fn a_proposal_that_copies_or_invents_a_topic_id_is_refused() {
         let _lock = exec_lock();
         let live = format!("# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}");
         let rows = [
-            (
-                "dropped",
-                format!("# Topic\n{TOPIC_CARD}"),
-                "proposal drops topic ID `topic-livetopic`",
-            ),
             (
                 "copied",
                 format!(
@@ -1678,6 +1685,59 @@ mod tests {
         assert_eq!(2, ids.len(), "{ids:?}");
         assert_eq!("topic-livetopic", ids[0], "the live topic keeps its id");
         assert_ne!("topic-livetopic", ids[1], "the new topic gets a fresh id");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_proposal_may_retire_a_whole_topic_with_its_id() {
+        let _lock = exec_lock();
+        let live = format!(
+            "# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}# Gone\n<!-- id: topic-gonetopic -->\n## Obsolete\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-obsolete -->\n"
+        );
+        let (_dir, workspace, source, _) = workspace_with("Old answer\n", &live);
+        let command = fake_reply(
+            &workspace,
+            &proposal(
+                &source,
+                &format!("# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}"),
+            ),
+        );
+        let report = stage(
+            &workspace,
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap();
+        let staged = Deck::load(report.staging.join("decks/facts.md")).unwrap();
+        assert_eq!(vec!["topic-livetopic".to_string()], topic_ids(&staged));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_live_deck_that_repeats_a_topic_id_is_refused_before_the_ai_call() {
+        let _lock = exec_lock();
+        let live = format!(
+            "# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}# Twin\n<!-- id: topic-livetopic -->\n## Second\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-second -->\n"
+        );
+        let (_dir, workspace, source, deck) = workspace_with("Old answer\n", &live);
+        let finding =
+            crate::topic::duplicated_topics(&Deck::load(&deck).unwrap(), None)[0].to_string();
+        let command = fake_reply(
+            &workspace,
+            &proposal(
+                &source,
+                &format!("# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}"),
+            ),
+        );
+        let error = stage(
+            &workspace,
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains(&finding), "{message}");
+        assert!(message.contains("fix it before updating"), "{message}");
     }
 
     #[cfg(unix)]
