@@ -215,7 +215,7 @@ export function createPicker({
     }
   });
 
-  // The deck-selection screen, mirroring the terminal picker. Three sections —
+  // The deck-selection screen, mirroring the terminal picker. Three groups:
   // Workspaces (each with its last-progress time), loose Decks, and
   // Folders and single-launch: click a deck to start its trace or review, or
   // open a workspace/folder to drill
@@ -482,8 +482,8 @@ export function createPicker({
       return row;
     }
 
-    // Renders a sectioned list with a filter, focus-driven primary button, and
-    // keyboard navigation. `sections` is [{ title, rows }] (title null = no
+    // Renders a grouped list with a filter, focus-driven primary button, and
+    // keyboard navigation. `groups` is [{ title, rows }] (title null = no
     // header). `gated` is informational; `back` (Esc/h) leaves the view;
     // `allowMastered` binds the m key + a chip to the Mastered window.
     function renderList(opts) {
@@ -530,12 +530,12 @@ export function createPicker({
       filter.placeholder = `Search  ·  ${label(keys.filter)}`;
 
       const lists = el("div", "lists");
-      const sectionEls = [];
-      for (const sec of opts.sections) {
-        const header = sec.title ? el("div", "section", sec.title) : null;
+      const groupEls = [];
+      for (const sec of opts.groups) {
+        const header = sec.title ? el("div", "group-heading", sec.title) : null;
         if (header) lists.appendChild(header);
         for (const r of sec.rows) lists.appendChild(r);
-        sectionEls.push({ header, rows: sec.rows });
+        groupEls.push({ header, rows: sec.rows });
       }
       const emptyHint = el("div", "empty-hint", "No decks match.");
       lists.appendChild(emptyHint);
@@ -998,11 +998,11 @@ export function createPicker({
 
       // No filter → show each row's default set (Decks hides finished and locked
       // rows); with a filter → search every row by label. Empty
-      // section headers hide themselves, and the tree flattens.
+      // group headers hide themselves, and the tree flattens.
       function applyFilter() {
         const q = filter.value.trim().toLowerCase();
         lists.classList.toggle("filtering", !!q);
-        for (const sec of sectionEls) {
+        for (const sec of groupEls) {
           let shown = 0;
           for (const r of sec.rows) {
             const show = q ? r._search.includes(q) : (r._default !== false);
@@ -1107,17 +1107,17 @@ export function createPicker({
     }
 
     function renderTop() {
-      const sections = [];
-      if (workspaces.length) sections.push({ title: "Workspaces", rows: workspaces.map(openRow) });
-      if (recent.length) sections.push({
+      const groups = [];
+      if (workspaces.length) groups.push({ title: "Workspaces", rows: workspaces.map(openRow) });
+      if (recent.length) groups.push({
         title: "Decks",
         // Finished and locked decks remain reachable through search.
         rows: recent.map(d => deckRow(d, true, null, d.state !== "finished" && !d.locked)),
       });
-      if (folders.length) sections.push({ title: "Folders", rows: folders.map(openRow) });
+      if (folders.length) groups.push({ title: "Folders", rows: folders.map(openRow) });
       renderList({
         headerFilter: true,
-        sections, back: null, allowMastered: true,
+        groups, back: null, allowMastered: true,
       });
     }
 
@@ -1132,7 +1132,7 @@ export function createPicker({
         lede: grp.label || grp.name,
         ledeDesc: grp.description || null,
         deadline: grp.deadline || null,
-        sections: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],
+        groups: [{ title: null, rows: grp.members.map(m => deckRow(m, true, grp.name, true, true)) }],
         back, allowMastered: false,
       });
     }
@@ -1143,7 +1143,7 @@ export function createPicker({
       renderList({
         headerFilter: true,
         lede: "mastered \u{1F389} (reopen a deck to cram or re-examine)",
-        sections: [{ title: null, rows: mastered.map(d => deckRow({ ...d, tree: "" }, false, null, true, false)) }],
+        groups: [{ title: null, rows: mastered.map(d => deckRow({ ...d, tree: "" }, false, null, true, false)) }],
         back: renderTop, allowMastered: false,
       });
     }

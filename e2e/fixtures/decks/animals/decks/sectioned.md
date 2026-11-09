@@ -1,7 +1,7 @@
 ---
 id: "deck-00000000000000000000000009"
-title: Sectioned
-description: A deck whose cards sit under a section heading.
+title: Topics
+description: A deck whose cards sit under a topic heading.
 ---
 
 # Ocean depths

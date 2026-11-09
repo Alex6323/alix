@@ -15,11 +15,11 @@
   .deck-filter::placeholder { color: var(--dim); }
   .deck-filter:focus { outline: none; border-color: var(--bolt); }
   .decklist { display: flex; flex-direction: column; gap: 8px; }
-  /* a single scroll container holds both the deck and workspace sections */
+  /* a single scroll container holds both the deck and workspace groups */
   .lists { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; }
   .lists::-webkit-scrollbar { width: 0; }
-  .select .section { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin: 18px 2px 9px; flex: none; }
-  .lists > .section:first-child { margin-top: 2px; }
+  .select .group-heading { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); margin: 18px 2px 9px; flex: none; }
+  .lists > .group-heading:first-child { margin-top: 2px; }
   .select .empty-hint { color: var(--dim); font-size: 0.85rem; padding: 4px 2px 0; }
   /* single-launch rows: click a deck to start it, a workspace/folder to open.
      A leading chevron (›) marks a drillable row; a glyph slot shows 🔒 / 🕒.

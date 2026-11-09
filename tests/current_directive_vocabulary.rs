@@ -14,7 +14,7 @@ fn executable_fixtures_use_the_current_directive_vocabulary() {
             include_str!("../e2e/fixtures/decks/animals/decks/multiple-sequence.md"),
         ),
         (
-            "section context E2E deck",
+            "topic context E2E deck",
             include_str!("../e2e/fixtures/decks/animals/decks/section-context-pill.md"),
         ),
         (

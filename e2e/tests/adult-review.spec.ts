@@ -1956,7 +1956,7 @@ test("the first topic introduction auto-opens without inline and the next topic 
   await openApp(page);
 
   await adultDeckRow(page, "Animals").click();
-  await adultDeckRow(page, "Sectioned").click();
+  await adultDeckRow(page, "Topics").click();
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/select")),
     page.getByRole("button", { name: "Learn" }).click(),

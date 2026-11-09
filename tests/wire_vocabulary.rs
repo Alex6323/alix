@@ -3,9 +3,6 @@ use std::path::{Path, PathBuf};
 const WIRE_FILES: &[&str] = &[
     "src/serve/dto.rs",
     "src/serve/contract.rs",
-    "mobile/alix/rust/src/api/review.rs",
-    "mobile/alix/rust/src/api/exam.rs",
-    "mobile/alix/rust/src/api/listing.rs",
     "mobile/alix/rust/src/frb_generated.rs",
     "mobile/alix/lib/src/rust/frb_generated.dart",
     "mobile/alix/lib/src/rust/frb_generated.io.dart",
@@ -26,10 +23,14 @@ const WIRE_FILES: &[&str] = &[
 const WIRE_DIRS: &[(&str, &str)] = &[
     ("tests/contracts", "json"),
     ("mobile/alix/lib/src/rust/api", "dart"),
+    ("mobile/alix/rust/src/api", "rs"),
+    ("web/alix/review", "js"),
 ];
 const WIRE_PROSE: &[&str] = &["docs/API.md"];
 // flutter_rust_bridge_codegen writes these region markers into every generated file.
 const GENERATOR_MARKER: &str = concat!("// Sec", "tion: ");
+// The HTML element of that name, created by the web client's `el(tag, ...)`.
+const DOM_TAG_LITERAL: &str = concat!("el(\"sec", "tion\"");
 
 fn names_a_wire_spelling(line: &str, needle: &str) -> bool {
     let lower = line.to_lowercase();
@@ -80,7 +81,12 @@ fn every_wire_surface_says_topic_never_the_old_heading_word() {
             if generated && line.trim_start().starts_with(GENERATOR_MARKER) {
                 continue;
             }
-            if line.to_lowercase().contains(needle) {
+            let checked = if file.extension().is_some_and(|e| e == "js") {
+                line.replace(DOM_TAG_LITERAL, "")
+            } else {
+                line.to_string()
+            };
+            if checked.to_lowercase().contains(needle) {
                 hits.push(format!(
                     "{}:{}: still says {needle}: {line}",
                     file.display(),

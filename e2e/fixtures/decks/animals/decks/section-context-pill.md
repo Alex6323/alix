@@ -1,12 +1,12 @@
 ---
-title: "Section context, a demonstration"
-description: A long section-context fixture for the adult review layout.
+title: "Topic context, a demonstration"
+description: A long topic-context fixture for the adult review layout.
 id: "deck-4ty97vhb35yfjwgnw63e8v3hhf"
 ---
 
 # Verbs of arguing
 
-Every card in this section shares this explanation. It is intentionally long
+Every card in this topic shares this explanation. It is intentionally long
 enough to demonstrate why optional orientation must not displace the question
 or crowd the answer choices during an ordinary review.
 

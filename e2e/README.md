@@ -115,7 +115,7 @@ where it is rather than fixed:
       keyboard focus on the adult side (`adult-multiple-choice.spec.ts`,
       `kids-multiple-choice.spec.ts`), live and stale source excerpts
       (`adult-source-excerpt.spec.ts`), the inline trace
-      (`adult-trace-inline.spec.ts`), section context (`kids-review.spec.ts`),
+      (`adult-trace-inline.spec.ts`), topic context (`kids-review.spec.ts`),
       the adult context-pill layout, and the sub-card graduation lock
       (`adult-review.spec.ts`).
     * `source-fact.rs`, `source-stale.rs`, and `trace-source.txt`: the live

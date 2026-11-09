@@ -1386,7 +1386,7 @@ pub fn default_config_toml() -> &'static str {
 # continue = ["space", "enter"] # move on from an answered card
 # restart = ["r"]               # start a new session from the summary screen
 # ask = ["a"]                   # ask the tutor about an answered card
-# context = ["c"]               # swap the question for the card's section
+# context = ["c"]               # open the card's topic drawer
 # hint = ["i"]                  # show the card's next hint
 # make_note = ["ctrl-s"]        # ask view: condense the conversation into a note
 # make_card = ["ctrl-d"]        # ask view: distill the conversation into a card

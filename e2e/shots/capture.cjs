@@ -1033,7 +1033,7 @@ async function main() {
   fs.rmSync(path.join(DEMO_DIR, "recent.json"), { force: true });
   // The showcase workspace comes from the repo, never from the personal copy.
   // ~/alix-demo's is an older vintage with no `title:` and a `#` body heading
-  // that is section context now, so the catalog labels its row from the first
+  // that is topic context now, so the catalog labels its row from the first
   // card and shot 6's text match cannot find it.
   const showcaseDest = path.join(DEMO_DIR, "workspace-showcase");
   fs.rmSync(showcaseDest, { recursive: true, force: true });

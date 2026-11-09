@@ -230,7 +230,7 @@ test("a resynced study response does not close the kids tutor or lose its transc
 test("the kids client never shows a card's topic, and offers no way to ask for it", async ({ page }) => {
   await openApp(page);
   await page.locator(".box", { hasText: "Animals" }).click();
-  await kidsDeckRow(page, "sectioned").click();
+  await kidsDeckRow(page, "topics").click();
   await Promise.all([
     page.waitForResponse((res) => res.url().includes("/api/select")),
     page.getByRole("button", { name: "Say it yourself" }).click(),
