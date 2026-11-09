@@ -1691,9 +1691,6 @@ fn repair_sources(paths: &[PathBuf], keep_results: bool, exam: &ExamConfig) -> R
         let report = alix::sources::commands::repair(path, keep_results, &exam)
             .with_context(|| format!("cannot repair the sources of {}", path.display()))?;
         let at = path.display();
-        for line in &report.over_limit {
-            eprintln!("warning: {at}: {line}");
-        }
         for (id, source) in &report.refrozen {
             println!("{at}: refroze {source} as {id}");
         }

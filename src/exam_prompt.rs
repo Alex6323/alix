@@ -2,9 +2,13 @@ use std::fmt;
 
 use crate::{
     config::{BackendKind, ExamConfig},
+    exam_ideas::QUESTIONS_PER_TOPIC,
     exam_status::ExamTopic,
     sources::SourceText,
 };
+
+pub const IDEA_LINE_MAX_CHARS: usize = 300;
+pub const RETRY_REASON_MAX_CHARS: usize = 300;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Measure {
@@ -40,8 +44,7 @@ pub struct PromptLimit {
     pub limit: u64,
 }
 
-// Probed: docs/results/2026-11-08-exam-sources-probes.md, section 0b. Gemini
-// is unmeasured there; the smallest measured limit stands in.
+// Gemini is unmeasured; the smallest measured limit stands in.
 pub fn prompt_limit(kind: BackendKind) -> PromptLimit {
     match kind {
         BackendKind::Codex => PromptLimit {
@@ -50,7 +53,7 @@ pub fn prompt_limit(kind: BackendKind) -> PromptLimit {
         },
         BackendKind::Copilot | BackendKind::Gemini => PromptLimit {
             measure: Measure::EstimatedTokens {
-                bytes_per_token_hundredths: 253,
+                bytes_per_token_hundredths: 250,
                 overhead: 2_200,
             },
             limit: 128_000,
@@ -113,10 +116,32 @@ impl fmt::Display for PreflightError {
 
 impl std::error::Error for PreflightError {}
 
-/// Measured with no idea listed: the ideas are the model's own reply,
-/// unknown ahead of the call.
 pub fn measured_prompt(topic: &ExamTopic, sources: &[SourceText], cfg: &ExamConfig) -> String {
-    questions_prompt(topic, sources, &[], cfg)
+    let ideas = vec![widest(IDEA_LINE_MAX_CHARS); QUESTIONS_PER_TOPIC];
+    retry_prompt(
+        &questions_prompt(topic, sources, &ideas, cfg),
+        &widest(RETRY_REASON_MAX_CHARS),
+    )
+}
+
+// Four bytes per char: the heaviest a char-capped line weighs in bytes.
+fn widest(chars: usize) -> String {
+    "\u{10000}".repeat(chars)
+}
+
+pub fn retry_prompt(prompt: &str, reason: &str) -> String {
+    format!(
+        "{prompt}\n\nYour previous answer was rejected: {}. Write the whole answer \
+         again and follow every rule above.",
+        truncate_chars(reason, RETRY_REASON_MAX_CHARS)
+    )
+}
+
+pub(crate) fn truncate_chars(s: &str, max: usize) -> &str {
+    match s.char_indices().nth(max) {
+        Some((at, _)) => &s[..at],
+        None => s,
+    }
 }
 
 pub fn measure_topic(
@@ -271,7 +296,7 @@ mod tests {
             overhead,
         };
         let copilot = PromptLimit {
-            measure: tokens(253, 2_200),
+            measure: tokens(250, 2_200),
             limit: 128_000,
         };
         type Row = (BackendKind, PromptLimit, &'static [(&'static str, u64)]);
@@ -311,10 +336,12 @@ mod tests {
         }
         let ascii = |n: usize| "a".repeat(n);
         for (ratio, overhead, bytes, size) in [
-            (253, 2_200, 253, 2_300),
-            (253, 2_200, 254, 2_301),
-            (253, 2_200, 506, 2_400),
-            (253, 2_200, 507, 2_401),
+            (250, 2_200, 250, 2_300),
+            (250, 2_200, 251, 2_301),
+            (250, 2_200, 500, 2_400),
+            (250, 2_200, 501, 2_401),
+            (250, 2_200, 314_500, 128_000),
+            (250, 2_200, 314_501, 128_001),
             (251, 0, 251, 100),
             (251, 0, 252, 101),
             (251, 0, 502, 200),
@@ -328,5 +355,22 @@ mod tests {
         }
         assert_eq!("characters", Measure::Characters.label());
         assert_eq!("estimated tokens", tokens(1, 0).label());
+    }
+
+    #[test]
+    fn a_retry_carries_at_most_the_capped_reason_cut_on_a_char_boundary() {
+        let reason = "é".repeat(RETRY_REASON_MAX_CHARS + 1);
+        let retry = retry_prompt("ask", &reason);
+        assert_eq!(
+            format!(
+                "ask\n\nYour previous answer was rejected: {}. Write the whole answer again and \
+                 follow every rule above.",
+                "é".repeat(RETRY_REASON_MAX_CHARS)
+            ),
+            retry
+        );
+        assert_eq!("ab", truncate_chars("abc", 2));
+        assert_eq!("abc", truncate_chars("abc", 3));
+        assert_eq!("日本", truncate_chars("日本語", 2));
     }
 }

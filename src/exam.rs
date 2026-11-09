@@ -12,7 +12,10 @@ use crate::{
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
     exam_ideas::{Idea, IdeaTopic, IdeasDocument},
-    exam_prompt::{PreflightError, ideas_prompt, measure_topic, questions_prompt},
+    exam_prompt::{
+        IDEA_LINE_MAX_CHARS, PreflightError, ideas_prompt, measure_topic, questions_prompt,
+        retry_prompt, truncate_chars,
+    },
     sources::DeckSources,
     store::Store,
     workspace,
@@ -478,10 +481,7 @@ fn with_one_retry<T>(
         Ok(value) => return Ok(value),
         Err(reason) => reason,
     };
-    let retry = format!(
-        "{prompt}\n\nYour previous answer was rejected: {reason}. Write the whole answer \
-         again and follow every rule above."
-    );
+    let retry = retry_prompt(prompt, &reason);
     match check(&ask::run_in(job, run, &retry)?) {
         Ok(value) => Ok(value),
         Err(reason) => bail!("{what} were rejected twice: {reason}"),
@@ -492,7 +492,11 @@ pub(crate) fn checked_ideas(raw: &str) -> std::result::Result<Vec<String>, Strin
     let dto: IdeasDto =
         parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
     let mut ideas: Vec<String> = Vec::new();
-    for idea in dto.ideas.iter().map(|idea| idea.trim()) {
+    for idea in dto
+        .ideas
+        .iter()
+        .map(|idea| truncate_chars(idea.trim(), IDEA_LINE_MAX_CHARS))
+    {
         if !idea.is_empty() && !ideas.iter().any(|known| known == idea) {
             ideas.push(idea.to_string());
         }
@@ -3875,6 +3879,10 @@ mod tests {
     const IDEAS: &str = "{\"ideas\":[\"m\"]}";
     const ONE_QUESTION: &str = "{\"questions\":[{\"shape\":\"instance\",\"idea\":1,\
                                 \"prompt\":\"Why move?\",\"points\":[\"avoids double free\"]}]}";
+    const THREE_QUESTIONS: &str = "{\"questions\":[\
+        {\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Why move?\",\"points\":[\"p\"]},\
+        {\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"When not?\",\"points\":[\"p\"]},\
+        {\"shape\":\"fix\",\"idea\":3,\"prompt\":\"Fix it.\",\"points\":[\"p\"]}]}";
 
     fn prepare(deck: &Deck, replies: &[&str]) -> (tempfile::TempDir, Vec<String>) {
         let cli_dir = tempfile::tempdir().unwrap();
@@ -4793,13 +4801,12 @@ mod tests {
             .unwrap()
             .texts_of(&topic.topic_id)
             .unwrap();
-        let fixed =
-            crate::exam_prompt::measured_prompt(&topic, &texts, &ExamConfig::default()).len() - 2;
+        let probed = crate::exam_prompt::measured_prompt(&topic, &texts, &ExamConfig::default());
         let measure = crate::exam_prompt::prompt_limit(kind).measure;
-        let (mut low, mut high) = (1u64, 4 * target);
+        let (mut low, mut high) = (0u64, 4 * target);
         while low < high {
             let middle = (low + high).div_ceil(2);
-            let sized = measure.of(&"x".repeat(fixed + middle as usize));
+            let sized = measure.of(&format!("{probed}{}", "x".repeat(middle as usize)));
             if sized <= target {
                 low = middle;
             } else {
@@ -4807,7 +4814,7 @@ mod tests {
             }
         }
         let ws = workspace_with(SIZED_TOPIC);
-        let filler = format!("{}\n", "x".repeat(low as usize - 1));
+        let filler = format!("{}\n", "x".repeat(low as usize + 1));
         source(&ws, "src.txt", &filler, &["topic-moves"]);
         let deck = opened(&ws);
         let topic = examined_topics(&deck).remove(0);
@@ -4895,5 +4902,83 @@ mod tests {
                 "{kind:?}: one over the limit, the model was never called"
             );
         }
+    }
+
+    /// Prepares a topic measuring exactly `kind`'s limit with three ideas of
+    /// 400 `idea_char`s and one rejected questions reply; returns the sizes
+    /// of the prompts sent (ideas, questions, questions retry) and of the
+    /// ideas prompt as it would be retried, in `kind`'s unit.
+    fn sizes_sent_at_the_limit(kind: crate::config::BackendKind, idea_char: char) -> Vec<u64> {
+        let limit = crate::exam_prompt::prompt_limit(kind);
+        let (_at, deck) = workspace_measuring(kind, limit.limit);
+        let idea = idea_char.to_string().repeat(400);
+        let long_ideas = format!("{{\"ideas\":[\"{idea}\",\"2{idea}\",\"3{idea}\"]}}");
+        let rejected = "not the JSON asked for. ".repeat(400);
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            cli_dir.path(),
+            &[&long_ideas, &rejected, THREE_QUESTIONS],
+        );
+        let (rx, _job) = spawn_prepare(
+            &deck,
+            examined_topics(&deck),
+            ExamConfig::default(),
+            AskConfig {
+                backend: kind,
+                ..ask_config(&cli)
+            },
+        );
+        assert_eq!(
+            Ok(()),
+            rx.recv().unwrap(),
+            "{kind:?}: at the limit, prepared after one rejected questions reply"
+        );
+        let sent = prompts(cli_dir.path());
+        assert_eq!(3, sent.len(), "{kind:?}: ideas, questions, questions retry");
+        let ideas_retry = crate::exam_prompt::retry_prompt(&sent[0], &rejected);
+        sent.iter()
+            .chain([&ideas_retry])
+            .map(|prompt| limit.measure.of(prompt))
+            .collect()
+    }
+
+    #[test]
+    fn every_prompt_sent_for_a_topic_at_the_limit_fits_it_with_the_widest_ideas_and_a_retry() {
+        let _lock = exec_lock();
+        for kind in crate::config::BackendKind::ALL {
+            let limit = crate::exam_prompt::prompt_limit(kind).limit;
+            let sizes = sizes_sent_at_the_limit(kind, '\u{10000}');
+            assert!(
+                sizes.iter().all(|&size| size <= limit),
+                "{kind:?}: every prompt sent fits the limit the preflight checked: \
+                 {sizes:?} against {limit}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_questions_retry_with_capped_ascii_ideas_meets_codexs_character_limit_exactly() {
+        let _lock = exec_lock();
+        let kind = crate::config::BackendKind::Codex;
+        let limit = crate::exam_prompt::prompt_limit(kind).limit;
+        let sizes = sizes_sent_at_the_limit(kind, 'a');
+        assert_eq!(
+            limit, sizes[2],
+            "the questions retry is the largest prompt and meets the limit exactly: {sizes:?}"
+        );
+    }
+
+    #[test]
+    fn an_idea_longer_than_the_line_cap_is_cut_on_a_char_boundary_before_dedup() {
+        let raw = format!(
+            "{{\"ideas\":[\"{}\",\" {} \"]}}",
+            "é".repeat(IDEA_LINE_MAX_CHARS + 1),
+            "é".repeat(IDEA_LINE_MAX_CHARS)
+        );
+        assert_eq!(
+            Ok(vec!["é".repeat(IDEA_LINE_MAX_CHARS)]),
+            checked_ideas(&raw),
+            "the cut idea and the idea it then equals collapse into one"
+        );
     }
 }

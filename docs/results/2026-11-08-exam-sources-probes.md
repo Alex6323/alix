@@ -83,4 +83,8 @@ Result:
 - Gemini's bare `-p` predates this arc. Named as `{#gemini-bare-p-rejected}`.
 - The constants live in `src/exam_prompt.rs`: `prompt_limit` holds each
   backend's `PromptLimit` (Gemini's arm shares Copilot's), and `Measure::of`
-  does the counting.
+  does the counting. Copilot's ratio is coded as 2.50, not the observed
+  2.53: at 2.53 the estimate admits up to 318,274 bytes, inside this
+  probe's UTF-8 uncertainty band (last OK 315,392, first fail 319,488); at
+  2.50 the admit edge is 314,500 bytes, below the last OK size. Claude's
+  edge (2,510,000 bytes at 2.51) is already below its last OK.

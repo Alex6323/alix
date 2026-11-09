@@ -391,8 +391,9 @@ and the limit ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be
   line. A live file that is gone is reported and its source kept; a key
   without a usable root is never read, and the warning names why with the
   `alix deck source root set` command that fixes it. Copies no row names
-  are deleted, and a refrozen topic over a backend's limit is warned about,
-  never refused. `--keep-results` (only beside `--repair-sources`) keeps each
+  are deleted. A topic over a backend's limit never stops a repair; the
+  doctor findings printed afterwards warn about it as they always do.
+  `--keep-results` (only beside `--repair-sources`) keeps each
   refrozen topic's result and the standing, as
   `alix deck source update --keep-results` does.
 - `alix doctor [dir-or-deck] --repair-diagrams`: after you review the

@@ -87,7 +87,6 @@ pub struct MeasuredTopic {
     pub measures: Vec<TopicMeasure>,
 }
 
-/// Every sourced topic's prompt, measured for every backend.
 pub fn topic_measures(
     deck: &Deck,
     sources: &DeckSources,

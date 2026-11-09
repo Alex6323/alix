@@ -98,15 +98,17 @@ names.
 
 Each topic's calls carry that topic's sources whole, and every backend CLI
 refuses a prompt past a limit of its own. alix measures each sourced topic's
-prompt ahead of the call, the question-writing prompt as the model receives
-it (without the idea lines the model itself writes first, which are not
-known yet), `[exam]` `extra` included, and compares it with the configured
-backend's limit. The limits were measured against each CLI:
+prompt ahead of the call at the largest it can get: the question-writing
+prompt with `[exam]` `extra`, the longest idea lines the model may write
+(an idea is cut at 300 characters), and the longest note alix adds when it
+retries a rejected answer. It compares that with the configured backend's
+limit, so no prompt the exam then sends can be larger than what was
+measured. The limits were measured against each CLI:
 
 | Backend | Limit | How alix measures |
 | --- | --- | --- |
 | Codex | 1,048,576 characters | an exact character count |
-| Copilot | 128,000 estimated tokens | bytes divided by 2.53, rounded up, plus 2,200 |
+| Copilot | 128,000 estimated tokens | bytes divided by 2.50, rounded up, plus 2,200 |
 | Claude | 1,000,000 estimated tokens | bytes divided by 2.51, rounded up |
 | Gemini | 128,000 estimated tokens | Copilot's values stand in: Gemini's own limit could not be measured |
 
@@ -119,10 +121,9 @@ still be refused by the backend.
   ``topic `Moves` exceeds codex's limit: 1048577 of 1048576 characters``.
   A topic whose prepared questions are kept is not measured again.
 - `alix deck source list` shows each sourced topic's measure for every
-  backend and marks the ones it exceeds. `add`, `bind`, `update`,
-  `alix doctor --repair-sources` and `alix doctor` warn with the same line
-  and never refuse: the same measure everywhere, so what the list shows is
-  what the exam will say.
+  backend and marks the ones it exceeds. `add`, `bind`, `update` and
+  `alix doctor` warn with the same line and never refuse: the same measure
+  everywhere, so what the list shows is what the exam will say.
 - The fix is to split the topic into two `#` headings, or to bind only the
   lines the topic needs (`10-80|<topic>`).
 

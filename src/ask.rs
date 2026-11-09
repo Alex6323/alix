@@ -12,6 +12,7 @@ use crate::{
     backend::{Access, Backend, RunOpts, backend_for},
     card::Card,
     config::{AskConfig, Audience},
+    exam_prompt::truncate_chars,
 };
 
 pub type Exchange = (String, String);
@@ -522,7 +523,7 @@ pub(crate) fn parse_json<T: for<'de> serde::Deserialize<'de>>(raw: &str) -> Resu
     if !tail.is_empty() {
         bail!(
             "the backend returned unexpected content after its JSON answer:\n{}",
-            truncate(tail, 300)
+            truncate_chars(tail, 300)
         );
     }
     Ok(value)
@@ -842,7 +843,7 @@ impl ProgressState {
                     self.last_activity = now;
                     if show {
                         let detail = event.line.trim().replace(['\r', '\n'], " ");
-                        let detail = truncate(&detail, 180);
+                        let detail = truncate_chars(&detail, 180);
                         self.report(format!("{}: {detail}", backend_label(backend.name())), now);
                     }
                 }
@@ -929,15 +930,8 @@ fn timeout_kind(
     }
 }
 
-fn truncate(s: &str, max: usize) -> &str {
-    match s.char_indices().nth(max) {
-        Some((i, _)) => &s[..i],
-        None => s,
-    }
-}
-
 fn map_run_failure(command: &str, detail: &str) -> String {
-    let detail = truncate(detail, 300);
+    let detail = truncate_chars(detail, 300);
     let lower = detail.to_ascii_lowercase();
     let hit = |needles: &[&str]| needles.iter().any(|n| lower.contains(n));
     if hit(&[
