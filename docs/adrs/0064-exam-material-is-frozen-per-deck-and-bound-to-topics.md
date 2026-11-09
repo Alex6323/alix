@@ -404,8 +404,9 @@ This record replaces, once accepted:
   same token rule as `deck` and `card`); in "Locator fields", the
   `fingerprint: xxh64-<hex>` and `asset: sha256-<hex>.<ext>` value forms
   and, in "What a frozen asset IS", the examiner grounding on live sources
-  and the tutor's, except the `cite:` browse rule 13 keeps; the whole "One source concept" section (deck and
-  workspace material keys, examination and `has_exam`);
+  and the tutor's, except the `cite:` browse rule 13 keeps; the whole
+  "One source concept" section (deck and workspace material keys,
+  examination and `has_exam`);
 - in ADR 0053: rule 1's `exam:` key and the tutor listing `exam:` entries;
   rule 14 (the exam reads `exam:`); rule 15's sole-root clause (a card
   without a local locator browses the deck's only local root; rule 13 here
@@ -437,7 +438,8 @@ field left the code first.
   or truncated copy from reaching the exam. Copies must be regular files,
   checked without following links, so a symlink in a deck's sources folder
   cannot point the exam or the tutor at a file outside it.
-- A backend whose reads are not confined never gets a folder to browse;
+- A backend whose reads are not confined never gets the sources folder to
+  browse (a card's local `cite:` root is still its working folder, rule 13);
   OS-level confinement for every backend is a separate roadmap item.
 
 ## Verification

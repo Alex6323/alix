@@ -100,11 +100,11 @@ reads them depends on the backend:
   is asked to cite sources by display path. Each question also names the
   sources bound to the card's topic as where to start, with the bound line
   ranges (such as `sdk:src/lib.rs:120-180`) when the binding has them.
-- **Codex and Gemini** do not confine reads, so they get no folder. Instead,
-  each question carries the sources bound to the card's topic, pasted into the
-  prompt (only the bound lines, when the binding has ranges). Moving to a card
-  of another topic pastes that topic's sources instead; sources never pile up
-  in the conversation.
+- **Codex and Gemini** do not confine reads, so they never get the sources
+  folder. Instead, each question carries the sources bound to the card's
+  topic, pasted into the prompt (only the bound lines, when the binding has
+  ranges). Moving to a card of another topic pastes that topic's sources
+  instead; sources never pile up in the conversation.
 - When a topic's sources are too large for the backend's prompt limit (the
   same limit and measure the exam uses), the tutor answers from the card
   alone, and its first answer on that card starts with one line saying so:
@@ -148,8 +148,8 @@ folder on Windows, gets no file tools; for the sources folder the tutor then
 pastes the topic's sources instead. Because Claude keeps one conversation,
 they are pasted on its first question only, and a card of another topic
 starts a new conversation with that topic's sources, so the run is then one
-conversation per topic rather than one for the whole run. Copilot's file tool is confined
-to the folder too: a path outside it, or a symlink pointing out of it, is
+conversation per topic rather than one for the whole run. Copilot's file
+tool is confined to the folder too: a path outside it, or a symlink pointing out of it, is
 refused, and a folder those rules cannot name (the same characters, or Windows)
 drops Copilot's file tools as well. A call with no folder, on Claude or
 Copilot, runs in alix's own working folder. Gemini and Codex do not confine
