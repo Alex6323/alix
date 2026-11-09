@@ -13,6 +13,7 @@ type PickerState = {
   exam_filter: "none" | "partial" | "all";
   exam_prepared?: boolean;
   meta?: string | null;
+  exam_changed?: boolean;
 };
 
 async function mockExamRows(page: Page, states: Record<string, PickerState>) {
@@ -71,6 +72,7 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
       examable: true,
       exam_filter: "partial",
       meta: "passed · 15.5 / 18",
+      exam_changed: true,
     },
     "cats.md": { state: "examdue", examable: false, exam_filter: "partial" },
     "source-fact.md": { state: "new", examable: true, exam_filter: "all" },
@@ -90,6 +92,7 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   await filter.click();
   await expect(filter).toHaveText(/☑ only what needs work/);
   await expect(adultDeckRow(page, "wild").locator(".meta")).toHaveText("passed · 15.5 / 18");
+  await expect(adultDeckRow(page, "wild").locator(".meta")).toHaveClass(/\bexam-changed\b/);
   await capture(page, "drawer-filled-filter-passed-badge");
 
   await adultDeckRow(page, "cats").click();
@@ -494,7 +497,19 @@ test("the checked filter on an all-needs-work deck reaches the exam request", as
 
 const sentence = (text: string) => ({ kind: "sentence", text, runs: [{ text }] });
 
-function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: number; partial: number }) {
+function resultsDto({
+  mastered,
+  pass,
+  partial,
+  examChanged = false,
+  unsourcedTopics = [],
+}: {
+  mastered: boolean;
+  pass: number;
+  partial: number;
+  examChanged?: boolean;
+  unsourcedTopics?: string[];
+}) {
   return {
     phase: "results",
     deck: "source-fact.md",
@@ -554,6 +569,8 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
     verdicts: { pass, partial, total: 18 },
     full: true,
     mastered,
+    exam_changed: examChanged,
+    unsourced_topics: unsourcedTopics,
     exam_high_mark: mastered ? "mastered (4 Nov)" : "passed (2 Nov)",
     gaps: mastered ? [] : ["ownership and the move model"],
     can_remediate: !mastered,
@@ -577,9 +594,14 @@ async function openResults(page: Page, dto: object) {
 }
 
 test("a full perfect sitting shows its count, topic counts, shapes, and mastered", async ({ page }) => {
-  await openResults(page, resultsDto({ mastered: true, pass: 18, partial: 0 }));
+  await openResults(
+    page,
+    resultsDto({ mastered: true, pass: 18, partial: 0, examChanged: true, unsourcedTopics: ["Terms", "Intro"] }),
+  );
 
   await expect(page.locator(".exam-score")).toHaveText("18 / 18");
+  await expect(page.locator(".exam-standing")).toHaveClass(/\bexam-changed\b/);
+  await expect(page.locator(".exam-unsourced")).toHaveText("Not examined: Terms, Intro");
   await expect(page.locator(".exam-standing")).toHaveText("mastered (4 Nov)");
   await expect(page.locator(".exam-topic")).toHaveCount(2);
   await expect(page.locator(".exam-topic").first()).toContainText("Ownership");
@@ -594,6 +616,8 @@ test("a partial-point sitting shows 17.5 out of 18 and the deck's standing", asy
 
   await expect(page.locator(".exam-score")).toHaveText("17.5 / 18");
   await expect(page.locator(".exam-standing")).toHaveText("passed (2 Nov)");
+  await expect(page.locator(".exam-standing")).not.toHaveClass(/\bexam-changed\b/);
+  await expect(page.locator(".exam-unsourced")).toHaveCount(0);
   await expect(page.locator(".exam-topic").first()).toContainText("8.5 / 9");
   await expect(page.locator(".exam-topic").first()).toContainText("needs work");
   await expect(page.getByText(/PASSED|FAILED/)).toHaveCount(0);

@@ -616,6 +616,7 @@ class _PickerScreenState extends State<PickerScreen> {
           support: support,
           buildClient: widget.buildClient ?? HttpServerClient.new,
           cards: cards,
+          unsourcedTopics: start.unsourcedTopics,
           initialExam: initialExam,
           ideas: ideas,
           loadAnswers: (questions) => exam_bridge.examAnswersLoad(

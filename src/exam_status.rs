@@ -172,19 +172,20 @@ pub fn exam_row(deck: &Deck, store: &Store, personal: Option<&[Card]>) -> ExamRo
         return ExamRow::default();
     }
     let status = exam_status(deck, store);
-    let exam_changed = match store.exam_stamp(deck_id) {
-        Some(recorded) if standing => {
-            let read;
-            let personal = match personal {
-                Some(cards) => cards,
-                None => {
-                    read = crate::assemble::personal_cards(deck).cards;
-                    &read
-                }
-            };
-            exam_changed(&current_stamp(deck, personal, manifest_of(deck)), recorded)
-        }
-        _ => false,
+    let exam_changed = standing && store.exam_stamp(deck_id).is_some() && {
+        let read;
+        let personal = match personal {
+            Some(cards) => cards,
+            None => {
+                read = crate::assemble::personal_cards(deck).cards;
+                &read
+            }
+        };
+        standing_changed(
+            store,
+            deck_id,
+            &current_stamp(deck, personal, manifest_of(deck)),
+        )
     };
     ExamRow {
         passed_at_ms,
@@ -303,12 +304,24 @@ pub fn exam_topics(deck: &Deck, sources: Option<&Manifest>) -> Vec<ExamTopic> {
     topics
 }
 
-/// Labels, in deck order, of the topics holding cards that no source binds.
-pub fn unsourced_topic_labels(deck: &Deck) -> Vec<String> {
-    exam_topics(deck, manifest_of(deck))
-        .into_iter()
-        .filter(|topic| !topic.sourced && topic.size > 0)
-        .map(|topic| topic.label)
+/// Labels, in deck order, of the topics holding cards (the deck's and the
+/// bound sidecar's) that no source binds.
+pub fn unsourced_topic_labels(deck: &Deck, personal: &[Card]) -> Vec<String> {
+    let (sourced_by_index, _) = topic_sourcing(deck, manifest_of(deck));
+    let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+    deck.topics
+        .iter()
+        .enumerate()
+        .filter(|(at, topic)| {
+            topic.id(deck_id).is_some()
+                && !sourced_by_index[*at]
+                && deck
+                    .cards
+                    .iter()
+                    .chain(personal)
+                    .any(|card| card.topic == *at)
+        })
+        .map(|(_, topic)| topic.heading.clone().unwrap_or_else(|| deck.display_name()))
         .collect()
 }
 
@@ -476,6 +489,7 @@ pub struct SittingStart {
     pub eligible: bool,
     pub blocking: Vec<String>,
     pub stamp: ExamStamp,
+    pub unsourced_topics: Vec<String>,
 }
 
 /// Evaluated once per sitting, at `now_ms`, against the store the sitting
@@ -494,6 +508,7 @@ pub fn sitting_start(
         eligible: blocking.is_empty(),
         blocking,
         stamp: stamp_of(&pairs, unsourced),
+        unsourced_topics: unsourced_topic_labels(deck, &personal),
     }
 }
 
@@ -912,8 +927,29 @@ mod tests {
         let deck = Deck::load(ws.deck()).unwrap();
         assert_eq!(
             vec![deck.display_name(), "Terms".to_string()],
-            unsourced_topic_labels(&deck),
+            unsourced_topic_labels(&deck, &[]),
             "the leading topic is named by the deck title, never an empty heading"
+        );
+    }
+
+    #[test]
+    fn a_leading_topic_holding_only_a_sidecar_card_is_listed_unsourced() {
+        let (ws, _) = law_workspace();
+        sidecar_card(&ws.deck(), "card-side1", "deck-fixture");
+        let deck = Deck::load(ws.deck()).unwrap();
+        let store = Store::open(ws.root().join("p.json")).unwrap();
+        let start = sitting_start(&deck, &store, 1_000_000, None);
+        assert!(
+            start
+                .stamp
+                .unsourced_cards
+                .contains(&"card-side1".to_string()),
+            "setup: the stamp counts the sidecar card as unsourced"
+        );
+        assert_eq!(
+            vec![deck.display_name(), "U".to_string(), "V".to_string()],
+            unsourced_topic_labels(&deck, &crate::assemble::personal_cards(&deck).cards),
+            "a topic whose only cards are sidecar cards is left out too"
         );
     }
 

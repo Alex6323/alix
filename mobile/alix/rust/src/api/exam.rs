@@ -32,6 +32,7 @@ pub struct ExamStart {
     pub cards: Option<Vec<String>>,
     pub eligible: bool,
     pub stamp: ExamStamp,
+    pub unsourced_topics: Vec<String>,
 }
 
 fn open_store(
@@ -191,13 +192,14 @@ pub fn exam_sitting_start(
             sourced: start.stamp.sourced,
             unsourced_cards: start.stamp.unsourced_cards,
         },
+        unsourced_topics: start.unsourced_topics,
     })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamApplied {
     pub unlocked: bool,
-    pub standing: Option<String>,
+    pub exam_high_mark: Option<String>,
     pub exam_changed: bool,
 }
 
@@ -236,7 +238,7 @@ pub fn apply_exam_result(
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     Ok(ExamApplied {
         unlocked,
-        standing: alix::exam_status::exam_high_mark(&store, deck_id, now_ms),
+        exam_high_mark: alix::exam_status::exam_high_mark(&store, deck_id, now_ms),
         exam_changed: alix::exam_status::standing_changed(&store, deck_id, &stamp),
     })
 }
@@ -476,7 +478,7 @@ mod tests {
             "full sitting with a failed topic: no unlock"
         );
         assert_eq!(
-            None, applied.standing,
+            None, applied.exam_high_mark,
             "neither passed nor mastered: no standing"
         );
         assert_eq!(
@@ -518,11 +520,11 @@ mod tests {
         );
         assert!(
             applied
-                .standing
+                .exam_high_mark
                 .as_deref()
                 .is_some_and(|line| line.starts_with("passed (")),
             "the phone words its own standing: {:?}",
-            applied.standing
+            applied.exam_high_mark
         );
         assert_eq!(Some(NOW + 1), store.deck_passed_at("deck-d"));
         assert_eq!(
@@ -561,6 +563,11 @@ mod tests {
             "an unreviewed card in an unsourced topic fails the condition"
         );
         assert_eq!(
+            vec!["C".to_string()],
+            start.unsourced_topics,
+            "the start names the topic the exam leaves out"
+        );
+        assert_eq!(
             1,
             start.stamp.unsourced_cards.len(),
             "the stamp lists the unsourced card: {:?}",
@@ -584,7 +591,7 @@ mod tests {
 
         let store = reopened(&path, root);
         assert!(!applied.unlocked, "control: no unlock");
-        assert_eq!(None, applied.standing, "control: no standing");
+        assert_eq!(None, applied.exam_high_mark, "control: no standing");
         assert_eq!(None, store.deck_passed_at("deck-d"));
         assert_eq!(None, store.deck_mastered_at("deck-d"));
         assert_eq!(None, store.exam_stamp("deck-d"));
@@ -622,7 +629,7 @@ mod tests {
         let second =
             apply_exam_result(deck_path.clone(), root_arg(root), moved, NOW + 1, None).unwrap();
         assert!(second.exam_changed, "the stamp now lists a card the standing does not");
-        assert!(second.standing.is_some(), "the standing stays latched");
+        assert!(second.exam_high_mark.is_some(), "the standing stays latched");
     }
 
     #[test]

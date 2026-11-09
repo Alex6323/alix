@@ -37,6 +37,8 @@ void main() {
     List<String> remediationCalls = const [],
     int remediationCountReply = 1,
     String? standingReply,
+    bool examChanged = false,
+    List<String> unsourcedTopics = const [],
     RemoteExam? initialExam,
     Map<String, dynamic>? ideas,
     List<String> Function(List<String>)? loadAnswers,
@@ -60,9 +62,10 @@ void main() {
         applyResult: applyResult ?? (exam, nowMs) {
           resultCalls?.add((exam, nowMs));
           final text = standingReply;
-          return text == null ? null : (text: text, examChanged: false);
+          return text == null ? null : (text: text, examChanged: examChanged);
         },
         cards: cards,
+        unsourcedTopics: unsourcedTopics,
         applyRemediation: (topicId, cardsText) {
           remediationCalls.add('$topicId: $cardsText');
           return remediationCountReply;
@@ -243,6 +246,33 @@ void main() {
 
     expect(client.gradeAnswers, hasLength(1));
     expect(client.gradeAnswers.single, ['a1', 'a2']);
+  });
+
+  testWidgets('a changed mark underlines dashed and unsourced topics list on the results',
+      (tester) async {
+    final client = FakeServerClient(
+      examGetReplies: [generating, answering2, grading, resultsMastered],
+    );
+    await pumpExam(tester,
+        client: client,
+        standingReply: 'mastered (4 Nov)',
+        examChanged: true,
+        unsourcedTopics: const ['Terms', 'Intro']);
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'a1');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'a2');
+    await tester.tap(find.text('Submit'));
+    await tester.pump();
+    await tester.pump(_pollInterval);
+    await tester.pumpAndSettle();
+
+    final mark = tester.widget<Text>(find.text('mastered (4 Nov)'));
+    expect(mark.style?.decoration, TextDecoration.underline);
+    expect(mark.style?.decorationStyle, TextDecorationStyle.dashed);
+    expect(find.text('Not examined: Terms, Intro'), findsOneWidget);
   });
 
   testWidgets('applyResult still applies exactly once when two in-flight polls both resolve to results',

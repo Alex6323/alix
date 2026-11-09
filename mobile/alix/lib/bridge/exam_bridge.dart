@@ -48,12 +48,14 @@ class ExamSittingStart {
     required this.eligible,
     required this.sourced,
     required this.unsourcedCards,
+    required this.unsourcedTopics,
   });
 
   final List<String>? cards;
   final bool eligible;
   final String sourced;
   final List<String> unsourcedCards;
+  final List<String> unsourcedTopics;
 }
 
 ExamSittingStart examSittingStart({
@@ -73,6 +75,7 @@ ExamSittingStart examSittingStart({
     eligible: start.eligible,
     sourced: start.stamp.sourced,
     unsourcedCards: start.stamp.unsourcedCards,
+    unsourcedTopics: start.unsourcedTopics,
   );
 }
 
@@ -112,7 +115,7 @@ ExamSittingStart examSittingStart({
     nowMs: nowMs,
     device: device,
   );
-  final text = applied.standing;
+  final text = applied.examHighMark;
   if (text == null) return null;
   return (text: text, examChanged: applied.examChanged);
 }

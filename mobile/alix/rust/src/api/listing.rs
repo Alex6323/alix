@@ -448,6 +448,17 @@ mod tests {
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.mastered, "mastered once a full sitting scores every point");
         assert!(!base.exam_due, "no longer awaiting the exam");
+        assert!(!base.exam_changed, "control: the material is as it was sat");
+
+        let mut text = std::fs::read_to_string(&base_path).unwrap();
+        text.push_str("\n# Extra\n<!-- id: topic-extra -->\n\n## q2\nb\n<!-- id: card-q2 -->\n");
+        std::fs::write(&base_path, text).unwrap();
+        let rows = list();
+        let base = rows.iter().find(|r| r.title == "base").unwrap();
+        assert!(
+            base.exam_changed,
+            "a card added to an unsourced topic changes the material the mark was earned on"
+        );
     }
 
     #[test]

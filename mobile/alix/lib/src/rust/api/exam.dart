@@ -98,18 +98,18 @@ int applyExamRemediation({
 
 class ExamApplied {
   final bool unlocked;
-  final String? standing;
+  final String? examHighMark;
   final bool examChanged;
 
   const ExamApplied({
     required this.unlocked,
-    this.standing,
+    this.examHighMark,
     required this.examChanged,
   });
 
   @override
   int get hashCode =>
-      unlocked.hashCode ^ standing.hashCode ^ examChanged.hashCode;
+      unlocked.hashCode ^ examHighMark.hashCode ^ examChanged.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -117,7 +117,7 @@ class ExamApplied {
       other is ExamApplied &&
           runtimeType == other.runtimeType &&
           unlocked == other.unlocked &&
-          standing == other.standing &&
+          examHighMark == other.examHighMark &&
           examChanged == other.examChanged;
 }
 
@@ -186,11 +186,21 @@ class ExamStart {
   final List<String>? cards;
   final bool eligible;
   final ExamStamp stamp;
+  final List<String> unsourcedTopics;
 
-  const ExamStart({this.cards, required this.eligible, required this.stamp});
+  const ExamStart({
+    this.cards,
+    required this.eligible,
+    required this.stamp,
+    required this.unsourcedTopics,
+  });
 
   @override
-  int get hashCode => cards.hashCode ^ eligible.hashCode ^ stamp.hashCode;
+  int get hashCode =>
+      cards.hashCode ^
+      eligible.hashCode ^
+      stamp.hashCode ^
+      unsourcedTopics.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -199,7 +209,8 @@ class ExamStart {
           runtimeType == other.runtimeType &&
           cards == other.cards &&
           eligible == other.eligible &&
-          stamp == other.stamp;
+          stamp == other.stamp &&
+          unsourcedTopics == other.unsourcedTopics;
 }
 
 class ExamTopicOutcome {

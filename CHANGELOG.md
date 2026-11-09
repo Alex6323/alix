@@ -236,7 +236,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A deck whose exam material changed since its standing was earned shows
   that on the web deck row (the exam badge gets a dashed border), the phone
   picker and exam result (a dashed underline), and the exam result screens
-  (`exam_changed`). The web exam result also lists, in one line, the topics
+  (`exam_changed`). The web and phone exam results also list, in one line, the
+  topics
   the exam leaves out because no source grounds them (`unsourced_topics`).
 
 ### Removed

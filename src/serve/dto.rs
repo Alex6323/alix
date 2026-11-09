@@ -1860,39 +1860,48 @@ mod tests {
         );
         let deck = crate::deck::Deck::load(&base).unwrap();
         let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();
-        let mut sitting = exam::Sitting::start(
+        let sitting = exam::Sitting::start(
             &deck,
             exam::sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             crate::config::ExamConfig::default(),
             crate::testutil::ask_config(&cli),
         );
+        let mut examining = Examining {
+            sitting,
+            deck_path: base.clone(),
+            prepared: None,
+        };
         for _ in 0..500 {
-            let _ = sitting.poll(&mut store, 0, None);
-            if !sitting.thinking() {
+            let _ = examining.sitting.poll(&mut store, 0, None);
+            if !examining.sitting.thinking() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        sitting.set_answer("answer".to_string());
-        sitting.submit();
+        let stale = crate::store::ExamStamp {
+            sourced: "other".to_string(),
+            unsourced_cards: Vec::new(),
+        };
+        store.set_deck_passed("deck-base", 5, &stale);
+        assert!(
+            !exam_dto(&examining, &store).exam_changed,
+            "before results a stale standing is not reported changed"
+        );
+        examining.sitting.set_answer("answer".to_string());
+        examining.sitting.submit();
         for _ in 0..500 {
-            let _ = sitting.poll(&mut store, 0, None);
-            if !sitting.thinking() {
+            let _ = examining.sitting.poll(&mut store, 0, None);
+            if !examining.sitting.thinking() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         assert!(
-            sitting.result().is_some(),
+            examining.sitting.result().is_some(),
             "setup: the sitting reached results: {:?}",
-            sitting.error()
+            examining.sitting.error()
         );
-        let examining = Examining {
-            sitting,
-            deck_path: base,
-            prepared: None,
-        };
 
         let dto = exam_dto(&examining, &store);
         assert_eq!(
@@ -1901,18 +1910,8 @@ mod tests {
             "the topic no source grounds is listed by its heading"
         );
         assert!(
-            !dto.exam_changed,
-            "control: no standing was set, so nothing changed"
-        );
-
-        let stale = crate::store::ExamStamp {
-            sourced: "other".to_string(),
-            unsourced_cards: Vec::new(),
-        };
-        store.set_deck_passed("deck-base", 5, &stale);
-        assert!(
-            exam_dto(&examining, &store).exam_changed,
-            "a standing earned on a different stamp is changed"
+            dto.exam_changed,
+            "a standing earned on a different stamp is changed once results are in"
         );
     }
 

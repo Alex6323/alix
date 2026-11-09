@@ -59,6 +59,7 @@ class ExamScreen extends StatefulWidget {
     required this.applyRemediation,
     required this.nowMs,
     this.cards,
+    this.unsourcedTopics = const [],
     this.initialExam,
     this.ideas,
     this.loadAnswers,
@@ -93,6 +94,9 @@ class ExamScreen extends StatefulWidget {
 
   /// The card ids whose topics to examine; null sits the full deck.
   final List<String>? cards;
+
+  /// Labels of the topics no source grounds, listed on the results.
+  final List<String> unsourcedTopics;
 
   final RemoteExam? initialExam;
 
@@ -139,7 +143,7 @@ class _ExamScreenState extends State<ExamScreen> {
   /// extra poll landing on the same terminal `results` DTO (e.g. two
   /// periodic ticks resolving out of order) must not double-apply.
   bool _resultApplied = false;
-  ({String text, bool examChanged})? _standing;
+  ({String text, bool examChanged})? _examHighMark;
 
   /// Same guard, for turning `remediated` cards into store entries.
   bool _remediationApplied = false;
@@ -251,7 +255,7 @@ class _ExamScreenState extends State<ExamScreen> {
     if (dto.phase == 'results' && !_resultApplied) {
       final ideas = dto.ideas;
       if (ideas != null) widget.saveIdeas?.call(ideas);
-      _standing = widget.applyResult(dto, widget.nowMs());
+      _examHighMark = widget.applyResult(dto, widget.nowMs());
       _resultApplied = true;
       widget.clearAnswers?.call();
     }
@@ -571,13 +575,13 @@ class _ExamScreenState extends State<ExamScreen> {
               color: tokens.text,
             ),
           ),
-        if (_standing case final standing?)
+        if (_examHighMark case final mark?)
           Text(
-            standing.text,
+            mark.text,
             style: TextStyle(
               color: tokens.good,
               fontSize: 13,
-              decoration: standing.examChanged ? TextDecoration.underline : null,
+              decoration: mark.examChanged ? TextDecoration.underline : null,
               decorationStyle: TextDecorationStyle.dashed,
             ),
           ),
@@ -587,6 +591,11 @@ class _ExamScreenState extends State<ExamScreen> {
             children: [
               for (final topic in exam.topics) _topicRow(topic, tokens),
               if (exam.topics.isNotEmpty) const SizedBox(height: 8),
+              if (widget.unsourcedTopics.isNotEmpty)
+                Text(
+                  'Not examined: ${widget.unsourcedTopics.join(', ')}',
+                  style: TextStyle(color: tokens.dim, fontSize: 13),
+                ),
               for (final g in exam.grades) _gradeRow(g, tokens),
               if (exam.gaps.isNotEmpty) ...[
                 const SizedBox(height: 12),

@@ -3082,7 +3082,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ExamApplied(
       unlocked: dco_decode_bool(arr[0]),
-      standing: dco_decode_opt_String(arr[1]),
+      examHighMark: dco_decode_opt_String(arr[1]),
       examChanged: dco_decode_bool(arr[2]),
     );
   }
@@ -3120,12 +3120,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExamStart dco_decode_exam_start(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
     return ExamStart(
       cards: dco_decode_opt_list_String(arr[0]),
       eligible: dco_decode_bool(arr[1]),
       stamp: dco_decode_exam_stamp(arr[2]),
+      unsourcedTopics: dco_decode_list_String(arr[3]),
     );
   }
 
@@ -4708,11 +4709,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExamApplied sse_decode_exam_applied(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_unlocked = sse_decode_bool(deserializer);
-    var var_standing = sse_decode_opt_String(deserializer);
+    var var_examHighMark = sse_decode_opt_String(deserializer);
     var var_examChanged = sse_decode_bool(deserializer);
     return ExamApplied(
       unlocked: var_unlocked,
-      standing: var_standing,
+      examHighMark: var_examHighMark,
       examChanged: var_examChanged,
     );
   }
@@ -4752,10 +4753,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_cards = sse_decode_opt_list_String(deserializer);
     var var_eligible = sse_decode_bool(deserializer);
     var var_stamp = sse_decode_exam_stamp(deserializer);
+    var var_unsourcedTopics = sse_decode_list_String(deserializer);
     return ExamStart(
       cards: var_cards,
       eligible: var_eligible,
       stamp: var_stamp,
+      unsourcedTopics: var_unsourcedTopics,
     );
   }
 
@@ -6725,7 +6728,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_exam_applied(ExamApplied self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self.unlocked, serializer);
-    sse_encode_opt_String(self.standing, serializer);
+    sse_encode_opt_String(self.examHighMark, serializer);
     sse_encode_bool(self.examChanged, serializer);
   }
 
@@ -6754,6 +6757,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_list_String(self.cards, serializer);
     sse_encode_bool(self.eligible, serializer);
     sse_encode_exam_stamp(self.stamp, serializer);
+    sse_encode_list_String(self.unsourcedTopics, serializer);
   }
 
   @protected

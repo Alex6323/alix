@@ -1164,7 +1164,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `passed_at_ms` | number? | When every topic of the deck first passed at `pass_threshold`, in a sitting that met the review condition; unlocks dependents' exams. Null when never. |
 | `full_exam_result` | {pass, partial, total}? | Raw verdict counts of the last full sitting (points are pass + partial / 2). Null when none. |
 | `topics` | {passed, needs_work, unexamined} | Topic counts by status, read from the deck's topic results: a result counts only while its fingerprint equals the topic's current sources' fingerprint, so a topic whose sources changed is `unexamined`. All zero for a deck without an exam. |
-| `exam_changed` | bool | The deck holds a standing (`passed_at_ms` or `mastered`) and the material it was earned on has changed since: a sourced topic's fingerprint differs from the standing's stamp, or an unsourced topic holds a card id the stamp does not list. Render the standing dotted; it still unlocks. False without a standing. |
+| `exam_changed` | bool | The deck holds a standing (`passed_at_ms` or `mastered`) and the material it was earned on has changed since: a sourced topic's fingerprint differs from the standing's stamp, or an unsourced topic holds a card id the stamp does not list. Render the badge dashed; it still unlocks. False without a standing. |
 | `exam_filter` | string | What "only topics needing work" would select: `none` (every topic passed) \| `partial` \| `all` (no topic passed) *(closed)*. `none` for a deck without an exam. |
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |

@@ -235,9 +235,9 @@ meets the review condition, and the standing is re-earned on the current
 material. Removing a card or a whole unsourced topic, editing card text or
 headings, and a card becoming due or lapsing never change a standing.
 
-The web exam result lists, in one line under the topics, the topics it left
-out because no source grounds them (the leading topic is named by the deck's
-title).
+The web and phone exam results list, in one line under the topics, the topics
+they left out because no source grounds them, personal cards included (the
+leading topic is named by the deck's title).
 
 Whenever an answer missed key points, the results offer to turn the gaps into
 **remediation cards**: a cloze card or a plain card for a missed fact, an open

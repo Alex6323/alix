@@ -2282,6 +2282,64 @@ fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
 }
 
 #[test]
+fn stats_says_material_changed_after_a_source_update() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let run = |args: &[&str]| alix_in(root.path(), home.path(), args);
+    let deck_path = root.path().join("decks").join("d.md");
+    let deck_arg = deck_path.to_str().unwrap().to_string();
+    let live = root.path().join("live").join("a.rs");
+    let root_arg = format!("sdk={}", root.path().join("live").display());
+    let out = run(&[
+        "deck",
+        "source",
+        "add",
+        "decks/d.md",
+        "live/a.rs",
+        "--root",
+        &root_arg,
+        "--topic",
+        "topic-alpha",
+    ]);
+    assert!(out.status.success(), "add: {}", stderr(&out));
+
+    let deck = alix::deck::Deck::load(&deck_path).unwrap();
+    let mut store = deck_store(&deck_arg);
+    let now = alix::time::now_ms();
+    let stamp = alix::exam_status::sitting_start(&deck, &store, now, None).stamp;
+    store.set_deck_passed("deck-sourced", now, &stamp);
+    store.save().unwrap();
+
+    let out = run(&["stats", &deck_arg]);
+    assert!(out.status.success(), "control: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("  state:   passed ✓"),
+        "control: frozen sources keep the plain glyph: {}",
+        stdout(&out)
+    );
+
+    let id = alix::sources::source_id(b"fn main() {}\n");
+    std::fs::write(&live, "fn main() { println!(); }\n").unwrap();
+    let out = run(&[
+        "deck",
+        "source",
+        "update",
+        "decks/d.md",
+        &id[..12],
+        live.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "update: {}", stderr(&out));
+
+    let out = run(&["stats", &deck_arg]);
+    assert!(out.status.success(), "after update: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("  state:   passed (sources changed)"),
+        "after update: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn stats_says_sources_changed_once_the_material_a_pass_was_earned_on_changes() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

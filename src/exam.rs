@@ -20,7 +20,7 @@ pub use crate::{
     exam_status::{
         ExamFilter, ExamScope, ExamStatus, ExamTopic, SittingStart, TOPIC_NUDGE_CARDS, TopicStatus,
         TopicTally, exam_status, exam_topics, examined_topics, oversized_topics,
-        retire_after_days_for, sitting_start, unsourced_topic_labels,
+        retire_after_days_for, sitting_start,
     },
     sources::SourceText,
 };
@@ -849,7 +849,6 @@ pub struct Sitting {
     remediated_topics: HashSet<String>,
     topics: Vec<ExamTopic>,
     deck_topics: Vec<ExamTopic>,
-    unsourced_topics: Vec<String>,
     start: SittingStart,
     unlocked: bool,
     ideas: Option<IdeasDocument>,
@@ -1015,7 +1014,6 @@ impl Sitting {
             remediated_topics: HashSet::new(),
             topics,
             deck_topics: examined_topics(deck),
-            unsourced_topics: unsourced_topic_labels(deck),
             start,
             unlocked: false,
             ideas: None,
@@ -1075,7 +1073,7 @@ impl Sitting {
     }
 
     pub fn unsourced_topics(&self) -> &[String] {
-        &self.unsourced_topics
+        &self.start.unsourced_topics
     }
 
     pub fn full(&self) -> bool {
@@ -3005,7 +3003,6 @@ mod tests {
             remediated_topics: HashSet::new(),
             topics: Vec::new(),
             deck_topics: Vec::new(),
-            unsourced_topics: Vec::new(),
             unlocked: false,
             ideas: None,
             locked: vec![false],
