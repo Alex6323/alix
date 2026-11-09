@@ -21,7 +21,7 @@ pub struct CommitReport {
 }
 
 #[derive(Debug, Error)]
-#[error("{source}")]
+#[error("cannot commit the deck's sources")]
 pub struct CommitError {
     pub manifest_replaced: bool,
     #[source]
@@ -111,11 +111,31 @@ fn write_copy(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), SourceError> {
 
 fn collect(dir: &Path) -> Result<Vec<String>, SourceError> {
     let strays = stray_copies(dir)?;
-    for name in &strays {
+    for name in strays.iter().chain(&leftover_temporaries(dir)?) {
         let path = dir.join(name);
         crate::fsio::remove_file(&path).map_err(io_error(&path))?;
     }
     Ok(strays)
+}
+
+fn is_leftover_temporary(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+        .is_some_and(|target| target == MANIFEST || target == ROOTS || is_copy_name(target))
+}
+
+fn leftover_temporaries(dir: &Path) -> Result<Vec<String>, SourceError> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(io_error(dir))? {
+        let entry = entry.map_err(io_error(dir))?;
+        if let Some(name) = entry.file_name().to_str()
+            && is_leftover_temporary(name)
+        {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 #[cfg(test)]
@@ -124,7 +144,7 @@ mod tests {
 
     use super::*;
     use crate::sources::{
-        commands::{bind, list},
+        commands::{self, bind, list},
         load_verified,
         testkit::{DECK, TOPIC_A, TOPIC_B, Workspace},
     };
@@ -136,6 +156,8 @@ mod tests {
         workspace.write_live("first.rs", FIRST);
         workspace.write_live("second.md", b"second\n");
         workspace.write_live("third.txt", b"third\n");
+        fs::create_dir_all(workspace.root().join("dl")).unwrap();
+        fs::write(workspace.root().join("dl").join("page.txt"), b"page\n").unwrap();
         workspace.add(&["first.rs"], &[TOPIC_A]).unwrap();
         let stray = source_id(b"stray\n");
         fs::write(workspace.dir().join(format!("{stray}.txt")), b"stray\n").unwrap();
@@ -149,74 +171,151 @@ mod tests {
             .manifest
     }
 
+    fn add_two_copies(workspace: &Workspace) -> anyhow::Result<()> {
+        workspace
+            .add(&["second.md", "third.txt"], &[TOPIC_B])
+            .map(drop)
+    }
+
+    fn add_under_a_new_root(workspace: &Workspace) -> anyhow::Result<()> {
+        commands::add(commands::AddRequest {
+            deck: &workspace.deck(),
+            files: vec![workspace.root().join("dl").join("page.txt")],
+            root: Some(("dl".to_string(), workspace.root().join("dl"))),
+            key: None,
+            topics: vec![TOPIC_B.to_string()],
+        })
+        .map(drop)
+    }
+
+    fn temporaries(workspace: &Workspace) -> Vec<String> {
+        workspace
+            .snapshot()
+            .names
+            .into_iter()
+            .filter(|name| name.ends_with(".tmp"))
+            .collect()
+    }
+
+    type Scenario = (&'static str, fn(&Workspace) -> anyhow::Result<()>);
+
     #[test]
     fn a_fault_at_every_step_leaves_old_or_new_manifest_with_every_named_copy_intact_and_the_next_command_collects_residue()
      {
-        let reference = fixture_with_one_source();
-        let before = manifest_of(&reference);
-        reference
-            .add(&["second.md", "third.txt"], &[TOPIC_B])
-            .unwrap();
-        let after = manifest_of(&reference);
-        assert_ne!(before, after, "precondition: the add changes the manifest");
+        let scenarios: [Scenario; 2] = [
+            ("two new copies", add_two_copies),
+            ("a new root", add_under_a_new_root),
+        ];
+        for (scenario, mutate) in scenarios {
+            let reference = fixture_with_one_source();
+            let before = manifest_of(&reference);
+            mutate(&reference).unwrap();
+            let after = manifest_of(&reference);
+            let roots_after = Roots::load(&reference.dir()).unwrap().unwrap();
+            assert_eq!(
+                scenario == "a new root",
+                roots_after.roots.contains_key("dl"),
+                "{scenario}: the roots file holds exactly the keys the mutation saved"
+            );
+            assert_ne!(
+                before, after,
+                "{scenario}: the mutation changes the manifest"
+            );
 
-        let mut replaced_after_rename = false;
-        let mut covered = Vec::new();
-        for n in 1.. {
-            let workspace = fixture_with_one_source();
-            let fault = crate::fsio::fault::fail_on_nth_operation(n);
-            let result = workspace.add(&["second.md", "third.txt"], &[TOPIC_B]);
-            let triggered = fault.triggered_operation();
-            drop(fault);
-            let Some(operation) = triggered else {
-                assert!(result.is_ok(), "uninjected run {n} failed: {result:?}");
-                break;
-            };
-            covered.push(operation);
-            let Err(error) = result else {
-                panic!("fault {n} ({operation:?}) was swallowed");
-            };
-            let loaded = load_verified(workspace.root(), DECK)
-                .unwrap_or_else(|error| panic!("fault {n} ({operation:?}): {error}"))
-                .expect("a manifest survives");
+            let mut replaced_after_rename = false;
+            let mut covered = Vec::new();
+            let mut left_temporaries = false;
+            for n in 1.. {
+                let workspace = fixture_with_one_source();
+                let fault = crate::fsio::fault::fail_on_nth_operation(n);
+                let result = mutate(&workspace);
+                let triggered = fault.triggered_operation();
+                drop(fault);
+                let Some(operation) = triggered else {
+                    assert!(
+                        result.is_ok(),
+                        "{scenario}: uninjected run {n} failed: {result:?}"
+                    );
+                    break;
+                };
+                covered.push(operation);
+                let step = format!("{scenario}, fault {n} ({operation:?})");
+                let Err(error) = result else {
+                    panic!("{step}: the fault was swallowed");
+                };
+                let loaded = load_verified(workspace.root(), DECK)
+                    .unwrap_or_else(|error| panic!("{step}: {error}"))
+                    .expect("a manifest survives");
+                assert!(
+                    loaded.manifest == before || loaded.manifest == after,
+                    "{step}: manifest is neither old nor new"
+                );
+                let commit_error = error
+                    .downcast_ref::<CommitError>()
+                    .unwrap_or_else(|| panic!("{step}: not a CommitError: {error:#}"));
+                assert_eq!(
+                    loaded.manifest == after,
+                    commit_error.manifest_replaced,
+                    "{step}: manifest_replaced disagrees with the manifest on disk"
+                );
+                if loaded.manifest == after {
+                    let roots = Roots::load(&workspace.dir()).unwrap().unwrap();
+                    assert_eq!(
+                        roots_after.roots.keys().collect::<Vec<_>>(),
+                        roots.roots.keys().collect::<Vec<_>>(),
+                        "{step}: the new manifest is in place before its roots"
+                    );
+                }
+                replaced_after_rename |= commit_error.manifest_replaced;
+                left_temporaries |= !temporaries(&workspace).is_empty();
+                let residue = loaded.residue().unwrap();
+                list(&workspace.deck()).unwrap();
+                assert_eq!(
+                    residue,
+                    loaded.residue().unwrap(),
+                    "{step}: list collected residue"
+                );
+                bind(&workspace.deck(), &source_id(FIRST), &[TOPIC_A.to_string()])
+                    .unwrap_or_else(|error| panic!("{step}: bind: {error:#}"));
+                let collected = load_verified(workspace.root(), DECK).unwrap().unwrap();
+                assert!(
+                    collected.residue().unwrap().is_empty(),
+                    "{step}: residue {residue:?} not collected"
+                );
+                assert_eq!(
+                    Vec::<String>::new(),
+                    temporaries(&workspace),
+                    "{step}: a temporary survived the next command"
+                );
+            }
             assert!(
-                loaded.manifest == before || loaded.manifest == after,
-                "fault {n} ({operation:?}): manifest is neither old nor new"
+                left_temporaries,
+                "{scenario}: some fault leaves a temporary for the next command to collect"
             );
-            let commit_error = error.downcast_ref::<CommitError>().unwrap_or_else(|| {
-                panic!("fault {n} ({operation:?}): not a CommitError: {error:#}")
-            });
-            assert_eq!(
-                loaded.manifest == after,
-                commit_error.manifest_replaced,
-                "fault {n} ({operation:?}): manifest_replaced disagrees with the manifest on disk"
-            );
-            replaced_after_rename |= commit_error.manifest_replaced;
-            let residue = loaded.residue().unwrap();
-            list(&workspace.deck()).unwrap();
-            assert_eq!(
-                residue,
-                loaded.residue().unwrap(),
-                "fault {n} ({operation:?}): list collected residue"
-            );
-            bind(&workspace.deck(), &source_id(FIRST), &[TOPIC_A.to_string()])
-                .unwrap_or_else(|error| panic!("fault {n} ({operation:?}): bind: {error:#}"));
-            let collected = load_verified(workspace.root(), DECK).unwrap().unwrap();
             assert!(
-                collected.residue().unwrap().is_empty(),
-                "fault {n} ({operation:?}): residue {residue:?} not collected"
+                covered.contains(&crate::fsio::Operation::RemoveFile),
+                "{scenario}: the collection step was faulted: {covered:?}"
             );
+            if cfg!(unix) {
+                assert!(
+                    replaced_after_rename,
+                    "{scenario}: some fault after the manifest rename reports manifest_replaced"
+                );
+            }
         }
-        assert!(
-            covered.contains(&crate::fsio::Operation::RemoveFile),
-            "the collection step was faulted: {covered:?}"
+    }
+
+    #[test]
+    fn a_commit_error_names_the_step_once_and_carries_its_cause() {
+        let error = CommitError {
+            manifest_replaced: false,
+            source: SourceError::MissingCopy("source-x".to_string()),
+        };
+        let chain = format!("{:#}", anyhow::Error::from(error));
+        assert_eq!(
+            "cannot commit the deck's sources: the copy of source `source-x` is missing",
+            chain
         );
-        if cfg!(unix) {
-            assert!(
-                replaced_after_rename,
-                "some fault after the manifest rename reports manifest_replaced"
-            );
-        }
     }
 
     #[test]

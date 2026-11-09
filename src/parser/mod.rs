@@ -3903,6 +3903,33 @@ fn build_card_inner(
     Ok(prose)
 }
 
+pub fn read_deck_identity(path: &std::path::Path) -> std::io::Result<Option<String>> {
+    use std::io::BufRead;
+
+    let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
+    let mut head = String::new();
+    let mut fences = 0;
+    let mut line = Vec::new();
+    while fences < 2 {
+        line.clear();
+        if reader.read_until(b'\n', &mut line)? == 0 {
+            break;
+        }
+        let Ok(text) = std::str::from_utf8(&line) else {
+            return Ok(None);
+        };
+        let content = text.strip_prefix('\u{feff}').unwrap_or(text);
+        let bare = content.trim_end_matches(['\n', '\r']);
+        if frontmatter::is_frontmatter_fence(bare) {
+            fences += 1;
+        } else if fences == 0 && !trim_ws(bare).is_empty() {
+            return Ok(None);
+        }
+        head.push_str(text);
+    }
+    Ok(deck_identity(&head).ok().flatten())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

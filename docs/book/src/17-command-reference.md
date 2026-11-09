@@ -154,7 +154,9 @@ The rest of the AI-and-deck surface:
 - `alix deck source <subcommand>`: manage a workspace deck's frozen exam
   material, kept in `sources/<deck-id>/` at the workspace root
   ([sources](12-the-ai-exam.md#sources)). `<deck>` is the deck file or a
-  unique prefix of its `deck-` id; `<source>` is a unique prefix of a
+  unique prefix of its `deck-` id, searched in the current workspace and the
+  configured decks folder (an id held by two decks is refused, naming both);
+  `<source>` is a unique prefix of a
   `source-` id; a topic is a unique prefix of a `topic-` id or the deck id,
   written `[<ranges>|]<topic>` where it binds.
   - `add <deck> <file>... [--root <key>=<dir>] [--key <key>] --topic
@@ -167,15 +169,19 @@ The rest of the AI-and-deck surface:
   - `update <deck> <source> <file> [--key <key>]`: refreeze a source from a
     file, keeping its bindings and their ranges; prints each kept range for
     review.
-  - `bind <deck> <source> <topic>...` and `unbind <deck> <source>
-    <topic>...`: add or replace a topic's entry, or drop it; the last topic
-    of a source cannot be unbound (remove the source instead).
+  - `bind <deck> <source> <topic>...`: add a topic's entry, or replace it
+    when the topic is already bound.
+  - `unbind <deck> <source> <topic>...`: drop topics, named without ranges;
+    the last topic of a source cannot be unbound (remove the source
+    instead).
   - `root set <deck> <key> <dir>` and `root unset <deck> <key>`: save or
     forget where a key's live files are on this machine, printing
     `old -> new`.
   - `list <deck>`: each topic with its source count and bytes, and each
     source with its id, bytes, display path, drift (`same`, `changed`,
-    `missing`, or `unchecked` for a key without a root), and bindings.
+    `missing`, `unreadable`, `linked` for a live path that is a symbolic
+    link or leaves its root, which is never followed, or `unchecked` for a
+    key without a root), and bindings.
 - `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
   its owned frozen assets, and its augmentation into another workspace. Stable
   deck and card IDs are preserved; progress is not copied.

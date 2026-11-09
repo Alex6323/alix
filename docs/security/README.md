@@ -155,8 +155,12 @@ names deleted: the names come from `stray_copies` over the manifest just
 written, and the commit refuses first when the deck folder or `sources/` is a
 symbolic link, or when the manifest, the roots file, or a new copy's name is
 not a regular file, so neither a write nor a deletion reaches through a link
-(`src/sources/transaction.rs`, `src/sources/commands.rs`). The commit error
-says whether the new manifest was already in place. A file added as a source
+(`src/sources/transaction.rs`, `src/sources/commands.rs`). The same step
+removes temporaries an interrupted write left, and only names of exactly the
+three shapes alix writes (`.manifest.toml.tmp`, `.manifest.local.toml.tmp`,
+`.<copy name>.tmp`). The commit error says whether the new manifest was
+already in place. `list` compares each live file without following a
+symbolic link at the file or out of its root, reporting it as `linked`. A file added as a source
 is read through its canonical path, which must lie inside the chosen saved
 root, so a symbolic link inside a root cannot freeze a file outside it.
 

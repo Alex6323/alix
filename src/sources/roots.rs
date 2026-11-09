@@ -24,19 +24,12 @@ impl Roots {
     }
 
     pub fn save(&self, dir: &Path) -> Result<(), SourceError> {
-        let mut roots = BTreeMap::new();
-        for (key, path) in &self.roots {
-            roots.insert(
-                key.clone(),
-                std::fs::canonicalize(path).map_err(io_error(path))?,
-            );
-        }
-        let canonical = Self {
+        let current = Self {
             version: ROOTS_VERSION,
-            roots,
+            roots: self.roots.clone(),
         };
         let path = dir.join(ROOTS);
-        let text = toml::to_string(&canonical).map_err(|source| SourceError::Serialize {
+        let text = toml::to_string(&current).map_err(|source| SourceError::Serialize {
             path: path.clone(),
             source,
         })?;
@@ -44,6 +37,17 @@ impl Roots {
         let tmp = dir.join(format!(".{ROOTS}.tmp"));
         crate::fsio::replace_file(&tmp, &path, text.as_bytes()).map_err(io_error(&path))
     }
+}
+
+pub fn canonical_folder(dir: &Path) -> Result<PathBuf, SourceError> {
+    let canonical = std::fs::canonicalize(dir).map_err(io_error(dir))?;
+    if !canonical.is_dir() {
+        return Err(io_error(dir)(std::io::Error::new(
+            std::io::ErrorKind::NotADirectory,
+            "not a folder",
+        )));
+    }
+    Ok(canonical)
 }
 
 #[cfg(test)]
@@ -57,18 +61,27 @@ mod tests {
     };
 
     #[test]
-    fn roots_round_trip_through_the_private_file_with_canonical_folders() {
+    fn roots_round_trip_through_the_private_file_and_save_writes_values_as_given() {
         assert!(workspace::is_private_name(ROOTS), "{ROOTS} never travels");
         let temp = tempfile::tempdir().unwrap();
         let live = temp.path().join("live").join("sub");
         fs::create_dir_all(&live).unwrap();
         let dir = temp.path().join("sources").join("deck-fixture");
+        let canonical =
+            canonical_folder(&temp.path().join("live").join("..").join("live").join("sub"))
+                .unwrap();
+        assert_eq!(
+            fs::canonicalize(&live).unwrap(),
+            canonical,
+            "canonical_folder resolves `..` and symlinked temp roots"
+        );
+        let stale = temp.path().join("gone");
         let roots = Roots {
             version: 7,
-            roots: BTreeMap::from([(
-                "sdk".to_string(),
-                temp.path().join("live").join("..").join("live").join("sub"),
-            )]),
+            roots: BTreeMap::from([
+                ("sdk".to_string(), canonical.clone()),
+                ("old".to_string(), stale.clone()),
+            ]),
         };
         roots.save(&dir).unwrap();
 
@@ -77,9 +90,9 @@ mod tests {
         assert!(text.contains("[roots]\n"), "{text}");
         let loaded = Roots::load(&dir).unwrap().expect("the file was saved");
         assert_eq!(
-            BTreeMap::from([("sdk".to_string(), fs::canonicalize(&live).unwrap())]),
+            BTreeMap::from([("sdk".to_string(), canonical), ("old".to_string(), stale)]),
             loaded.roots,
-            "values are canonical, so `..` and symlinked temp roots are resolved"
+            "save writes every value as given, a stale folder included"
         );
         assert_eq!(
             ROOTS_VERSION, loaded.version,
@@ -115,18 +128,18 @@ mod tests {
     }
 
     #[test]
-    fn saving_roots_refuses_a_folder_that_does_not_exist_and_writes_nothing() {
+    fn canonical_folder_refuses_a_missing_folder_and_a_file() {
         let temp = tempfile::tempdir().unwrap();
-        let dir = temp.path().join("sources").join("deck-fixture");
         let missing = temp.path().join("gone");
-        let roots = Roots {
-            version: ROOTS_VERSION,
-            roots: BTreeMap::from([("sdk".to_string(), missing.clone())]),
-        };
         assert!(
-            matches!(roots.save(&dir), Err(SourceError::Io { path, .. }) if path == missing),
-            "canonicalize names the missing folder"
+            matches!(canonical_folder(&missing), Err(SourceError::Io { path, .. }) if path == missing),
+            "a missing folder is named"
         );
-        assert!(!dir.join(ROOTS).exists(), "nothing was written");
+        let file = temp.path().join("file");
+        fs::write(&file, "x").unwrap();
+        assert!(
+            matches!(canonical_folder(&file), Err(SourceError::Io { path, .. }) if path == file),
+            "a file is not a folder"
+        );
     }
 }

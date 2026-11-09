@@ -14,6 +14,7 @@ pub struct Counts {
     pub fingerprint_hashes: u64,
     pub sidecar_reads: u64,
     pub distractor_candidates_scanned: u64,
+    pub workspace_topic_scans: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub enum Counter {
     FingerprintHashes,
     SidecarReads,
     DistractorCandidatesScanned,
+    WorkspaceTopicScans,
 }
 
 impl Counts {
@@ -47,6 +49,7 @@ impl Counts {
             Counter::FingerprintHashes => &mut self.fingerprint_hashes,
             Counter::SidecarReads => &mut self.sidecar_reads,
             Counter::DistractorCandidatesScanned => &mut self.distractor_candidates_scanned,
+            Counter::WorkspaceTopicScans => &mut self.workspace_topic_scans,
         };
         *slot += 1;
     }
@@ -65,11 +68,12 @@ impl Counts {
             Counter::FingerprintHashes => self.fingerprint_hashes,
             Counter::SidecarReads => self.sidecar_reads,
             Counter::DistractorCandidatesScanned => self.distractor_candidates_scanned,
+            Counter::WorkspaceTopicScans => self.workspace_topic_scans,
         }
     }
 }
 
-pub const ALL_COUNTERS: [Counter; 12] = [
+pub const ALL_COUNTERS: [Counter; 13] = [
     Counter::CandidatesClassified,
     Counter::ManifestReads,
     Counter::DecksLoaded,
@@ -82,6 +86,7 @@ pub const ALL_COUNTERS: [Counter; 12] = [
     Counter::FingerprintHashes,
     Counter::SidecarReads,
     Counter::DistractorCandidatesScanned,
+    Counter::WorkspaceTopicScans,
 ];
 
 thread_local! {

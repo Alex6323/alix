@@ -1,6 +1,8 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
-use crate::{deck::Deck, dedup::TopicDupe, token};
+use crate::{deck::Deck, dedup::TopicDupe, token, workspace};
+
+const TOPIC_PREFIX: &str = "topic-";
 
 /// One `#` heading block, or the leading block before the first heading
 /// (`heading` and `line` are `None` there).
@@ -27,6 +29,10 @@ pub fn duplicated_topics(deck: &Deck, workspace_root: Option<&Path>) -> Vec<Topi
     let mut found = same_deck_duplicates(&deck.path, &deck.topics);
     if let Some(root) = workspace_root {
         let ids: Vec<String> = deck.topic_ids().into_iter().flatten().collect();
+        if !any_named_twice(root, &ids) {
+            return found;
+        }
+        crate::profile::hit(crate::profile::Counter::WorkspaceTopicScans);
         found.extend(
             crate::dedup::scan_dir(root)
                 .topic_dupes
@@ -36,6 +42,53 @@ pub fn duplicated_topics(deck: &Deck, workspace_root: Option<&Path>) -> Vec<Topi
     }
     found.sort_by(|a, b| (&a.id, &a.copies).cmp(&(&b.id, &b.copies)));
     found
+}
+
+fn any_named_twice(root: &Path, ids: &[String]) -> bool {
+    let mut counts: HashMap<&str, usize> = ids
+        .iter()
+        .filter(|id| id.starts_with(TOPIC_PREFIX))
+        .map(|id| (id.as_str(), 0))
+        .collect();
+    if counts.is_empty() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(workspace::member_dir(root)) else {
+        return false;
+    };
+    for path in entries.filter_map(|entry| entry.ok().map(|entry| entry.path())) {
+        let is_member_shaped = path.extension().is_some_and(|extension| extension == "md")
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    !workspace::is_sidecar_name(name)
+                        && !workspace::is_conventional_non_deck(name)
+                        && !workspace::is_conflict_name(name)
+                });
+        if !is_member_shaped {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for (at, _) in text.match_indices(TOPIC_PREFIX) {
+            let tail = &text[at + TOPIC_PREFIX.len()..];
+            let end = tail
+                .find(|character: char| {
+                    !(character.is_ascii_lowercase() || character.is_ascii_digit())
+                })
+                .unwrap_or(tail.len());
+            let id = &text[at..at + TOPIC_PREFIX.len() + end];
+            if let Some(count) = counts.get_mut(id) {
+                *count += 1;
+                if *count > 1 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 pub fn same_deck_duplicates(path: &Path, topics: &[Topic]) -> Vec<TopicDupe> {
@@ -197,5 +250,47 @@ mod tests {
                 "no root: no cross-deck scan"
             );
         }
+    }
+
+    #[test]
+    fn the_workspace_topic_scan_runs_only_when_a_topic_id_appears_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        for index in 0..12 {
+            std::fs::write(
+                dir.path().join(format!("d{index}.md")),
+                format!(
+                    "---\nid: \"deck-d{index}\"\n---\n# A\n<!-- id: topic-a{index} -->\n## q\na                      topic-a{index}x\n"
+                ),
+            )
+            .unwrap();
+        }
+        std::fs::write(dir.path().join("d0.local.md"), "<!-- topic: topic-a0 -->\n").unwrap();
+        let deck = Deck::load(dir.path().join("d0.md")).unwrap();
+        let (found, counts) =
+            crate::profile::collect(|| duplicated_topics(&deck, Some(dir.path())));
+        assert!(found.is_empty(), "no repeat: {found:?}");
+        assert_eq!(
+            0,
+            counts.get(crate::profile::Counter::WorkspaceTopicScans),
+            "no repeat in the member decks: no full workspace parse, whatever the deck count"
+        );
+
+        std::fs::write(
+            dir.path().join("copy.md"),
+            "---\nid: \"deck-copy\"\n---\n# B\n<!-- id: topic-a0 -->\n## r\nb\n",
+        )
+        .unwrap();
+        let (found, counts) =
+            crate::profile::collect(|| duplicated_topics(&deck, Some(dir.path())));
+        assert_eq!(
+            1,
+            counts.get(crate::profile::Counter::WorkspaceTopicScans),
+            "a repeat: one full workspace parse"
+        );
+        assert_eq!(
+            vec!["topic-a0".to_string()],
+            found.iter().map(|dupe| dupe.id.clone()).collect::<Vec<_>>(),
+            "the finding comes from the full scan"
+        );
     }
 }

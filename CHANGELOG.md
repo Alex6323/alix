@@ -17,7 +17,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   topics are named by unique id prefixes. Every command checks the whole
   folder first, refuses twins, URLs, empty or non-UTF-8 files and files
   outside their root, writes copies before the manifest, and deletes copies
-  no row names. The exam does not read sources yet.
+  no row names and temporaries an interrupted write left. The exam does not
+  read sources yet.
 
 - Topics carry permanent IDs: `alix deck init` and opening a deck write one
   `<!-- id: topic-<token> -->` line closing each `#` heading block (after its

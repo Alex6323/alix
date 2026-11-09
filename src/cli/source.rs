@@ -20,7 +20,7 @@ pub(crate) enum SourceAction {
     /// Bind a source to more topics, or replace a topic's ranges.
     Bind(BindArgs),
     /// Unbind a source from topics.
-    Unbind(BindArgs),
+    Unbind(UnbindArgs),
     /// Save or forget where a key's live files are on this machine.
     #[command(subcommand)]
     Root(RootAction),
@@ -90,6 +90,18 @@ pub(crate) struct BindArgs {
     /// The source, a unique prefix of its `source-` id.
     source: String,
     /// Topics, each `[<ranges>|]<topic>` with a unique id prefix.
+    #[arg(required = true)]
+    topics: Vec<String>,
+}
+
+#[derive(Args)]
+pub(crate) struct UnbindArgs {
+    /// A workspace deck: its file, or a unique prefix of its `deck-` id.
+    deck: String,
+    /// The source, a unique prefix of its `source-` id.
+    source: String,
+    /// Topics to unbind, each a unique prefix of a `topic-` id or the deck
+    /// id, without ranges.
     #[arg(required = true)]
     topics: Vec<String>,
 }

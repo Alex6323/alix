@@ -7,7 +7,7 @@ use anyhow::{Context, Result, anyhow, bail};
 
 use super::{
     Binding, DeckSources, DisplayPath, MANIFEST_VERSION, Manifest, ROOTS_VERSION, Roots, Row,
-    binding_of, copy_name, line_count, load_verified,
+    binding_of, canonical_folder, copy_name, line_count, load_verified,
     manifest::topic_of,
     parse_binding, source_id,
     transaction::{Candidate, CommitReport, commit, save_roots},
@@ -85,6 +85,8 @@ pub enum Drift {
     Same,
     Changed,
     Missing,
+    Linked,
+    Unreadable,
 }
 
 impl Drift {
@@ -94,6 +96,8 @@ impl Drift {
             Drift::Same => "same",
             Drift::Changed => "changed",
             Drift::Missing => "missing",
+            Drift::Linked => "linked",
+            Drift::Unreadable => "unreadable",
         }
     }
 }
@@ -210,6 +214,29 @@ pub fn resolve_topic_prefix(deck: &Deck, prefix: &str) -> Result<String> {
     unique_prefix(ids.iter().map(String::as_str).collect(), prefix, "topic").map(str::to_string)
 }
 
+fn member_files(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(workspace::member_dir(root)) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension().is_some_and(|extension| extension == "md")
+                && path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        !workspace::is_sidecar_name(name)
+                            && !workspace::is_conventional_non_deck(name)
+                            && !workspace::is_conflict_name(name)
+                    })
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 pub fn resolve_deck(arg: &str, cwd: &Path, decks_dir: Option<&Path>) -> Result<PathBuf> {
     let direct = cwd.join(arg);
     if direct.is_file() {
@@ -217,48 +244,47 @@ pub fn resolve_deck(arg: &str, cwd: &Path, decks_dir: Option<&Path>) -> Result<P
     }
     let mut files = Vec::new();
     if let Some(root) = cwd.ancestors().find(|dir| workspace::has_manifest(dir)) {
-        files.extend(workspace::deck_files(root));
+        files.extend(member_files(root));
     }
     if let Some(dir) = decks_dir {
         for root in workspace::roots_under(dir) {
-            files.extend(workspace::deck_files(&root));
+            files.extend(member_files(&root));
         }
     }
     let mut seen = workspace::SeenPaths::default();
-    let mut found: Vec<(String, PathBuf)> = Vec::new();
+    let mut matches: Vec<(String, PathBuf)> = Vec::new();
     for file in files {
         if !seen.first_visit(&file) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
-        if let Ok(Some(id)) = parser::deck_identity(&text) {
-            found.push((id, file));
+        if let Ok(Some(id)) = parser::read_deck_identity(&file)
+            && !arg.is_empty()
+            && id.starts_with(arg)
+        {
+            matches.push((id, file));
         }
     }
-    let ids: Vec<&str> = found.iter().map(|(id, _)| id.as_str()).collect();
-    let id = unique_prefix(ids, arg, "deck").map_err(|error| {
-        let listed: Vec<String> = found
-            .iter()
-            .filter(|(id, _)| !arg.is_empty() && id.starts_with(arg))
-            .map(|(id, path)| format!("{id} ({})", path.display()))
-            .collect();
-        if listed.len() > 1 {
-            anyhow!(
+    let exact: Vec<&(String, PathBuf)> = matches.iter().filter(|(id, _)| id == arg).collect();
+    let chosen: Vec<&(String, PathBuf)> = if exact.is_empty() {
+        matches.iter().collect()
+    } else {
+        exact
+    };
+    match chosen.as_slice() {
+        [] => bail!("no deck matches `{arg}`"),
+        [(_, path)] => Ok(path.clone()),
+        many => {
+            let listed: Vec<String> = many
+                .iter()
+                .map(|(id, path)| format!("{id} ({})", path.display()))
+                .collect();
+            bail!(
                 "`{arg}` matches {} decks: {}",
-                listed.len(),
+                many.len(),
                 listed.join(", ")
             )
-        } else {
-            error
         }
-    })?;
-    found
-        .iter()
-        .find(|(candidate, _)| candidate == id)
-        .map(|(_, path)| path.clone())
-        .with_context(|| format!("no deck matches `{arg}`"))
+    }
 }
 
 fn parse_topic_arg(deck: &Deck, arg: &str) -> Result<Binding> {
@@ -396,15 +422,6 @@ fn parse_root_key(key: &str) -> Result<String> {
     })
 }
 
-fn canonical_dir(dir: &Path) -> Result<PathBuf> {
-    let canonical = std::fs::canonicalize(dir)
-        .with_context(|| format!("cannot use `{}` as a root", dir.display()))?;
-    if !canonical.is_dir() {
-        bail!("root `{}` is not a folder", dir.display());
-    }
-    Ok(canonical)
-}
-
 pub fn add(req: AddRequest) -> Result<AddReport> {
     let opened = open(req.deck)?;
     let bindings = if req.topics.is_empty() {
@@ -430,7 +447,7 @@ pub fn add(req: AddRequest) -> Result<AddReport> {
     let mut key = req.key.clone();
     if let Some((root_key, dir)) = &req.root {
         let root_key = parse_root_key(root_key)?;
-        let canonical = canonical_dir(dir)?;
+        let canonical = canonical_folder(dir)?;
         match roots.roots.get(&root_key) {
             Some(saved) if *saved != canonical => bail!(
                 "root `{root_key}` is already `{}`; change it with `alix deck source root set` first",
@@ -614,7 +631,7 @@ pub fn unbind(deck: &Path, source: &str, topics: &[String]) -> Result<()> {
 pub fn root_set(deck: &Path, key: &str, dir: &Path) -> Result<RootChange> {
     let opened = open(deck)?;
     let key = parse_root_key(key)?;
-    let new = canonical_dir(dir)?;
+    let new = canonical_folder(dir)?;
     let mut roots = opened.roots;
     let old = roots.roots.insert(key, new.clone());
     save_roots(&opened.dir, &roots)?;
@@ -671,7 +688,7 @@ pub fn list(deck: &Path) -> Result<Listing> {
     let mut sources = Vec::with_capacity(opened.manifest.sources.len());
     for (id, row) in &opened.manifest.sources {
         let display: DisplayPath = row.path.parse()?;
-        let drift = drift(id, &display, &opened.roots)?;
+        let drift = drift(id, &display, &opened.roots);
         sources.push((
             display,
             SourceLine {
@@ -690,19 +707,29 @@ pub fn list(deck: &Path) -> Result<Listing> {
     })
 }
 
-fn drift(id: &str, display: &DisplayPath, roots: &Roots) -> Result<Drift> {
+fn drift(id: &str, display: &DisplayPath, roots: &Roots) -> Drift {
     let Some(dir) = roots.roots.get(&display.key) else {
-        return Ok(Drift::Unchecked);
+        return Drift::Unchecked;
     };
     let live = display
         .path
         .split('/')
         .fold(dir.clone(), |live, part| live.join(part));
+    match std::fs::symlink_metadata(&live) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Drift::Missing,
+        Err(_) => return Drift::Unreadable,
+        Ok(metadata) if metadata.file_type().is_symlink() => return Drift::Linked,
+        Ok(_) => {}
+    }
+    match std::fs::canonicalize(&live) {
+        Ok(canonical) if canonical.starts_with(dir) => {}
+        Ok(_) => return Drift::Linked,
+        Err(_) => return Drift::Unreadable,
+    }
     match std::fs::read(&live) {
-        Ok(bytes) if source_id(&bytes) == id => Ok(Drift::Same),
-        Ok(_) => Ok(Drift::Changed),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Drift::Missing),
-        Err(error) => Err(error).with_context(|| format!("cannot read `{}`", live.display())),
+        Ok(bytes) if source_id(&bytes) == id => Drift::Same,
+        Ok(_) => Drift::Changed,
+        Err(_) => Drift::Unreadable,
     }
 }
 
@@ -855,6 +882,12 @@ mod tests {
                     .map(drop)
                 },
                 &["root set"],
+            ),
+            (
+                "root set to a missing folder",
+                |_| {},
+                |w| root_set(&w.deck(), "dl", &w.root().join("gone")).map(drop),
+                &["gone"],
             ),
             (
                 "two roots",
@@ -1228,6 +1261,85 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_stale_saved_root_does_not_block_saving_another_key() {
+        let workspace = base();
+        let gone = workspace.root().join("gone");
+        fs::create_dir_all(&gone).unwrap();
+        root_set(&workspace.deck(), "old", &gone).unwrap();
+        let saved = fs::canonicalize(&gone).unwrap();
+        fs::remove_dir(&gone).unwrap();
+        let other = workspace.root().join("other");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("o.txt"), b"other\n").unwrap();
+
+        root_set(&workspace.deck(), "dl", &other)
+            .unwrap_or_else(|error| panic!("root set beside a stale root: {error:#}"));
+        add(AddRequest {
+            deck: &workspace.deck(),
+            files: vec![other.join("o.txt")],
+            root: Some(("web".to_string(), other.clone())),
+            key: Some("web".to_string()),
+            topics: strings(&[TOPIC_A]),
+        })
+        .unwrap_or_else(|error| panic!("add --root beside a stale root: {error:#}"));
+        let roots = Roots::load(&workspace.dir()).unwrap().unwrap();
+        assert_eq!(
+            Some(&saved),
+            roots.roots.get("old"),
+            "the stale root is kept as saved"
+        );
+    }
+
+    #[test]
+    fn list_reports_an_unreadable_live_file_as_drift_instead_of_failing() {
+        let workspace = base();
+        fs::remove_file(workspace.live().join("a.rs")).unwrap();
+        fs::create_dir(workspace.live().join("a.rs")).unwrap();
+        let listing = list(&workspace.deck()).unwrap_or_else(|error| panic!("list: {error:#}"));
+        assert_eq!(
+            vec![Drift::Unreadable],
+            listing
+                .sources
+                .iter()
+                .map(|line| line.drift)
+                .collect::<Vec<_>>(),
+            "a folder where the live file was is unreadable, per source"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_never_follows_a_live_symlink_out_of_the_root() {
+        let workspace = base();
+        let outside = workspace.root().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("a.rs"), A).unwrap();
+        fs::remove_file(workspace.live().join("a.rs")).unwrap();
+        std::os::unix::fs::symlink(outside.join("a.rs"), workspace.live().join("a.rs")).unwrap();
+        let drift = |workspace: &Workspace| -> Vec<Drift> {
+            list(&workspace.deck())
+                .unwrap()
+                .sources
+                .iter()
+                .map(|line| line.drift)
+                .collect()
+        };
+        assert_eq!(vec![Drift::Linked], drift(&workspace), "a linked live file");
+
+        let nested = base();
+        let sub = nested.root().join("away");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("a.rs"), A).unwrap();
+        fs::rename(nested.live(), nested.root().join("live-real")).unwrap();
+        std::os::unix::fs::symlink(&sub, nested.live()).unwrap();
+        assert_eq!(
+            vec![Drift::Linked],
+            drift(&nested),
+            "a live path through a linked folder leaving the saved root"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_linked_deck_folder_is_refused_and_nothing_behind_the_link_is_collected() {
@@ -1292,5 +1404,42 @@ mod tests {
         );
         let error = resolve_deck("deck-zzz", workspace.root(), None).unwrap_err();
         assert_eq!("no deck matches `deck-zzz`", error.to_string());
+    }
+
+    #[test]
+    fn resolve_deck_refuses_a_full_id_held_by_two_workspaces_and_reads_only_the_frontmatter() {
+        let decks_dir = tempfile::tempdir().unwrap();
+        let mut copies = Vec::new();
+        for name in ["one", "two"] {
+            let members = decks_dir.path().join(name).join("decks");
+            fs::create_dir_all(&members).unwrap();
+            fs::write(decks_dir.path().join(name).join("alix.toml"), "").unwrap();
+            let mut text = b"---\nid: \"deck-copied\"\n---\n## q\n".to_vec();
+            text.extend_from_slice(&[0xff, 0xfe, b'\n']);
+            fs::write(members.join("d.md"), text).unwrap();
+            copies.push(members.join("d.md"));
+        }
+        let elsewhere = tempfile::tempdir().unwrap();
+        let error = resolve_deck("deck-copied", elsewhere.path(), Some(decks_dir.path()))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`deck-copied` matches 2 decks"),
+            "an exact id on two decks is refused: {error}"
+        );
+        for copy in &copies {
+            assert!(
+                error.contains(&copy.display().to_string()),
+                "the refusal names {}: {error}",
+                copy.display()
+            );
+        }
+
+        fs::remove_file(&copies[1]).unwrap();
+        assert_eq!(
+            copies[0],
+            resolve_deck("deck-copied", elsewhere.path(), Some(decks_dir.path())).unwrap(),
+            "a body that is not UTF-8 is never read"
+        );
     }
 }

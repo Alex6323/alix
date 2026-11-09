@@ -19,7 +19,7 @@ mod testkit;
 mod transaction;
 
 pub use manifest::{DeckSources, Manifest, Row, ValidRow, load_verified, stray_copies};
-pub use roots::Roots;
+pub use roots::{Roots, canonical_folder};
 pub use transaction::{Candidate, CommitError, CommitReport, commit};
 
 pub const ROOT: &str = "sources";
