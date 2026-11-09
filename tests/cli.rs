@@ -9195,3 +9195,203 @@ fn doctor_on_a_workspace_reports_a_deck_root_nested_in_a_manifest_root_as_an_err
         "step defaults: an unknown `[defaults]` key warns: {text}"
     );
 }
+
+const SOURCE_DECK: &str = "---\nid: \"deck-sourced\"\n---\n# Alpha\n<!-- id: topic-alpha -->\n\n## \
+                           q1\na1\n\n# Beta\n<!-- id: topic-beta -->\n\n## q2\na2\n";
+
+fn source_workspace() -> TempDir {
+    let root = TempDir::new().unwrap();
+    std::fs::write(root.path().join("alix.toml"), "").unwrap();
+    std::fs::create_dir_all(root.path().join("decks")).unwrap();
+    std::fs::create_dir_all(root.path().join("live")).unwrap();
+    write(&root.path().join("decks"), "d.md", SOURCE_DECK);
+    write(&root.path().join("live"), "a.rs", "fn main() {}\n");
+    root
+}
+
+#[test]
+fn deck_source_add_list_bind_unbind_remove_round_trip_by_id_prefix() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let run = |args: &[&str]| alix_in(root.path(), home.path(), args);
+    let live = root.path().join("live");
+    let id = alix::sources::source_id(b"fn main() {}\n");
+    let copy = root
+        .path()
+        .join("sources")
+        .join("deck-sourced")
+        .join(format!("{id}.rs"));
+
+    let root_arg = format!("sdk={}", live.display());
+    let out = run(&[
+        "deck",
+        "source",
+        "add",
+        "decks/d.md",
+        "live/a.rs",
+        "--root",
+        &root_arg,
+        "--topic",
+        "topic-al",
+    ]);
+    assert!(out.status.success(), "add: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains(&format!("added {id} sdk:a.rs")),
+        "add: {}",
+        stdout(&out)
+    );
+    assert!(copy.is_file(), "add: the copy is written");
+
+    let out = run(&[
+        "deck",
+        "source",
+        "bind",
+        "deck-sou",
+        &id[..12],
+        "1|topic-be",
+    ]);
+    assert!(out.status.success(), "bind: {}", stderr(&out));
+
+    let out = run(&["deck", "source", "list", "deck-sourced"]);
+    assert!(out.status.success(), "list: {}", stderr(&out));
+    let listing = stdout(&out);
+    for expected in [
+        id.as_str(),
+        "13 bytes",
+        "sdk:a.rs",
+        "same",
+        "topic-alpha, 1|topic-beta",
+        "Alpha",
+    ] {
+        assert!(
+            listing.contains(expected),
+            "list: no {expected:?} in {listing}"
+        );
+    }
+
+    let out = run(&["deck", "source", "root", "unset", "deck-sourced", "sdk"]);
+    assert!(out.status.success(), "root unset: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("-> (none)"),
+        "root unset: {}",
+        stdout(&out)
+    );
+    let listing = stdout(&run(&["deck", "source", "list", "deck-sourced"]));
+    assert!(
+        listing.contains("unchecked"),
+        "list without a root: {listing}"
+    );
+
+    let out = run(&[
+        "deck",
+        "source",
+        "unbind",
+        "deck-sourced",
+        &id[..12],
+        "topic-be",
+    ]);
+    assert!(out.status.success(), "unbind: {}", stderr(&out));
+    let listing = stdout(&run(&["deck", "source", "list", "deck-sourced"]));
+    assert!(
+        listing.contains("bound to topic-alpha\n"),
+        "unbind: beta is gone: {listing}"
+    );
+
+    let out = run(&["deck", "source", "remove", "deck-sourced", &id[..12]]);
+    assert!(out.status.success(), "remove: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains(&format!("removed {id} sdk:a.rs")),
+        "remove: {}",
+        stdout(&out)
+    );
+    assert!(!copy.exists(), "remove: the copy is deleted");
+}
+
+#[test]
+fn deck_source_add_refuses_a_url_and_points_at_saving_the_page() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let out = alix_in(
+        root.path(),
+        home.path(),
+        &[
+            "deck",
+            "source",
+            "add",
+            "decks/d.md",
+            "https://example.com/page.html",
+            "--topic",
+            "topic-alpha",
+        ],
+    );
+    assert!(!out.status.success(), "a URL is refused");
+    assert!(
+        stderr(&out).contains("save the page as a file"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(!root.path().join("sources").exists(), "nothing was written");
+}
+
+#[test]
+fn deck_source_commands_resolve_the_deck_by_unique_id_prefix_and_refuse_an_ambiguous_one() {
+    let root = source_workspace();
+    write(
+        &root.path().join("decks"),
+        "e.md",
+        &SOURCE_DECK.replace("deck-sourced", "deck-sourcer"),
+    );
+    let home = TempDir::new().unwrap();
+
+    let out = alix_in(
+        root.path(),
+        home.path(),
+        &["deck", "source", "list", "deck-sourc"],
+    );
+    assert!(!out.status.success(), "an ambiguous prefix is refused");
+    let message = stderr(&out);
+    assert!(
+        message.contains("`deck-sourc` matches 2 decks")
+            && message.contains("deck-sourced")
+            && message.contains("deck-sourcer"),
+        "{message}"
+    );
+
+    let out = alix_in(
+        root.path(),
+        home.path(),
+        &["deck", "source", "list", "deck-sourcer"],
+    );
+    assert!(!out.status.success(), "a duplicated topic id is refused");
+    assert!(
+        stderr(&out).contains("topic id `topic-alpha` is also at"),
+        "the shared finding is printed: {}",
+        stderr(&out)
+    );
+
+    std::fs::write(
+        root.path().join("decks").join("e.md"),
+        "---\nid: \"deck-sourcer\"\n---\n## q\na\n",
+    )
+    .unwrap();
+    let out = alix_in(
+        root.path(),
+        home.path(),
+        &["deck", "source", "list", "deck-sourcer"],
+    );
+    assert!(
+        out.status.success(),
+        "a unique id resolves: {}",
+        stderr(&out)
+    );
+    let out = alix_in(
+        root.path(),
+        home.path(),
+        &["deck", "source", "list", "deck-zzz"],
+    );
+    assert!(
+        stderr(&out).contains("no deck matches `deck-zzz`"),
+        "{}",
+        stderr(&out)
+    );
+}

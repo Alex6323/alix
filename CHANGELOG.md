@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix deck source add|remove|update|bind|unbind|list|root set|root unset`
+  manage a workspace deck's sources: frozen copies of local, non-empty UTF-8
+  text files in `sources/<deck-id>/`, named by their SHA-256 and listed in a
+  `manifest.toml` with their `<key>:<path>` display path and the topics they
+  ground, optionally by line ranges (`10-80,120|<topic>`). A key's local
+  folder lives in the private `manifest.local.toml`. Decks, sources and
+  topics are named by unique id prefixes. Every command checks the whole
+  folder first, refuses twins, URLs, empty or non-UTF-8 files and files
+  outside their root, writes copies before the manifest, and deletes copies
+  no row names. The exam does not read sources yet.
+
 - Topics carry permanent IDs: `alix deck init` and opening a deck write one
   `<!-- id: topic-<token> -->` line closing each `#` heading block (after its
   prose, before its first card). The cards above the first `#` are the

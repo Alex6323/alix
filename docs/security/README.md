@@ -144,6 +144,22 @@ version, or failing validation) is an error, never a list of copies to
 collect. The roots file beside the manifest holds absolute local folders and
 is private by the `*.local.*` pattern, so it never travels (`src/sources/`).
 
+Every `alix deck source` command first passes that verified load, refuses a
+deck outside a workspace and a deck whose topic ids are duplicated, and
+validates the complete new manifest before it writes anything. The commit
+then writes the roots file (only when its roots change), each new copy (read
+back and re-hashed against its id), and `manifest.toml` once by atomic
+replacement, in that order, so a returned error or a crash leaves the old or
+the new manifest with every copy it names intact. Only then are copies no row
+names deleted: the names come from `stray_copies` over the manifest just
+written, and the commit refuses first when the deck folder or `sources/` is a
+symbolic link, or when the manifest, the roots file, or a new copy's name is
+not a regular file, so neither a write nor a deletion reaches through a link
+(`src/sources/transaction.rs`, `src/sources/commands.rs`). The commit error
+says whether the new manifest was already in place. A file added as a source
+is read through its canonical path, which must lie inside the chosen saved
+root, so a symbolic link inside a root cannot freeze a file outside it.
+
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
 code still process content supplied to the app. The app reads and writes only
@@ -640,6 +656,16 @@ The most relevant deterministic checks currently live beside their controls:
   integrity over every fault from a version bump to a same-bytes symlink
   (`load_verified_fails_closed_on_every_integrity_fault`), and the display
   path and binding grammars as table laws;
+- `src/sources/transaction.rs` and `src/sources/commands.rs`: a fail-on-Nth
+  fault at every step of a source commit leaves the old or the new manifest
+  with every named copy intact, reports whether the manifest was replaced,
+  and the next mutating command collects the residue
+  (`a_fault_at_every_step_leaves_old_or_new_manifest_with_every_named_copy_intact_and_the_next_command_collects_residue`);
+  every refusal leaves the folder byte for byte unchanged
+  (`every_source_command_refusal_names_its_cause_and_leaves_state_untouched`,
+  including a symbolic link out of a root); a linked deck folder is refused
+  and nothing behind it is collected
+  (`a_linked_deck_folder_is_refused_and_nothing_behind_the_link_is_collected`);
 - `src/locator.rs` and `src/cite.rs`: locator grammar (relative, normalized
   paths only) and containment of every resolved citation inside its root;
 - `src/workspace_update.rs`: update-manifest member containment, accepting a

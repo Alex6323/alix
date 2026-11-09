@@ -11,11 +11,16 @@ use thiserror::Error;
 
 use crate::{locator, token};
 
+pub mod commands;
 mod manifest;
 mod roots;
+#[cfg(test)]
+mod testkit;
+mod transaction;
 
 pub use manifest::{DeckSources, Manifest, Row, ValidRow, load_verified, stray_copies};
 pub use roots::Roots;
+pub use transaction::{Candidate, CommitError, CommitReport, commit};
 
 pub const ROOT: &str = "sources";
 pub const MANIFEST: &str = "manifest.toml";

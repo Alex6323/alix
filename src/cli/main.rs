@@ -11,6 +11,7 @@ mod launch;
 mod profile;
 mod progress;
 mod share;
+mod source;
 
 use std::path::PathBuf;
 
@@ -556,6 +557,10 @@ enum DeckAction {
     /// Nothing is destroyed: the swapped-away state becomes the new backup,
     /// so running it again swaps back.
     Restore(DeckRestoreArgs),
+    /// Manage a workspace deck's frozen exam material: copies of local text
+    /// files, each bound to the topics it grounds.
+    #[command(subcommand)]
+    Source(source::SourceAction),
 }
 
 #[derive(Args)]
@@ -756,6 +761,7 @@ fn main() -> Result<()> {
             DeckAction::Import(args) => deck::import_cmd(args),
             DeckAction::Remove(args) => deck::remove_cmd(args),
             DeckAction::Restore(args) => deck::restore_cmd(args),
+            DeckAction::Source(action) => source::run(action),
         },
         Some(Command::Workspace(action)) => match action {
             WorkspaceAction::Generate(args) => generate::workspace_cmd(args),

@@ -79,6 +79,40 @@ impl Manifest {
         }
         Ok(rows)
     }
+
+    pub fn to_text(&self) -> String {
+        let mut text = format!("version = {}\n\n[sources]\n", self.version);
+        for (id, row) in &self.sources {
+            let bound: Vec<String> = row
+                .bound_to
+                .iter()
+                .map(|entry| toml_string(entry))
+                .collect();
+            text.push_str(&format!(
+                "{id} = {{ path = {}, bound-to = [{}] }}\n",
+                toml_string(&row.path),
+                bound.join(", ")
+            ));
+        }
+        text
+    }
+}
+
+fn toml_string(text: &str) -> String {
+    let mut quoted = String::with_capacity(text.len() + 2);
+    quoted.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            control if control < ' ' || control == '\u{7f}' => {
+                quoted.push_str(&format!("\\u{:04X}", u32::from(control)));
+            }
+            other => quoted.push(other),
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 fn display_of(id: &str, row: &Row) -> Result<DisplayPath, SourceError> {
@@ -92,7 +126,7 @@ fn display_of(id: &str, row: &Row) -> Result<DisplayPath, SourceError> {
     })
 }
 
-fn topic_of(entry: &str) -> &str {
+pub(super) fn topic_of(entry: &str) -> &str {
     entry.rsplit_once('|').map_or(entry, |(_, topic)| topic)
 }
 
@@ -127,7 +161,7 @@ pub fn load_verified(
     }))
 }
 
-fn folder_exists(path: &Path) -> Result<bool, SourceError> {
+pub(super) fn folder_exists(path: &Path) -> Result<bool, SourceError> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             Err(SourceError::LinkedFolder(path.to_path_buf()))
@@ -799,6 +833,40 @@ mod tests {
         let row = &manifest.sources["source-18pgda5qxze0435914h3awa04ej3cmvhk8hvwef6g09ybdv1czkc"];
         assert_eq!("sdk:src/lib.rs", row.path);
         assert_eq!(2, row.bound_to.len());
+    }
+
+    #[test]
+    fn the_writer_renders_the_adr_example_layout_byte_for_byte_and_round_trips() {
+        let golden = "version = 1\n\n[sources]\n\
+                      source-18pgda5qxze0435914h3awa04ej3cmvhk8hvwef6g09ybdv1czkc = { path = \
+                      \"sdk:src/lib.rs\", bound-to = [\"topic-c9ns6n7s0k9hzm7eb0e7hqn35j\", \
+                      \"100-400,512|topic-3whzpgpjp1z1rsfgcvxx4984hn\"] }\n";
+        let manifest: Manifest = toml::from_str(golden).unwrap();
+        assert_eq!(golden, manifest.to_text(), "the ADR rule 4 layout");
+
+        let (x, y) = (source_id(b"x"), source_id(b"y"));
+        let odd = manifest_with(&[
+            (
+                &y,
+                "sdk:a \"quoted\" \u{e9}.md",
+                &["deck-fixture", "1|topic-aaaa"],
+            ),
+            (&x, "dl:b.txt", &["topic-aaaa"]),
+        ]);
+        let text = odd.to_text();
+        assert_eq!(odd, toml::from_str(&text).unwrap(), "round trip: {text}");
+        let x_at = text.find(&x).unwrap();
+        let y_at = text.find(&y).unwrap();
+        assert_eq!(x < y, x_at < y_at, "rows in id byte order: {text}");
+        assert!(
+            text.contains("\"sdk:a \\\"quoted\\\" \u{e9}.md\""),
+            "a quote is escaped and other text stays literal: {text}"
+        );
+        assert_eq!(
+            "version = 1\n\n[sources]\n",
+            manifest_with(&[]).to_text(),
+            "an empty manifest keeps its table"
+        );
     }
 
     #[test]

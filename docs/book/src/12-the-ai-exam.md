@@ -40,6 +40,42 @@ away; passing alone already unlocks its dependents. A deck with no `exam:` at al
 workspace manifest) simply becomes *finished* when all its cards graduate,
 unlocking its dependents directly, even when it declares `cite:` roots.
 
+## Sources
+
+A workspace deck can also hold **sources**: frozen copies of local text
+files, each bound to the topics (the deck's `#` heading blocks) it grounds.
+They live in `sources/<deck-id>/` at the workspace root, beside a
+`manifest.toml` that lists every copy by its id (`source-` plus the file's
+SHA-256), its display path (`<key>:<path>`), and its bindings. The exam does
+not read sources yet: until it does, `exam:` above names its material.
+
+```
+alix deck source add decks/rust.md ../sdk/src/lib.rs --root sdk=../sdk --topic topic-3whz
+alix deck source list decks/rust.md
+```
+
+- A **key** names a folder of live files on this machine. `--root
+  <key>=<dir>` saves it on first use, `root set` and `root unset` change it
+  later, and they live in `manifest.local.toml`, which never leaves the
+  machine. A file is shown as its path under the root, after the key.
+- A **binding** is a topic id, or `<ranges>|<topic>` for some lines only,
+  for example `10-80,120|topic-3whz`: 1-based inclusive lines, ascending and
+  disjoint. A source is always bound to at least one topic; a deck without
+  `#` topics binds its deck id.
+- `update` refreezes a source from its file and keeps every binding,
+  refusing when a range would lie beyond the new copy's last line;
+  `list` shows whether each live file still matches its copy.
+
+A source is refused when it is a URL (save the page as a file), empty, not
+UTF-8, outside its root (a symbolic link out of the root included), already
+in the deck under another path with the same bytes, or at a path the deck
+already holds (refreeze that one with `update` or `alix doctor
+--repair-sources`). Every command checks the deck's whole sources folder
+first and refuses a damaged one. A change writes new copies first and the
+manifest last, so an interruption leaves the old or the new state, and the
+next change deletes any copy no row names. Every subcommand and flag is
+listed in the [command reference](17-command-reference.md#the-ai-features).
+
 ## Sitting the exam
 
 An exam is written ahead, then taken. Writing the questions is a long model

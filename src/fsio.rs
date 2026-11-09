@@ -13,6 +13,7 @@ pub(crate) enum Operation {
     Rename,
     SetPermissions,
     CreateDirectory,
+    RemoveFile,
     #[cfg(unix)]
     OpenDirectory,
     #[cfg(unix)]
@@ -197,6 +198,10 @@ mod replacement_contract {
             "an unavailable target must fail without replacing the user's symlink: {result:?}"
         );
     }
+}
+
+pub(crate) fn remove_file(path: &Path) -> Result<()> {
+    operation(Operation::RemoveFile, || std::fs::remove_file(path))
 }
 
 // create_dir_all leaves each new directory entry in its parent's page cache, so
