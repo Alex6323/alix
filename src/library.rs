@@ -113,9 +113,7 @@ pub fn replace_sourced_deck(
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("deck");
-    let old_id = parser::read_deck_identity(&dir.join(format!("{stem}.md")))
-        .ok()
-        .flatten();
+    let old_sources = ReplacedSources::before(dir, name);
     let (placed, report, created) = place_and_bind(
         dir,
         &format!(".{stem}.generated.md"),
@@ -131,18 +129,61 @@ pub fn replace_sourced_deck(
     let temporary = remove_file(&placed.path);
     match replaced {
         Ok(replaced) => {
-            let old_sources = old_id
-                .filter(|old| Some(old) != new_id.as_ref())
-                .map_or(Ok(()), |old| {
-                    remove_folder(&created.files.sources_for(&old))
-                });
-            first_error([temporary, old_sources])?;
+            first_error([temporary, old_sources.drop_if_replaced()])?;
             Ok((replaced, report))
         }
         Err(error) => Err(with_cleanup(
             error,
             first_error([temporary, created.remove(new_id.as_deref())]),
         )),
+    }
+}
+
+pub fn replace_deck_dropping_old_sources(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    store: &mut Store,
+) -> Result<ReplaceReport> {
+    let old_sources = ReplacedSources::before(dir, name);
+    let replaced = replace_deck(dir, name, text, store)?;
+    old_sources.drop_if_replaced()?;
+    Ok(replaced)
+}
+
+fn deck_stem(name: &str) -> &str {
+    let file = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("deck");
+    file.strip_suffix(".md").unwrap_or(file)
+}
+
+struct ReplacedSources {
+    deck: PathBuf,
+    folder: Option<(WorkspaceFiles, String)>,
+}
+
+impl ReplacedSources {
+    fn before(dir: &Path, name: &str) -> Self {
+        let deck = dir.join(format!("{}.md", deck_stem(name)));
+        let files = workspace::root_for_member_dir(dir).map(WorkspaceFiles::new);
+        let old_id = parser::read_deck_identity(&deck).ok().flatten();
+        Self {
+            deck,
+            folder: files.zip(old_id),
+        }
+    }
+
+    fn drop_if_replaced(self) -> Result<()> {
+        let Some((files, old_id)) = self.folder else {
+            return Ok(());
+        };
+        let new_id = parser::read_deck_identity(&self.deck).ok().flatten();
+        if new_id.as_deref() == Some(old_id.as_str()) {
+            return Ok(());
+        }
+        remove_folder(&files.sources_for(&old_id))
     }
 }
 
@@ -245,11 +286,7 @@ pub fn replace_deck(
     store: &mut Store,
 ) -> Result<ReplaceReport> {
     let text = &parser::normalize(text);
-    let stem = Path::new(name)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("deck");
-    let stem = stem.strip_suffix(".md").unwrap_or(stem);
+    let stem = deck_stem(name);
     let file = format!("{stem}.md");
     let path = dir.join(&file);
 

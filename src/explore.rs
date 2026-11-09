@@ -727,7 +727,7 @@ pub fn merge_built(
                     }
                     let text = fs::read_to_string(&member_from)
                         .with_context(|| format!("cannot read {}", member_from.display()))?;
-                    library::replace_deck(&to, &member_name, &text, store)?;
+                    library::replace_deck_dropping_old_sources(&to, &member_name, &text, store)?;
                     fs::remove_file(&member_from)
                         .with_context(|| format!("cannot remove {}", member_from.display()))?;
                 } else {
@@ -1930,6 +1930,40 @@ back a
                 .contains("new q")
         );
         assert!(!staging.join("decks/01-a.md").exists());
+
+        let _ = fs::remove_dir_all(staging.parent().unwrap());
+    }
+
+    #[test]
+    fn forced_workspace_regeneration_drops_the_replaced_decks_old_sources() {
+        let (staging, dest) = merge_test_dirs("sourced-regeneration");
+        for root in [&staging, &dest] {
+            fs::create_dir_all(root.join("decks")).unwrap();
+            fs::write(root.join("alix.toml"), "").unwrap();
+        }
+        let old = dest.join("decks/01-a.md");
+        fs::write(
+            &old,
+            "---\nformat-version: 1\nid: deck-old1\n---\n# Old\n<!-- id: topic-old1 -->\n\n## old\nold\n<!-- id: card-old1 -->\n",
+        )
+        .unwrap();
+        crate::sources::testkit::sourced(old.clone());
+        let replacement = staging.join("decks/01-a.md");
+        fs::write(
+            &replacement,
+            "---\nformat-version: 1\nid: deck-new1\n---\n# New\n<!-- id: topic-new1 -->\n\n## new\nnew\n<!-- id: card-new1 -->\n",
+        )
+        .unwrap();
+        crate::sources::testkit::sourced(replacement);
+        let mut store = crate::state::open_store(&old, &dest).unwrap();
+
+        merge_built(&staging, &dest, true, &mut store).unwrap();
+
+        assert!(dest.join("sources/deck-new1").is_dir());
+        assert!(
+            !dest.join("sources/deck-old1").exists(),
+            "the source folder owned by the replaced generated deck must not be orphaned"
+        );
 
         let _ = fs::remove_dir_all(staging.parent().unwrap());
     }
