@@ -38,9 +38,20 @@ struct Report {
     notes: Vec<String>,
     drift: DriftChecks,
     exam: ExamConfig,
+    linked: HashSet<PathBuf>,
 }
 
 impl Report {
+    fn linked_folder(&mut self, folder: &Path, consequence: &str) {
+        let folder = std::path::absolute(folder).unwrap_or_else(|_| folder.to_path_buf());
+        if self.linked.insert(folder.clone()) {
+            self.error(format!(
+                "{} is a link; {consequence}: replace it with what it points to, or remove it",
+                folder.display()
+            ));
+        }
+    }
+
     fn new(drift: DriftChecks) -> Self {
         Self {
             drift,
@@ -245,6 +256,9 @@ fn deck_source_findings(deck: &Deck, report: &mut Report) {
     };
     let exam = report.exam.clone().for_workspace(&root);
     let found = alix::sources::deck_findings(&root, deck, report.drift.sources, &exam);
+    if let Some(linked) = &found.linked_root {
+        report.linked_folder(linked, SOURCES_LINKED);
+    }
     let at = deck.path.display();
     report
         .errors
@@ -992,6 +1006,8 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
     }
 }
 
+const SOURCES_LINKED: &str = "the exam refuses it";
+
 struct OwnedRoot {
     name: &'static str,
     linked: &'static str,
@@ -1008,7 +1024,7 @@ const OWNED_ROOTS: [OwnedRoot; 2] = [
     },
     OwnedRoot {
         name: alix::sources::ROOT,
-        linked: "the exam refuses it",
+        linked: SOURCES_LINKED,
         orphan: "; no exam reads it",
         owner_reports_links: true,
     },
@@ -1028,11 +1044,7 @@ fn audit_owned_root(
 ) {
     let folder = dir.join(root.name);
     if std::fs::symlink_metadata(&folder).is_ok_and(|metadata| metadata.is_symlink()) {
-        report.error(format!(
-            "{} is a link; {}: replace it with what it points to, or remove it",
-            folder.display(),
-            root.linked
-        ));
+        report.linked_folder(&folder, root.linked);
         return;
     }
     let entries = match std::fs::read_dir(&folder) {
@@ -3627,17 +3639,41 @@ mod tests {
             dir.path().join("sources/deck-m1"),
         )
         .unwrap();
-        let linked_folder =
-            workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+        let targets = |label: &str| {
+            let decks = dir.path().join("decks");
+            [
+                (
+                    format!("{label}, the workspace"),
+                    workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default()),
+                ),
+                (
+                    format!("{label}, its decks folder"),
+                    findings_in(&decks, DriftChecks::default(), &ExamConfig::default()),
+                ),
+                (
+                    format!("{label}, one member deck"),
+                    check_report(
+                        vec![decks.join("m.md")],
+                        DriftChecks::default(),
+                        ExamConfig::default(),
+                    ),
+                ),
+            ]
+        };
+        let linked_folder = targets("a linked deck folder");
         std::fs::remove_dir_all(dir.path().join("sources")).unwrap();
         std::os::unix::fs::symlink(&elsewhere, dir.path().join("sources")).unwrap();
-        let linked_root =
-            workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+        let linked_root = targets("a linked root");
 
-        for (case, report, named) in [
-            ("a linked root", linked_root, "sources is a link"),
-            ("a linked deck folder", linked_folder, "deck-m1"),
-        ] {
+        for (case, report, named) in linked_root
+            .into_iter()
+            .map(|(case, report)| (case, report, "sources is a link"))
+            .chain(
+                linked_folder
+                    .into_iter()
+                    .map(|(case, report)| (case, report, "deck-m1")),
+            )
+        {
             let links: Vec<&String> = report
                 .errors
                 .iter()

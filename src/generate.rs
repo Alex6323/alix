@@ -605,8 +605,6 @@ pub fn spawn(
     rx
 }
 
-/// `sources` is the draft's list; when given, the reply must carry the list
-/// for the deck it returns.
 pub fn review_deck(
     deck: &str,
     sources: Option<&str>,

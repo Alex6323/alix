@@ -48,8 +48,8 @@ complete member and [freezes its evidence](13-trace-decks.md). Cited excerpts
 (from files and directories alike) and local card images land below each
 member's `assets/deck-<token>/` directory. The fill also lists, per facts
 deck, the files its cards draw on (with line ranges for a file longer than 400
-lines; a facts deck with cards and no files refuses the build); alix freezes them as that deck's [sources](12-the-ai-exam.md#sources),
-bound to its topic, and saves the source folder as its `src` root on this
+lines; a facts deck with cards and no files refuses the build); alix freezes
+them as that deck's [sources](12-the-ai-exam.md#sources), bound to its topic, and saves the source folder as its `src` root on this
 machine only. Trace decks get no sources. A missing or changed required source,
 or a listed file that cannot be frozen, aborts publication instead of leaving a
 live or partially frozen workspace.

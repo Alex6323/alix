@@ -81,7 +81,8 @@ manifest) and a binding to a topic the deck lacks are errors, a copy no
 row names is a note, and a `sources/<deck-id>/` folder no member deck owns
 (left by a generated workspace deck that was not merged over a same-named
 member, or by hand edits) is a warning. A linked `sources/` folder is one
-error. A live file changing is normal, so drift is opt-in:
+error, whether doctor checks the workspace, its `decks/` folder, or one
+member deck. A live file changing is normal, so drift is opt-in:
 `alix doctor --warn-on-source-drift` warns for each source whose live file
 changed, is gone, or cannot be read, and names each key with no usable root
 on this machine together with the `root set` command that saves one.

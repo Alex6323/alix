@@ -53,11 +53,12 @@ How the source is recorded depends on its kind, and it matters later:
   line ranges the cards rest on, and a shorter file is bound whole. Every
   topic holding cards must be listed once with at least one file, and no card
   may sit before the first `#` heading; a `--review` pass returns its own list
-  for the deck it rewrites. A single file is bound whole to every topic. The `cite:` root the source is cited
-  through (normally `src`, see below) is saved for the deck's sources on this
-  machine only. Any file that cannot be frozen (not text, empty, outside that
-  root, a range past its end) stops the generation, naming the
-  file and the topic, and leaves no deck and no sources behind. Sources live
+  for the deck it rewrites. A single file is bound whole to every topic. The
+  `cite:` root the source is cited through (normally `src`, see below) is
+  saved for the deck's sources on this machine only. Any file that cannot be
+  frozen (not text, empty, outside that root, a range past its end) stops the
+  generation, naming the file and the topic, and leaves no deck and no
+  sources behind. Sources live
   in a workspace, so a deck written outside one gets none, and no exam.
   Each fact that maps to
   specific lines also gets a fingerprinted
