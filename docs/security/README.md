@@ -147,9 +147,10 @@ link-free stat precedes the read without that handle check. A copy no row
 names is residue, reported only; a damaged manifest (unparseable, another
 version, or failing validation) is an error, never a list of copies to
 collect. The roots file beside the manifest holds absolute local folders and
-is private by the `*.local.*` pattern, so it never leaves the machine: share,
+is private by the `*.local.*` pattern, so no alix transfer moves it: share,
 sync, and receive omit it, and only a same-machine deck copy or move carries
-it (`src/sources/`, `src/deck_transfer.rs`).
+it (`src/sources/`, `src/deck_transfer.rs`). A confined tutor can still read
+it (below).
 
 Every `alix deck source` command first passes that verified load, refuses a
 deck outside a workspace and a deck whose topic ids are duplicated, and
@@ -430,7 +431,9 @@ loaded through the verified load above at every tutor question. On a backend
 that confines file reads (Claude, Copilot) the tutor gets file tools rooted at
 that folder alone, and the folder replaces any `cite:` root for that call; the
 parent configuration's working folder or source-access grant is never
-inherited. A folder `ask::expressible_root` rejects gets no file tools, and
+inherited. The roots file sits in that folder, so its absolute local paths
+can reach the AI provider; this is accepted, since it names folders, not
+content. A folder `ask::expressible_root` rejects gets no file tools, and
 the topic's sources are pasted instead. A backend that does not confine reads
 (Codex, Gemini) never receives the sources folder: the card's topic's sources
 are pasted into the prompt, and a topic over the backend's prompt limit is not
