@@ -12254,11 +12254,11 @@ the answer
         let cases = [
             (
                 "fingerprint: 00112233 asset: a geometry: b".to_string(),
-                "short fingerprint hex",
+                "fingerprint shorter than 13 chars",
             ),
             (
                 format!("fingerprint: 0011223344556677 asset: {png} geometry: {json}"),
-                "missing xxh64 prefix",
+                "16-char fingerprint",
             ),
             (
                 format!("fingerprint: 004926d25askq asset: nope.png geometry: {json}"),

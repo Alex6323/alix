@@ -631,7 +631,7 @@ mod tests {
             let error = format_locator(&locator).unwrap_err();
             assert_eq!(rule, error.rule(), "{locator:?} gave {error}");
         }
-        for value in ["", "xxh64 1", "a-->b"] {
+        for value in ["", "0 1", "a-->b"] {
             let error =
                 format_locator_comment(&fields(passage("guide"), Some(value), None)).unwrap_err();
             assert_eq!(7, error.rule(), "fingerprint `{value}` gave {error}");

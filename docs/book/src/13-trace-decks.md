@@ -86,7 +86,7 @@ already taken, it stops before calling the model. A URL trace build works only
 in a workspace member deck: the URL becomes the `cite:` root `src`, and the
 model copies each checkpoint's passage verbatim between a `PASSAGE <token>`
 line and an `END PASSAGE <token>` line, with a token alix mints for that build.
-Alix freezes each passage as a `asset-<52 base32>.txt` object in the deck's asset
+Alix freezes each passage as an `asset-<52 base32>.txt` object in the deck's asset
 folder and cites it as `<!-- at: src fingerprint: ... asset: ... -->`. A
 missing or altered marker, or a checkpoint without a passage, fails the build
 naming the checkpoint, and nothing is written. Alix fingerprints those locators

@@ -507,7 +507,7 @@ further and **freezes** its source evidence and local images below
 quotes never shift. Freezing stores only the cited excerpt, never the whole
 file, and leaves the deck's `cite:` roots pointed at the real material: each
 frozen citation keeps its key and path in `at:` and gains an `asset:` field
-naming the content-addressed object, so a drift check can still compare
+naming the content-addressed object (`asset-<52 base32>.<ext>`), so a drift check can still compare
 against the live file under that key's root when it is reachable. That check
 is opt-in: `alix doctor --warn-on-cite-locator-drift` reports frozen
 drift as a warning; plain doctor stays quiet about it.
