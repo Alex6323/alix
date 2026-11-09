@@ -40,3 +40,44 @@ through `ask::run` with a files grant and the root as the working folder.
 
 Result: `inside.txt` returned its content. `../outside.txt` returned
 `REFUSED`. `link.txt` (symlink to the outside file) returned `REFUSED`.
+
+## 0b. Per-backend prompt limit
+
+Recorded 2026-11-09 through the production spawn path (`ask::spawn`, the
+same supervised run as `ask::run`), one call at a time, each backend on the
+default model alix selects; failures re-run directly with alix's argv to
+read the cause. 108 calls in all.
+
+Assumption A1: each backend's threshold is a count the lib can compute
+offline over the prompt text.
+
+Falsifier: `<N bytes of filler>` plus `Reply with exactly: OK`, N doubled
+from 64 KiB to the first failure, then bisected to 4 KiB, once with an
+ASCII filler and once with a 3-byte UTF-8 filler.
+
+| Backend | Model, CLI | ASCII last OK / first fail (bytes) | UTF-8 last OK / first fail (bytes) | Cause | Measure |
+| --- | --- | --- | --- | --- | --- |
+| Codex | gpt-5.6-sol, codex-cli 0.167.0 | 1,044,480 / 1,048,576 | 3,141,632 / 3,145,728 | client-side `input_too_large`, `max_chars` 1048576 | characters |
+| Copilot | claude-haiku-4.5, CLI 1.0.107 | 761,856 / 765,952 | 315,392 / 319,488 | "exceeds the model's prompt budget", limit 128,000 tokens | tokens |
+| Claude | claude-fable-5-1, CLI 2.1.319 | 2,510,848 / 2,513,920 (Rust source) | unmeasured | "Prompt is too long", ~1,000,707 tokens against a limit of 1,000,000 | tokens |
+| Gemini | CLI 0.67.0 | blocked | blocked | argv rejected: "Not enough arguments following: p" | none |
+
+Result:
+
+- A1 holds for Codex: a character count, exact and offline.
+- A1 fails for Copilot and Claude: their counts exist only in the error
+  after a request. The fallback applies (bytes divided by the worst
+  observed bytes-per-token ratio): Copilot 2.53 on CJK text plus about
+  2,200 tokens of fixed overhead; Claude 2.51 on Rust source with the
+  system prompt included.
+- Claude's first byte boundaries (1,486,848 ASCII, 561,152 UTF-8) were
+  safety-classifier refusals of the synthetic filler, not length limits.
+  The UTF-8 series with real text mapped to CJK characters was refused the
+  same way at its first call, so Claude's UTF-8 threshold is unmeasured.
+- Through alix, a Claude failure shows only unrelated stderr warnings, and
+  a Codex failure keeps only the first 300 characters of stderr, cutting the
+  cause. Named as `{#backend-failure-cause-hidden}`.
+- Codex is refused in a working folder with no `.git` ancestor because
+  alix's argv omits `--skip-git-repo-check`; the probe ran from a folder
+  set up with `git init`. Named as `{#codex-needs-skip-git-repo-check}`.
+- Gemini's bare `-p` predates this arc. Named as `{#gemini-bare-p-rejected}`.
