@@ -88,3 +88,51 @@ Result:
   probe's UTF-8 uncertainty band (last OK 315,392, first fail 319,488); at
   2.50 the admit edge is 314,500 bytes, below the last OK size. Claude's
   edge (2,510,000 bytes at 2.51) is already below its last OK.
+
+## 0c. Tutor browse versus paste
+
+Recorded 2026-11-09 through `ask::run` (the tutor's spawn path), one call at
+a time, 300 calls: 270 tutor answers and 30 judge calls, none failed. Claude
+Code 2.1.319 (claude-fable-5-1), codex-cli 0.167.0 (gpt-5.6-sol).
+
+Assumption A2: on Claude, browsing `sources/<deck-id>/` with the manifest as
+a map answers card questions at least as well as pasting the card's topic's
+sources; on Codex, pasting answers well enough to ship.
+
+Falsifier: `src/tutor_probes.rs`, the ignored test
+`the_tutor_answers_as_well_browsing_frozen_sources_as_with_them_pasted`
+(env `ALIX_TUTOR_EVAL_DECKS`): three real decks frozen into a scratch
+workspace (prose book chapters, 158 KB; Rust source, 209 KB; Rust, Go and
+Swift source, 405 KB), ten cards each, the same three questions per card in
+every arm, web tools stripped. One Claude judge call per card sees the
+topic's sources, the card and the nine answers shuffled without arm labels,
+and marks each grounded, specific and correct; pass is all three.
+
+Expected: Claude browse >= Claude paste minus 5 points; Codex paste >= 80% of
+Claude browse.
+
+| Backend | Condition | Passed | Rate |
+| --- | --- | --- | --- |
+| Claude | Browse | 90 / 90 | 100.0% |
+| Claude | Paste | 88 / 90 | 97.8% |
+| Codex | Paste | 74 / 90 | 82.2% |
+
+Result: both expectations held; A2 holds as far as one run reaches. The
+Codex margin is two answers (72 / 90 was the line). Caveats: a single run,
+Claude judges Claude, fixed template questions.
+
+Side findings:
+
+- 11 of Codex's 16 misses answer the counterfactual question from general
+  knowledge, judged not grounded.
+- Browse answers cite the frozen copy name (`source-<52>.md:137`) in 42 of 90
+  answers and never the display path: the browse prompt should ask for the
+  display path.
+- Browse answers exceed the tutor's six-sentence cap in 33 of 90 (Paste 18,
+  Codex 0).
+- 60 of 90 Codex answers end with a line the operator's Codex memories ask
+  for: alix's Codex argv does not isolate the call from the operator's Codex
+  memories. Named as `{#codex-memories-leak}`.
+- The 405 KB deck's deck-wide topics measure about 172,000 estimated tokens,
+  over Copilot's and Gemini's 128,000 limit; the two largest real `exam:`
+  lists (7.2 MB and 5.8 MB) exceed every backend's limit, which bears on 0d.

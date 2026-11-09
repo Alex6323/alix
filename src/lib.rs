@@ -130,6 +130,9 @@ mod testutil;
 #[cfg(all(test, feature = "full"))]
 mod exam_probes;
 
+#[cfg(all(test, feature = "full"))]
+mod tutor_probes;
+
 #[cfg(test)]
 mod tests {
     use super::*;
