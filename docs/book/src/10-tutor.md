@@ -120,8 +120,11 @@ are allowed under the root's resolved path alone, and the call loads none of
 your Claude settings files, whose own allow rules would otherwise widen it. A
 root whose path contains `(`, `)`, `*`, `?`, `[`, `]`, `{` or `}`, or any
 root on Windows, gets no file tools. Copilot's file tool is confined to the
-root too: a path outside it, or a symlink pointing out of it, is refused.
-Gemini and Codex do not confine reads to the root.
+root too: a path outside it, or a symlink pointing out of it, is refused, and
+a root those rules cannot name (the same characters, or Windows) drops
+Copilot's file tools as well. A call with no root, on Claude or Copilot, runs
+in alix's own working folder. Gemini and Codex do not confine reads to the
+root.
 
 When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current

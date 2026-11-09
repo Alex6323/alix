@@ -659,12 +659,11 @@ fn run_supervised_inner(
     let (pipe_tx, pipe_rx) = channel();
     let out = drain_pipe(stdout_pipe, Pipe::Stdout, pipe_tx.clone());
     let err = drain_pipe(stderr_pipe, Pipe::Stderr, pipe_tx);
-    {
+    let prompt_bytes = prompt.as_bytes().to_vec();
+    let writer = std::thread::spawn(move || {
         let mut stdin = stdin;
-        stdin
-            .write_all(prompt.as_bytes())
-            .context("cannot write the prompt")?;
-    }
+        stdin.write_all(&prompt_bytes)
+    });
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(config.timeout_secs);
@@ -727,6 +726,7 @@ fn run_supervised_inner(
     let stdout = out.join().unwrap_or_default();
     let stderr = err.join().unwrap_or_default();
     progress.receive(&pipe_rx, backend.as_ref(), config.progress, Instant::now());
+    let written = writer.join().unwrap_or(Ok(()));
     if !status.success() {
         let progress_detail = config
             .progress
@@ -743,6 +743,11 @@ fn run_supervised_inner(
         .find(|detail| !detail.is_empty())
         .unwrap_or_default();
         bail!("{}", map_run_failure(&config.command, detail));
+    }
+    if let Err(error) = written
+        && error.kind() != std::io::ErrorKind::BrokenPipe
+    {
+        return Err(error).context("cannot write the prompt");
     }
     let answer = if config.progress {
         backend.extract_progress(&stdout)?
@@ -1812,6 +1817,16 @@ mod tests {
     }
 
     #[test]
+    fn run_times_out_on_a_cli_that_never_reads_a_large_prompt() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(dir.path(), "sleep 30");
+        let prompt = "x".repeat(256 * 1024);
+        let err = run(&config(&cli, 1), &prompt, &[]).unwrap_err();
+        assert!(format!("{err:#}").contains("timed out"), "{err:#}");
+    }
+
+    #[test]
     fn run_stops_when_a_progress_stream_goes_idle() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
@@ -2076,7 +2091,7 @@ mod tests {
         use crate::config::BackendKind;
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_cli(dir.path(), "echo \"$@\"");
+        let cli = fake_cli(dir.path(), "cat >/dev/null; echo \"$@\"");
         let config = AskConfig {
             backend: BackendKind::Codex,
             command: cli.to_str().unwrap().to_string(),
@@ -2088,6 +2103,24 @@ mod tests {
         assert!(
             !answer.contains("--resume") && !answer.contains("sess-123"),
             "session args must be dropped for codex: {answer}"
+        );
+    }
+
+    #[test]
+    fn a_cli_that_exits_before_reading_a_large_prompt_reports_its_own_error() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(dir.path(), "echo 'unknown option --bogus' >&2; exit 2");
+        let prompt = "x".repeat(256 * 1024);
+        let error = run(&ask_config(&cli), &prompt, &[]).unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("unknown option --bogus"),
+            "the CLI's stderr must reach the error: {message}"
+        );
+        assert!(
+            !message.to_lowercase().contains("broken pipe"),
+            "the write failure must not replace the CLI's error: {message}"
         );
     }
 

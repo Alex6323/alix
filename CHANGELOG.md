@@ -761,7 +761,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Long prompts no longer fail to start on Codex and Copilot: every backend now
   receives the prompt on stdin, where those two took it as one command-line
-  argument that Linux refuses past 128 KiB.
+  argument that Linux refuses past 128 KiB. A CLI that exits before reading
+  its prompt now reports its own error instead of "broken pipe".
 
 - Copilot's grounded reads now name Copilot's real file tool (`view`), so a
   source-grounded tutor reads files instead of inventing their content, and

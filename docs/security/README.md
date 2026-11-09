@@ -378,7 +378,10 @@ its `view` tool (`--available-tools view --allow-tool view
 --disallow-temp-dir`) and runs in the working folder; canary probes against
 Copilot CLI 1.0.107 read a file inside the folder and refused `../outside.txt`
 and a symlink pointing outside (`docs/results/2026-11-08-exam-sources-probes.md`).
-Gemini and Codex do not receive this confinement.
+A root `ask::expressible_root` rejects (pattern characters, or any path on
+Windows) drops Copilot's file tools, as it does Claude's. A Claude or Copilot
+call with no root runs in the process's working folder. Gemini and Codex do
+not receive this confinement.
 
 A citation reads only inside its key's root. A locator path is relative and
 normalized (no absolute path, drive letter, `..`, `.` or empty segment), and
