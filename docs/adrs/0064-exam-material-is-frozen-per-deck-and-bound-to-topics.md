@@ -95,8 +95,8 @@ one command-line argument; on a Linux host with 4096-byte pages, a
    plus 52). `path` is the display path, always `key:path`, split at the
    first colon. The key follows ADR 0053's `cite:` key grammar:
    `[a-z][a-z0-9_-]*`, and not `true`, `false` or `null`. The part after it
-   is `/`-separated normal components: no `.`, `..`, backslash, control
-   character, empty component, or absolute, root or prefix form. No two
+   is `/`-separated normal components: no `.`, `..`, backslash, colon,
+   control character, empty component, or absolute, root or prefix form. No two
    sources in a deck share a display path. `bound-to` lists the topics the
    source grounds (topic ids, or the deck id, which always names the
    leading topic, rule 7, even when it has no cards) and is
