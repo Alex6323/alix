@@ -117,7 +117,7 @@ pub fn fences(lines: &[String]) -> Vec<Fence> {
 pub fn fingerprint(source: &str) -> String {
     let mut hasher = XxHash64::default();
     hasher.write(source.replace("\r\n", "\n").as_bytes());
-    format!("xxh64-{:016x}", hasher.finish())
+    crate::token::base32_64(hasher.finish())
 }
 
 #[cfg(feature = "full")]
@@ -1556,7 +1556,8 @@ mod tests {
             fingerprint("flowchart LR\n A-->C"),
             "an edited diagram must miss its old asset"
         );
-        assert!(fingerprint("x").starts_with("xxh64-"));
+        assert_eq!(13, fingerprint("x").len());
+        assert!(crate::token::is_base32_64(&fingerprint("x")));
     }
 
     fn sources(n: usize) -> Vec<String> {
@@ -2148,7 +2149,7 @@ mod tests {
     fn the_scanner_rejects_every_near_stamp_the_parser_rejects() {
         let source = "flowchart LR\n A-->B";
         let print = fingerprint(source);
-        let object = |ext: &str| format!("sha256-{}.{ext}", "a".repeat(64));
+        let object = |ext: &str| format!("asset-{}.{ext}", "1".repeat(52));
         let cases = [
             (
                 format!(
@@ -2187,8 +2188,8 @@ mod tests {
         let source = "flowchart LR\n A-->B";
         let print = fingerprint(source);
         let text = format!(
-            "## q\n```mermaid\n{source}\n```\n  <!-- diagram: fingerprint: {print} asset: sha256-{0}.png geometry: sha256-{0}.json -->\nanswer\n",
-            "a".repeat(64)
+            "## q\n```mermaid\n{source}\n```\n  <!-- diagram: fingerprint: {print} asset: asset-{0}.png geometry: asset-{0}.json -->\nanswer\n",
+            "1".repeat(52)
         );
         let found = fences_in_document(&text, None);
         assert_eq!(
@@ -2203,8 +2204,8 @@ mod tests {
     #[test]
     fn document_fences_carry_insert_offsets_and_existing_stamps() {
         let text = format!(
-            "---\nid: x\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n```mermaid\nsecond\n```\n<!-- diagram: fingerprint: xxh64-00000000000000ff asset: sha256-{0}.png geometry: sha256-{0}.json -->\nmore\n",
-            "a".repeat(64)
+            "---\nid: x\n---\n## q\n```mermaid\nflowchart LR\n A-->B\n```\nanswer\n```mermaid\nsecond\n```\n<!-- diagram: fingerprint: 000000000007z asset: asset-{0}.png geometry: asset-{0}.json -->\nmore\n",
+            "1".repeat(52)
         );
         let text = text.as_str();
         let found = fences_in_document(text, Some((1, 3)));
@@ -2219,7 +2220,7 @@ mod tests {
         );
         let second = &found.fences[1];
         let (range, fingerprint) = second.stamp.as_ref().unwrap();
-        assert_eq!("xxh64-00000000000000ff", fingerprint);
+        assert_eq!("000000000007z", fingerprint);
         assert!(
             text[range.clone()].starts_with("<!-- diagram:")
                 && text[range.clone()].ends_with("-->"),
@@ -2453,7 +2454,7 @@ mod tests {
     #[test]
     fn the_geometry_round_trips_and_rejects_unknown_fields() {
         let geometry = DiagramGeometry {
-            image: "sha256-ab.png".into(),
+            image: "asset-ab.png".into(),
             image_width: 200,
             image_height: 100,
             logical_width: 100,
@@ -2494,7 +2495,7 @@ mod tests {
         let unbindable = serde_json::to_value(LabelSource::Unbindable).unwrap();
         assert_eq!(serde_json::json!({"kind": "unbindable"}), unbindable);
         let geometry = serde_json::json!({
-            "png": "sha256-ab.png",
+            "png": "asset-ab.png",
             "image_width": 200,
             "image_height": 100,
             "logical_width": 100,
@@ -2510,7 +2511,7 @@ mod tests {
 
     fn geometry_with(labels: Vec<GeometryLabel>) -> DiagramGeometry {
         DiagramGeometry {
-            image: "sha256-ab.png".into(),
+            image: "asset-ab.png".into(),
             image_width: 200,
             image_height: 100,
             logical_width: 100,

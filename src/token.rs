@@ -88,7 +88,7 @@ fn render_base32(len: usize, digit: impl Fn(usize) -> usize) -> String {
         .collect()
 }
 
-fn alphabet_index(byte: u8) -> Option<usize> {
+pub(crate) fn alphabet_index(byte: u8) -> Option<usize> {
     TOKEN_ALPHABET.iter().position(|&b| b == byte)
 }
 

@@ -12,5 +12,5 @@ It calls `reserve` before inserting the element.
 > [!NOTE]
 > `reserve` establishes capacity first.
 <!-- given: `Vec` — the collection being grown -->
-<!-- at: src:trace-source.txt:1 fingerprint: xxh64-75905a565538542f asset: sha256-772e7e921c4821d8ab3ce4fbe8e8680e1d82f648b208104a261cbef2824c0dd7.txt -->
+<!-- at: src:trace-source.txt:1 fingerprint: 7b42tasakgn1f asset: asset-0xseft91rj11v2nkss7vx3m6g3gxgbv4hcg82152c75yya14r3eq.txt -->
 <!-- id: card-00000000000000000000000002 -->

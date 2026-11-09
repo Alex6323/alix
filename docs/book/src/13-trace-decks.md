@@ -33,14 +33,14 @@ cite:
 ## You write `let s2 = s1`. What gets copied onto the stack, and what stays shared?
 Only the stack data (pointer, length, capacity) is copied.
 So s1 and s2 point at the *same* heap allocation.
-<!-- at: book:ch04-01-what-is-ownership.md:290-297 fingerprint: xxh64-0123456789abcdef -->
+<!-- at: book:ch04-01-what-is-ownership.md:290-297 fingerprint: 028t5cy4tqkff -->
 > [!NOTE]
 > The heap contents themselves are never copied here.
 
 ## So s1 and s2 point at one heap allocation. What breaks when both go out of scope, and how does Rust stop it?
 Both would call drop on that memory (a double free).
 Rust treats the assignment as a move: s1 is invalidated, so only s2 frees it.
-<!-- at: book:ch04-01-what-is-ownership.md:322-343 fingerprint: xxh64-123456789abcdef0 -->
+<!-- at: book:ch04-01-what-is-ownership.md:322-343 fingerprint: 14d2pf2dbsqqg -->
 > [!NOTE]
 > Using s1 after the move is a compile-time error.
 ```
@@ -57,7 +57,7 @@ described with [source citations](06-cloze-direction-images.md#source-citations)
 a range-less path cites the whole file, a bare key the frozen passage of a URL
 root), never comma-separated, since a stitched excerpt makes disjoint code look
 adjacent. Its
-`fingerprint: xxh64-...` field fingerprints the displayed lines. A live trace
+`fingerprint: <13 base32>` field fingerprints the displayed lines. A live trace
 reveals the source only while that fingerprint matches, so a shifted numeric
 range cannot silently show unrelated lines. When a
 tight excerpt leans on a
@@ -86,7 +86,7 @@ already taken, it stops before calling the model. A URL trace build works only
 in a workspace member deck: the URL becomes the `cite:` root `src`, and the
 model copies each checkpoint's passage verbatim between a `PASSAGE <token>`
 line and an `END PASSAGE <token>` line, with a token alix mints for that build.
-Alix freezes each passage as a `sha256-<hex>.txt` object in the deck's asset
+Alix freezes each passage as a `asset-<52 base32>.txt` object in the deck's asset
 folder and cites it as `<!-- at: src fingerprint: ... asset: ... -->`. A
 missing or altered marker, or a checkpoint without a passage, fails the build
 naming the checkpoint, and nothing is written. Alix fingerprints those locators
@@ -159,7 +159,8 @@ named file and a directory alike, is reduced to the excerpts cited by its
 cards, so Alix never exports a whole file or an entire repository.
 
 Every copied excerpt lives below `assets/deck-<token>/` and is named
-`sha256-<digest>.<ext>`, where the digest covers its exact stored bytes. Freezing
+`asset-<52 base32>.<ext>`, where the base32 is the SHA-256 digest of its
+exact stored bytes. Freezing
 leaves the deck's `exam:` and `cite:` roots pointed at the real material (a
 path or a URL): they are never rewritten to point into `assets/`. Each
 `<!-- at: -->` keeps its key, path, and lines, keeps its excerpt
@@ -167,7 +168,7 @@ path or a URL): they are never rewritten to point into `assets/`. Each
 object:
 
 ```markdown
-<!-- at: code:scheduler.rs:90-98 fingerprint: xxh64-0123456789abcdef asset: sha256-<digest>.rs -->
+<!-- at: code:scheduler.rs:90-98 fingerprint: 028t5cy4tqkff asset: asset-<52 base32>.rs -->
 ```
 
 Review reveals the frozen excerpt (display evidence, numbered from the `at:`

@@ -3253,7 +3253,7 @@ mod tests {
             "d.md",
             "---\nformat-version: 1\nid: deck-unknown\ncite:\n  - src: .\n---\n\
              ## q\na\n<!-- at: nope:x.txt:1 -->\n<!-- id: card-q -->\n\
-             ## frozen\nb\n<!-- at: nope:x.txt:1 fingerprint: xxh64-0000000000000000 asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.txt -->\n<!-- id: card-f -->\n",
+             ## frozen\nb\n<!-- at: nope:x.txt:1 fingerprint: 0000000000000 asset: asset-0000000000000000000000000000000000000000000000000000.txt -->\n<!-- id: card-f -->\n",
         );
 
         let mut report = Report::default();
@@ -3328,7 +3328,7 @@ mod tests {
             MemberOnly,
             LooseOnly,
         }
-        const ASSET: &str = " fingerprint: xxh64-0000000000000000 asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.txt";
+        const ASSET: &str = " fingerprint: 0000000000000 asset: asset-0000000000000000000000000000000000000000000000000000.txt";
         let rows: [(&str, &str, &str, Place); 13] = [
             (
                 "missing key",
@@ -4404,7 +4404,7 @@ printf ']}}'
         doctor_cmd(args(true)).unwrap();
         let repaired = std::fs::read_to_string(&deck).unwrap();
         assert_ne!(before, repaired);
-        assert!(repaired.contains("fingerprint: xxh64-"), "{repaired}");
+        assert!(repaired.contains("fingerprint: "), "{repaired}");
     }
 
     #[test]

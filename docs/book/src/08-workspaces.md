@@ -88,7 +88,7 @@ spanish/
 ├── assets/
 │   ├── icon.svg
 │   └── deck-<token>/
-│       └── sha256-<digest>.<ext>
+│       └── asset-<52 base32>.<ext>
 ├── sources/
 │   └── deck-<token>/
 │       ├── manifest.toml

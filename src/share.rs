@@ -2759,8 +2759,8 @@ mod tests {
         std::fs::write(
             &deck_path,
             "---\nformat-version: 1\nid: \"deck-m1\"\nexam: .\ncite:\n  - src: .\n---\n## q\na\n\
-             <!-- at: src:code.rs:1 fingerprint: xxh64-0000000000000000 \
-             asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.rs -->\n\
+             <!-- at: src:code.rs:1 fingerprint: 0000000000000 \
+             asset: asset-0000000000000000000000000000000000000000000000000000.rs -->\n\
              <!-- id: card-m1c1 -->\n",
         )
         .unwrap();
@@ -2769,7 +2769,7 @@ mod tests {
 
         let error = validate_bundle_material(&deck, root).unwrap_err();
         assert!(
-            format!("{error:#}").contains("sha256-"),
+            format!("{error:#}").contains("asset-"),
             "a frozen excerpt whose asset object is absent fails the bundle: {error:#}"
         );
     }

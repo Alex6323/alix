@@ -963,12 +963,12 @@ mod tests {
         );
         assert!(!text.contains("origin:"), "freezing stamps nothing: {text}");
         assert!(
-            text.contains("<!-- at: src:a.rs:2-3 fingerprint: xxh64-")
+            text.contains("<!-- at: src:a.rs:2-3 fingerprint: ")
                 && text.contains(&format!(" asset: {first} -->\n")),
             "{text}"
         );
         assert!(
-            text.contains("<!-- at: src:b.rs:1 fingerprint: xxh64-")
+            text.contains("<!-- at: src:b.rs:1 fingerprint: ")
                 && text.contains(&format!(" asset: {second} -->\n")),
             "{text}"
         );
@@ -1031,7 +1031,7 @@ mod tests {
             "the live source declaration stays untouched: {text}"
         );
         assert!(
-            text.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-")
+            text.contains("<!-- at: src:notes.md:2 fingerprint: ")
                 && text.contains(&format!(" asset: {excerpt_name} -->\n")),
             "{text}"
         );

@@ -2772,8 +2772,8 @@ mod tests {
             "two cards citing one line is one rewrite, and satisfied: {shared_out}"
         );
         for expected in [
-            "<!-- at: src:src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
-            "<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
+            "<!-- at: src:src/lib.rs:1 fingerprint: 0000000000001 -->",
+            "<!-- at: src:src/lib.rs:2 fingerprint: 0000000000002 -->",
         ] {
             assert!(out.contains(expected), "missing {expected}: {out}");
         }
@@ -2781,8 +2781,8 @@ mod tests {
         let parsed = parser::parse("t.md", text).unwrap();
         let frozen = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
         for expected in [
-            "<!-- at: src:src/lib.rs:1 fingerprint: xxh64-0000000000000001 -->",
-            "<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000002 -->",
+            "<!-- at: src:src/lib.rs:1 fingerprint: 0000000000001 -->",
+            "<!-- at: src:src/lib.rs:2 fingerprint: 0000000000002 -->",
         ] {
             assert!(frozen.contains(expected), "missing {expected}: {frozen}");
         }
@@ -2796,7 +2796,7 @@ mod tests {
         let ats = [AtRewrite {
             at: locator("src:src/lib.rs:2"),
             fingerprint: Some(7),
-            asset: Some("sha256-source.rs".into()),
+            asset: Some("asset-source.rs".into()),
             line: 11,
         }];
 
@@ -2805,12 +2805,12 @@ mod tests {
             parsed.frontmatter_span,
             Some("../source tree"),
             &ats,
-            &[(image.destination, "assets/deck/sha256-image.png".into())],
+            &[(image.destination, "assets/deck/asset-image.png".into())],
         )
         .unwrap();
 
         assert_eq!(
-            "---\nexam: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/sha256-image.png>)\na\n<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->\n",
+            "---\nexam: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/asset-image.png>)\na\n<!-- at: src:src/lib.rs:2 fingerprint: 0000000000007 asset: asset-source.rs -->\n",
             out
         );
     }
@@ -2822,7 +2822,7 @@ mod tests {
         let ats = [AtRewrite {
             at: locator("src:src/lib.rs:2"),
             fingerprint: Some(7),
-            asset: Some("sha256-source.rs".into()),
+            asset: Some("asset-source.rs".into()),
             line: 6,
         }];
 
@@ -2831,7 +2831,7 @@ mod tests {
         assert!(out.contains("exam: ../src\n"), "{out}");
         assert!(!out.contains("origin:"), "freezing stamps nothing: {out}");
         assert!(out.contains(
-            "<!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000007 asset: sha256-source.rs -->"
+            "<!-- at: src:src/lib.rs:2 fingerprint: 0000000000007 asset: asset-source.rs -->"
         ));
     }
 
@@ -2914,8 +2914,7 @@ mod tests {
             line: 3,
         };
         let without_newline = "## q\na\n  <!-- at: src:old.rs:1 -->";
-        let expected =
-            "## q\na\n  <!-- at: src:src/lib.rs:2 fingerprint: xxh64-0000000000000007 -->";
+        let expected = "## q\na\n  <!-- at: src:src/lib.rs:2 fingerprint: 0000000000007 -->";
 
         assert_eq!(
             (expected.to_string(), 1),

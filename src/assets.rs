@@ -14,7 +14,7 @@ use crate::{
 };
 
 pub const ROOT: &str = "assets";
-const DIGEST_PREFIX: &str = "sha256-";
+pub const OBJECT_PREFIX: &str = "asset-";
 
 #[derive(Debug, Error)]
 pub enum AssetError {
@@ -116,11 +116,8 @@ pub fn normalized_extension(path: &Path, text: bool) -> String {
 pub fn object_name(bytes: &[u8], extension: &str) -> String {
     let digest = Sha256::digest(bytes);
     format!(
-        "{DIGEST_PREFIX}{}.{extension}",
-        digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
+        "{OBJECT_PREFIX}{}.{extension}",
+        crate::token::base32_256(&digest.into())
     )
 }
 
@@ -1162,17 +1159,16 @@ pub fn verify_object(path: &Path) -> Result<(), AssetError> {
         .extension()
         .and_then(|value| value.to_str())
         .ok_or_else(|| AssetError::InvalidName(name.to_string()))?;
-    let stem = name
-        .strip_suffix(&format!(".{extension}"))
-        .and_then(|value| value.strip_prefix(DIGEST_PREFIX))
-        .filter(|value| value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()))
+    name.strip_suffix(&format!(".{extension}"))
+        .and_then(|value| value.strip_prefix(OBJECT_PREFIX))
+        .filter(|value| crate::token::is_base32_256(value))
         .ok_or_else(|| AssetError::InvalidName(name.to_string()))?;
     let bytes = std::fs::read(path).map_err(|source| AssetError::Io {
         path: path.to_path_buf(),
         source,
     })?;
     let expected = object_name(&bytes, extension);
-    if expected == name && stem.chars().all(|c| !c.is_ascii_uppercase()) {
+    if expected == name {
         Ok(())
     } else {
         Err(AssetError::DigestMismatch {
@@ -1185,13 +1181,10 @@ pub fn is_object_name(name: &str) -> bool {
     let Some((stem, extension)) = name.rsplit_once('.') else {
         return false;
     };
-    let Some(digest) = stem.strip_prefix(DIGEST_PREFIX) else {
+    let Some(digest) = stem.strip_prefix(OBJECT_PREFIX) else {
         return false;
     };
-    digest.len() == 64
-        && digest
-            .chars()
-            .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
+    crate::token::is_base32_256(digest)
         && !extension.is_empty()
         && extension
             .chars()
@@ -1235,7 +1228,7 @@ mod tests {
     #[test]
     fn object_names_are_exact_byte_sha256_addresses() {
         assert_eq!(
-            "sha256-ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.rs",
+            "asset-1ekr2tzry0efx90m2g6ybpq248xg0dgt75gqfaeb847zc7s005dd.rs",
             object_name(b"abc", "rs")
         );
         assert_ne!(object_name(b"abc", "rs"), object_name(b"abc\n", "rs"));
@@ -1293,7 +1286,7 @@ mod tests {
         ));
         assert!(!is_object_name("human-name.png"));
 
-        let bad_digest = format!("{DIGEST_PREFIX}{}.png", "g".repeat(64));
+        let bad_digest = format!("{OBJECT_PREFIX}{}.png", "u".repeat(52));
         let path = directory.path().join(&bad_digest);
         std::fs::write(&path, "bytes").unwrap();
         assert!(matches!(
@@ -1301,14 +1294,19 @@ mod tests {
             Err(AssetError::InvalidName(name)) if name == bad_digest
         ));
 
-        let valid_digest = "a".repeat(64);
+        let valid_digest = "1".repeat(52);
+        assert!(is_object_name(&format!(
+            "{OBJECT_PREFIX}{valid_digest}.png"
+        )));
         for invalid in [
-            format!("{DIGEST_PREFIX}{}.png", "a".repeat(63)),
-            format!("{DIGEST_PREFIX}{}.png", "g".repeat(64)),
-            format!("{DIGEST_PREFIX}{}.png", "A".repeat(64)),
-            format!("{DIGEST_PREFIX}{valid_digest}."),
-            format!("{DIGEST_PREFIX}{valid_digest}.p-ng"),
-            format!("{DIGEST_PREFIX}{valid_digest}.PNG"),
+            format!("{OBJECT_PREFIX}{}.png", "1".repeat(51)),
+            format!("{OBJECT_PREFIX}{}.png", "1".repeat(64)),
+            format!("{OBJECT_PREFIX}{}.png", "u".repeat(52)),
+            format!("{OBJECT_PREFIX}{}.png", "A".repeat(52)),
+            format!("{OBJECT_PREFIX}{}.png", "z".repeat(52)),
+            format!("{OBJECT_PREFIX}{valid_digest}."),
+            format!("{OBJECT_PREFIX}{valid_digest}.p-ng"),
+            format!("{OBJECT_PREFIX}{valid_digest}.PNG"),
         ] {
             assert!(!is_object_name(&invalid), "accepted {invalid}");
         }
@@ -1407,7 +1405,7 @@ mod tests {
         );
         let excerpt_name = object_name(b"two\n", "md");
         assert!(
-            frozen.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:notes.md:2 fingerprint: ")
                 && frozen.contains(&format!(" asset: {excerpt_name} -->")),
             "{frozen}"
         );
@@ -1498,7 +1496,7 @@ mod tests {
         assert!(!frozen.contains("uncited.rs"));
         assert!(!frozen.contains("secret"));
         assert!(
-            frozen.contains("<!-- at: src:lib.rs:2-3 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:lib.rs:2-3 fingerprint: ")
                 && frozen.contains(&format!(" asset: {evidence_name} -->")),
             "{frozen}"
         );
@@ -1575,7 +1573,7 @@ mod tests {
         );
         let frozen = std::fs::read_to_string(&path).unwrap();
         assert!(
-            frozen.contains("<!-- at: src:notes.md:5-104 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:notes.md:5-104 fingerprint: ")
                 && frozen.contains(&format!(" asset: {evidence_name} -->")),
             "the authored range must survive freezing verbatim: {frozen}"
         );
@@ -1667,7 +1665,7 @@ mod tests {
         );
         let frozen = std::fs::read_to_string(&path).unwrap();
         assert!(
-            frozen.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-")
+            frozen.contains("<!-- at: src:notes.md:2 fingerprint: ")
                 && frozen.contains(&format!(" asset: {excerpt_name} -->")),
             "{frozen}"
         );
@@ -2993,7 +2991,7 @@ mod tests {
         let geometry_path = owned.join(&deck.cards[0].diagrams[0].geometry);
         let mut geometry: crate::diagram::DiagramGeometry =
             serde_json::from_slice(&std::fs::read(&geometry_path).unwrap()).unwrap();
-        geometry.image = format!("sha256-{}.png", "b".repeat(64));
+        geometry.image = format!("asset-{}.png", "1".repeat(52));
         std::fs::write(&geometry_path, serde_json::to_vec(&geometry).unwrap()).unwrap();
         let deck = Deck::load(&path).unwrap();
         assert!(

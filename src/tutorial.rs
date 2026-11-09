@@ -318,7 +318,7 @@ mod tests {
     }
 
     fn strip_fingerprints(text: &str) -> String {
-        const TOKEN: &str = " fingerprint: xxh64-";
+        const TOKEN: &str = " fingerprint: ";
         let mut out = String::with_capacity(text.len());
         for line in text.split_inclusive('\n') {
             match line
@@ -326,7 +326,7 @@ mod tests {
                 .filter(|_| line.trim_start().starts_with("<!-- at:"))
             {
                 Some(start) => {
-                    let end = (start + TOKEN.len() + 16).min(line.len());
+                    let end = (start + TOKEN.len() + 13).min(line.len());
                     out.push_str(&line[..start]);
                     out.push_str(&line[end..]);
                 }

@@ -17,18 +17,18 @@ Stack: a pointer, a length, and a capacity.
 Heap: the actual character contents.
 > [!NOTE]
 > Length is bytes currently used; capacity is bytes received from the allocator.
-<!-- at: src fingerprint: xxh64-fbc4c018148dac41 asset: sha256-0e01969ffa5628cec10f139bca4404df9debfc317b43cd7fc1ce7c4f1af527cc.md -->
+<!-- at: src fingerprint: fqh6030a8vb21 asset: asset-03g1jtfzmnh8sv0gy4wvs9209qwxxfy32yt3snzw3kkw9wdfa9yc.md -->
 <!-- id: card-4mwwdfwyeb9nvsm2x03rchknj9 -->
 
 ## Given that layout, when you write `let s2 = s1`, what exactly gets copied?
 Only the stack data (pointer, length, capacity) is copied.
 The heap contents are not copied; `s1` and `s2` point at the same heap data.
-<!-- at: src fingerprint: xxh64-16503ce6bd047bfc asset: sha256-9e9c232518a9b39891857b365a9e85239509da9822d3691a26f2f7ade5987284.md -->
+<!-- at: src fingerprint: 1cm1wwtyg8yzw asset: asset-17mw4cjhhadkk28rayspbaf8a8wn17d9g8pkd4d2dwqqnqjsgwm4.md -->
 <!-- id: card-0c76yd1ta5h68bhfk8mbb2fzcn -->
 
 ## If both `s1` and `s2` pointed at the same heap data and both went out of scope, what memory bug would occur?
 A double free: both would call `drop` on the same memory, risking corruption.
-<!-- at: src fingerprint: xxh64-684012cb0bf8b6c9 asset: sha256-1369019b16981c7381f621fb0e73ca4b48b4276de392f0059529936ceb73ded2.md -->
+<!-- at: src fingerprint: 6gg0jsc5zhdp9 asset: asset-04v906dhd60wee0zc8fv1sswmjt8pgkpvrwjy02saackdknq7qpj.md -->
 <!-- id: card-23wyjq03gnq8t81qyp0cbh0qda -->
 
 ## So how does Rust prevent that double free after `let s2 = s1`?
@@ -36,10 +36,10 @@ It treats the assignment as a move: `s1` is considered no longer valid, so only 
 Using `s1` afterward is a compile-time error.
 > [!NOTE]
 > A move is a shallow copy (pointer, length, capacity) plus invalidation of the source.
-<!-- at: src fingerprint: xxh64-e493709594baa752 asset: sha256-2ca3a57a6a89ad30fedd2b25f73203997948a59721215df1d59ee4d666e64bbe.md -->
+<!-- at: src fingerprint: e94vgjpabn9tj asset: asset-0b53mnx6n2dd63zdtas5yws076bs92jse891bqrxb7q4tskecjxy.md -->
 <!-- id: card-7778gyq63jd49h6yrbw8w5q8m6 -->
 
 ## Does this mean Rust ever silently makes a deep copy of heap data?
 No. Rust never automatically deep-copies, so any automatic copy can be assumed cheap.
-<!-- at: src fingerprint: xxh64-c09ba7870cc043c2 asset: sha256-a66036d9b644edb49b6e851bdb1417841e0295acd252e277d885d17594e0a5dd.md -->
+<!-- at: src fingerprint: c16x7gw6c0gy2 asset: asset-19k06vcvch7dpjdpx18vvca1f10y0aatsmjjw9vxh1ehepae19ex.md -->
 <!-- id: card-3dyw29w4q19avx46bj6a9wy0nd -->

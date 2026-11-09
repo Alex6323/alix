@@ -2301,13 +2301,13 @@ mod tests {
         }
         fs::write(&deck, "original deck\n").unwrap();
         fs::write(&augment, "{\"original\":true}\n").unwrap();
-        fs::write(assets.join("sha256-kept.rs"), "kept\n").unwrap();
+        fs::write(assets.join("asset-kept.rs"), "kept\n").unwrap();
 
         let snapshot =
             MemberSnapshot::take(&staging, Path::new("decks/facts.md"), "deck-deck1").unwrap();
         fs::write(&deck, "the rejected proposal\n").unwrap();
         fs::write(&augment, "{\"pruned\":true}\n").unwrap();
-        fs::write(assets.join("sha256-orphan.rs"), "orphan\n").unwrap();
+        fs::write(assets.join("asset-orphan.rs"), "orphan\n").unwrap();
 
         snapshot.restore().unwrap();
 
@@ -2317,7 +2317,7 @@ mod tests {
             fs::read_to_string(&augment).unwrap()
         );
         assert_eq!(
-            vec![OsString::from("sha256-kept.rs")],
+            vec![OsString::from("asset-kept.rs")],
             directory_names(&assets)
                 .unwrap()
                 .into_iter()
@@ -2342,7 +2342,7 @@ mod tests {
         fs::create_dir_all(augment.parent().unwrap()).unwrap();
         fs::create_dir_all(&assets).unwrap();
         fs::write(&augment, "{\"new\":true}\n").unwrap();
-        fs::write(assets.join("sha256-orphan.rs"), "orphan\n").unwrap();
+        fs::write(assets.join("asset-orphan.rs"), "orphan\n").unwrap();
 
         snapshot.restore().unwrap();
 

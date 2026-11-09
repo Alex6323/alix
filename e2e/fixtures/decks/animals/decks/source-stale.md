@@ -8,5 +8,5 @@ title: Source Stale
 
 ## Which call belongs to the cited implementation?
 The cited implementation calls `stable`.
-<!-- at: src:source-stale.rs:1-3 fingerprint: xxh64-81218500756d7fca -->
+<!-- at: src:source-stale.rs:1-3 fingerprint: 828c501tptzya -->
 <!-- id: card-0000000000000000000000000a -->

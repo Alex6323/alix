@@ -1697,7 +1697,7 @@ back a
         assert!(!fact.contains("origin:"), "freezing stamps nothing: {fact}");
         assert!(!fact.contains("<!-- at: src:a.rs:3 -->"), "{fact}");
         assert!(
-            fact.contains("<!-- at: src:a.rs:3 fingerprint: xxh64-")
+            fact.contains("<!-- at: src:a.rs:3 fingerprint: ")
                 && fact.contains(&format!(" asset: {fact_name} -->")),
             "{fact}"
         );

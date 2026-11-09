@@ -2560,7 +2560,7 @@ mod tests {
         let ws = Workspace::new();
         std::fs::write(
             ws.deck(),
-            format!("---\nformat-version: 1\nid: {DECK}\ncite:\n  - src: https://example.org/source\n---\n## q\na\n<!-- at: src fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n"),
+            format!("---\nformat-version: 1\nid: {DECK}\ncite:\n  - src: https://example.org/source\n---\n## q\na\n<!-- at: src fingerprint: 0000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n"),
         )
         .unwrap();
         source(&ws, "s.txt", "s\n", &[]);

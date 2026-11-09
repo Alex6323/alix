@@ -67,23 +67,17 @@ fn fingerprint_lines<'a>(lines: impl IntoIterator<Item = &'a str>) -> u64 {
     hasher.finish()
 }
 
-/// The ADR 0026 locator fingerprint field value, e.g. `xxh64-0123456789abcdef`.
 pub fn format_locator_fingerprint(fingerprint: u64) -> String {
-    format!("xxh64-{fingerprint:016x}")
+    crate::token::base32_64(fingerprint)
 }
 
-/// Accepts only the canonical dash form `format_locator_fingerprint` emits:
-/// exactly 16 lowercase hex digits after `xxh64-`.
 pub fn parse_locator_fingerprint(value: &str) -> Option<u64> {
-    let hex = value.strip_prefix("xxh64-")?;
-    let canonical = hex.len() == 16
-        && hex
-            .chars()
-            .all(|character| character.is_ascii_digit() || ('a'..='f').contains(&character));
-    if !canonical {
+    if !crate::token::is_base32_64(value) {
         return None;
     }
-    u64::from_str_radix(hex, 16).ok()
+    value.bytes().try_fold(0u64, |acc, byte| {
+        Some((acc << 5) | crate::token::alphabet_index(byte)? as u64)
+    })
 }
 
 pub fn stamp_citations(path: &Path) -> Result<usize> {
@@ -544,7 +538,7 @@ mod tests {
         assert_eq!(1, stamp_citations(&deck_path).unwrap());
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains("<!-- at: src:big.rs:1-100 fingerprint: xxh64-"),
+            text.contains("<!-- at: src:big.rs:1-100 fingerprint: "),
             "the authored range must be stamped verbatim: {text}"
         );
 
@@ -824,7 +818,7 @@ mod tests {
         );
         assert_eq!(1, stamp_citations(&deck_path).unwrap());
         let text = std::fs::read_to_string(&deck_path).unwrap();
-        assert!(text.contains("<!-- at: src:code.rs:2-3 fingerprint: xxh64-"));
+        assert!(text.contains("<!-- at: src:code.rs:2-3 fingerprint: "));
         let deck = Deck::load(&deck_path).unwrap();
         assert_eq!(Some("card-card1".to_string()), deck.cards[0].id());
         assert!(matches!(
@@ -928,27 +922,26 @@ mod tests {
     }
 
     #[test]
-    fn format_locator_fingerprint_uses_the_dash_form() {
-        assert_eq!(
-            "xxh64-0123456789abcdef",
-            format_locator_fingerprint(0x0123456789abcdef)
-        );
-    }
-
-    #[test]
-    fn parse_locator_fingerprint_round_trips_the_dash_form_only() {
-        assert_eq!(
-            Some(0x0123456789abcdef),
-            parse_locator_fingerprint("xxh64-0123456789abcdef")
-        );
-        assert_eq!(
-            Some(42),
-            parse_locator_fingerprint(&format_locator_fingerprint(42))
-        );
-        assert_eq!(None, parse_locator_fingerprint("xxh64:0123456789abcdef"));
-        assert_eq!(None, parse_locator_fingerprint("xxh64-0123"));
-        assert_eq!(None, parse_locator_fingerprint("xxh64-0123456789ABCDEF"));
-        assert_eq!(None, parse_locator_fingerprint("0123456789abcdef"));
+    fn the_locator_fingerprint_is_the_bare_13_char_render() {
+        assert_eq!("000000000007z", format_locator_fingerprint(0xff));
+        assert_eq!(Some(0xff), parse_locator_fingerprint("000000000007z"));
+        for value in [u64::MIN, 42, 0x0123456789abcdef, u64::MAX] {
+            assert_eq!(
+                Some(value),
+                parse_locator_fingerprint(&format_locator_fingerprint(value))
+            );
+        }
+        for wrong in [
+            "",
+            "000000000007",
+            "000000000007zz",
+            "00000000000i7",
+            "0000000000-7z",
+            "000000000007Z",
+            "0123456789abcdef",
+        ] {
+            assert_eq!(None, parse_locator_fingerprint(wrong), "accepted {wrong}");
+        }
     }
 
     #[cfg(feature = "full")]

@@ -1105,7 +1105,7 @@ fn the_asset_collector_reads_only_the_assets_directory_never_a_source_folder() {
     let lookalike = root
         .join("sources")
         .join(DECK_ID)
-        .join(format!("sha256-{}.md", "0".repeat(64)));
+        .join(format!("asset-{}.md", "0".repeat(52)));
     fs::write(&lookalike, b"not an asset\n").unwrap();
     let deck = Deck::load(deck_path(&root)).unwrap();
     let orphans = assets::unreferenced_objects(&deck, &root).unwrap();

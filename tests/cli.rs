@@ -477,7 +477,7 @@ fn plain_doctor_errors_when_a_fingerprinted_whole_file_live_citation_disappears(
     assert!(
         std::fs::read_to_string(&deck)
             .unwrap()
-            .contains("fingerprint: xxh64-"),
+            .contains("fingerprint: "),
         "repair doctor must stamp the live citation"
     );
     std::fs::remove_file(source).unwrap();
@@ -4972,7 +4972,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
         "the build declares its input as the `src` root: {rewritten}"
     );
     assert!(
-        rewritten.contains("<!-- at: src:notes.md:1 fingerprint: xxh64-"),
+        rewritten.contains("<!-- at: src:notes.md:1 fingerprint: "),
         "the keyed locator resolves and is stamped: {rewritten}"
     );
 }
@@ -5254,7 +5254,7 @@ fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root() {
     }
     assert_eq!(
         2,
-        built.matches("<!-- at: src fingerprint: xxh64-").count(),
+        built.matches("<!-- at: src fingerprint: ").count(),
         "step fingerprint: each passage locator is fingerprinted: {built}"
     );
     let doctor = alix(&["doctor", &stub]);
@@ -5369,7 +5369,7 @@ fn a_local_facts_deck_declares_its_input_folder_as_the_src_root_and_its_locator_
         "`exam:` stays: {deck}"
     );
     assert!(
-        deck.contains("<!-- at: src:notes.md:2 fingerprint: xxh64-"),
+        deck.contains("<!-- at: src:notes.md:2 fingerprint: "),
         "the keyed locator resolves and is stamped: {deck}"
     );
     assert!(
@@ -5422,7 +5422,7 @@ fn a_member_facts_deck_reuses_the_manifest_key_holding_its_input_and_quotes_a_sp
     );
     assert!(!deck.contains("cite:"), "no `src` is declared: {deck}");
     assert!(
-        deck.contains("<!-- at: code:\"my dir/lib.rs\":1 fingerprint: xxh64-"),
+        deck.contains("<!-- at: code:\"my dir/lib.rs\":1 fingerprint: "),
         "the reused key's locator freezes: {deck}"
     );
     assert!(
@@ -7179,7 +7179,7 @@ fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = std::fs::read_to_string(decks.join("d.md")).unwrap();
     assert!(
-        text.contains("fingerprint: xxh64-") && text.contains("asset: sha256-"),
+        text.contains("fingerprint: ") && text.contains("asset: asset-"),
         "a relative path must freeze the excerpt exactly as an absolute one does: {text}"
     );
 }
@@ -8873,7 +8873,7 @@ fn doctor_reports_every_diagram_inconsistency() {
         (
             "missing",
             format!("## q\n{fence}\n{current_stamp}\nanswer\n"),
-            "image `sha256-",
+            "image `asset-",
         ),
         (
             "spanbind",

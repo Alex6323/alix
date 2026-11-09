@@ -91,7 +91,7 @@ A second try at recalling before you grade, with the answer out of sight.
 > On the phone, tap the revealed answer and switch the sheet to Source. On
 > the web, click the `</>` marker or press `s`. A cited card shows the exact
 > lines behind its answer, as long as they still match what was cited.
-<!-- at: sample:tutorial-sample.py:1-6 fingerprint: xxh64-4a5c42717d4d0aa0 -->
+<!-- at: sample:tutorial-sample.py:1-6 fingerprint: 4mq22e5ymt2n0 -->
 <!-- id: card-7mzssfyzf5xepcekjysgsdwxhd -->
 
 ## What is there beyond a walk?

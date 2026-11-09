@@ -340,7 +340,7 @@ stamp comment lands on the line after the fence, tying the fence text to
 those two frozen files:
 
 ```
-<!-- diagram: fingerprint: xxh64-… asset: sha256-….png geometry: sha256-….json -->
+<!-- diagram: fingerprint: <13 base32> asset: asset-<52 base32>.png geometry: asset-<52 base32>.json -->
 ```
 
 From then on every client shows the image, including the mobile app
@@ -450,7 +450,7 @@ cite:
 
 ## What does the `String` struct hold?
 A `Vec<u8>` (its bytes).
-<!-- at: code:string.rs:1-3 fingerprint: xxh64-0123456789abcdef -->
+<!-- at: code:string.rs:1-3 fingerprint: 028t5cy4tqkff -->
 ```
 
 A `cite:` key is lowercase (`[a-z][a-z0-9_-]*`). Its root is a folder, relative
@@ -463,7 +463,8 @@ inside another root it sees. The locator is the same shape a
 `at:` is `<key>:<path>[:<lines>]`, the key, the file's path below that root,
 and a line range (`code:string.rs:1-3`; without a range the whole file is
 cited; a bare `<key>` cites the frozen passage of a URL root), and
-`fingerprint:` is an `xxh64-<hex>` digest of the displayed source text. A
+`fingerprint:` is a 13-character base32 digest of the displayed source text
+(the lowercase token alphabet, no algorithm prefix). A
 locator without a key, a key no root declares, or a path that leaves its root
 is an error; nothing searches parent folders or file names on its behalf. alix
 writes the fingerprint when it creates a cited card or when you explicitly
@@ -471,9 +472,9 @@ repair a hand-authored citation. A fact card may repeat the whole directive when
 its answer rests on several disjoint source ranges:
 
 ```markdown
-<!-- at: code:state.rs:64-74 fingerprint: xxh64-0123456789abcdef -->
-<!-- at: code:state.rs:114-118 fingerprint: xxh64-123456789abcdef0 -->
-<!-- at: code:state.rs:152-158 fingerprint: xxh64-23456789abcdef01 -->
+<!-- at: code:state.rs:64-74 fingerprint: 028t5cy4tqkff -->
+<!-- at: code:state.rs:114-118 fingerprint: 14d2pf2dbsqqg -->
+<!-- at: code:state.rs:152-158 fingerprint: 26hb7h6nwvvr1 -->
 ```
 
 Each locator remains one contiguous range; separate directives never imply

@@ -77,7 +77,7 @@ pub fn parse_locator_comment(comment: &str) -> Result<LocatorFields, LocatorErro
     if !tail.is_empty() {
         return Err(spelling(
             tail,
-            "is not a locator field; after the value come ` fingerprint: <hex>`, then ` asset: <object>`, then ` -->`",
+            "is not a locator field; after the value come ` fingerprint: <13 base32>`, then ` asset: <object>`, then ` -->`",
         ));
     }
     Ok(LocatorFields {
@@ -479,51 +479,48 @@ mod tests {
             (at("code:a\\b"), Err(10)),
             // rule 7 fields
             (
-                at("code:x.txt:3 fingerprint: xxh64-0123456789abcdef"),
+                at("code:x.txt:3 fingerprint: 028t5cy4tqkff"),
                 frozen(
                     file("code", "x.txt", Some((3, 3))),
-                    Some("xxh64-0123456789abcdef"),
+                    Some("028t5cy4tqkff"),
                     None,
                 ),
             ),
             (
-                at("code:x.txt:3 fingerprint: xxh64-0123456789abcdef asset: sha256-abc.txt"),
+                at("code:x.txt:3 fingerprint: 028t5cy4tqkff asset: asset-abc.txt"),
                 frozen(
                     file("code", "x.txt", Some((3, 3))),
-                    Some("xxh64-0123456789abcdef"),
-                    Some("sha256-abc.txt"),
+                    Some("028t5cy4tqkff"),
+                    Some("asset-abc.txt"),
                 ),
             ),
             (
-                at("code:x.txt asset: sha256-abc.txt"),
-                frozen(file("code", "x.txt", None), None, Some("sha256-abc.txt")),
+                at("code:x.txt asset: asset-abc.txt"),
+                frozen(file("code", "x.txt", None), None, Some("asset-abc.txt")),
             ),
             (
-                at("guide asset: sha256-abc.txt"),
-                frozen(passage("guide"), None, Some("sha256-abc.txt")),
+                at("guide asset: asset-abc.txt"),
+                frozen(passage("guide"), None, Some("asset-abc.txt")),
             ),
             (
-                at("code:\"a fingerprint: b.txt\":3 fingerprint: xxh64-1"),
+                at("code:\"a fingerprint: b.txt\":3 fingerprint: 1"),
                 frozen(
                     file("code", "a fingerprint: b.txt", Some((3, 3))),
-                    Some("xxh64-1"),
+                    Some("1"),
                     None,
                 ),
             ),
-            (
-                at("code:x.txt asset: sha256-abc.txt fingerprint: xxh64-1"),
-                Err(7),
-            ),
+            (at("code:x.txt asset: asset-abc.txt fingerprint: 1"), Err(7)),
             (at("code:x.txt fingerprint:"), Err(7)),
-            (at("code:x.txt fingerprint:xxh64-1"), Err(7)),
+            (at("code:x.txt fingerprint:1"), Err(7)),
             (at("code:x.txt fingerprint: a fingerprint: b"), Err(7)),
             (at("code:x.txt flavor: cherry"), Err(8)),
             // rule 7 spacing
             (at(" code:x.txt"), Err(7)),
             (at("code:x.txt "), Err(7)),
             (at("code:\"a b\" "), Err(7)),
-            (at("code:x.txt  fingerprint: xxh64-1"), Err(7)),
-            (at("code:x.txt fingerprint:  xxh64-1"), Err(7)),
+            (at("code:x.txt  fingerprint: 1"), Err(7)),
+            (at("code:x.txt fingerprint:  1"), Err(7)),
             (at("code:x --> extra"), Err(7)),
             ("<!--  at: code:x.txt -->".into(), Err(7)),
             ("<!--at: code:x.txt -->".into(), Err(7)),
@@ -611,12 +608,8 @@ mod tests {
         }
         assert_eq!(Ok("guide".to_string()), format_locator(&passage("guide")));
         assert_eq!(
-            Ok("<!-- at: guide fingerprint: xxh64-1 asset: sha256-a.txt -->".to_string()),
-            format_locator_comment(&fields(
-                passage("guide"),
-                Some("xxh64-1"),
-                Some("sha256-a.txt")
-            ))
+            Ok("<!-- at: guide fingerprint: 1 asset: asset-a.txt -->".to_string()),
+            format_locator_comment(&fields(passage("guide"), Some("1"), Some("asset-a.txt")))
         );
     }
 

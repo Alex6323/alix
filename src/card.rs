@@ -130,7 +130,7 @@ pub struct ResolvedDiagram {
 pub struct SourceCitation {
     pub locator: crate::locator::Locator,
     pub fingerprint: Option<u64>,
-    /// The `asset:` field: the frozen `sha256-<hex>.<ext>` object name,
+    /// The `asset:` field: the frozen `asset-<52 base32>.<ext>` object name,
     /// present only on a frozen citation.
     pub asset: Option<String>,
     pub line: usize,

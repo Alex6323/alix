@@ -2016,7 +2016,7 @@ mod tests {
         else {
             panic!("the fence slot holds the diagram: {units:?}");
         };
-        assert_eq!("/ws/assets/deck-x/sha256-aa.png", src);
+        assert_eq!("/ws/assets/deck-x/asset-aa.png", src);
         assert_eq!(
             (&188, &114),
             (width, height),
@@ -2284,9 +2284,9 @@ mod tests {
     fn resolved(source: &str) -> Vec<crate::card::ResolvedDiagram> {
         vec![crate::card::ResolvedDiagram {
             fingerprint: crate::diagram::fingerprint(source),
-            png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+            png: std::path::PathBuf::from("/ws/assets/deck-x/asset-aa.png"),
             geometry: crate::diagram::DiagramGeometry {
-                image: "sha256-aa.png".to_string(),
+                image: "asset-aa.png".to_string(),
                 image_width: 376,
                 image_height: 228,
                 logical_width: 188,

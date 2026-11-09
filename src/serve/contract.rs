@@ -3251,9 +3251,9 @@ fn carddto_masked_front_diagram_wire_shape() {
         };
     card.resolved_diagrams.push(crate::card::ResolvedDiagram {
         fingerprint: crate::diagram::fingerprint(interior),
-        png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+        png: std::path::PathBuf::from("/ws/assets/deck-x/asset-aa.png"),
         geometry: crate::diagram::DiagramGeometry {
-            image: "sha256-aa.png".to_string(),
+            image: "asset-aa.png".to_string(),
             image_width: 376,
             image_height: 228,
             logical_width: 188,
@@ -3381,9 +3381,9 @@ fn diagram_card() -> crate::card::Card {
     );
     card.resolved_diagrams.push(crate::card::ResolvedDiagram {
         fingerprint: crate::diagram::fingerprint(source),
-        png: std::path::PathBuf::from("/ws/assets/deck-x/sha256-aa.png"),
+        png: std::path::PathBuf::from("/ws/assets/deck-x/asset-aa.png"),
         geometry: crate::diagram::DiagramGeometry {
-            image: "sha256-aa.png".to_string(),
+            image: "asset-aa.png".to_string(),
             image_width: 376,
             image_height: 228,
             logical_width: 188,

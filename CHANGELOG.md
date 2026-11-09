@@ -266,6 +266,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Breaking: content names carry no algorithm prefix. Frozen asset objects are
+  `asset-<52 base32>.<ext>` (the SHA-256 digest in the token alphabet) and
+  locator and diagram `fingerprint:` values are 13 base32 characters (a
+  64-bit digest). Existing decks and asset folders need converting.
 - A deck's frozen exam sources travel with it: `alix deck copy|move|remove|
   restore`, `alix workspace remove`, paired sync, a workspace update, and
   `alix explore` merging carry or remove `sources/deck-<token>/` exactly as

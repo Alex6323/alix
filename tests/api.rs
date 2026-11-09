@@ -442,11 +442,11 @@ const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how
 ## Predict the first hop\n\
 it reads the first line\n\
 <!-- given: line — the input line -->\n\
-<!-- at: src:source.txt:1 fingerprint: xxh64-cc98257fe4be8f5a -->\n\
+<!-- at: src:source.txt:1 fingerprint: cs615fzjbx3tt -->\n\
 <!-- id: card-t1 -->\n\
 ## Predict the second hop\n\
 it reads line two\n\
-<!-- at: src:source.txt:2 fingerprint: xxh64-ca7ffbd94d5e0037 -->\n\
+<!-- at: src:source.txt:2 fingerprint: cmzzvv56nw01q -->\n\
 <!-- id: card-t2 -->\n";
 const TRACE_SOURCE: &str = "first\nsecond\nthird\n";
 

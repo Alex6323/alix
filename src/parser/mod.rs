@@ -1043,7 +1043,7 @@ struct CardDirectives {
     ignore: bool,
 }
 
-/// `fingerprint: xxh64-<16 hex> asset: <object>.png geometry: <object>.json`,
+/// `fingerprint: <13 base32> asset: <object>.png geometry: <object>.json`,
 /// exactly these three fields in order; anything else is invalid input.
 fn parse_diagram_stamp(value: &str, line: usize) -> Result<crate::card::DiagramStamp, String> {
     let mut rest = value.trim();
@@ -1058,10 +1058,9 @@ fn parse_diagram_stamp(value: &str, line: usize) -> Result<crate::card::DiagramS
         Ok(value)
     };
     let fingerprint = field("fingerprint:")?;
-    let hex = fingerprint.strip_prefix("xxh64-").unwrap_or_default();
-    if hex.len() != 16 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !crate::token::is_base32_64(&fingerprint) {
         return Err(format!(
-            "fingerprint `{fingerprint}` is not `xxh64-` plus 16 hex digits"
+            "fingerprint `{fingerprint}` is not 13 base32 characters"
         ));
     }
     let asset = field("asset:")?;
@@ -3233,11 +3232,8 @@ fn apply_directive(
         let fingerprint = fields
             .fingerprint
             .map(|raw| {
-                crate::source::parse_locator_fingerprint(&raw).ok_or_else(|| {
-                    bad(format!(
-                        "fingerprint `{raw}` is not `xxh64-` plus 16 hex digits"
-                    ))
-                })
+                crate::source::parse_locator_fingerprint(&raw)
+                    .ok_or_else(|| bad(format!("fingerprint `{raw}` is not 13 base32 characters")))
             })
             .transpose()?;
         directives.citations.push(crate::card::SourceCitation {
@@ -5079,7 +5075,7 @@ mod tests {
             "direction: sideways",
             "reveal: line",
             "id: card-x",
-            "diagram: xxh64-0123456789abcdef",
+            "diagram: 028t5cy4tqkff",
             "input: draw",
             "sampling: on",
             "given: partial",
@@ -7275,7 +7271,7 @@ a
         );
 
         let stamped = parse(
-            "## q\n```mermaid\ngraph TD\n```\n<!-- diagram: fingerprint: xxh64-0123456789abcdef asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.png geometry: sha256-0000000000000000000000000000000000000000000000000000000000000000.json -->\nprose after\n",
+            "## q\n```mermaid\ngraph TD\n```\n<!-- diagram: fingerprint: 028t5cy4tqkff asset: asset-0000000000000000000000000000000000000000000000000000.png geometry: asset-0000000000000000000000000000000000000000000000000000.json -->\nprose after\n",
         );
         assert_eq!(
             1,
@@ -7321,7 +7317,7 @@ a
             ("sampling: off", "sampling"),
             ("id: card-3g12jfjv4pypppsrx5wvtx65y5", "id"),
             (
-                "diagram: fingerprint: xxh64-0123456789abcdef asset: sha256-0000000000000000000000000000000000000000000000000000000000000000.png geometry: sha256-0000000000000000000000000000000000000000000000000000000000000000.json",
+                "diagram: fingerprint: 028t5cy4tqkff asset: asset-0000000000000000000000000000000000000000000000000000.png geometry: asset-0000000000000000000000000000000000000000000000000000.json",
                 "diagram",
             ),
             ("blank: span hidden=\"a\"", "blank"),
@@ -8510,11 +8506,11 @@ a
         };
         let rows: Vec<(&str, Result<crate::card::SourceCitation, ()>)> = vec![
             (
-                "<!-- at: code:src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->",
+                "<!-- at: code:src/caching.rs:46-66 fingerprint: 028t5cy4tqkff asset: asset-abc123.rs -->",
                 citation(
                     file("code", "src/caching.rs", Some((46, 66))),
                     Some(0x0123456789abcdef),
-                    Some("sha256-abc123.rs"),
+                    Some("asset-abc123.rs"),
                 ),
             ),
             (
@@ -8530,14 +8526,14 @@ a
                 citation(file("code", "a b.txt", Some((3, 3))), None, None),
             ),
             (
-                "<!-- at: guide asset: sha256-abc123.md -->",
+                "<!-- at: guide asset: asset-abc123.md -->",
                 citation(
                     Locator {
                         key: "guide".into(),
                         target: Target::Passage,
                     },
                     None,
-                    Some("sha256-abc123.md"),
+                    Some("asset-abc123.md"),
                 ),
             ),
             (
@@ -8560,9 +8556,9 @@ a
                 "<!-- at: code:x.txt fingerprint: xxh64:0123456789abcdef -->",
                 Err(()),
             ),
-            ("<!-- at: code:x.txt fingerprint: xxh64-ABC -->", Err(())),
+            ("<!-- at: code:x.txt fingerprint: ABC -->", Err(())),
             (
-                "<!-- at: code:x.txt asset: sha256-abc.rs fingerprint: xxh64-0123456789abcdef -->",
+                "<!-- at: code:x.txt asset: asset-abc.rs fingerprint: 028t5cy4tqkff -->",
                 Err(()),
             ),
             ("<!-- at: code:x.txt flavor: cherry -->", Err(())),
@@ -9489,7 +9485,7 @@ the answer
 <!-- reveal: flip -->
 <!-- input: type -->
 <!-- direction: reverse -->
-<!-- at: code:src/caching.rs:46-66 fingerprint: xxh64-0123456789abcdef asset: sha256-abc123.rs -->
+<!-- at: code:src/caching.rs:46-66 fingerprint: 028t5cy4tqkff asset: asset-abc123.rs -->
 <!-- given: state - the parser position -->
 <!-- given: partial - the card -->
 <!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->
@@ -9540,7 +9536,7 @@ the answer
                 citations: vec![crate::card::SourceCitation {
                     locator: caching_locator(),
                     fingerprint: Some(0x0123456789abcdef),
-                    asset: Some("sha256-abc123.rs".into()),
+                    asset: Some("asset-abc123.rs".into()),
                     line: 33,
                 }],
                 diagrams: Vec::new(),
@@ -9567,7 +9563,7 @@ the answer
             vec![crate::card::SourceCitation {
                 locator: caching_locator(),
                 fingerprint: Some(0x0123456789abcdef),
-                asset: Some("sha256-abc123.rs".into()),
+                asset: Some("asset-abc123.rs".into()),
                 line: 33,
             }],
             card.citations
@@ -12230,16 +12226,16 @@ the answer
     }
     #[test]
     fn a_diagram_stamp_parses_onto_the_card() {
-        let object = |ext: &str| format!("sha256-{}.{ext}", "a".repeat(64));
+        let object = |ext: &str| format!("asset-{}.{ext}", "1".repeat(52));
         let text = format!(
-            "## q\n```mermaid\nflowchart LR\n A-->B\n```\n<!-- diagram: fingerprint: xxh64-0011223344556677 asset: {} geometry: {} -->\nanswer\n",
+            "## q\n```mermaid\nflowchart LR\n A-->B\n```\n<!-- diagram: fingerprint: 004926d25askq asset: {} geometry: {} -->\nanswer\n",
             object("png"),
             object("json"),
         );
         let deck = parse(&text);
         assert_eq!(1, deck.cards[0].diagrams.len());
         let stamp = &deck.cards[0].diagrams[0];
-        assert_eq!("xxh64-0011223344556677", stamp.fingerprint);
+        assert_eq!("004926d25askq", stamp.fingerprint);
         assert_eq!(object("png"), stamp.asset);
         assert_eq!(object("json"), stamp.geometry);
         assert!(
@@ -12253,11 +12249,11 @@ the answer
 
     #[test]
     fn malformed_diagram_stamps_fail_as_invalid_input() {
-        let png = format!("sha256-{}.png", "a".repeat(64));
-        let json = format!("sha256-{}.json", "a".repeat(64));
+        let png = format!("asset-{}.png", "1".repeat(52));
+        let json = format!("asset-{}.json", "1".repeat(52));
         let cases = [
             (
-                "fingerprint: xxh64-00112233 asset: a geometry: b".to_string(),
+                "fingerprint: 00112233 asset: a geometry: b".to_string(),
                 "short fingerprint hex",
             ),
             (
@@ -12265,25 +12261,23 @@ the answer
                 "missing xxh64 prefix",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 asset: nope.png geometry: {json}"),
+                format!("fingerprint: 004926d25askq asset: nope.png geometry: {json}"),
                 "asset is not an object name",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 asset: {json} geometry: {png}"),
+                format!("fingerprint: 004926d25askq asset: {json} geometry: {png}"),
                 "swapped artifact roles: a json asset or png geometry is a later decode failure",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 asset: {png} geometry: {png}"),
+                format!("fingerprint: 004926d25askq asset: {png} geometry: {png}"),
                 "the geometry role requires a json object",
             ),
             (
-                format!("fingerprint: xxh64-0011223344556677 geometry: {json} asset: {png}"),
+                format!("fingerprint: 004926d25askq geometry: {json} asset: {png}"),
                 "fields out of order",
             ),
             (
-                format!(
-                    "fingerprint: xxh64-0011223344556677 asset: {png} geometry: {json} extra: 1"
-                ),
+                format!("fingerprint: 004926d25askq asset: {png} geometry: {json} extra: 1"),
                 "trailing junk",
             ),
         ];
