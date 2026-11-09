@@ -444,16 +444,9 @@ pub(super) fn remote_create_card(
     let Some(deck_id) = deck.info.deck_token.clone() else {
         return missing(&"the served deck carries no id");
     };
-    let Some(topic_id) = deck
-        .cards
-        .iter()
-        .find(|card| card.id().as_deref() == Some(req.card_id.as_str()))
-        .and_then(|card| deck.info.topic_ids.get(card.topic).cloned().flatten())
-    else {
-        return RemoteCreateOutcome::UnknownCard(format!(
-            "card `{}` is not in deck `{}`",
-            req.card_id, req.deck_id
-        ));
+    let topic_id = match named_card_topic(&deck, &req.deck_id, &req.card_id) {
+        Ok(topic_id) => topic_id,
+        Err(error) => return RemoteCreateOutcome::UnknownCard(error),
     };
     let deck_fingerprints: HashSet<u64> = deck
         .authored_cards()
@@ -477,8 +470,34 @@ pub(super) fn remote_create_card(
             | crate::store::MintError::Malformed(_)
             | crate::store::MintError::DuplicatedTopic(_),
         ) => RemoteCreateOutcome::Invalid,
-        Err(crate::store::MintError::Mint(_)) => RemoteCreateOutcome::MintFailed,
+        Err(crate::store::MintError::Mint(_) | crate::store::MintError::Deck(_)) => {
+            RemoteCreateOutcome::MintFailed
+        }
     }
+}
+
+fn named_card_topic(
+    deck: &crate::assemble::TutorDeck,
+    deck_id: &str,
+    card_id: &str,
+) -> Result<String, String> {
+    let Some(card) = deck
+        .cards
+        .iter()
+        .find(|card| card.id().as_deref() == Some(card_id))
+    else {
+        return Err(format!("card `{card_id}` is not in deck `{deck_id}`"));
+    };
+    deck.info
+        .topic_ids
+        .get(card.topic)
+        .cloned()
+        .flatten()
+        .ok_or_else(|| {
+            format!(
+                "card `{card_id}` sits in a topic with no topic id; run `alix deck init` to mint it"
+            )
+        })
 }
 
 fn resolve_remote_target(
@@ -2022,6 +2041,40 @@ mod tests {
         };
         assert_eq!("request front", card.front);
         assert_eq!(["request back"], card.back.as_slice());
+    }
+
+    #[test]
+    fn a_named_card_in_a_topic_without_an_id_names_the_card_and_the_remedy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("noid.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-noid\"\n---\n\
+             # Unstamped\n\n## qn\nn\n<!-- id: card-qn -->\n",
+        )
+        .unwrap();
+        let cfg = AssembleConfig {
+            review: crate::config::ReviewConfig::default(),
+            ask: AskConfig::default(),
+            pacing: crate::assemble::Pacing {
+                max_session: 10,
+                new_cards_percent: 30,
+            },
+            instance_store: None,
+        };
+        let deck = tutor_deck(&path, &cfg).unwrap();
+
+        assert_eq!(
+            Err(
+                "card `card-qn` sits in a topic with no topic id; run `alix deck init` to mint it"
+                    .to_string()
+            ),
+            named_card_topic(&deck, "deck-noid", "card-qn"),
+        );
+        assert_eq!(
+            Err("card `card-nope` is not in deck `deck-noid`".to_string()),
+            named_card_topic(&deck, "deck-noid", "card-nope"),
+        );
     }
 
     #[test]

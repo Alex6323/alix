@@ -813,8 +813,8 @@ fn a_sidecar_card_naming_an_unknown_topic_joins_the_leading_topic_and_doctor_war
     };
     assert!(
         warning.ends_with(
-            "line 8: sidecar card `card-aaaaaaaaaaaaaaaaaaaaaaaaaa` names topic `topic-zzz`, \
-             which is not in the deck; it counts in the leading topic"
+            "spanish.local.md:8: sidecar card `card-aaaaaaaaaaaaaaaaaaaaaaaaaa` names topic \
+             `topic-zzz`, which is not in the deck; it counts in the leading topic"
         ),
         "bind: {warning}"
     );
@@ -826,6 +826,59 @@ fn a_sidecar_card_naming_an_unknown_topic_joins_the_leading_topic_and_doctor_war
         err.lines()
             .any(|line| line == format!("warning: {warning}")),
         "doctor prints the same line: {err}"
+    );
+}
+
+#[test]
+fn a_personal_card_without_a_topic_line_keeps_its_progress_through_reset_orphans() {
+    let (dir, deck) = spanish_workspace(
+        "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+         ## mine\nx\n<!-- id: card-bbbbbbbbbbbbbbbbbbbbbbbbbb -->\n",
+    );
+    let mut store = deck_store(deck.to_str().unwrap());
+    store.get_or_insert("card-bbbbbbbbbbbbbbbbbbbbbbbbbb");
+    store.save().unwrap();
+
+    let doctor = alix(&["doctor", dir.path().to_str().unwrap()]);
+    assert!(
+        !stderr(&doctor).contains("orphaned store key (card) `card-bbbb"),
+        "doctor: a key held by a card in the file is no orphan: {}",
+        stderr(&doctor)
+    );
+    let reset = alix(&["reset", "--orphans", dir.path().to_str().unwrap(), "--yes"]);
+    assert!(
+        stdout(&reset).contains("No orphaned progress to reset."),
+        "reset: nothing to reset: {}",
+        stdout(&reset)
+    );
+    let after = std::fs::read_to_string(store.path()).unwrap();
+    assert!(
+        after.contains("card-bbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        "reset: the skipped card keeps its history: {after}"
+    );
+}
+
+#[test]
+fn a_topic_line_outside_any_personal_card_is_a_load_warning_and_a_doctor_error() {
+    let sidecar = "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+                   <!-- topic: deck-spanishspanishspanishspa -->\n\n\
+                   ## mine\nx\n<!-- topic: deck-spanishspanishspanishspa -->\n\
+                   <!-- id: card-aaaaaaaaaaaaaaaaaaaaaaaaaa -->\n";
+    let (dir, deck) = spanish_workspace(sidecar);
+    let expected = format!(
+        "{}:6: personal topic line belongs to no card",
+        alix::personal::sidecar_path(&deck).display()
+    );
+
+    let personal = alix::personal::read(&deck, "spanish.md");
+    assert_eq!(vec![expected.clone()], personal.warnings, "load");
+    assert_eq!(1, personal.cards.len(), "load: the card below still loads");
+
+    let out = alix(&["doctor", dir.path().to_str().unwrap()]);
+    let err = stderr(&out);
+    assert!(
+        err.lines().any(|line| line == format!("error: {expected}")),
+        "doctor: {err}"
     );
 }
 

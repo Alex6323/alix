@@ -778,9 +778,14 @@ Two kinds of block live there, in any order:
   before it naming the deck topic the card belongs to: a `# ` topic's id, or
   the deck's own id for the cards before the first `# ` heading. It joins the
   session after the deck's own cards and is drilled and scheduled like any
-  other, but it does not count toward the deck's card count. A card with no topic line is skipped on its own (the
-  other cards still load), with a warning when the deck opens and an error
-  from `alix doctor`. A card naming a topic the deck does not have counts in
+  other, but it does not count toward the deck's card count. A card with no
+  topic line, a topic line anywhere but directly before the id line, or a
+  second topic line is skipped on its own (the other cards still load, and
+  the skipped card keeps its progress), with a warning when the deck opens
+  and an error from `alix doctor`, both naming the file line. A topic line
+  that belongs to no card gets the same warning and error. When exam
+  remediation brings a card back, its topic line names the topic that
+  brought it back. A card naming a topic the deck does not have counts in
   the deck's leading topic, and `alix doctor` warns. The `<!-- topic: -->`
   line belongs to personal files only: in a deck file it is a parse error.
 

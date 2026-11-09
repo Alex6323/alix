@@ -838,6 +838,7 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::TopicWithoutCards => "topic has prose but no card below it; a topic \
              introduces the cards under it"
             .to_string(),
+        LintKind::StrayTopicLine => "personal topic line belongs to no card".to_string(),
         LintKind::DuplicateTopicHeading { first_line } => format!(
             "two topics share the heading of line {first_line}; they are separate topics \
              that read the same, so rename one"
@@ -982,7 +983,7 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
         &deck.topic_ids(),
     );
     for warning in bound.warnings {
-        report.warn(format!("{}: {warning}", sidecar.display()));
+        report.warn(format!("{}:{warning}", sidecar.display()));
     }
     let deck_blocks: Vec<alix::DeckCard> = deck
         .cards

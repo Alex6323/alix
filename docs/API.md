@@ -279,8 +279,10 @@ and rejects an unparseable body with `400`. Success is `200` with `{"id":
 "card-<token>"}` (`CreateCardResp`), not `201`: alix's JSON responder
 always answers `200` on success, so "created" is expressed by the DTO shape,
 not the status line. A duplicate (the card's canonical content already exists
-in the deck or its personal file) or malformed front/back (empty after
-trimming, or not exactly one well-formed card) is `422`.
+in the deck or its personal file), malformed front/back (empty after
+trimming, or not exactly one well-formed card), a topic id two topics of the
+deck share, or a current card whose topic has no id is `422`. A deck file
+that no longer loads is `500`, with nothing written.
 
 ### 4.6 Import
 
@@ -455,8 +457,9 @@ personal sidecar (never the authored deck, never the store) and answers
 exact text appended, for the phone to append unchanged to its own copy. It
 is synchronous, holds no slot, and is adult-only (`403`). A deck the desktop
 does not serve is `404` with nothing written (the phone then mints the card
-alone); a `card_id` the served deck does not hold is `400` with a plain-text
-message naming the id and nothing written; a duplicate or malformed card,
+alone); a `card_id` the served deck does not hold, or one whose topic has
+no id, is `400` with a plain-text message naming the id (for the topic
+case, also `alix deck init` as the remedy) and nothing written; a duplicate or malformed card,
 or a topic whose id two topics share, is `422`, as on the local route,
 with one exception for a retry whose reply was lost: when the sidecar
 already holds exactly the plain card this (trimmed) front and back would
@@ -777,7 +780,7 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 | GET | `/api/ask` | – | `AskDto` (poll) | 409 |
 | POST | `/api/ask/note` | – | `AskDto` | 409 |
 | POST | `/api/ask/card/draft` | – | `AskDto` (draft lands on `draft` once polled) | 403 kids; 409 no active review |
-| POST | `/api/ask/card/create` | `{front, back}` (`CreateCardReq`) | `CreateCardResp` | 400 bad body; 403 kids; 409 no active review / no current card; 422 duplicate or malformed |
+| POST | `/api/ask/card/create` | `{front, back}` (`CreateCardReq`) | `CreateCardResp` | 400 bad body; 403 kids; 409 no active review / no current card; 422 duplicate, malformed, shared topic id, or topic without id; 500 deck no longer loads |
 
 ### Exam
 

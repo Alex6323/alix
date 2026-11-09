@@ -14,17 +14,24 @@ pub fn sidecar_path(deck: &Path) -> PathBuf {
 #[derive(Debug, Default)]
 pub struct Personal {
     pub cards: Vec<ParsedSidecarCard>,
+    pub skipped: Vec<Card>,
     pub notes: Vec<SidecarNote>,
     pub warnings: Vec<String>,
 }
 
 impl Personal {
-    /// Cards then notes; `merge` walks each kind in its own pass.
+    /// Cards, then skipped cards, then notes; `merge` walks each kind in its
+    /// own pass.
     pub fn blocks(&self) -> Vec<SidecarBlock> {
-        let cards = self.cards.iter().map(|parsed| SidecarBlock::Card {
-            id: parsed.card.id().unwrap_or_default(),
-            notes: Vec::new(),
-        });
+        let cards = self
+            .cards
+            .iter()
+            .map(|parsed| &parsed.card)
+            .chain(&self.skipped)
+            .map(|card| SidecarBlock::Card {
+                id: card.id().unwrap_or_default(),
+                notes: Vec::new(),
+            });
         let notes = self.notes.iter().map(|note| SidecarBlock::Note {
             card: note.card.clone(),
             note: note.note.clone(),
@@ -53,15 +60,21 @@ pub fn read(deck_path: &Path, subject: &str) -> Personal {
     let parsed = crate::parser::parse_sidecar(subject, &stripped).unwrap_or_default();
     Personal {
         warnings: parsed
-            .missing_topic
+            .problems
             .iter()
-            .map(|&line| {
+            .map(|problem| {
                 format!(
-                    "{}:{}: personal card has no topic line",
+                    "{}:{}: {}",
                     path.display(),
-                    file_line(line)
+                    file_line(problem.line),
+                    problem.kind.message()
                 )
             })
+            .collect(),
+        skipped: parsed
+            .skipped
+            .into_iter()
+            .filter(|card| card.id().is_some())
             .collect(),
         cards: parsed
             .cards
@@ -77,10 +90,12 @@ pub fn read(deck_path: &Path, subject: &str) -> Personal {
 }
 
 pub fn card_ids(deck: &Deck) -> Vec<String> {
-    let cards: Vec<Card> = read(&deck.path, &deck.subject)
+    let personal = read(&deck.path, &deck.subject);
+    let cards: Vec<Card> = personal
         .cards
         .into_iter()
         .map(|parsed| parsed.card)
+        .chain(personal.skipped)
         .collect();
     let mut ids: Vec<String> = cards.iter().filter_map(Card::id).collect();
     ids.extend(crate::card::dormant_base_ids(&cards));
@@ -185,6 +200,35 @@ pub fn append_cards(deck: &Path, deck_id: &str, blocks: &str) -> Result<(), Deck
     write_deck_text(&path, &out)
 }
 
+pub fn rebind_topic(deck: &Path, base_ids: &[String], topic_id: &str) -> Result<(), DeckError> {
+    let path = sidecar_path(deck);
+    let text = std::fs::read_to_string(&path).map_err(|source| DeckError::Io {
+        path: path.clone(),
+        source,
+    })?;
+    let id_lines: Vec<String> = base_ids
+        .iter()
+        .map(|id| format!("<!-- id: {id} -->"))
+        .collect();
+    let mut lines: Vec<&str> = Vec::new();
+    let topic = format!("<!-- topic: {topic_id} -->");
+    for line in text.lines() {
+        if id_lines.iter().any(|id_line| line.trim() == id_line) {
+            if lines.last().is_some_and(|previous| is_topic_line(previous)) {
+                lines.pop();
+            }
+            lines.push(&topic);
+        }
+        lines.push(line);
+    }
+    write_deck_text(&path, &format!("{}\n", lines.join("\n")))
+}
+
+fn is_topic_line(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("<!-- topic:") && line.ends_with("-->")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +321,50 @@ mod tests {
             "the id line sits on line 11 of the file, past the dropped note block"
         );
         assert!(personal.cards.is_empty(), "{:?}", personal.cards);
+    }
+
+    #[test]
+    fn a_topic_line_not_directly_before_the_id_line_skips_the_card_with_a_warning() {
+        let good = "## good\nok\n<!-- topic: deck-abc -->\n<!-- id: card-good -->\n";
+        for (row, bad, line, text) in [
+            (
+                "misplaced",
+                "## bad\nback\n<!-- topic: deck-abc -->\n<!-- input: draw -->\n<!-- id: card-bad -->\n",
+                7,
+                "personal card's topic line is not directly before its id line",
+            ),
+            (
+                "second",
+                "## bad\nback\n<!-- topic: deck-abc -->\n<!-- topic: deck-abc -->\n<!-- id: card-bad -->\n",
+                8,
+                "personal card has a second topic line",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let deck = deck(dir.path());
+            std::fs::write(
+                sidecar_path(&deck),
+                format!("---\nfor: deck-abc\n---\n\n{bad}\n{good}"),
+            )
+            .unwrap();
+
+            let personal = read(&deck, "spanish");
+
+            assert_eq!(
+                vec![Some("card-good".to_string())],
+                personal
+                    .cards
+                    .iter()
+                    .map(|parsed| parsed.card.id())
+                    .collect::<Vec<_>>(),
+                "{row}: the bad card is skipped alone"
+            );
+            assert_eq!(
+                vec![format!("{}:{line}: {text}", sidecar_path(&deck).display())],
+                personal.warnings,
+                "{row}: the warning names the topic line"
+            );
+        }
     }
 
     #[test]

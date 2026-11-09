@@ -224,7 +224,7 @@ pub fn bind_personal(
                 if warned_line != Some(parsed.topic_line) {
                     warned_line = Some(parsed.topic_line);
                     warnings.push(format!(
-                        "line {}: sidecar card `{}` names topic `{named}`, which is not in the deck; it counts in the leading topic",
+                        "{}: sidecar card `{}` names topic `{named}`, which is not in the deck; it counts in the leading topic",
                         parsed.topic_line,
                         card.token.as_deref().unwrap_or_default(),
                     ));
@@ -252,7 +252,7 @@ fn sidecar_warnings(deck_path: &Path, read: Vec<String>, bound: Vec<String>) -> 
         .chain(
             bound
                 .into_iter()
-                .map(|warning| format!("{}: {warning}", sidecar.display())),
+                .map(|warning| format!("{}:{warning}", sidecar.display())),
         )
         .collect()
 }

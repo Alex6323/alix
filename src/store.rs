@@ -1505,6 +1505,8 @@ pub enum MintError {
     Mint(String),
     #[error("{0}")]
     DuplicatedTopic(String),
+    #[error("{0}")]
+    Deck(String),
 }
 
 pub struct MintedCard {
@@ -1524,7 +1526,7 @@ pub fn mint_tutor_card(
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<String, MintError> {
-    refuse_duplicated_topic(deck_path, topic_id).map_err(MintError::DuplicatedTopic)?;
+    refuse_duplicated_topic(deck_path, topic_id)?;
     let minted = mint_personal_card(deck_path, deck_id, topic_id, front, back, deck_fingerprints)?;
     store.get_or_insert(&minted.id);
     Ok(minted.id)
@@ -1561,7 +1563,7 @@ pub fn mint_or_return_kept_card(
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<MintedCard, MintError> {
-    refuse_duplicated_topic(deck_path, topic_id).map_err(MintError::DuplicatedTopic)?;
+    refuse_duplicated_topic(deck_path, topic_id)?;
     match mint_personal_card(deck_path, deck_id, topic_id, front, back, deck_fingerprints) {
         Err(MintError::Duplicate) => {
             kept_card(deck_path, deck_id, topic_id, front, back, deck_fingerprints)
@@ -1571,24 +1573,22 @@ pub fn mint_or_return_kept_card(
     }
 }
 
-/// A deck that does not load has no topic to refuse.
-fn refuse_duplicated_topic(deck_path: &Path, topic_id: &str) -> Result<(), String> {
-    let Ok(deck) = Deck::load(deck_path) else {
-        return Ok(());
-    };
+fn refuse_duplicated_topic(deck_path: &Path, topic_id: &str) -> Result<(), MintError> {
+    let deck = Deck::load(deck_path).map_err(|e| MintError::Deck(e.to_string()))?;
     let root = crate::workspace::root_for_deck(deck_path);
     match crate::topic::duplicated_topics(&deck, root.as_deref())
         .into_iter()
         .find(|finding| finding.id == topic_id)
     {
-        Some(finding) => Err(finding.to_string()),
+        Some(finding) => Err(MintError::DuplicatedTopic(finding.to_string())),
         None => Ok(()),
     }
 }
 
 fn sidecar_cards(deck_id: &str, text: &str) -> Option<Vec<Card>> {
     let parsed = crate::parser::parse_sidecar(deck_id, text).ok()?;
-    Some(parsed.cards.into_iter().map(|parsed| parsed.card).collect())
+    let cards = parsed.cards.into_iter().map(|parsed| parsed.card);
+    Some(cards.chain(parsed.skipped).collect())
 }
 
 fn kept_card(
@@ -1670,10 +1670,8 @@ fn append_checked_card(
 ) -> Result<MintedCard, MintError> {
     let parsed = crate::parser::parse_sidecar(deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
-    if !parsed.missing_topic.is_empty() {
-        return Err(MintError::Malformed(
-            "the card has no topic line".to_string(),
-        ));
+    if let Some(problem) = parsed.problems.first() {
+        return Err(MintError::Malformed(problem.kind.message().to_string()));
     }
     let [crate::parser::ParsedSidecarCard { card, .. }] = parsed.cards.as_slice() else {
         return Err(MintError::Malformed(
@@ -1780,9 +1778,7 @@ pub fn store_remediation_cards(
     let Some(deck_path) = deck_path else {
         bail!("this sitting has no deck file to write personal cards beside");
     };
-    if let Err(finding) = refuse_duplicated_topic(deck_path, topic_id) {
-        bail!(finding);
-    }
+    refuse_duplicated_topic(deck_path, topic_id)?;
     let blocks = split_card_blocks(cards_text);
     if blocks.is_empty() {
         bail!("remediation produced no cards to store");
@@ -1829,6 +1825,8 @@ pub fn store_remediation_cards(
             .iter()
             .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
         {
+            let bases = personal_bases_with_content(deck_path, deck_id, fingerprint);
+            crate::personal::rebind_topic(deck_path, &bases, topic_id)?;
             for id in &existing {
                 *store.get_or_insert(id) = CardState::new();
                 created_or_revived += 1;
@@ -1843,6 +1841,23 @@ pub fn store_remediation_cards(
 /// Ids of personal cards already in the sidecar whose content matches, so a
 /// rerun of the same gap revives the card instead of writing it twice.
 fn personal_ids_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) -> Vec<String> {
+    personal_cards_with_content(deck_path, deck_id, fingerprint)
+        .iter()
+        .filter_map(Card::id)
+        .collect()
+}
+
+fn personal_bases_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) -> Vec<String> {
+    let mut bases: Vec<String> = personal_cards_with_content(deck_path, deck_id, fingerprint)
+        .iter()
+        .filter_map(|card| card.token.as_deref())
+        .map(|token| crate::token::card_id(token, None, false, None))
+        .collect();
+    bases.dedup();
+    bases
+}
+
+fn personal_cards_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) -> Vec<Card> {
     let Ok(text) = std::fs::read_to_string(crate::personal::sidecar_path(deck_path)) else {
         return Vec::new();
     };
@@ -1850,9 +1865,8 @@ fn personal_ids_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) 
         return Vec::new();
     };
     cards
-        .iter()
+        .into_iter()
         .filter(|card| card.block_fingerprint == fingerprint)
-        .filter_map(|card| card.id())
         .collect()
 }
 
@@ -2007,6 +2021,12 @@ fn generate_device_label() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_deck(dir: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
+        let deck = dir.path().join(name);
+        std::fs::write(&deck, "").unwrap();
+        deck
+    }
 
     fn sync_document(deck_id: &str, revision: u64, device: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
@@ -2911,7 +2931,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         std::fs::write(
             &deck,
             "---\nid: \"deck-d\"\n---\n# A\n<!-- id: topic-a -->\n## q\na\n<!-- id: card-q1 -->\n\
@@ -2953,6 +2973,20 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(finding, remediation.to_string(), "remediation");
+        let remote = mint_or_return_kept_card(
+            &deck,
+            "deck-d",
+            "topic-a",
+            "capital?",
+            &["Paris".to_string()],
+            &HashSet::new(),
+        )
+        .map(|minted| minted.id);
+        assert_eq!(
+            Err(finding.clone()),
+            remote.map_err(|error| error.to_string()),
+            "remote draft"
+        );
         assert_eq!(
             before,
             std::fs::read_to_string(&sidecar).unwrap(),
@@ -2965,7 +2999,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let sidecar = crate::personal::sidecar_path(&deck);
         let text = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n\
                     <!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n\n\
@@ -3028,11 +3062,131 @@ mod tests {
     }
 
     #[test]
+    fn a_personal_card_without_a_topic_line_still_dedups_a_new_card() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = empty_deck(&dir, "geo.md");
+        std::fs::write(&deck, "").unwrap();
+        let sidecar = crate::personal::sidecar_path(&deck);
+        let text = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n\
+                    <!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
+        std::fs::write(&sidecar, text).unwrap();
+
+        let minted = mint_tutor_card(
+            &mut store,
+            &deck,
+            "geo.md",
+            "topic-t",
+            "capital of spain?",
+            &["Madrid".to_string()],
+            &HashSet::new(),
+        );
+        assert!(
+            matches!(minted, Err(MintError::Duplicate)),
+            "tutor: {minted:?}"
+        );
+        let stored = store_remediation(
+            &mut store,
+            &deck,
+            "geo.md",
+            "## capital of spain?\nMadrid\n",
+            None,
+        )
+        .unwrap();
+        assert_eq!(0, stored, "remediation");
+        assert_eq!(
+            text,
+            std::fs::read_to_string(&sidecar).unwrap(),
+            "nothing written"
+        );
+    }
+
+    #[test]
+    fn minting_and_remediation_fail_with_the_load_error_when_the_deck_cannot_load() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("broken.md");
+        std::fs::write(&deck, "## q\n").unwrap();
+        let load_error = Deck::load(&deck).unwrap_err().to_string();
+
+        let tutor = mint_tutor_card(
+            &mut store,
+            &deck,
+            "deck-b",
+            "deck-b",
+            "capital?",
+            &["Paris".to_string()],
+            &HashSet::new(),
+        )
+        .unwrap_err();
+        assert_eq!(load_error, tutor.to_string(), "tutor draft");
+        let remediation = store_remediation_cards(
+            &mut store,
+            Some(&deck),
+            "deck-b",
+            "deck-b",
+            &HashSet::new(),
+            "## Why?\nbecause\n",
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(load_error, format!("{remediation:#}"), "remediation");
+        assert!(
+            !crate::personal::sidecar_path(&deck).exists(),
+            "nothing is written"
+        );
+    }
+
+    #[test]
+    fn a_revived_remediation_card_takes_the_topic_of_the_call_that_revived_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = empty_deck(&dir, "d.md");
+        std::fs::write(&deck, "").unwrap();
+        let text = "## Why does X happen?\nbecause of Y\n";
+        let cap = Some(30u32);
+        let store_for = |store: &mut Store, topic: &str| {
+            store_remediation_cards(
+                store,
+                Some(&deck),
+                "d.md",
+                topic,
+                &std::collections::HashSet::new(),
+                text,
+                cap,
+            )
+            .unwrap()
+        };
+        assert_eq!(1, store_for(&mut store, "topic-a"), "created under topic-a");
+        let id = sidecar_ids(&deck, "d.md")[0].clone();
+        store.get_or_insert(&id).recall = Some(FsrsState {
+            state: 2,
+            scheduled_days: 90,
+            ..Default::default()
+        });
+
+        assert_eq!(1, store_for(&mut store, "topic-b"), "revived by topic-b");
+
+        let sidecar = std::fs::read_to_string(crate::personal::sidecar_path(&deck)).unwrap();
+        assert!(
+            sidecar.contains(&format!("<!-- topic: topic-b -->\n<!-- id: {id} -->")),
+            "the revived card's topic line names topic-b:\n{sidecar}"
+        );
+        assert_eq!(
+            1,
+            sidecar.matches("<!-- topic: ").count(),
+            "the line is rewritten, not added:\n{sidecar}"
+        );
+    }
+
+    #[test]
     fn mint_tutor_card_writes_the_card_into_the_sidecar() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let id = mint_tutor_card(
             &mut store,
             &deck,
@@ -3064,7 +3218,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("s.json")).unwrap();
-        let geo = dir.path().join("geo.md");
+        let geo = empty_deck(&dir, "geo.md");
         let tutor = mint_tutor_card(
             &mut store,
             &geo,
@@ -3077,7 +3231,7 @@ mod tests {
         .unwrap();
         assert!(store.get(&tutor).is_some(), "the schedule entry exists");
 
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         store_remediation(
             &mut store,
             &deck,
@@ -3095,7 +3249,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let empty = HashSet::new();
         mint_tutor_card(
             &mut store,
@@ -3125,7 +3279,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let authored = crate::parser::parse_str(
             "geo.md",
             "## capital of france?\nParis\n<!-- id: card-france -->\n",
@@ -3156,7 +3310,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         for (front, back) in [
             ("  ", vec!["Paris".to_string()]),
             ("capital?", vec!["  ".to_string()]),
@@ -3183,7 +3337,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let err = mint_tutor_card(
             &mut store,
             &deck,
@@ -3201,7 +3355,7 @@ mod tests {
     fn mint_personal_card_hands_back_the_block_it_appended() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let minted = mint_personal_card(
             &deck,
             "geo.md",
@@ -3231,7 +3385,7 @@ mod tests {
     fn a_retried_mint_returns_the_kept_card_only_when_front_and_back_are_identical() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let authored = crate::parser::parse_str(
             "geo.md",
             "## capital of france?\nParis\n<!-- id: card-france -->\n",
@@ -3283,7 +3437,7 @@ mod tests {
     fn a_retried_mint_does_not_rebuild_a_directive_card_as_plain_text() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let sidecar = crate::personal::sidecar_path(&deck);
         let kept = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- input: draw -->\n<!-- topic: topic-t -->\n<!-- id: card-spain -->\n";
         std::fs::write(&sidecar, kept).unwrap();
@@ -3308,7 +3462,7 @@ mod tests {
     fn an_authored_duplicate_is_not_returned_from_a_matching_sidecar_card() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let authored = crate::parser::parse_str(
             "geo.md",
             "## capital of spain?\nMadrid\n<!-- id: card-authored -->\n",
@@ -3340,7 +3494,7 @@ mod tests {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("geo.md");
+        let deck = empty_deck(&dir, "geo.md");
         let authored = crate::parser::parse_str(
             "geo.md",
             "## capital of france?\nParis\n<!-- id: card-france -->\n",
@@ -3494,7 +3648,7 @@ mod tests {
     fn failing_the_same_exam_twice_yields_zero_duplicate_gap_cards() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let text = "## Why does X happen?\nbecause of Y\n";
 
         let first = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
@@ -3511,7 +3665,7 @@ mod tests {
     fn remediation_keeps_distinct_answers_in_matching_span_blank_contexts() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let lunate = "## Which bone sits in the center?\nThe lunate sits in the center\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n";
         let hamate = "## Which bone sits in the center?\nThe hamate sits in the center\n<!-- blank: span hidden=\"hamate\" b:a1b2c3 -->\n";
 
@@ -3529,7 +3683,7 @@ mod tests {
     fn an_unstamped_span_remediation_is_stamped_and_stored() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let text = "## Recall how a String is laid out in memory.\nA String stores a pointer, length and capacity on the stack.\n<!-- blank: span hidden=\"pointer\" -->\n<!-- blank: span hidden=\"length\" -->\n";
 
         let created = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
@@ -3570,7 +3724,7 @@ mod tests {
         .unwrap();
         let deck_fingerprints: std::collections::HashSet<u64> =
             authored.iter().map(|card| card.block_fingerprint).collect();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
 
         let created = store_remediation_cards(
             &mut store,
@@ -3597,7 +3751,7 @@ mod tests {
     fn distinct_answer_cloze_holes_stay_distinct() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let text = "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"be\" occurrence=2 b:d4e5f6 -->\n";
 
         let n = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
@@ -3623,7 +3777,7 @@ mod tests {
     fn a_retired_multi_hole_block_revives_every_hole() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let text = "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n";
         let cap = Some(30u32);
 
@@ -3673,7 +3827,7 @@ mod tests {
         let deck_fingerprints: std::collections::HashSet<u64> =
             plain.iter().map(|c| c.block_fingerprint).collect();
 
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let cloze = "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n";
         let created = store_remediation_cards(
             &mut store,
@@ -3699,7 +3853,7 @@ mod tests {
             "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n",
         ] {
             let dir = tempfile::tempdir().unwrap();
-            let deck = dir.path().join("d.md");
+            let deck = empty_deck(&dir, "d.md");
             std::fs::write(&deck, "## existing\nanswer\n<!-- id: card-ex1 -->\n").unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
@@ -3721,7 +3875,7 @@ mod tests {
         use crate::depth::Reveal;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        let deck = dir.path().join("d.md");
+        let deck = empty_deck(&dir, "d.md");
         let text =
             "## Why does X?\npoint one\n<!-- reveal: line -->\n\n## fact card\nplain answer\n";
 

@@ -2774,6 +2774,41 @@ mod tests {
     }
 
     #[test]
+    fn law_each_mobile_mint_binds_the_card_to_the_current_cards_topic() {
+        type Mint = fn(&Path, &Path) -> Result<String>;
+        let rows: [(&str, Mint); 2] = [
+            ("review", |deck, root| {
+                opened_after_introduction(deck, root, None)
+                    .mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()])
+            }),
+            ("walk", |deck, root| {
+                opened_walk(deck, root)
+                    .mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()])
+            }),
+        ];
+        for (label, mint) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let deck = root.join("d.md");
+            write_deck(
+                &deck,
+                "# Capitals\nWhere the government sits.\n\n## capital of italy?\nRome\n",
+            );
+            let id = mint(&deck, root).unwrap_or_else(|e| panic!("{label}: mints: {e}"));
+            let capitals = alix::deck::Deck::load(&deck).unwrap().topic_ids()[1].clone();
+            assert_eq!(
+                vec![(Some(id), capitals)],
+                alix::personal::read(&deck, "d.md")
+                    .cards
+                    .iter()
+                    .map(|parsed| (parsed.card.id(), Some(parsed.topic_id.clone())))
+                    .collect::<Vec<_>>(),
+                "{label}: the minted card binds to the current card's topic"
+            );
+        }
+    }
+
+    #[test]
     fn law_a_walk_serves_each_item_once_and_saves_walked_ms_and_the_grade_on_grade_only() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

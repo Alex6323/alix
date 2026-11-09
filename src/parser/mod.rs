@@ -147,6 +147,8 @@ pub enum LintKind {
         name: String,
     },
     TopicWithoutCards,
+    /// A personal file's `<!-- topic: -->` line outside any card.
+    StrayTopicLine,
     DuplicateTopicHeading {
         first_line: usize,
     },
@@ -497,17 +499,20 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
 
 struct BlockBinding {
     block_line: usize,
-    token_line: Option<usize>,
-    topic: Option<(String, usize)>,
+    topic: Result<(String, usize), Option<SidecarProblem>>,
 }
 
 impl BlockBinding {
     fn of(block_line: usize, directives: &CardDirectives) -> Self {
-        Self {
-            block_line,
-            token_line: directives.token_line,
-            topic: directives.topic.clone(),
-        }
+        let problem = |line, kind| Err(Some(SidecarProblem { line, kind }));
+        let topic = match (directives.topics.as_slice(), directives.token_line) {
+            ([], None) => Err(None),
+            ([], Some(id_line)) => problem(id_line, SidecarProblemKind::MissingTopic),
+            ([_, (_, second), ..], _) => problem(*second, SidecarProblemKind::SecondTopic),
+            ([(id, line)], Some(id_line)) if line + 1 == id_line => Ok((id.clone(), *line)),
+            ([(_, line)], _) => problem(*line, SidecarProblemKind::MisplacedTopic),
+        };
+        Self { block_line, topic }
     }
 }
 
@@ -586,24 +591,35 @@ pub fn parse_sidecar(subject: &str, text: &str) -> Result<ParsedSidecar, ParseEr
     SIDECAR_MODE.with(|flat| flat.set(false));
     let (deck, bindings) = out?;
     let mut parsed = ParsedSidecar {
-        missing_topic: bindings
+        problems: deck
+            .lints
             .iter()
-            .filter(|binding| binding.topic.is_none())
-            .filter_map(|binding| binding.token_line)
+            .filter(|lint| matches!(lint.kind, LintKind::StrayTopicLine))
+            .map(|lint| SidecarProblem {
+                line: lint.line,
+                kind: SidecarProblemKind::StrayTopic,
+            })
             .collect(),
         ..ParsedSidecar::default()
     };
-    let topics: HashMap<usize, (String, usize)> = bindings
-        .into_iter()
-        .filter_map(|binding| Some((binding.block_line, binding.topic?)))
-        .collect();
+    let mut topics: HashMap<usize, (String, usize)> = HashMap::new();
+    for binding in bindings {
+        match binding.topic {
+            Ok(topic) => {
+                topics.insert(binding.block_line, topic);
+            }
+            Err(problem) => parsed.problems.extend(problem),
+        }
+    }
+    parsed.problems.sort_by_key(|problem| problem.line);
     for card in deck.cards {
-        if let Some((topic_id, topic_line)) = topics.get(&card.block_line).cloned() {
-            parsed.cards.push(ParsedSidecarCard {
+        match topics.get(&card.block_line).cloned() {
+            Some((topic_id, topic_line)) => parsed.cards.push(ParsedSidecarCard {
                 card,
                 topic_id,
                 topic_line,
-            });
+            }),
+            None => parsed.skipped.push(card),
         }
     }
     Ok(parsed)
@@ -622,7 +638,33 @@ pub struct ParsedSidecarCard {
 #[derive(Debug, Clone, Default)]
 pub struct ParsedSidecar {
     pub cards: Vec<ParsedSidecarCard>,
-    pub missing_topic: Vec<usize>,
+    pub skipped: Vec<Card>,
+    pub problems: Vec<SidecarProblem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SidecarProblem {
+    pub line: usize,
+    pub kind: SidecarProblemKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidecarProblemKind {
+    MissingTopic,
+    MisplacedTopic,
+    SecondTopic,
+    StrayTopic,
+}
+
+impl SidecarProblemKind {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::MissingTopic => "personal card has no topic line",
+            Self::MisplacedTopic => "personal card's topic line is not directly before its id line",
+            Self::SecondTopic => "personal card has a second topic line",
+            Self::StrayTopic => "personal topic line belongs to no card",
+        }
+    }
 }
 
 thread_local! {
@@ -988,7 +1030,7 @@ struct CardDirectives {
     sites: Vec<Site>,
     token: Option<String>,
     token_line: Option<usize>,
-    topic: Option<(String, usize)>,
+    topics: Vec<(String, usize)>,
     sampling: Option<bool>,
     reveal: Option<Reveal>,
     reveal_line: Option<usize>,
@@ -1841,15 +1883,21 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                                 });
                             }
                         }
+                        None if key == "topic" => {
+                            if !sidecar_mode() {
+                                return Err(ParseError::TopicLineOutsideSidecar(lineno));
+                            }
+                            lints.push(Lint {
+                                line: lineno,
+                                kind: LintKind::StrayTopicLine,
+                            });
+                        }
                         // A region outside any card has nothing to bind to and
                         // would otherwise vanish silently; other directives
                         // keep their historical tolerance here.
                         // An id names a card; with none open it would be
                         // swallowed, and the card it names would silently
                         // lose its history on the next stamping pass.
-                        None if key == "topic" && !sidecar_mode() => {
-                            return Err(ParseError::TopicLineOutsideSidecar(lineno));
-                        }
                         None if key == "id" => {
                             if !value.starts_with("topic-") {
                                 return Err(ParseError::OrphanCardId(lineno));
@@ -3228,7 +3276,7 @@ fn apply_directive(
             directives.token = Some(value);
             directives.token_line = Some(line);
         }
-        "topic" if sidecar_mode() => directives.topic = Some((value, line)),
+        "topic" if sidecar_mode() => directives.topics.push((value, line)),
         "topic" => return Err(ParseError::TopicLineOutsideSidecar(line)),
         // Valid `choices: single|multiple` bodies are consumed as invocations
         // before the directive split, so any value arriving here is invalid.
@@ -6754,7 +6802,7 @@ a
     fn a_personal_sidecar_card_carries_its_hints() {
         let cards = super::parse_sidecar(
             "deck.md",
-            "## q\n> [!TIP]\n> h\n\n---\nanswer\n<!-- topic: topic-t -->\n",
+            "## q\n> [!TIP]\n> h\n\n---\nanswer\n<!-- topic: topic-t -->\n<!-- id: card-aaaaaaaaaaaaaaaaaaaaaaaaaa -->\n",
         )
         .unwrap()
         .cards;
@@ -9482,7 +9530,7 @@ the answer
                 sites: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
                 token_line: Some(36),
-                topic: None,
+                topics: Vec::new(),
                 reveal: Some(Reveal::Flip),
                 reveal_line: Some(30),
                 input: Some(Input::Type),

@@ -157,7 +157,7 @@ mod tests {
             (card.topic_id.as_str(), card.topic_line),
             "the topic id is kept unresolved with the line of its comment"
         );
-        assert!(parsed.missing_topic.is_empty(), "{parsed:?}");
+        assert!(parsed.problems.is_empty(), "{parsed:?}");
     }
 
     #[test]
@@ -168,6 +168,11 @@ mod tests {
             Some(crate::parser::ParseError::TopicLineOutsideSidecar(5)),
             crate::parser::parse("d.md", text).err(),
             "the comment on line 5 belongs to sidecars only"
+        );
+        assert_eq!(
+            Some(crate::parser::ParseError::TopicLineOutsideSidecar(1)),
+            crate::parser::parse("d.md", "<!-- topic: topic-a -->\n## q\na\n").err(),
+            "a topic line outside any card is refused too"
         );
     }
 

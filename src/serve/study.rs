@@ -2204,7 +2204,7 @@ impl StudyState {
                 | store::MintError::Malformed(_)
                 | store::MintError::DuplicatedTopic(_),
             ) => CreateOutcome::Invalid,
-            Err(store::MintError::Mint(_)) => CreateOutcome::MintFailed,
+            Err(store::MintError::Mint(_) | store::MintError::Deck(_)) => CreateOutcome::MintFailed,
         }
     }
 

@@ -337,8 +337,9 @@ void main() {
 
     test('postCard tells a kept card, a refusal, and a lost reply apart', () async {
       var call = 0;
+      final bodies = <Map<String, dynamic>>[];
       final s = await startServer((request) async {
-        await request.drain<void>();
+        bodies.add(await readJsonBody(request));
         call++;
         if (call == 1) {
           await respondJson(request, 200, {'id': 'card-k', 'block': '## f\nb\n<!-- id: card-k -->\n'});
@@ -358,6 +359,16 @@ void main() {
       expect(refused, isA<AddCardRefused>().having((r) => r.status, 'status', 422), reason: '422');
       final lost = await client.postCard('deck-d1', 'card-d1', 'f', ['b']);
       expect(lost, isA<AddCardNoAnswer>(), reason: 'the reply never arrived');
+      expect(
+        bodies.first,
+        {
+          'deck_id': 'deck-d1',
+          'card_id': 'card-d1',
+          'front': 'f',
+          'back': ['b'],
+        },
+        reason: 'the body names the card the draft was made on',
+      );
     });
 
     test('a dead port reads as null within about 3.5s, no exception thrown', () async {

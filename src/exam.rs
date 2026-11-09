@@ -845,6 +845,7 @@ pub struct Sitting {
     error: Option<String>,
     pending_since: Option<u64>,
     remediated_count: Option<usize>,
+    remediated_topics: HashSet<String>,
     topics: Vec<ExamTopic>,
     deck_topics: Vec<ExamTopic>,
     unlocked: bool,
@@ -987,6 +988,7 @@ impl Sitting {
             error: None,
             pending_since: None,
             remediated_count: None,
+            remediated_topics: HashSet::new(),
             topics,
             deck_topics: examined_topics(deck),
             unlocked: false,
@@ -1197,6 +1199,9 @@ impl Sitting {
             .as_ref()
             .map(|result| result.gaps_by_topic(&self.questions, &self.topics))
             .unwrap_or_default()
+            .into_iter()
+            .filter(|(topic_id, _)| !self.remediated_topics.contains(topic_id))
+            .collect()
     }
 
     pub fn remediated_count(&self) -> Option<usize> {
@@ -1292,27 +1297,32 @@ impl Sitting {
             }
             Some(Effect::RemediationCards(by_topic)) => {
                 store_mutated = true;
-                let stored: Result<usize> = by_topic
-                    .iter()
-                    .map(|topic| {
-                        crate::store::store_remediation_cards(
-                            store,
-                            self.deck_path.as_deref(),
-                            &self.deck_token,
-                            &topic.topic_id,
-                            &self.deck_fingerprints,
-                            &topic.cards,
-                            retire_after_days,
-                        )
-                    })
-                    .sum();
-                match stored {
-                    Ok(n) => self.remediated_count = Some(n),
-                    Err(e) => {
-                        self.error = Some(format!("{e}"));
-                        self.phase = Phase::Results;
+                let mut stored = 0;
+                for topic in &by_topic {
+                    match crate::store::store_remediation_cards(
+                        store,
+                        self.deck_path.as_deref(),
+                        &self.deck_token,
+                        &topic.topic_id,
+                        &self.deck_fingerprints,
+                        &topic.cards,
+                        retire_after_days,
+                    ) {
+                        Ok(n) => {
+                            stored += n;
+                            self.remediated_topics.insert(topic.topic_id.clone());
+                        }
+                        Err(e) => {
+                            self.error = Some(format!("{e}"));
+                            self.phase = Phase::Results;
+                            return ExamPollOutcome {
+                                advanced,
+                                store_mutated,
+                            };
+                        }
                     }
                 }
+                self.remediated_count = Some(stored);
             }
             None => {}
         }
@@ -2934,6 +2944,7 @@ mod tests {
             error: None,
             pending_since: None,
             remediated_count: None,
+            remediated_topics: HashSet::new(),
             topics: Vec::new(),
             deck_topics: Vec::new(),
             unlocked: false,
@@ -3601,6 +3612,89 @@ mod tests {
                 "a passing re-sit must not retire remediation cards"
             );
         }
+    }
+
+    fn two_failed_topics(ws: &Workspace, cli: &std::path::Path) -> Sitting {
+        let deck = opened(ws);
+        let topics = examined_topics(&deck);
+        let index = |id: &str| {
+            topics
+                .iter()
+                .position(|topic| topic.topic_id == id)
+                .unwrap_or_else(|| panic!("{id} is examined"))
+        };
+        let questions = vec![
+            ExamQuestion {
+                prompt: "qa".to_string(),
+                topic: index("topic-alpha"),
+                ..Default::default()
+            },
+            ExamQuestion {
+                prompt: "qb".to_string(),
+                topic: index("topic-beta"),
+                ..Default::default()
+            },
+        ];
+        let fail = |missed: &str| AnswerGrade {
+            verdict: Verdict::Fail,
+            feedback: String::new(),
+            missed: vec![missed.to_string()],
+        };
+        let result = ExamResult::scored(&questions, vec![fail("alpha"), fail("beta")], 1.0);
+        let mut s = test_sitting(Strictness::Balanced);
+        s.deck_path = Some(ws.deck());
+        s.deck_token = DECK.to_string();
+        s.ask_cfg = ask_config(cli);
+        s.phase = Phase::Results;
+        s.questions = questions;
+        s.answers = vec![String::new(); 2];
+        s.locked = vec![false; 2];
+        s.result = Some(result);
+        s.topics = topics;
+        s
+    }
+
+    #[test]
+    fn a_remediation_retry_after_a_partial_failure_writes_no_duplicate() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            cli_dir.path(),
+            &[
+                "## Alpha gap?\nA\n",
+                "## q\n",
+                "## Beta gap?\nB\n",
+                "## Extra?\nE\n",
+            ],
+        );
+        let mut s = two_failed_topics(&ws, &cli);
+        let mut store = Store::open(cli_dir.path().join("p.json")).unwrap();
+
+        s.remediate();
+        drain(&mut s, &mut store);
+        assert!(s.error().is_some(), "first try: beta's block is malformed");
+        assert!(s.can_remediate(), "first try: beta is still owed");
+
+        s.remediate();
+        drain(&mut s, &mut store);
+        assert_eq!(None, s.error(), "retry");
+
+        let reloaded = Deck::load(ws.deck()).unwrap();
+        let topic_ids = reloaded.topic_ids();
+        let bound = crate::assemble::personal_cards(&reloaded);
+        assert_eq!(
+            vec![
+                ("Alpha gap?".to_string(), Some("topic-alpha".to_string())),
+                ("Beta gap?".to_string(), Some("topic-beta".to_string())),
+            ],
+            bound
+                .cards
+                .iter()
+                .map(|card| (card.front.clone(), topic_ids[card.topic].clone()))
+                .collect::<Vec<_>>(),
+            "retry: alpha is not remediated again"
+        );
     }
 
     #[test]

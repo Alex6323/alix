@@ -2592,6 +2592,13 @@ fn a_remote_tutor_draft_binds_to_the_topic_of_the_named_card() {
                  # B\n<!-- id: topic-b -->\n\n## qb\nb\n<!-- id: card-qb -->\n",
             )
             .unwrap();
+            std::fs::write(
+                dir.join("dup.md"),
+                "---\nformat-version: 1\nid: \"deck-dup\"\n---\n\
+                 # A\n<!-- id: topic-d -->\n\n## qd\nd\n<!-- id: card-qd -->\n\n\
+                 # B\n<!-- id: topic-d -->\n\n## qe\ne\n<!-- id: card-qe -->\n",
+            )
+            .unwrap();
         },
         |_opts| {},
     );
@@ -2622,6 +2629,17 @@ fn a_remote_tutor_draft_binds_to_the_topic_of_the_named_card() {
     assert!(
         block.contains("<!-- topic: topic-b -->\n"),
         "named card: the draft binds to card-qb's topic: {block}"
+    );
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-dup","card_id":"card-qe","front":"new?","back":["yes"]}"#,
+    );
+    assert_eq!(
+        422, response.status,
+        "duplicated topic id: {:?}",
+        response.body
     );
 }
 
@@ -8891,6 +8909,14 @@ fn walk_ask_card_draft_then_create_mints_into_the_walked_decks_sidecar() {
             sidecar.contains("edited term?")
         ),
         "create: the posted card lands in the walked deck's sidecar, never the deck: {sidecar}"
+    );
+    let walked = alix::deck::Deck::load(guard.dir().join("walk.md")).unwrap();
+    let capitals = walked.topic_ids()[1]
+        .clone()
+        .expect("the walk stamped the topic");
+    assert!(
+        sidecar.contains(&format!("<!-- topic: {capitals} -->\n<!-- id: card-")),
+        "create: the card binds to the walked card's topic `{capitals}`: {sidecar}"
     );
 }
 
