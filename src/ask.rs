@@ -726,7 +726,9 @@ fn run_supervised_inner(
     let stdout = out.join().unwrap_or_default();
     let stderr = err.join().unwrap_or_default();
     progress.receive(&pipe_rx, backend.as_ref(), config.progress, Instant::now());
-    let written = writer.join().unwrap_or(Ok(()));
+    let written = writer
+        .join()
+        .unwrap_or_else(|_| Err(std::io::Error::other("the prompt writer panicked")));
     if !status.success() {
         let progress_detail = config
             .progress
@@ -744,9 +746,10 @@ fn run_supervised_inner(
         .unwrap_or_default();
         bail!("{}", map_run_failure(&config.command, detail));
     }
-    if let Err(error) = written
-        && error.kind() != std::io::ErrorKind::BrokenPipe
-    {
+    if let Err(error) = written {
+        if error.kind() == std::io::ErrorKind::BrokenPipe {
+            bail!("the backend exited before reading the whole prompt");
+        }
         return Err(error).context("cannot write the prompt");
     }
     let answer = if config.progress {
@@ -1814,6 +1817,19 @@ mod tests {
         let cli = fake_cli(dir.path(), "sleep 30");
         let err = run(&config(&cli, 1), "x", &[]).unwrap_err();
         assert!(format!("{err:#}").contains("timed out"));
+    }
+
+    #[test]
+    fn a_cli_that_exits_cleanly_without_reading_the_whole_prompt_is_refused() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_cli(dir.path(), "head -c 10 >/dev/null; echo answer");
+        let prompt = "x".repeat(256 * 1024);
+        let error = run(&ask_config(&cli), &prompt, &[]).unwrap_err();
+        assert_eq!(
+            "the backend exited before reading the whole prompt",
+            format!("{error:#}")
+        );
     }
 
     #[test]
