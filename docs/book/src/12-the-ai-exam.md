@@ -226,12 +226,18 @@ unsourced topics, sidecar cards included. When that material changes later
 (a source refrozen or rebound, a topic given or stripped of its source, a
 card or a blank added to an unsourced topic, a remediation card among them),
 the standing reads as **sources changed**: `alix stats` prints
-`passed (sources changed)` or `mastered (sources changed)`. It still stands:
+`passed (sources changed)` or `mastered (sources changed)`, the web deck row's
+exam badge and the phone picker's badge turn dashed, and the exam result's
+standing line does too. It still stands:
 a dependent it unlocked stays unlocked, and mastered stays mastered. Re-sit
 (the changed topics are the ones needing work) and pass in a sitting that
 meets the review condition, and the standing is re-earned on the current
 material. Removing a card or a whole unsourced topic, editing card text or
 headings, and a card becoming due or lapsing never change a standing.
+
+The web exam result lists, in one line under the topics, the topics it left
+out because no source grounds them (the leading topic is named by the deck's
+title).
 
 Whenever an answer missed key points, the results offer to turn the gaps into
 **remediation cards**: a cloze card or a plain card for a missed fact, an open

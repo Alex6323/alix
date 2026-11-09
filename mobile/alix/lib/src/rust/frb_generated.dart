@@ -3030,8 +3030,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DeckEntry dco_decode_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return DeckEntry(
       title: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
@@ -3043,14 +3043,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       passed: dco_decode_bool(arr[7]),
       examBadge: dco_decode_opt_String(arr[8]),
       examFilter: dco_decode_String(arr[9]),
-      examDue: dco_decode_bool(arr[10]),
-      hasExam: dco_decode_bool(arr[11]),
-      locked: dco_decode_bool(arr[12]),
-      progressError: dco_decode_bool(arr[13]),
-      icon: dco_decode_opt_String(arr[14]),
-      indent: dco_decode_u_32(arr[15]),
-      tree: dco_decode_String(arr[16]),
-      deadline: dco_decode_opt_box_autoadd_deadline(arr[17]),
+      examChanged: dco_decode_bool(arr[10]),
+      examDue: dco_decode_bool(arr[11]),
+      hasExam: dco_decode_bool(arr[12]),
+      locked: dco_decode_bool(arr[13]),
+      progressError: dco_decode_bool(arr[14]),
+      icon: dco_decode_opt_String(arr[15]),
+      indent: dco_decode_u_32(arr[16]),
+      tree: dco_decode_String(arr[17]),
+      deadline: dco_decode_opt_box_autoadd_deadline(arr[18]),
     );
   }
 
@@ -3077,11 +3078,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExamApplied dco_decode_exam_applied(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ExamApplied(
       unlocked: dco_decode_bool(arr[0]),
       standing: dco_decode_opt_String(arr[1]),
+      examChanged: dco_decode_bool(arr[2]),
     );
   }
 
@@ -4650,6 +4652,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_passed = sse_decode_bool(deserializer);
     var var_examBadge = sse_decode_opt_String(deserializer);
     var var_examFilter = sse_decode_String(deserializer);
+    var var_examChanged = sse_decode_bool(deserializer);
     var var_examDue = sse_decode_bool(deserializer);
     var var_hasExam = sse_decode_bool(deserializer);
     var var_locked = sse_decode_bool(deserializer);
@@ -4669,6 +4672,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       passed: var_passed,
       examBadge: var_examBadge,
       examFilter: var_examFilter,
+      examChanged: var_examChanged,
       examDue: var_examDue,
       hasExam: var_hasExam,
       locked: var_locked,
@@ -4705,7 +4709,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_unlocked = sse_decode_bool(deserializer);
     var var_standing = sse_decode_opt_String(deserializer);
-    return ExamApplied(unlocked: var_unlocked, standing: var_standing);
+    var var_examChanged = sse_decode_bool(deserializer);
+    return ExamApplied(
+      unlocked: var_unlocked,
+      standing: var_standing,
+      examChanged: var_examChanged,
+    );
   }
 
   @protected
@@ -6687,6 +6696,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.passed, serializer);
     sse_encode_opt_String(self.examBadge, serializer);
     sse_encode_String(self.examFilter, serializer);
+    sse_encode_bool(self.examChanged, serializer);
     sse_encode_bool(self.examDue, serializer);
     sse_encode_bool(self.hasExam, serializer);
     sse_encode_bool(self.locked, serializer);
@@ -6716,6 +6726,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_bool(self.unlocked, serializer);
     sse_encode_opt_String(self.standing, serializer);
+    sse_encode_bool(self.examChanged, serializer);
   }
 
   @protected

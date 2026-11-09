@@ -43,7 +43,7 @@ void main() {
     void Function(List<String>, List<String>)? saveAnswers,
     VoidCallback? clearAnswers,
     void Function(Map<String, dynamic>)? saveIdeas,
-    String? Function(RemoteExam, BigInt)? applyResult,
+    ({String text, bool examChanged})? Function(RemoteExam, BigInt)? applyResult,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
@@ -59,7 +59,8 @@ void main() {
         saveIdeas: saveIdeas,
         applyResult: applyResult ?? (exam, nowMs) {
           resultCalls?.add((exam, nowMs));
-          return standingReply;
+          final text = standingReply;
+          return text == null ? null : (text: text, examChanged: false);
         },
         cards: cards,
         applyRemediation: (topicId, cardsText) {

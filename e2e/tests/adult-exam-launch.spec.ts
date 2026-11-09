@@ -554,7 +554,7 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
     verdicts: { pass, partial, total: 18 },
     full: true,
     mastered,
-    standing: mastered ? "mastered (4 Nov)" : "passed (2 Nov)",
+    exam_high_mark: mastered ? "mastered (4 Nov)" : "passed (2 Nov)",
     gaps: mastered ? [] : ["ownership and the move model"],
     can_remediate: !mastered,
     remediated_count: null,

@@ -3479,6 +3479,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_passed = <bool>::sse_decode(deserializer);
         let mut var_examBadge = <Option<String>>::sse_decode(deserializer);
         let mut var_examFilter = <String>::sse_decode(deserializer);
+        let mut var_examChanged = <bool>::sse_decode(deserializer);
         let mut var_examDue = <bool>::sse_decode(deserializer);
         let mut var_hasExam = <bool>::sse_decode(deserializer);
         let mut var_locked = <bool>::sse_decode(deserializer);
@@ -3498,6 +3499,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
             passed: var_passed,
             exam_badge: var_examBadge,
             exam_filter: var_examFilter,
+            exam_changed: var_examChanged,
             exam_due: var_examDue,
             has_exam: var_hasExam,
             locked: var_locked,
@@ -3542,9 +3544,11 @@ impl SseDecode for crate::api::exam::ExamApplied {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_unlocked = <bool>::sse_decode(deserializer);
         let mut var_standing = <Option<String>>::sse_decode(deserializer);
+        let mut var_examChanged = <bool>::sse_decode(deserializer);
         return crate::api::exam::ExamApplied {
             unlocked: var_unlocked,
             standing: var_standing,
+            exam_changed: var_examChanged,
         };
     }
 }
@@ -5604,6 +5608,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.passed.into_into_dart().into_dart(),
             self.exam_badge.into_into_dart().into_dart(),
             self.exam_filter.into_into_dart().into_dart(),
+            self.exam_changed.into_into_dart().into_dart(),
             self.exam_due.into_into_dart().into_dart(),
             self.has_exam.into_into_dart().into_dart(),
             self.locked.into_into_dart().into_dart(),
@@ -5677,6 +5682,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamApplied {
         [
             self.unlocked.into_into_dart().into_dart(),
             self.standing.into_into_dart().into_dart(),
+            self.exam_changed.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -7042,6 +7048,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <bool>::sse_encode(self.passed, serializer);
         <Option<String>>::sse_encode(self.exam_badge, serializer);
         <String>::sse_encode(self.exam_filter, serializer);
+        <bool>::sse_encode(self.exam_changed, serializer);
         <bool>::sse_encode(self.exam_due, serializer);
         <bool>::sse_encode(self.has_exam, serializer);
         <bool>::sse_encode(self.locked, serializer);
@@ -7084,6 +7091,7 @@ impl SseEncode for crate::api::exam::ExamApplied {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.unlocked, serializer);
         <Option<String>>::sse_encode(self.standing, serializer);
+        <bool>::sse_encode(self.exam_changed, serializer);
     }
 }
 

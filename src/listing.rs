@@ -33,6 +33,7 @@ pub struct DeckSummary {
     pub passed: bool,
     pub exam_badge: Option<String>,
     pub exam_filter: crate::exam_status::ExamFilter,
+    pub exam_changed: bool,
     pub exam_due: bool,
     pub has_exam: bool,
     pub exam_prepared: bool,
@@ -459,6 +460,7 @@ fn folder_summary(
         passed: false,
         exam_badge: None,
         exam_filter: crate::exam_status::ExamFilter::None,
+        exam_changed: false,
         exam_due: false,
         has_exam: false,
         exam_prepared: false,
@@ -553,6 +555,7 @@ fn deck_summary(
         } else {
             exam.filter
         },
+        exam_changed: exam.exam_changed && !progress_error,
         exam_due: exam_due && !progress_error,
         has_exam,
         exam_prepared,

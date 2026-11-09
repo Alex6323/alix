@@ -99,11 +99,17 @@ int applyExamRemediation({
 class ExamApplied {
   final bool unlocked;
   final String? standing;
+  final bool examChanged;
 
-  const ExamApplied({required this.unlocked, this.standing});
+  const ExamApplied({
+    required this.unlocked,
+    this.standing,
+    required this.examChanged,
+  });
 
   @override
-  int get hashCode => unlocked.hashCode ^ standing.hashCode;
+  int get hashCode =>
+      unlocked.hashCode ^ standing.hashCode ^ examChanged.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -111,7 +117,8 @@ class ExamApplied {
       other is ExamApplied &&
           runtimeType == other.runtimeType &&
           unlocked == other.unlocked &&
-          standing == other.standing;
+          standing == other.standing &&
+          examChanged == other.examChanged;
 }
 
 class ExamOutcome {

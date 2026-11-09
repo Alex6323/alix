@@ -198,6 +198,7 @@ pub fn exam_sitting_start(
 pub struct ExamApplied {
     pub unlocked: bool,
     pub standing: Option<String>,
+    pub exam_changed: bool,
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -235,7 +236,8 @@ pub fn apply_exam_result(
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     Ok(ExamApplied {
         unlocked,
-        standing: alix::exam_status::standing(&store, deck_id, now_ms),
+        standing: alix::exam_status::exam_high_mark(&store, deck_id, now_ms),
+        exam_changed: alix::exam_status::standing_changed(&store, deck_id, &stamp),
     })
 }
 
@@ -591,6 +593,36 @@ mod tests {
             store.topic_result("deck-d", "topic-a").map(|r| r.pass),
             "the results are still recorded"
         );
+    }
+
+    #[test]
+    fn an_ineligible_phone_sitting_on_changed_material_reports_exam_changed_and_keeps_the_standing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let start = exam_sitting_start(deck_path.clone(), root_arg(root), false, NOW).unwrap();
+        let both = |start: &ExamStart| {
+            outcome(
+                start,
+                vec![
+                    topic_outcome(&path, "A", true),
+                    topic_outcome(&path, "B", true),
+                ],
+                true,
+            )
+        };
+        let first =
+            apply_exam_result(deck_path.clone(), root_arg(root), both(&start), NOW, None).unwrap();
+        assert!(!first.exam_changed, "a sitting that just set the standing matches it");
+
+        let mut moved = both(&start);
+        moved.eligible = false;
+        moved.stamp.unsourced_cards = vec!["card-new".to_string()];
+        let second =
+            apply_exam_result(deck_path.clone(), root_arg(root), moved, NOW + 1, None).unwrap();
+        assert!(second.exam_changed, "the stamp now lists a card the standing does not");
+        assert!(second.standing.is_some(), "the standing stays latched");
     }
 
     #[test]

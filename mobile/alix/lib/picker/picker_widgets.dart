@@ -938,6 +938,8 @@ List<Widget> pickerExamBadgeLine(ThemeData theme, PickerEntry entry) {
         fontFamily: 'IBM Plex Mono',
         fontSize: 11,
         color: theme.alix.dim,
+        decoration: entry.examChanged ? TextDecoration.underline : null,
+        decorationStyle: TextDecorationStyle.dashed,
       ),
     ),
   ];

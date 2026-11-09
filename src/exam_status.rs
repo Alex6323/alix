@@ -125,7 +125,7 @@ impl ExamRow {
     }
 }
 
-pub fn standing(store: &Store, deck_id: &str, now_ms: u64) -> Option<String> {
+pub fn exam_high_mark(store: &Store, deck_id: &str, now_ms: u64) -> Option<String> {
     standing_text(
         store.deck_mastered_at(deck_id),
         store.deck_passed_at(deck_id),
@@ -303,6 +303,15 @@ pub fn exam_topics(deck: &Deck, sources: Option<&Manifest>) -> Vec<ExamTopic> {
     topics
 }
 
+/// Labels, in deck order, of the topics holding cards that no source binds.
+pub fn unsourced_topic_labels(deck: &Deck) -> Vec<String> {
+    exam_topics(deck, manifest_of(deck))
+        .into_iter()
+        .filter(|topic| !topic.sourced && topic.size > 0)
+        .map(|topic| topic.label)
+        .collect()
+}
+
 pub fn sourced_hash(topics: &[(&str, &str)]) -> String {
     let mut lines: Vec<String> = topics
         .iter()
@@ -365,6 +374,15 @@ pub fn current_stamp(deck: &Deck, personal: &[Card], manifest: Option<&Manifest>
         &pairs,
         unsourced_card_ids(deck, personal, &sourced_by_index),
     )
+}
+
+pub fn standing_changed(store: &Store, deck_id: &str, current: &ExamStamp) -> bool {
+    let has_standing =
+        store.deck_passed_at(deck_id).is_some() || store.deck_mastered_at(deck_id).is_some();
+    has_standing
+        && store
+            .exam_stamp(deck_id)
+            .is_some_and(|recorded| exam_changed(current, recorded))
 }
 
 pub fn exam_changed(current: &ExamStamp, recorded: &ExamStamp) -> bool {
@@ -876,6 +894,61 @@ mod tests {
     fn row_after(ws: &Workspace, store: &Store) -> ExamRow {
         let deck = Deck::load(ws.deck()).unwrap();
         exam_row(&deck, store, None)
+    }
+
+    #[test]
+    fn the_exam_screen_lists_unsourced_topics_by_label_with_the_deck_title_for_the_leading_topic() {
+        let ws = Workspace::new();
+        std::fs::write(
+            ws.deck(),
+            "---\nformat-version: 1\nid: deck-fixture\n---\n\
+            ## lead\nzero\n<!-- id: card-l0 -->\n\n\
+            # A\n<!-- id: topic-a -->\n\n## a1\none\n<!-- id: card-a1 -->\n\n\
+            # Terms\n<!-- id: topic-terms -->\n\n## t1\ntwo\n<!-- id: card-t1 -->\n",
+        )
+        .unwrap();
+        ws.write_live("a.txt", b"alpha source\n");
+        ws.add(&["a.txt"], &["topic-a"]).unwrap();
+        let deck = Deck::load(ws.deck()).unwrap();
+        assert_eq!(
+            vec![deck.display_name(), "Terms".to_string()],
+            unsourced_topic_labels(&deck),
+            "the leading topic is named by the deck title, never an empty heading"
+        );
+    }
+
+    #[test]
+    fn a_standing_is_changed_for_a_sitting_stamp_only_when_the_recorded_stamp_differs() {
+        let (ws, _) = law_workspace();
+        let deck = Deck::load(ws.deck()).unwrap();
+        let mut store = Store::open(ws.root().join("p.json")).unwrap();
+        let now = 1_000_000;
+        let stamp_of_deck = |deck: &Deck| {
+            let personal = crate::assemble::personal_cards(deck).cards;
+            current_stamp(deck, &personal, manifest_of(deck))
+        };
+        assert!(
+            !standing_changed(&store, "deck-fixture", &stamp_of_deck(&deck)),
+            "control: no standing, nothing changed"
+        );
+        for id in ["card-u1", "card-u2", "card-v1"] {
+            *store.get_or_insert(id) = graduated_pass(now);
+        }
+        pass_topics(&mut store, &deck, &["topic-a"], now);
+        assert!(
+            !standing_changed(&store, "deck-fixture", &stamp_of_deck(&deck)),
+            "the stamp the standing was earned on matches"
+        );
+        rewrite_deck(
+            &ws.deck(),
+            "## u2\nthree\n<!-- id: card-u2 -->\n",
+            "## u2\nthree\n<!-- id: card-u2 -->\n\n## u3\nnew\n<!-- id: card-u3 -->\n",
+        );
+        let edited = Deck::load(ws.deck()).unwrap();
+        assert!(
+            standing_changed(&store, "deck-fixture", &stamp_of_deck(&edited)),
+            "a card added to an unsourced topic changes the standing"
+        );
     }
 
     #[test]

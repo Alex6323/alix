@@ -674,7 +674,9 @@ pub(super) struct ExamDto {
     pub(super) verdicts: Option<VerdictsDto>,
     pub(super) full: bool,
     pub(super) mastered: bool,
-    pub(super) standing: Option<String>,
+    pub(super) exam_high_mark: Option<String>,
+    pub(super) exam_changed: bool,
+    pub(super) unsourced_topics: Vec<String>,
     pub(super) gaps: Vec<String>,
     pub(super) can_remediate: bool,
     pub(super) remediated_count: Option<usize>,
@@ -900,9 +902,12 @@ pub(super) fn exam_dto(ex: &Examining, store: &crate::store::Store) -> ExamDto {
         verdicts: parts.verdicts,
         full: s.full(),
         mastered: parts.mastered,
-        standing: result.and_then(|_| {
-            crate::exam_status::standing(store, s.deck_token(), crate::time::now_ms())
+        exam_high_mark: result.and_then(|_| {
+            crate::exam_status::exam_high_mark(store, s.deck_token(), crate::time::now_ms())
         }),
+        exam_changed: result.is_some()
+            && crate::exam_status::standing_changed(store, s.deck_token(), s.stamp()),
+        unsourced_topics: s.unsourced_topics().to_vec(),
         gaps: s.gaps(),
         can_remediate: s.can_remediate(),
         remediated_count: s.remediated_count(),
@@ -1815,11 +1820,99 @@ mod tests {
             "a pass exposes exactly the direct dependents"
         );
         assert!(
-            dto.standing
+            dto.exam_high_mark
                 .as_deref()
                 .is_some_and(|line| line.starts_with("mastered (")),
             "a perfect full sitting reports the deck mastered: {:?}",
-            dto.standing
+            dto.exam_high_mark
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_exam_dto_reports_unsourced_topics_and_whether_the_exam_changed() {
+        let _lock = crate::testutil::exec_lock();
+        let (dir, decks) = crate::sources::testkit::workspace_decks();
+        let base = decks.join("base.md");
+        std::fs::write(
+            &base,
+            "---\nformat-version: 1\nid: deck-base\n---\n\
+             # Core\n<!-- id: topic-core -->\n\n## base\nanswer\n<!-- id: card-base -->\n\n\
+             # Terms\n<!-- id: topic-terms -->\n\n## term\nanswer\n<!-- id: card-term -->\n",
+        )
+        .unwrap();
+        crate::stamp::stamp_deck(&base).unwrap();
+        let live = dir.path().join("live");
+        std::fs::create_dir_all(&live).unwrap();
+        let file = live.join("base.txt");
+        std::fs::write(&file, "the source of base\n").unwrap();
+        crate::sources::commands::add(crate::sources::commands::AddRequest {
+            deck: &base,
+            files: vec![file],
+            root: Some(("live".to_string(), live)),
+            key: None,
+            topics: vec!["topic-core".to_string()],
+        })
+        .unwrap();
+        let cli = crate::testutil::fake_cli(
+            dir.path(),
+            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"questions\"'*) printf '%s' '{\"questions\":[{\"shape\":\"fix\",\"idea\":1,\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\n*) printf '%s' '{\"ideas\":[\"m\"]}' ;;\nesac",
+        );
+        let deck = crate::deck::Deck::load(&base).unwrap();
+        let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();
+        let mut sitting = exam::Sitting::start(
+            &deck,
+            exam::sitting_start(&deck, &store, 0, None),
+            Strictness::Balanced,
+            crate::config::ExamConfig::default(),
+            crate::testutil::ask_config(&cli),
+        );
+        for _ in 0..500 {
+            let _ = sitting.poll(&mut store, 0, None);
+            if !sitting.thinking() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        sitting.set_answer("answer".to_string());
+        sitting.submit();
+        for _ in 0..500 {
+            let _ = sitting.poll(&mut store, 0, None);
+            if !sitting.thinking() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(
+            sitting.result().is_some(),
+            "setup: the sitting reached results: {:?}",
+            sitting.error()
+        );
+        let examining = Examining {
+            sitting,
+            deck_path: base,
+            prepared: None,
+        };
+
+        let dto = exam_dto(&examining, &store);
+        assert_eq!(
+            vec!["Terms".to_string()],
+            dto.unsourced_topics,
+            "the topic no source grounds is listed by its heading"
+        );
+        assert!(
+            !dto.exam_changed,
+            "control: no standing was set, so nothing changed"
+        );
+
+        let stale = crate::store::ExamStamp {
+            sourced: "other".to_string(),
+            unsourced_cards: Vec::new(),
+        };
+        store.set_deck_passed("deck-base", 5, &stale);
+        assert!(
+            exam_dto(&examining, &store).exam_changed,
+            "a standing earned on a different stamp is changed"
         );
     }
 

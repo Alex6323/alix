@@ -76,8 +76,9 @@ ExamSittingStart examSittingStart({
   );
 }
 
-/// The deck's standing after the sitting, worded by the core, or null.
-String? applyExamResult({
+/// The deck's standing after the sitting, worded by the core, and whether
+/// its material has changed since; null while the deck has no standing.
+({String text, bool examChanged})? applyExamResult({
   required String deckPath,
   required String rootDir,
   required RemoteExam exam,
@@ -111,7 +112,9 @@ String? applyExamResult({
     nowMs: nowMs,
     device: device,
   );
-  return applied.standing;
+  final text = applied.standing;
+  if (text == null) return null;
+  return (text: text, examChanged: applied.examChanged);
 }
 
 int applyExamRemediation({

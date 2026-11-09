@@ -88,7 +88,8 @@ class ExamScreen extends StatefulWidget {
   /// Records a settled sitting, whatever its outcome, in the phone's own
   /// store (a closure over `applyExamResult`). Called at most once per
   /// sitting, with the terminal DTO.
-  final String? Function(RemoteExam exam, BigInt nowMs) applyResult;
+  final ({String text, bool examChanged})? Function(RemoteExam exam, BigInt nowMs)
+  applyResult;
 
   /// The card ids whose topics to examine; null sits the full deck.
   final List<String>? cards;
@@ -138,7 +139,7 @@ class _ExamScreenState extends State<ExamScreen> {
   /// extra poll landing on the same terminal `results` DTO (e.g. two
   /// periodic ticks resolving out of order) must not double-apply.
   bool _resultApplied = false;
-  String? _standing;
+  ({String text, bool examChanged})? _standing;
 
   /// Same guard, for turning `remediated` cards into store entries.
   bool _remediationApplied = false;
@@ -571,7 +572,15 @@ class _ExamScreenState extends State<ExamScreen> {
             ),
           ),
         if (_standing case final standing?)
-          Text(standing, style: TextStyle(color: tokens.good, fontSize: 13)),
+          Text(
+            standing.text,
+            style: TextStyle(
+              color: tokens.good,
+              fontSize: 13,
+              decoration: standing.examChanged ? TextDecoration.underline : null,
+              decorationStyle: TextDecorationStyle.dashed,
+            ),
+          ),
         const SizedBox(height: 16),
         Expanded(
           child: ListView(

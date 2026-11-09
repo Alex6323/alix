@@ -6,6 +6,8 @@
   "deck": "rust.md",
   "elapsed": null,
   "error": null,
+  "exam_changed": true,
+  "exam_high_mark": "passed (2 Nov)",
   "full": true,
   "gaps": [],
   "grades": [
@@ -78,7 +80,6 @@
   "question": null,
   "question_units": null,
   "remediated_count": null,
-  "standing": "passed (2 Nov)",
   "strictness": "balanced",
   "thinking": false,
   "topics": [
@@ -100,6 +101,9 @@
   "total": 1,
   "unlocks": [
     "next.md"
+  ],
+  "unsourced_topics": [
+    "Terms"
   ],
   "verdicts": {
     "partial": 0,

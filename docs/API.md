@@ -1549,7 +1549,9 @@ Example (from the pinned test):
 | `verdicts` | {pass, partial, total}? | The sitting's raw verdict counts; null until graded. A client shows points as pass + partial / 2 over total. |
 | `full` | bool | The sitting examines every topic of the deck. |
 | `mastered` | bool | A full sitting where every answer was PASS. |
-| `standing` | string? | The deck's standing after the sitting, worded by the lib: `"mastered (4 Nov)"` or `"passed (2 Nov)"` (local date; the year only outside the current one); null before results or while the deck has neither. |
+| `exam_high_mark` | string? | The deck's highest exam result after the sitting, worded by the lib: `"mastered (4 Nov)"` or `"passed (2 Nov)"` (local date; the year only outside the current one); null before results or while the deck has neither. |
+| `exam_changed` | bool | After results: the deck holds an exam high mark and the material it was earned on differs from this sitting's evidence stamp, as in `DeckItemDto.exam_changed`. Render the mark dashed. False before results. |
+| `unsourced_topics` | [string] | Labels, in deck order, of the topics holding cards that no source binds, so the sitting does not examine them; the leading topic is named by the deck title. A client lists them as not examined. |
 | `gaps` | [string] | Named understanding gaps. |
 | `can_remediate` | bool | A failed topic has an answer that missed key points. |
 | `remediated_count` | number? | Null until remediation completes. |
@@ -1756,7 +1758,7 @@ phone applies it to its own state).
 | `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
 | `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
-| `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` under its `topic_id` with its `fingerprint` in its own store, with the review condition and evidence stamp it evaluated at its own start; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
+| `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` under its `topic_id` with its `fingerprint` in its own store, with the review condition and evidence stamp it evaluated at its own start; the desktop records nothing of a phone sitting. There is no `exam_high_mark`: the phone words its own from its store. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `gaps` | [string] | Named understanding gaps. |
 | `can_remediate` | bool | A failed topic has an answer that missed key points. |

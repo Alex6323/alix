@@ -226,7 +226,9 @@ export function createExam({
     if (current.phase === "results") {
       const summary = el("div", "exam-summary");
       summary.appendChild(el("div", "exam-score", countText(current.verdicts)));
-      if (current.standing) summary.appendChild(el("div", "exam-standing", current.standing));
+      if (current.exam_high_mark) {
+        summary.appendChild(el("div", "exam-standing" + (current.exam_changed ? " exam-changed" : ""), current.exam_high_mark));
+      }
       wrap.appendChild(summary);
       const topics = el("div", "exam-topics");
       current.topics.forEach((topic) => {
@@ -241,6 +243,9 @@ export function createExam({
         topics.appendChild(topicEl);
       });
       wrap.appendChild(topics);
+      if (current.unsourced_topics && current.unsourced_topics.length) {
+        wrap.appendChild(el("div", "exam-unsourced", `Not examined: ${current.unsourced_topics.join(", ")}`));
+      }
       if (current.unlocks && current.unlocks.length) {
         wrap.appendChild(el("div", "exam-unlocks", `Unlocks: ${current.unlocks.join(", ")}`));
       }

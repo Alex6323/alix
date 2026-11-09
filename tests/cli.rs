@@ -2282,6 +2282,38 @@ fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
 }
 
 #[test]
+fn stats_says_sources_changed_once_the_material_a_pass_was_earned_on_changes() {
+    let dir = TempDir::new().unwrap();
+    let deck = write(dir.path(), "math.md", VALID_DECK);
+    let mut store = deck_store(&deck);
+    let loaded = alix::deck::Deck::load(&deck).unwrap();
+    let now = alix::time::now_ms();
+    let stamp = alix::exam_status::sitting_start(&loaded, &store, now, None).stamp;
+    store.set_deck_passed("deck-mathdeck", now, &stamp);
+    store.save().unwrap();
+
+    let out = alix(&["stats", &deck]);
+    assert!(out.status.success(), "control: stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("  state:   passed ✓"),
+        "control: unchanged material keeps the plain glyph: {}",
+        stdout(&out)
+    );
+
+    let mut text = std::fs::read_to_string(&deck).unwrap();
+    text.push_str("\n## a card added later\nanswer\n<!-- id: card-added1 -->\n");
+    std::fs::write(&deck, text).unwrap();
+
+    let out = alix(&["stats", &deck]);
+    assert!(out.status.success(), "changed: stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("  state:   passed (sources changed)"),
+        "changed: stdout: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn reset_all_clears_a_seeded_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);

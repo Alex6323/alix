@@ -233,6 +233,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it for the first time. Settings gains a "Paired desktop" row to switch
   between saved pairings.
 
+- A deck whose exam material changed since its standing was earned shows
+  that on the web deck row (the exam badge gets a dashed border), the phone
+  picker and exam result (a dashed underline), and the exam result screens
+  (`exam_changed`). The web exam result also lists, in one line, the topics
+  the exam leaves out because no source grounds them (`unsourced_topics`).
+
 ### Removed
 
 - The phone's shared-folder decks root and its `MANAGE_EXTERNAL_STORAGE`
@@ -240,6 +246,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Breaking: wire `ExamDto.standing` is renamed `exam_high_mark` (same text,
+  e.g. `"mastered (4 Nov)"`); `ExamDto` gains `exam_changed` and
+  `unsourced_topics`.
 
 - Breaking: an exam result is recorded per topic, under the topic id with
   the fingerprint of the sources it was examined over, instead of on each
@@ -260,7 +270,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A card without one, with it elsewhere, or with two is skipped alone (its
   progress is kept), with a load warning and an `alix doctor` error, as is
   a topic line outside any card; a card naming a topic the deck lacks counts
-  in the leading topic and doctor warns. In a deck file the line is a parse error. Exam
+  in the leading topic and doctor warns. In a deck file the line is a parse
+  error. Exam
   remediation runs once per failed topic and binds each card to it, and a
   tutor card joins the topic of the card it was drafted on; both refuse a
   topic id two topics share. Wire: `RemoteExamDto.cards` is replaced by

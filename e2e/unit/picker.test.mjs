@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPicker } from "../../web/alix/review/picker.js";
+import { createPicker, deckMetaClass } from "../../web/alix/review/picker.js";
 
 function harness(responses) {
   const calls = [];
@@ -70,4 +70,11 @@ test("picker owns review and trace launch transitions", async () => {
 
   assert.deepEqual(run.traces, [trace]);
   assert.equal(run.stored.get("alix.lastDeck"), "trace.md");
+});
+
+test("an_exam_changed_row_gets_the_dashed_exam_badge", () => {
+  const changed = deckMetaClass({ state: "finished", exam_changed: true, badge_dotted: false });
+  assert.deepEqual(changed.split(" "), ["meta", "state-finished", "exam-changed"]);
+  const plain = deckMetaClass({ state: "finished", exam_changed: false, badge_dotted: true });
+  assert.ok(!plain.includes("exam-changed"), `a lapsed depth badge is not an exam change: ${plain}`);
 });

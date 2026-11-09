@@ -1,3 +1,7 @@
+export function deckMetaClass(it) {
+  return "meta state-" + it.state + (it.exam_changed ? " exam-changed" : "");
+}
+
 export function createPicker({
   api,
   post,
@@ -468,7 +472,7 @@ export function createPicker({
         row.appendChild(badge);
       }
       if (it.new_cards) row.appendChild(el("span", "badge-new", "new"));
-      if (it.meta) row.appendChild(el("span", "meta state-" + it.state, it.meta));
+      if (it.meta) row.appendChild(el("span", deckMetaClass(it), it.meta));
       // 🕒 nothing due — at the line end with the status, so the left gutter stays
       // tree + title. (A finished deck shows its 🎉 in the badge instead.)
       if (gated && !it.reviewable && it.state !== "finished") row.appendChild(el("span", "glyph", "\u{1F552}"));
