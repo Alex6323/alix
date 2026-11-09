@@ -1,15 +1,16 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::Metadata,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DisplayPath, MANIFEST, MANIFEST_VERSION, SourceError, copy_name, io_error, is_copy_name,
-    is_source_id, line_count, parse_binding, read_versioned, source_id,
+    Binding, DisplayPath, MANIFEST, MANIFEST_VERSION, SourceError, copy_name, io_error,
+    is_copy_name, is_source_id, line_count, parse_binding, read_versioned, source_id,
 };
-use crate::{deck::Deck, workspace::WorkspaceFiles};
+use crate::{deck::Deck, token, workspace::WorkspaceFiles};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -26,6 +27,14 @@ pub struct Row {
     pub bound_to: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidRow<'a> {
+    pub id: &'a str,
+    pub row: &'a Row,
+    pub display: DisplayPath,
+    pub bindings: Vec<Binding>,
+}
+
 impl Manifest {
     pub fn load(dir: &Path) -> Result<Option<Self>, SourceError> {
         read_versioned(
@@ -35,31 +44,40 @@ impl Manifest {
         )
     }
 
-    pub fn validate(&self) -> Result<(), SourceError> {
+    pub fn validate(&self) -> Result<Vec<ValidRow<'_>>, SourceError> {
         let mut paths: BTreeSet<&str> = BTreeSet::new();
+        let mut rows = Vec::with_capacity(self.sources.len());
         for (id, row) in &self.sources {
             if !is_source_id(id) {
                 return Err(SourceError::BadId(id.clone()));
             }
-            display_of(id, row)?;
+            let display = display_of(id, row)?;
             if !paths.insert(&row.path) {
                 return Err(SourceError::DuplicatePath(row.path.clone()));
             }
             if row.bound_to.is_empty() {
                 return Err(SourceError::EmptyBinding(id.clone()));
             }
-            let mut topics: BTreeSet<String> = BTreeSet::new();
+            let mut topics: BTreeSet<&str> = BTreeSet::new();
+            let mut bindings = Vec::with_capacity(row.bound_to.len());
             for entry in &row.bound_to {
                 let binding = parse_binding(id, entry)?;
-                if !topics.insert(binding.topic.clone()) {
+                if !topics.insert(topic_of(entry)) {
                     return Err(SourceError::DuplicateTopicEntry {
                         id: id.clone(),
                         topic: binding.topic,
                     });
                 }
+                bindings.push(binding);
             }
+            rows.push(ValidRow {
+                id,
+                row,
+                display,
+                bindings,
+            });
         }
-        Ok(())
+        Ok(rows)
     }
 }
 
@@ -82,61 +100,116 @@ fn topic_of(entry: &str) -> &str {
 pub struct DeckSources {
     pub dir: PathBuf,
     pub manifest: Manifest,
+    pub copies: BTreeMap<String, Vec<u8>>,
 }
 
 pub fn load_verified(
     workspace_root: &Path,
     deck_id: &str,
 ) -> Result<Option<DeckSources>, SourceError> {
-    let dir = WorkspaceFiles::new(workspace_root).sources_for(deck_id);
+    if !matches!(token::parse_id(deck_id), Some((token::Kind::Deck, ..))) {
+        return Err(SourceError::BadDeckId(deck_id.to_string()));
+    }
+    let files = WorkspaceFiles::new(workspace_root);
+    let dir = files.sources_for(deck_id);
+    if !folder_exists(&files.sources())? || !folder_exists(&dir)? {
+        return Ok(None);
+    }
     let Some(manifest) = Manifest::load(&dir)? else {
         return Ok(None);
     };
-    manifest.validate()?;
-    verify_copies(&dir, &manifest)?;
-    Ok(Some(DeckSources { dir, manifest }))
+    let rows = manifest.validate()?;
+    let copies = verify_copies(&dir, &rows)?;
+    Ok(Some(DeckSources {
+        dir,
+        manifest,
+        copies,
+    }))
 }
 
-fn verify_copies(dir: &Path, manifest: &Manifest) -> Result<(), SourceError> {
+fn folder_exists(path: &Path) -> Result<bool, SourceError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(SourceError::LinkedFolder(path.to_path_buf()))
+        }
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(io_error(path)(error)),
+    }
+}
+
+fn verify_copies(
+    dir: &Path,
+    rows: &[ValidRow<'_>],
+) -> Result<BTreeMap<String, Vec<u8>>, SourceError> {
     let names = read_names(dir).map_err(io_error(dir))?;
-    for (id, row) in &manifest.sources {
-        let expected = copy_name(id, &display_of(id, row)?);
+    let mut copies = BTreeMap::new();
+    for valid in rows {
+        let expected = copy_name(valid.id, &valid.display);
         let path = dir.join(&expected);
-        match std::fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.file_type().is_file() => {}
-            Ok(_) => return Err(SourceError::NotRegularFile(path)),
+        let inspected = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let prefix = format!("{id}.");
-                return Err(match names.iter().find(|name| name.starts_with(&prefix)) {
-                    Some(found) => SourceError::WrongName {
-                        expected,
-                        found: found.clone(),
-                    },
-                    None => SourceError::MissingCopy(id.clone()),
-                });
+                return Err(missing_copy(valid.id, expected, &names));
             }
             Err(error) => return Err(io_error(&path)(error)),
+        };
+        if !inspected.file_type().is_file() {
+            return Err(SourceError::NotRegularFile(path));
         }
-        let bytes = std::fs::read(&path).map_err(io_error(&path))?;
+        let bytes = read_inspected_file(&path, &inspected)?;
         if bytes.is_empty() {
             return Err(SourceError::EmptyCopy(path));
         }
-        if source_id(&bytes) != *id {
+        if source_id(&bytes) != valid.id {
             return Err(SourceError::DigestMismatch(path));
         }
         let lines = line_count(&bytes);
-        for entry in &row.bound_to {
-            let binding = parse_binding(id, entry)?;
+        for (entry, binding) in valid.row.bound_to.iter().zip(&valid.bindings) {
             if binding.ranges.iter().any(|&(_, end)| end as usize > lines) {
                 return Err(SourceError::RangeOutOfBounds {
-                    id: id.clone(),
+                    id: valid.id.to_string(),
                     entry: entry.clone(),
                     lines,
                 });
             }
         }
+        copies.insert(valid.id.to_string(), bytes);
     }
-    Ok(())
+    Ok(copies)
+}
+
+fn missing_copy(id: &str, expected: String, names: &BTreeSet<String>) -> SourceError {
+    let prefix = format!("{id}.");
+    match names.iter().find(|name| name.starts_with(&prefix)) {
+        Some(found) => SourceError::WrongName {
+            expected,
+            found: found.clone(),
+        },
+        None => SourceError::MissingCopy(id.to_string()),
+    }
+}
+
+#[cfg(unix)]
+fn read_inspected_file(path: &Path, inspected: &Metadata) -> Result<Vec<u8>, SourceError> {
+    use std::{io::Read, os::unix::fs::MetadataExt};
+
+    let mut file = std::fs::File::open(path).map_err(io_error(path))?;
+    let opened = file.metadata().map_err(io_error(path))?;
+    if !opened.file_type().is_file()
+        || opened.dev() != inspected.dev()
+        || opened.ino() != inspected.ino()
+    {
+        return Err(SourceError::NotRegularFile(path.to_path_buf()));
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).map_err(io_error(path))?;
+    Ok(bytes)
+}
+
+#[cfg(not(unix))]
+fn read_inspected_file(path: &Path, _inspected: &Metadata) -> Result<Vec<u8>, SourceError> {
+    std::fs::read(path).map_err(io_error(path))
 }
 
 fn read_names(dir: &Path) -> std::io::Result<BTreeSet<String>> {
@@ -149,30 +222,32 @@ fn read_names(dir: &Path) -> std::io::Result<BTreeSet<String>> {
     Ok(names)
 }
 
-fn strays(dir: &Path, manifest: Option<&Manifest>) -> Vec<String> {
-    let named: BTreeSet<String> = manifest
-        .map(|manifest| {
-            manifest
-                .sources
-                .iter()
-                .filter_map(|(id, row)| Some(copy_name(id, &display_of(id, row).ok()?)))
-                .collect()
-        })
-        .unwrap_or_default();
-    read_names(dir)
-        .unwrap_or_default()
+fn strays(dir: &Path, rows: &[ValidRow<'_>]) -> Result<Vec<String>, SourceError> {
+    let named: BTreeSet<String> = rows
+        .iter()
+        .map(|valid| copy_name(valid.id, &valid.display))
+        .collect();
+    let names = match read_names(dir) {
+        Ok(names) => names,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(io_error(dir)(error)),
+    };
+    Ok(names
         .into_iter()
         .filter(|name| is_copy_name(name) && !named.contains(name))
-        .collect()
+        .collect())
 }
 
-pub fn stray_copies(dir: &Path) -> Vec<String> {
-    strays(dir, Manifest::load(dir).ok().flatten().as_ref())
+pub fn stray_copies(dir: &Path) -> Result<Vec<String>, SourceError> {
+    match Manifest::load(dir)? {
+        Some(manifest) => strays(dir, &manifest.validate()?),
+        None => strays(dir, &[]),
+    }
 }
 
 impl DeckSources {
-    pub fn residue(&self) -> Vec<String> {
-        strays(&self.dir, Some(&self.manifest))
+    pub fn residue(&self) -> Result<Vec<String>, SourceError> {
+        strays(&self.dir, &self.manifest.validate()?)
     }
 
     pub fn validate_bindings(&self, deck: &Deck) -> Result<(), SourceError> {
@@ -291,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn a_valid_folder_loads_with_no_residue_and_an_absent_one_is_none() {
+    fn a_valid_folder_loads_with_its_bytes_and_no_residue_and_an_absent_one_is_none() {
         let fixture = fixture();
         assert_eq!(
             fixture.dir,
@@ -301,13 +376,36 @@ mod tests {
         let sources = fixture.load().unwrap().expect("a manifest is present");
         assert_eq!(fixture.dir, sources.dir);
         assert_eq!(2, sources.manifest.sources.len());
-        assert_eq!(Vec::<String>::new(), sources.residue(), "no stray copy");
+        assert_eq!(
+            BTreeMap::from([
+                (fixture.a.clone(), A.to_vec()),
+                (fixture.b.clone(), B.to_vec())
+            ]),
+            sources.copies,
+            "the verified load hands back the bytes it hashed"
+        );
         assert_eq!(
             Vec::<String>::new(),
-            stray_copies(&fixture.dir),
+            sources.residue().unwrap(),
+            "no stray copy"
+        );
+        assert_eq!(
+            Vec::<String>::new(),
+            stray_copies(&fixture.dir).unwrap(),
             "stray_copies agrees with residue"
         );
 
+        for bad in [
+            "deck-fixture/../deck-fixture",
+            "card-fixture",
+            "fixture",
+            "",
+        ] {
+            assert!(
+                matches!(load_verified(fixture.root.path(), bad), Err(SourceError::BadDeckId(id)) if id == bad),
+                "{bad:?}: not a deck id"
+            );
+        }
         assert!(
             load_verified(fixture.root.path(), "deck-other")
                 .unwrap()
@@ -318,23 +416,23 @@ mod tests {
         assert!(fixture.load().unwrap().is_none(), "no manifest: None");
         assert_eq!(
             vec![format!("{}.rs", fixture.a), format!("{}.txt", fixture.b)],
-            stray_copies(&fixture.dir),
+            stray_copies(&fixture.dir).unwrap(),
             "without a manifest every copy is stray"
         );
         assert_eq!(
             Vec::<String>::new(),
-            stray_copies(&fixture.root.path().join("sources").join("deck-other")),
+            stray_copies(&fixture.root.path().join("sources").join("deck-other")).unwrap(),
             "no folder: no strays"
         );
     }
 
-    #[test]
-    fn load_verified_fails_closed_on_every_integrity_fault() {
-        type Fault = (
-            &'static str,
-            fn(&Fixture),
-            fn(&Fixture, &SourceError) -> bool,
-        );
+    type Fault = (
+        &'static str,
+        fn(&Fixture),
+        fn(&Fixture, &SourceError) -> bool,
+    );
+
+    fn faults() -> Vec<Fault> {
         let mut faults: Vec<Fault> = vec![
             (
                 "version 2",
@@ -452,19 +550,53 @@ mod tests {
                 },
             ),
         ];
-        #[cfg(unix)]
-        faults.push((
-            "copy replaced by a symlink to an outside file with the same bytes",
-            |f| {
-                let outside = f.root.path().join("outside.rs");
-                fs::write(&outside, A).unwrap();
-                fs::remove_file(f.copy_a()).unwrap();
-                std::os::unix::fs::symlink(&outside, f.copy_a()).unwrap();
-            },
-            |f, e| matches!(e, SourceError::NotRegularFile(p) if *p == f.copy_a()),
-        ));
+        faults.extend(platform_faults());
+        faults
+    }
 
-        for (name, apply, expected) in faults {
+    #[cfg(unix)]
+    fn platform_faults() -> Vec<Fault> {
+        vec![
+            (
+                "copy replaced by a symlink to an outside file with the same bytes",
+                |f| {
+                    let outside = f.root.path().join("outside.rs");
+                    fs::write(&outside, A).unwrap();
+                    fs::remove_file(f.copy_a()).unwrap();
+                    std::os::unix::fs::symlink(&outside, f.copy_a()).unwrap();
+                },
+                |f, e| matches!(e, SourceError::NotRegularFile(p) if *p == f.copy_a()),
+            ),
+            (
+                "deck folder replaced by a symlink to a folder holding the same files",
+                |f| {
+                    let real = f.root.path().join("real");
+                    fs::rename(&f.dir, &real).unwrap();
+                    std::os::unix::fs::symlink(&real, &f.dir).unwrap();
+                },
+                |f, e| matches!(e, SourceError::LinkedFolder(p) if *p == f.dir),
+            ),
+            (
+                "sources root replaced by a symlink",
+                |f| {
+                    let sources = f.root.path().join("sources");
+                    let real = f.root.path().join("real");
+                    fs::rename(&sources, &real).unwrap();
+                    std::os::unix::fs::symlink(&real, &sources).unwrap();
+                },
+                |f, e| matches!(e, SourceError::LinkedFolder(p) if *p == f.root.path().join("sources")),
+            ),
+        ]
+    }
+
+    #[cfg(not(unix))]
+    fn platform_faults() -> Vec<Fault> {
+        Vec::new()
+    }
+
+    #[test]
+    fn load_verified_fails_closed_on_every_integrity_fault() {
+        for (name, apply, expected) in faults() {
             let fixture = fixture();
             apply(&fixture);
             let error = match fixture.load() {
@@ -479,15 +611,54 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
-    fn a_stray_copy_loads_and_shows_as_residue() {
+    fn reading_a_copy_refuses_a_handle_that_is_not_the_inspected_inode() {
+        let fixture = fixture();
+        let other = fs::symlink_metadata(fixture.dir.join(MANIFEST)).unwrap();
+        assert!(
+            matches!(
+                read_inspected_file(&fixture.copy_a(), &other),
+                Err(SourceError::NotRegularFile(p)) if p == fixture.copy_a()
+            ),
+            "a handle on another inode than the one inspected is refused"
+        );
+        let same = fs::symlink_metadata(fixture.copy_a()).unwrap();
+        assert_eq!(
+            A.to_vec(),
+            read_inspected_file(&fixture.copy_a(), &same).unwrap(),
+            "the inspected inode reads through"
+        );
+    }
+
+    #[test]
+    fn a_stray_copy_loads_and_shows_as_residue_but_a_damaged_manifest_names_no_stray() {
         let fixture = fixture();
         let stray = format!("{}.txt", source_id(b"other\n"));
         fs::write(fixture.dir.join(&stray), b"other\n").unwrap();
         fs::write(fixture.dir.join("notes.txt"), b"not copy-named").unwrap();
         let sources = fixture.load().unwrap().expect("a stray is never an error");
-        assert_eq!(vec![stray.clone()], sources.residue());
-        assert_eq!(vec![stray], stray_copies(&fixture.dir));
+        assert_eq!(vec![stray.clone()], sources.residue().unwrap());
+        assert_eq!(vec![stray.clone()], stray_copies(&fixture.dir).unwrap());
+
+        fixture.rewrite_manifest("version = 1", "version = 2");
+        assert!(
+            matches!(
+                stray_copies(&fixture.dir),
+                Err(SourceError::Version { found: 2 })
+            ),
+            "a version-2 manifest is an error, not a list of every copy"
+        );
+        fs::write(fixture.dir.join(MANIFEST), "version = \n").unwrap();
+        assert!(
+            matches!(stray_copies(&fixture.dir), Err(SourceError::Toml { .. })),
+            "an unparseable manifest is an error"
+        );
+        fixture.rewrite_manifest("sdk:src/main.rs", "src/main.rs");
+        assert!(
+            matches!(stray_copies(&fixture.dir), Err(SourceError::BadPath { .. })),
+            "a manifest that fails validation is an error"
+        );
     }
 
     fn write_deck(dir: &Path, text: &str) -> Deck {
@@ -496,25 +667,47 @@ mod tests {
         Deck::load(&path).unwrap()
     }
 
+    fn manifest_with(rows: &[(&str, &str, &[&str])]) -> Manifest {
+        Manifest {
+            version: MANIFEST_VERSION,
+            sources: rows
+                .iter()
+                .map(|(id, path, bound)| {
+                    (
+                        id.to_string(),
+                        Row {
+                            path: path.to_string(),
+                            bound_to: bound.iter().map(|b| b.to_string()).collect(),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
     fn sources_with(rows: &[(&str, &str, &[&str])]) -> DeckSources {
         DeckSources {
             dir: PathBuf::new(),
-            manifest: Manifest {
-                version: MANIFEST_VERSION,
-                sources: rows
-                    .iter()
-                    .map(|(id, path, bound)| {
-                        (
-                            id.to_string(),
-                            Row {
-                                path: path.to_string(),
-                                bound_to: bound.iter().map(|b| b.to_string()).collect(),
-                            },
-                        )
-                    })
-                    .collect(),
-            },
+            manifest: manifest_with(rows),
+            copies: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn validate_keeps_two_paths_that_differ_only_by_case_as_two_rows() {
+        let (x, y) = (source_id(b"x"), source_id(b"y"));
+        let manifest = manifest_with(&[
+            (&x, "sdk:README.md", &["topic-aaaa"]),
+            (&y, "sdk:readme.md", &["topic-aaaa"]),
+        ]);
+        let rows = manifest
+            .validate()
+            .expect("case variants are distinct display paths");
+        assert_eq!(2, rows.len());
+        assert_eq!(
+            vec![x.as_str(), y.as_str()],
+            rows.iter().map(|row| row.id).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -596,7 +789,13 @@ mod tests {
                     \"sdk:src/lib.rs\", bound-to = [\"topic-c9ns6n7s0k9hzm7eb0e7hqn35j\", \
                     \"100-400,512|topic-3whzpgpjp1z1rsfgcvxx4984hn\"] }\n";
         let manifest: Manifest = toml::from_str(text).unwrap();
-        manifest.validate().unwrap();
+        let rows = manifest.validate().unwrap();
+        assert_eq!(1, rows.len());
+        assert_eq!(
+            vec![(100, 400), (512, 512)],
+            rows[0].bindings[1].ranges,
+            "the ranged entry parses into its lines"
+        );
         let row = &manifest.sources["source-18pgda5qxze0435914h3awa04ej3cmvhk8hvwef6g09ybdv1czkc"];
         assert_eq!("sdk:src/lib.rs", row.path);
         assert_eq!(2, row.bound_to.len());

@@ -32,7 +32,7 @@ impl Roots {
             );
         }
         let canonical = Self {
-            version: self.version,
+            version: ROOTS_VERSION,
             roots,
         };
         let path = dir.join(ROOTS);
@@ -64,7 +64,7 @@ mod tests {
         fs::create_dir_all(&live).unwrap();
         let dir = temp.path().join("sources").join("deck-fixture");
         let roots = Roots {
-            version: ROOTS_VERSION,
+            version: 7,
             roots: BTreeMap::from([(
                 "sdk".to_string(),
                 temp.path().join("live").join("..").join("live").join("sub"),
@@ -81,7 +81,10 @@ mod tests {
             loaded.roots,
             "values are canonical, so `..` and symlinked temp roots are resolved"
         );
-        assert_eq!(ROOTS_VERSION, loaded.version);
+        assert_eq!(
+            ROOTS_VERSION, loaded.version,
+            "save writes the current version, whatever the struct carried"
+        );
     }
 
     #[test]

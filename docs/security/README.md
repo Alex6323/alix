@@ -130,14 +130,19 @@ against a malicious author who controls both content and metadata
 
 Frozen exam sources fail closed behind their content address. A verified
 load of a deck's `sources/<deck-id>/` folder refuses the whole set unless the
-manifest is version 1 with no unknown field, every key is a source id, every
-display path and binding parses, every bound range lies within its copy, and
-each copy is a regular file read without following links (so a link placed in
-the folder cannot point the exam or the tutor at a file outside it), carries
-the name its id and display path dictate, is non-empty, and hashes back to
-the id in its name. A copy no row names is residue: reported, never read. The
-roots file beside the manifest holds absolute local folders and is private by
-the `*.local.*` pattern, so it never travels (`src/sources/`).
+deck id is well formed, neither `sources/` nor the deck folder is a symbolic
+link, the manifest is version 1 with no unknown field, every key is a source
+id, every display path and binding parses, every bound range lies within its
+copy, and each copy is a regular file by a link-free stat, carries the name
+its id and display path dictate, is non-empty, and hashes back to the id in
+its name. On Unix the copy is then opened and read through one handle whose
+device and inode must equal the inspected entry's, so a link swapped in
+between the stat and the open is refused as well; on other platforms the
+link-free stat precedes the read without that handle check. A copy no row
+names is residue, reported only; a damaged manifest (unparseable, another
+version, or failing validation) is an error, never a list of copies to
+collect. The roots file beside the manifest holds absolute local folders and
+is private by the `*.local.*` pattern, so it never travels (`src/sources/`).
 
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem

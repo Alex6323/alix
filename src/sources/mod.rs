@@ -14,7 +14,7 @@ use crate::{locator, token};
 mod manifest;
 mod roots;
 
-pub use manifest::{DeckSources, Manifest, Row, load_verified, stray_copies};
+pub use manifest::{DeckSources, Manifest, Row, ValidRow, load_verified, stray_copies};
 pub use roots::Roots;
 
 pub const ROOT: &str = "sources";
@@ -29,6 +29,10 @@ const ID_PREFIX: &str = "source-";
 pub enum SourceError {
     #[error("sources file version {found} is unknown")]
     Version { found: u32 },
+    #[error("deck ID `{0}` is not valid")]
+    BadDeckId(String),
+    #[error("sources folder `{0}` is a symbolic link")]
+    LinkedFolder(PathBuf),
     #[error("`{0}` is not a source id")]
     BadId(String),
     #[error("{}display path `{path}` {problem}", source_prefix(.id))]
@@ -214,8 +218,8 @@ fn path_problem(path: &str) -> Option<&'static str> {
     if path.contains('\\') {
         return Some("contains a backslash");
     }
-    if matches!(path.as_bytes(), [letter, b':', ..] if letter.is_ascii_alphabetic()) {
-        return Some("starts with a drive letter");
+    if path.contains(':') {
+        return Some("contains a colon");
     }
     path.split('/').find_map(|component| match component {
         "" => Some("has an empty component"),
@@ -412,8 +416,6 @@ mod tests {
             ("dl:rfc9110.txt", Ok(())),
             ("sdk:docs/Übersicht.md", Ok(())),
             ("sdk:a b", Ok(())),
-            ("sdk:ab:c", Ok(())),
-            ("sdk:x/a:b", Ok(())),
             ("a-b_1:x", Ok(())),
             ("src/lib.rs", Err("has no key")),
             ("Sdk:x", Err("has a malformed key")),
@@ -431,9 +433,12 @@ mod tests {
             ("sdk:..", Err("has a `..` component")),
             ("sdk:a\\b", Err("contains a backslash")),
             ("sdk:C:\\x", Err("contains a backslash")),
-            ("sdk:C:/x", Err("starts with a drive letter")),
-            ("sdk:c:x", Err("starts with a drive letter")),
-            ("sdk:a:b", Err("starts with a drive letter")),
+            ("sdk:C:/x", Err("contains a colon")),
+            ("sdk:c:x", Err("contains a colon")),
+            ("sdk:a:b", Err("contains a colon")),
+            ("sdk:ab:c", Err("contains a colon")),
+            ("sdk:x/a:b", Err("contains a colon")),
+            ("sdk:a:", Err("contains a colon")),
             ("sdk:a\u{7}b", Err("contains a control character")),
             ("sdk:a\u{7f}b", Err("contains a control character")),
             ("sdk:a\nb", Err("contains a control character")),
