@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     path::{Path, PathBuf},
     sync::mpsc::{Receiver, TryRecvError, channel},
 };
@@ -169,6 +169,7 @@ pub fn generate_questions(
         cfg,
         ask_cfg,
         &ask::AskJob::default(),
+        &mut |_| Ok(()),
     )
 }
 
@@ -272,9 +273,19 @@ impl Prepared {
     }
 
     /// Whether every question was written from the deck's current sources
-    /// for a topic it still has.
+    /// for a topic it still has, and every topic sourced now was sourced the
+    /// same way when this exam was written.
     pub fn is_current(&self, deck: &Deck) -> bool {
-        !self.questions.is_empty() && self.against(deck).1.len() == self.questions.len()
+        let fingerprints = deck.declared().fingerprints();
+        let topic_ids: BTreeSet<String> = deck.topic_ids().into_iter().flatten().collect();
+        !self.questions.is_empty()
+            && self
+                .questions
+                .iter()
+                .all(|q| topic_ids.contains(&q.topic) && self.fresh(&q.topic, &fingerprints))
+            && fingerprints
+                .keys()
+                .all(|topic_id| self.fresh(topic_id, &fingerprints))
     }
 
     /// The deck's sourced topics this exam still covers, and its questions
@@ -306,6 +317,22 @@ pub fn open_for_exam(path: &Path) -> Result<Deck> {
     let mut deck = Deck::load(path).with_context(|| format!("loading {}", path.display()))?;
     deck.cards.retain(|card| card.id().is_some());
     Ok(deck)
+}
+
+fn topic_refusal(deck: &Deck, manifest: Option<&crate::sources::Manifest>) -> Option<String> {
+    duplicated_topic_error(deck).or_else(|| {
+        manifest
+            .and_then(|manifest| manifest.validate_bindings(deck).err())
+            .map(|error| error.to_string())
+    })
+}
+
+fn cached_manifest(deck: &Deck) -> Option<&crate::sources::Manifest> {
+    deck.declared()
+        .manifest
+        .as_ref()
+        .ok()
+        .and_then(Option::as_ref)
 }
 
 fn source_boundary_error(deck: &Deck) -> Option<String> {
@@ -381,8 +408,12 @@ pub fn generate_topics(
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
     job: &ask::AskJob,
+    after_topic: &mut dyn FnMut(&IdeasDocument) -> Result<()>,
 ) -> Result<Vec<ExamQuestion>> {
     let fingerprints = sources.manifest.fingerprints()?;
+    ideas
+        .topics
+        .retain(|topic_id, _| fingerprints.contains_key(topic_id));
     let mut questions = Vec::new();
     for (at, topic) in topics.iter().enumerate() {
         let Some(fingerprint) = fingerprints.get(&topic.topic_id) else {
@@ -392,6 +423,7 @@ pub fn generate_topics(
         let entry = ideas.for_topic(&topic.topic_id, fingerprint);
         let generated = generate_topic(topic, &texts, Some(&*entry), cfg, ask_cfg, job)?;
         entry.ideas = generated.ideas;
+        after_topic(ideas)?;
         questions.extend(
             generated
                 .questions
@@ -552,9 +584,17 @@ pub fn spawn_generation(
     let worker = job.clone();
     std::thread::spawn(move || {
         let mut ideas = ideas.unwrap_or_default();
-        let r = generate_topics(&topics, &sources, &mut ideas, &cfg, &ask_cfg, &worker)
-            .map(|questions| Generated { questions, ideas })
-            .map_err(|e| format!("{e:#}"));
+        let r = generate_topics(
+            &topics,
+            &sources,
+            &mut ideas,
+            &cfg,
+            &ask_cfg,
+            &worker,
+            &mut |_| Ok(()),
+        )
+        .map(|questions| Generated { questions, ideas })
+        .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
     (rx, job)
@@ -587,7 +627,7 @@ pub fn spawn_prepare(
 ) -> (Receiver<Result<(), String>>, ask::AskJob) {
     let (tx, rx) = channel();
     let job = ask::AskJob::default();
-    if let Some(error) = duplicated_topic_error(deck) {
+    if let Some(error) = topic_refusal(deck, cached_manifest(deck)) {
         let _ = tx.send(Err(error));
         return (rx, job);
     }
@@ -614,7 +654,15 @@ pub fn spawn_prepare(
                 })
             };
             let stale: Vec<ExamTopic> = topics.iter().filter(|t| !kept(t)).cloned().collect();
-            let written = generate_topics(&stale, &sources, &mut ideas, &cfg, &ask_cfg, &worker)?;
+            let written = generate_topics(
+                &stale,
+                &sources,
+                &mut ideas,
+                &cfg,
+                &ask_cfg,
+                &worker,
+                &mut |ideas| ideas.save(&ideas_path),
+            )?;
             ideas.save(&ideas_path)?;
             let run = run_config(&cfg, &ask_cfg);
             let mut prepared = Prepared {
@@ -635,7 +683,12 @@ pub fn spawn_prepare(
                                 .filter(|(q, _)| q.topic == topic.topic_id)
                                 .map(|(q, a)| (q.clone(), a.clone()))
                                 .unzip();
-                            (questions, answers, earlier.topics[&topic.topic_id].clone())
+                            let entry = earlier
+                                .topics
+                                .get(&topic.topic_id)
+                                .cloned()
+                                .context("a kept topic has no prepared entry")?;
+                            (questions, answers, entry)
                         }
                         None => {
                             let at = stale
@@ -662,6 +715,16 @@ pub fn spawn_prepare(
                 prepared.topics.insert(topic.topic_id.clone(), entry);
                 prepared.questions.extend(questions);
                 prepared.answers.extend(answers);
+            }
+            for (topic_id, fingerprint) in &fingerprints {
+                prepared
+                    .topics
+                    .entry(topic_id.clone())
+                    .or_insert_with(|| PreparedTopic {
+                        fingerprint: fingerprint.clone(),
+                        model: run.model.clone(),
+                        effort: run.effort.clone(),
+                    });
             }
             prepared.save(&prepared_path)
         })()
@@ -832,7 +895,7 @@ impl Sitting {
             .into_iter()
             .filter(|topic| sourced.contains(&topic.topic_id))
             .collect();
-        let refusal = duplicated_topic_error(deck)
+        let refusal = topic_refusal(deck, Some(&sources.manifest))
             .or_else(|| source_boundary_error(deck))
             .or_else(|| {
                 topics
@@ -906,6 +969,9 @@ impl Sitting {
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
+        if let Some(error) = topic_refusal(deck, cached_manifest(deck)) {
+            return Self::refused(deck, error, strictness, cfg, ask_cfg);
+        }
         let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
         sitting.locked = answers.iter().map(|a| !a.trim().is_empty()).collect();
         sitting.current = sitting.locked.iter().position(|l| !l).unwrap_or(0);
@@ -3668,6 +3734,211 @@ mod tests {
                 .collect::<Vec<_>>(),
             "step 2: Alpha's question is kept beside Beta's new one"
         );
+    }
+
+    fn prepare_over(
+        deck: &Deck,
+        topics: Vec<ExamTopic>,
+        replies: &[&str],
+    ) -> (tempfile::TempDir, Result<(), String>) {
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), replies);
+        let (rx, _job) = spawn_prepare(deck, topics, ExamConfig::default(), ask_config(&cli));
+        let outcome = rx.recv().unwrap();
+        (cli_dir, outcome)
+    }
+
+    fn ideas_of(deck: &Deck) -> IdeasDocument {
+        let (ideas_path, _) = exam_files(deck).unwrap();
+        IdeasDocument::load(&ideas_path)
+            .unwrap()
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_topic_sourced_after_generate_makes_the_prepared_exam_stale() {
+        let _lock = exec_lock();
+        let ws = workspace_with(TWO_TOPICS);
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
+        prepare(&opened(&ws), &[IDEAS, ONE_QUESTION]);
+        assert!(
+            has_current_prepared(&opened(&ws)),
+            "step 1: Alpha alone is prepared and current"
+        );
+        source(&ws, "beta.txt", "BETA_SOURCE\n", &["topic-beta"]);
+        assert!(
+            !has_current_prepared(&opened(&ws)),
+            "step 2: a newly sourced Beta makes the prepared exam stale, so Generate is open"
+        );
+
+        let subset = two_sourced_topics();
+        let deck = opened(&subset);
+        let alpha_only: Vec<ExamTopic> = examined_topics(&deck)
+            .into_iter()
+            .filter(|topic| topic.topic_id == "topic-alpha")
+            .collect();
+        let (_cli, outcome) = prepare_over(&deck, alpha_only, &[IDEAS, ONE_QUESTION]);
+        assert_eq!(Ok(()), outcome, "needs-work prepare over Alpha only");
+        assert!(
+            has_current_prepared(&opened(&subset)),
+            "a prepared exam that asked only Alpha stays current while nothing changes"
+        );
+    }
+
+    #[test]
+    fn unbinding_a_topics_last_source_drops_its_ideas_on_the_next_prepare() {
+        let _lock = exec_lock();
+        let ws = workspace_with(TWO_TOPICS);
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
+        source(
+            &ws,
+            "shared.txt",
+            "SHARED\n",
+            &["topic-alpha", "topic-beta"],
+        );
+        prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
+        assert!(
+            ideas_of(&opened(&ws)).topics.contains_key("topic-beta"),
+            "setup: Beta has ideas"
+        );
+        let shared = opened(&ws)
+            .sources()
+            .unwrap()
+            .unwrap()
+            .manifest
+            .sources
+            .iter()
+            .find(|(_, row)| row.path.ends_with("shared.txt"))
+            .map(|(id, _)| id.clone())
+            .unwrap();
+        crate::sources::commands::unbind(&ws.deck(), &shared, &["topic-beta".to_string()]).unwrap();
+        let deck = opened(&ws);
+        prepare(&deck, &[IDEAS, ONE_QUESTION]);
+        assert_eq!(
+            vec!["topic-alpha"],
+            ideas_of(&deck)
+                .topics
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            "the unbound topic's ideas are pruned"
+        );
+    }
+
+    #[test]
+    fn a_failing_topic_keeps_the_ideas_of_the_topics_before_it() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let deck = opened(&ws);
+        let (_cli, outcome) = prepare_over(
+            &deck,
+            examined_topics(&deck),
+            &[IDEAS, ONE_QUESTION, "{}", "{}"],
+        );
+        assert!(outcome.is_err(), "Beta's listing fails twice: {outcome:?}");
+        assert_eq!(
+            vec!["topic-alpha"],
+            ideas_of(&deck)
+                .topics
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            "Alpha's ideas were saved before Beta failed"
+        );
+    }
+
+    #[test]
+    fn resuming_a_prepared_exam_refuses_a_duplicated_topic_id_like_a_fresh_sitting() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
+        let text = std::fs::read_to_string(ws.deck()).unwrap();
+        std::fs::write(
+            ws.deck(),
+            format!("{text}\n# Gamma\n<!-- id: topic-beta -->\n\n## g?\nthree\n"),
+        )
+        .unwrap();
+        let deck = Deck::load(ws.deck()).unwrap();
+        let (_, prepared_path) = exam_files(&deck).unwrap();
+        let prepared = Prepared::load(&prepared_path).unwrap().unwrap();
+        let (topics, questions, answers) = prepared.against(&deck);
+        let sitting = Sitting::from_prepared(
+            &deck,
+            topics,
+            questions,
+            answers,
+            IdeasDocument::default(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(
+            duplicated_topic_error(&deck).as_deref(),
+            sitting.error(),
+            "the resume refuses with the shared findings text"
+        );
+        assert!(sitting.error().is_some(), "setup: the id is duplicated");
+    }
+
+    #[test]
+    fn a_binding_to_a_topic_the_deck_lacks_refuses_prepare_and_every_sitting_start() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
+        std::fs::write(
+            ws.deck(),
+            format!(
+                "---\nid: \"{DECK}\"\ntitle: Ownership\n---\n\
+                 # Alpha\n\nAlpha prose.\n<!-- id: topic-alpha -->\n\n## a1?\none\n"
+            ),
+        )
+        .unwrap();
+        let deck = opened(&ws);
+        let expected = deck
+            .sources()
+            .unwrap()
+            .unwrap()
+            .validate_bindings(&deck)
+            .unwrap_err()
+            .to_string();
+        assert!(expected.contains("topic-beta"), "setup: {expected}");
+        assert!(
+            !has_current_prepared(&deck),
+            "a prepared question whose topic the deck lost is not current"
+        );
+
+        let (_cli, outcome) = prepare_over(&deck, examined_topics(&deck), &[IDEAS, ONE_QUESTION]);
+        assert_eq!(Err(expected.clone()), outcome, "prepare");
+
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+        let fresh = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        assert_eq!(Some(expected.as_str()), fresh.error(), "fresh sitting");
+        assert_eq!(
+            0,
+            crate::testutil::fake_reply_calls(cli_dir.path()),
+            "no model call"
+        );
+
+        let (_, prepared_path) = exam_files(&deck).unwrap();
+        let prepared = Prepared::load(&prepared_path).unwrap().unwrap();
+        let (topics, questions, answers) = prepared.against(&deck);
+        let resumed = Sitting::from_prepared(
+            &deck,
+            topics,
+            questions,
+            answers,
+            IdeasDocument::default(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(Some(expected.as_str()), resumed.error(), "resumed sitting");
     }
 
     #[test]

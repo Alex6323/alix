@@ -81,6 +81,27 @@ impl Manifest {
         Ok(rows)
     }
 
+    pub fn validate_bindings(&self, deck: &Deck) -> Result<(), SourceError> {
+        let ids: Vec<String> = deck.topic_ids().into_iter().flatten().collect();
+        let known: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
+        for (id, row) in &self.sources {
+            for entry in &row.bound_to {
+                let topic = topic_of(entry);
+                if !known.contains(topic) {
+                    return Err(SourceError::UnknownTopic {
+                        id: id.clone(),
+                        topic: topic.to_string(),
+                    });
+                }
+            }
+        }
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        if let Some(repeated) = ids.iter().find(|id| !seen.insert(id.as_str())) {
+            return Err(SourceError::DuplicateTopicId(repeated.clone()));
+        }
+        Ok(())
+    }
+
     pub fn to_text(&self) -> String {
         let mut text = format!("version = {}\n\n[sources]\n", self.version);
         for (id, row) in &self.sources {
@@ -286,24 +307,7 @@ impl DeckSources {
     }
 
     pub fn validate_bindings(&self, deck: &Deck) -> Result<(), SourceError> {
-        let ids: Vec<String> = deck.topic_ids().into_iter().flatten().collect();
-        let known: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
-        for (id, row) in &self.manifest.sources {
-            for entry in &row.bound_to {
-                let topic = topic_of(entry);
-                if !known.contains(topic) {
-                    return Err(SourceError::UnknownTopic {
-                        id: id.clone(),
-                        topic: topic.to_string(),
-                    });
-                }
-            }
-        }
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
-        if let Some(repeated) = ids.iter().find(|id| !seen.insert(id.as_str())) {
-            return Err(SourceError::DuplicateTopicId(repeated.clone()));
-        }
-        Ok(())
+        self.manifest.validate_bindings(deck)
     }
 
     pub fn texts_of(&self, topic_id: &str) -> Result<Vec<SourceText>, SourceError> {
