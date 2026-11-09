@@ -17,15 +17,14 @@ build that chain yourself.
 ## What a trace looks like
 
 A trace is a deck with a `trace:` (a path description — what it traces, and the
-thing that marks the deck a trace) and a `exam:` (the path's origin), then a
-sequence of **checkpoint** cards. Each checkpoint is an `explain`-style card — an
+thing that marks the deck a trace) and a `cite:` root holding the code it
+walks, then a sequence of **checkpoint** cards. Each checkpoint is an `explain`-style card: an
 open *predict* prompt and the key points a good prediction should hit — plus a
 `<!-- at: -->` locator pointing at the real lines in the source:
 
 ```
 ---
 trace: how `let s2 = s1` moves a String and avoids a double free
-exam: .
 cite:
   - book: src
 ---
@@ -67,29 +66,23 @@ so the excerpt stays focused without orphaning the names it needs.
 
 ## Building it with the model
 
-You don't have to hand-write checkpoints. Declare just the `trace:` and
-`exam:`, then name the stub deck as
+You don't have to hand-write checkpoints. Declare just the `trace:` and a
+`cite:` root, then name the stub deck as
 [`alix deck generate`](11-generating-decks.md)'s source:
 
 ```sh
 alix deck generate mytrace.md
 ```
 
-The model explores the source — **read-only** `Read`/`Glob`/`Grep`, source root as
-its working directory, no write or shell access — finds the single load-bearing
-path, and writes the checkpoints (with their `<!-- at: -->` locators) back into the deck.
-The locators use the `cite:` key `src`, which the build declares for its input:
-the `exam:` directory, or the folder holding an `exam:` file (so a file is cited
-as `src:<file name>:<lines>`). When a `cite:` root the deck already sees holds
-the input, the build reuses that key instead; when none does and `src` is
-already taken, it stops before calling the model. A URL trace build works only
-in a workspace member deck: the URL becomes the `cite:` root `src`, and the
-model copies each checkpoint's passage verbatim between a `PASSAGE <token>`
-line and an `END PASSAGE <token>` line, with a token alix mints for that build.
-Alix freezes each passage as an `asset-<52 base32>.txt` object in the deck's asset
-folder and cites it as `<!-- at: src fingerprint: ... asset: ... -->`. A
-missing or altered marker, or a checkpoint without a passage, fails the build
-naming the checkpoint, and nothing is written. Alix fingerprints those locators
+The build's scope is the deck's **first local `cite:` root**, in the order
+the deck sees its roots: a member deck's workspace `[cite]` table first (in
+key order), then the deck's own `cite:` list, skipping URL roots.
+A deck with no local root is refused before the model is called. The model
+explores that folder (**read-only** `Read`/`Glob`/`Grep`, the folder as its
+working directory, no write or shell access), finds the single load-bearing
+path, and writes the checkpoints (with their `<!-- at: -->` locators) back
+into the deck. The locators use that root's key, so a root declared as
+`- code: src` yields `code:<file>:<lines>`. Alix fingerprints those locators
 before placing the result. The result is
 cached and version-controlled there, so review it (especially the locators) and
 edit freely; re-run it to regenerate.
@@ -110,7 +103,8 @@ alix deck generate . --trace --plan
 
 does a single read-only recon pass over a source (a repo `.`, a directory, a file,
 or a URL) and prints a **ranked menu of candidate traces** — each a path-question,
-a one-line spine sketch, and a suggested `exam:` scope. The list is sized by
+a one-line spine sketch, and a suggested scope (declare it as the new
+deck's `cite:` root). The list is sized by
 **coverage** (the central spine plus one main path per major subsystem), so it's
 as long as the source needs. It also names the *node-shaped* subsystems it skips —
 a config table, a store's on-disk format — as **facts-deck material**, because
@@ -161,7 +155,7 @@ cards, so Alix never exports a whole file or an entire repository.
 Every copied excerpt lives below `assets/deck-<token>/` and is named
 `asset-<52 base32>.<ext>`, where the base32 is the SHA-256 digest of its
 exact stored bytes. Freezing
-leaves the deck's `exam:` and `cite:` roots pointed at the real material (a
+leaves the deck's `cite:` roots pointed at the real material (a
 path or a URL): they are never rewritten to point into `assets/`. Each
 `<!-- at: -->` keeps its key, path, and lines, keeps its excerpt
 `fingerprint:`, and gains an `asset:` field naming the content-addressed
@@ -181,7 +175,7 @@ silently degrading. A loose trace over a live source is left as-is.
 
 ## Checking the locators
 
-For a trace that *isn't* frozen — a loose `.md` over a live `exam:` —
+For a trace that *isn't* frozen (a loose `.md` over a live `cite:` root),
 [`alix doctor <deck>`](17-command-reference.md) validates that every
 `<!-- at: -->` still resolves and matches its fingerprint. A missing fingerprint,
 missing file, changed excerpt, or ambiguous exact match is reported without

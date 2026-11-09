@@ -15,7 +15,7 @@ pub struct DeckEntry {
     pub exam_filter: String,
     pub exam_changed: bool,
     pub exam_due: bool,
-    pub has_exam: bool,
+    pub examable: bool,
     pub locked: bool,
     pub progress_error: bool,
     pub icon: Option<String>,
@@ -57,9 +57,9 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             exam_filter: s.exam_filter.label().to_string(),
             exam_changed: s.exam_changed,
             exam_due: s.exam_due,
-            has_exam: s.has_exam,
+            examable: s.examable,
             locked: s.locked,
-            progress_error: s.progress_error,
+            progress_error: s.progress_error || s.manifest_error.is_some(),
             icon: s.icon.map(|p| p.to_string_lossy().into_owned()),
             indent: s.indent as u32,
             tree: s.tree,
@@ -419,11 +419,11 @@ mod tests {
         let rows = list();
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.exam_due, "every card passed once, not yet mastered");
-        assert!(base.has_exam, "sourced deck has an AI exam");
+        assert!(base.examable, "sourced deck has an AI exam");
         assert!(!base.mastered);
         let fresh = rows.iter().find(|r| r.title == "fresh").unwrap();
         assert!(!fresh.mastered);
-        assert!(!fresh.has_exam);
+        assert!(!fresh.examable);
 
         let mut store = alix::state::open_store(&base_path, &store_path).unwrap();
         let base_deck = alix::deck::Deck::load(&base_path).unwrap();

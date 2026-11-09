@@ -98,7 +98,7 @@ class DeckEntry {
   final String examFilter;
   final bool examChanged;
   final bool examDue;
-  final bool hasExam;
+  final bool examable;
   final bool locked;
   final bool progressError;
   final String? icon;
@@ -119,7 +119,7 @@ class DeckEntry {
     required this.examFilter,
     required this.examChanged,
     required this.examDue,
-    required this.hasExam,
+    required this.examable,
     required this.locked,
     required this.progressError,
     this.icon,
@@ -142,7 +142,7 @@ class DeckEntry {
       examFilter.hashCode ^
       examChanged.hashCode ^
       examDue.hashCode ^
-      hasExam.hashCode ^
+      examable.hashCode ^
       locked.hashCode ^
       progressError.hashCode ^
       icon.hashCode ^
@@ -167,7 +167,7 @@ class DeckEntry {
           examFilter == other.examFilter &&
           examChanged == other.examChanged &&
           examDue == other.examDue &&
-          hasExam == other.hasExam &&
+          examable == other.examable &&
           locked == other.locked &&
           progressError == other.progressError &&
           icon == other.icon &&

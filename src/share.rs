@@ -1804,7 +1804,7 @@ mod tests {
         let deck = decks.join("facts.md");
         std::fs::write(
             &deck,
-            "---\nformat-version: 1\nid: deck-deck1\nexam: notes.md\n---\n## q\na\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let stage = dir.path().join("stage");
@@ -1831,7 +1831,7 @@ mod tests {
         std::fs::write(
             &deck_path,
             format!(
-                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{source_name}\ncite:\n  - src: assets/deck-deck1\n---\n\
+                "---\nformat-version: 1\nid: deck-deck1\ncite:\n  - src: assets/deck-deck1\n---\n\
                  ## q\na\n<!-- at: src:{source_name}:1 -->\n<!-- id: card-card1 -->\n"
             ),
         )
@@ -1949,10 +1949,7 @@ mod tests {
         let deck = sender.join("facts.md");
         std::fs::write(
             &deck,
-            format!(
-                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
-                 ## q\na\n<!-- id: card-card1 -->\n"
-            ),
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let transfer = dir.path().join("transfer");
@@ -1980,10 +1977,7 @@ mod tests {
         let deck = sender.join("facts.md");
         std::fs::write(
             &deck,
-            format!(
-                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
-                 ## q\na\n<!-- id: card-card1 -->\n"
-            ),
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let transfer = dir.path().join("transfer");
@@ -2758,14 +2752,14 @@ mod tests {
         let deck_path = root.join("m.md");
         std::fs::write(
             &deck_path,
-            "---\nformat-version: 1\nid: \"deck-m1\"\nexam: .\ncite:\n  - src: .\n---\n## q\na\n\
+            "---\nformat-version: 1\nid: \"deck-m1\"\ncite:\n  - src: .\n---\n## q\na\n\
              <!-- at: src:code.rs:1 fingerprint: 0000000000000 \
              asset: asset-0000000000000000000000000000000000000000000000000000.rs -->\n\
              <!-- id: card-m1c1 -->\n",
         )
         .unwrap();
         let deck = crate::deck::Deck::load(&deck_path).unwrap();
-        assert!(!deck.exam.is_empty(), "the fixture declares a source");
+        assert!(!deck.cite.is_empty(), "the fixture declares a root");
 
         let error = validate_bundle_material(&deck, root).unwrap_err();
         assert!(

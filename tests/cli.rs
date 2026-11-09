@@ -552,39 +552,6 @@ fn deck_copy_refuses_a_cited_key_that_resolves_to_another_root_in_the_destinatio
 }
 
 #[test]
-fn deck_copy_refuses_an_exam_entry_that_resolves_to_another_path_in_the_destination() {
-    let dir = TempDir::new().unwrap();
-    let source = dir.path().join("source");
-    let destination = dir.path().join("destination");
-    for workspace in [&source, &destination] {
-        std::fs::create_dir_all(workspace.join("decks")).unwrap();
-        std::fs::create_dir_all(workspace.join("material")).unwrap();
-        std::fs::write(workspace.join("alix.toml"), "exam = \"material\"\n").unwrap();
-    }
-    let deck = write(
-        &source.join("decks"),
-        "facts.md",
-        "---\nformat-version: 1\nid: deck-deck1\n---\n## q\nanswer\n<!-- id: card-card1 -->\n",
-    );
-
-    let out = alix(&["deck", "copy", &deck, destination.to_str().unwrap()]);
-
-    assert!(!out.status.success(), "stdout: {}", stdout(&out));
-    let from = source.canonicalize().unwrap().join("material");
-    let to = destination.canonicalize().unwrap().join("material");
-    assert!(
-        stderr(&out).contains(&format!(
-            "`exam:` entry `material` resolves to {} in the source workspace but to {} in the destination",
-            from.display(),
-            to.display()
-        )),
-        "stderr: {}",
-        stderr(&out)
-    );
-    assert!(!destination.join("decks/facts.md").exists());
-}
-
-#[test]
 fn deck_move_requires_confirmation_and_reports_progress() {
     let dir = TempDir::new().unwrap();
     let source = dir.path().join("source");
@@ -1012,10 +979,7 @@ fn doctor_reports_a_moved_excerpt_only_on_request_and_repair_rebases_it_without_
     let deck = ws.join("decks/d.md");
     std::fs::write(
         &deck,
-        format!(
-            "---\nformat-version: 1\nexam: {}\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n",
-            source.display()
-        ),
+        "---\nformat-version: 1\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n",
     )
     .unwrap();
     let alix_bin = |args: &[&str]| alix(args);
@@ -1681,7 +1645,7 @@ fn reset_exam_all_reaches_decks_inside_configured_workspaces() {
     let deck = write(
         &members,
         "a.md",
-        "---\nformat-version: 1\nid: deck-a\nexam: https://x\n---\n\
+        "---\nformat-version: 1\nid: deck-a\n---\n\
          ## q\na\n<!-- id: card-a -->\n",
     );
     let config = decks_config(&root);
@@ -1708,7 +1672,7 @@ fn reset_exam_all_reaches_decks_inside_plain_folders() {
     let deck = write(
         &folder,
         "a.md",
-        "---\nformat-version: 1\nid: deck-a\nexam: https://x\n---\n\
+        "---\nformat-version: 1\nid: deck-a\n---\n\
          ## q\na\n<!-- id: card-a -->\n",
     );
     let config = decks_config(&root);
@@ -1737,7 +1701,7 @@ fn reset_exam_all_does_not_follow_directory_symlinks_outside_configured_root() {
     let deck = write(
         &outside,
         "a.md",
-        "---\nformat-version: 1\nid: deck-a\nexam: https://x\n---\n\
+        "---\nformat-version: 1\nid: deck-a\n---\n\
          ## q\na\n<!-- id: card-a -->\n",
     );
     std::os::unix::fs::symlink(&outside, root.join("linked-outside")).unwrap();
@@ -4946,7 +4910,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     let stub = write(
         dir.path(),
         "t.md",
-        "---\ntrace: how it works\nexam: .\n---\n",
+        "---\ntrace: how it works\ncite:\n  - src: .\n---\n",
     );
     let cli = fake_claude(
         dir.path(),
@@ -4967,9 +4931,10 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
     let rewritten = std::fs::read_to_string(&stub).unwrap();
     assert!(rewritten.contains("trace: how it works"), "{rewritten}");
     assert!(rewritten.contains("checkpoint one"), "{rewritten}");
-    assert!(
-        rewritten.contains("cite:\n  - src: \".\"\n"),
-        "the build declares its input as the `src` root: {rewritten}"
+    assert_eq!(
+        1,
+        rewritten.matches("  - src:").count(),
+        "the build reuses the declared root: {rewritten}"
     );
     assert!(
         rewritten.contains("<!-- at: src:notes.md:1 fingerprint: "),
@@ -4978,29 +4943,14 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
 }
 
 #[test]
-fn a_trace_build_over_one_file_roots_src_at_its_folder_and_rebuilds_without_redeclaring() {
+fn a_trace_build_without_a_local_cite_root_is_refused_before_the_backend() {
     let dir = TempDir::new().unwrap();
-    std::fs::create_dir(dir.path().join("docs")).unwrap();
-    write(
-        &dir.path().join("docs"),
-        "notes.md",
-        "first line\nsecond line\n",
-    );
-    let stub = write(
-        dir.path(),
-        "t.md",
-        "---\ntrace: how it works\nexam: docs/notes.md\n---\n",
-    );
-    let request = dir.path().join("request.txt");
-    let reply = write(
-        dir.path(),
-        "reply.txt",
-        "## checkpoint one\nsome point\n<!-- at: src:notes.md:2 -->\n",
-    );
+    let stub = write(dir.path(), "t.md", "---\ntrace: how it works\n---\n");
+    let called = dir.path().join("called");
     let cli = write(
         dir.path(),
         "fake-claude",
-        &format!("#!/bin/sh\ncat > {}\ncat {reply}\n", request.display()),
+        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
     );
     {
         use std::os::unix::fs::PermissionsExt;
@@ -5011,46 +4961,32 @@ fn a_trace_build_over_one_file_roots_src_at_its_folder_and_rebuilds_without_rede
         "config.toml",
         &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
     );
+    let original = std::fs::read_to_string(&stub).unwrap();
 
     let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
-    assert!(out.status.success(), "step build: {}", stderr(&out));
-    let built = std::fs::read_to_string(&stub).unwrap();
-    assert!(
-        built.contains("cite:\n  - src: \"docs\"\n"),
-        "step build: a file input roots `src` at its folder: {built}"
-    );
-    assert!(
-        std::fs::read_to_string(&request)
-            .unwrap()
-            .contains("`src:<file>:start-end`"),
-        "step build: the prompt teaches the keyed locator"
-    );
 
-    let out = alix(&[
-        "deck", "generate", &stub, "--config", &config, "--yes", "--force",
-    ]);
-    assert!(out.status.success(), "step rebuild: {}", stderr(&out));
-    let rebuilt = std::fs::read_to_string(&stub).unwrap();
-    assert_eq!(
-        1,
-        rebuilt.matches("  - src:").count(),
-        "step rebuild: the deck's own `src` already holds the input, so it is reused: {rebuilt}"
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("declares no local `cite:` root to trace"),
+        "stderr: {}",
+        stderr(&out)
     );
+    assert!(
+        !called.exists(),
+        "the refusal comes before any backend call"
+    );
+    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
 }
 
 #[test]
-fn a_member_trace_build_reuses_the_manifest_key_whose_root_holds_its_input() {
+fn a_member_trace_build_takes_the_first_local_root_from_the_manifest() {
     let dir = TempDir::new().unwrap();
     let ws = dir.path().join("ws");
     std::fs::create_dir_all(ws.join("decks")).unwrap();
     std::fs::create_dir_all(ws.join("repo/crates/core")).unwrap();
     write(&ws.join("repo/crates/core"), "lib.rs", "fn one() {}\n");
     write(&ws, "alix.toml", "[cite]\ncode = \"repo\"\n");
-    let stub = write(
-        &ws.join("decks"),
-        "t.md",
-        "---\ntrace: how it works\nexam: repo/crates/core\n---\n",
-    );
+    let stub = write(&ws.join("decks"), "t.md", "---\ntrace: how it works\n---\n");
     let request = dir.path().join("request.txt");
     let reply = write(
         dir.path(),
@@ -5080,91 +5016,8 @@ fn a_member_trace_build_reuses_the_manifest_key_whose_root_holds_its_input() {
     assert!(
         std::fs::read_to_string(&request)
             .unwrap()
-            .contains("`code:crates/core/<file>:start-end`"),
-        "the prompt prefixes locators with the reused key and the input's place under its root"
-    );
-}
-
-#[test]
-fn a_trace_build_refuses_an_input_outside_every_root_while_src_is_taken() {
-    let dir = TempDir::new().unwrap();
-    let ws = dir.path().join("ws");
-    std::fs::create_dir_all(ws.join("decks")).unwrap();
-    std::fs::create_dir_all(ws.join("elsewhere")).unwrap();
-    std::fs::create_dir_all(ws.join("input")).unwrap();
-    write(&ws, "alix.toml", "[cite]\nsrc = \"elsewhere\"\n");
-    let stub = write(
-        &ws.join("decks"),
-        "t.md",
-        "---\ntrace: how it works\nexam: input\n---\n",
-    );
-    let called = dir.path().join("called");
-    let cli = write(
-        dir.path(),
-        "fake-claude",
-        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
-    );
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let config = write(
-        dir.path(),
-        "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
-    );
-    let original = std::fs::read_to_string(&stub).unwrap();
-
-    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
-
-    assert!(!out.status.success());
-    assert!(
-        stderr(&out).contains("outside every `cite:` root"),
-        "stderr: {}",
-        stderr(&out)
-    );
-    assert!(
-        !called.exists(),
-        "the refusal comes before any backend call"
-    );
-    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
-}
-
-#[test]
-fn a_url_trace_build_outside_a_workspace_is_refused_before_the_backend() {
-    let dir = TempDir::new().unwrap();
-    let stub = write(
-        dir.path(),
-        "t.md",
-        "---\ntrace: how a guard gates the body\nexam: https://example.com/guide\n---\n",
-    );
-    let called = dir.path().join("called");
-    let cli = write(
-        dir.path(),
-        "fake-claude",
-        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
-    );
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let config = write(
-        dir.path(),
-        "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
-    );
-
-    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
-
-    assert!(!out.status.success());
-    assert!(
-        stderr(&out).contains("only a workspace member"),
-        "stderr: {}",
-        stderr(&out)
-    );
-    assert!(
-        !called.exists(),
-        "the refusal comes before any backend call"
+            .contains("`code:<file>:start-end`"),
+        "the prompt cites under the first local root's key"
     );
 }
 
@@ -5186,140 +5039,6 @@ fn passage_echoing_claude(dir: &Path, reply: &str) -> (String, PathBuf) {
     (cli, request)
 }
 
-fn url_trace_member(dir: &Path) -> (PathBuf, String) {
-    let ws = dir.join("ws");
-    std::fs::create_dir_all(ws.join("decks")).unwrap();
-    write(&ws, "alix.toml", "");
-    let stub = write(
-        &ws.join("decks"),
-        "t.md",
-        "---\ntrace: how a guard gates the body\nexam: https://example.com/guide\n---\n",
-    );
-    (ws, stub)
-}
-
-#[test]
-fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root() {
-    let dir = TempDir::new().unwrap();
-    let (ws, stub) = url_trace_member(dir.path());
-    let first = "The guard runs before the body.\n\n```text\n## not a card\n```\n> quoted line\nEND PASSAGE someothertoken\n";
-    let second = "Only then does the body run.\n";
-    let (cli, request) = passage_echoing_claude(
-        dir.path(),
-        &format!(
-            "Here is the trace:\n## What happens before the body runs?\nthe guard is checked first\n<!-- at: src -->\nPASSAGE TOKEN\n{first}END PASSAGE TOKEN\n> [!NOTE]\n> guards come first\n\n## And after the guard passes?\nthe body runs\n<!-- at: src -->\nPASSAGE TOKEN\n{second}END PASSAGE TOKEN\n"
-        ),
-    );
-    let config = write(
-        dir.path(),
-        "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
-    );
-
-    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
-    let built = std::fs::read_to_string(&stub).unwrap();
-    assert!(
-        out.status.success(),
-        "step build: exit {:?}\nstderr: {}\ndeck:\n{built}",
-        out.status.code(),
-        stderr(&out)
-    );
-    assert!(
-        std::fs::read_to_string(&request)
-            .unwrap()
-            .contains("END PASSAGE "),
-        "step prompt: the prompt teaches the passage markers"
-    );
-    assert!(
-        built.contains("cite:\n  - src: \"https://example.com/guide\"\n"),
-        "step cite: the url is declared as the `src` root: {built}"
-    );
-    assert!(
-        !built.contains("PASSAGE"),
-        "step cut: no marker line survives: {built}"
-    );
-    let deck = alix::deck::Deck::load(Path::new(&stub)).unwrap();
-    let deck_id = deck.deck_token.clone().unwrap();
-    for (label, passage) in [("first", first), ("second", second)] {
-        let object = alix::assets::object_name(passage.as_bytes(), "txt");
-        assert!(
-            built.contains(&format!(" asset: {object} -->")),
-            "step {label} locator names its object {object}: {built}"
-        );
-        assert_eq!(
-            passage,
-            std::fs::read_to_string(ws.join("assets").join(&deck_id).join(&object)).unwrap(),
-            "step {label} object holds the exact passage bytes"
-        );
-    }
-    assert_eq!(
-        2,
-        built.matches("<!-- at: src fingerprint: ").count(),
-        "step fingerprint: each passage locator is fingerprinted: {built}"
-    );
-    let doctor = alix(&["doctor", &stub]);
-    assert!(
-        doctor.status.success(),
-        "step doctor: {}{}",
-        stdout(&doctor),
-        stderr(&doctor)
-    );
-
-    std::fs::remove_dir_all(ws.join("assets")).unwrap();
-    let out = alix(&[
-        "deck", "generate", &stub, "--config", &config, "--yes", "--force",
-    ]);
-    let rebuilt = std::fs::read_to_string(&stub).unwrap();
-    assert!(
-        out.status.success(),
-        "step rebuild: {}\ndeck:\n{rebuilt}",
-        stderr(&out)
-    );
-    assert_eq!(
-        1,
-        rebuilt.matches("  - src:").count(),
-        "step rebuild: the deck's own `src` names the url, so it is reused: {rebuilt}"
-    );
-    let rebuilt_id = alix::deck::Deck::load(Path::new(&stub))
-        .unwrap()
-        .deck_token
-        .unwrap();
-    for passage in [first, second] {
-        let object = alix::assets::object_name(passage.as_bytes(), "txt");
-        assert!(
-            ws.join("assets").join(&rebuilt_id).join(&object).is_file(),
-            "step rebuild: {object} is written again"
-        );
-    }
-}
-
-#[test]
-fn a_url_trace_build_with_an_altered_passage_token_fails_naming_the_card_and_writes_nothing() {
-    let dir = TempDir::new().unwrap();
-    let (ws, stub) = url_trace_member(dir.path());
-    let original = std::fs::read_to_string(&stub).unwrap();
-    let (cli, _) = passage_echoing_claude(
-        dir.path(),
-        "## What happens before the body runs?\nthe guard is checked first\n<!-- at: src -->\nPASSAGE TOKEN\nThe guard runs first.\nEND PASSAGE TOKEN\n\n## And after the guard passes?\nthe body runs\n<!-- at: src -->\nPASSAGE TOKEN\nThe body runs.\nEND PASSAGE TOKEX\n",
-    );
-    let config = write(
-        dir.path(),
-        "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
-    );
-
-    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
-
-    assert!(!out.status.success(), "the build fails");
-    assert!(
-        stderr(&out).contains("And after the guard passes?"),
-        "the error names the card: {}",
-        stderr(&out)
-    );
-    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
-    assert!(!ws.join("assets").exists(), "no object is written");
-}
-
 #[test]
 fn a_local_facts_deck_declares_its_input_folder_as_the_src_root_and_its_locator_resolves() {
     let dir = TempDir::new().unwrap();
@@ -5330,10 +5049,7 @@ fn a_local_facts_deck_declares_its_input_folder_as_the_src_root_and_its_locator_
     std::fs::create_dir_all(&decks).unwrap();
     let (cli, request) = passage_echoing_claude(
         dir.path(),
-        &format!(
-            "---\nexam: {}\nchoices: single\n---\n## What is the second line?\nsecond line\n<!-- at: src:notes.md:2 -->\n",
-            docs.join("notes.md").display()
-        ),
+        "---\nchoices: single\n---\n## What is the second line?\nsecond line\n<!-- at: src:notes.md:2 -->\n",
     );
     let config = write(
         dir.path(),
@@ -5365,10 +5081,6 @@ fn a_local_facts_deck_declares_its_input_folder_as_the_src_root_and_its_locator_
         "the input's folder is the `src` root: {deck}"
     );
     assert!(
-        deck.contains(&format!("exam: {}", docs.join("notes.md").display())),
-        "`exam:` stays: {deck}"
-    );
-    assert!(
         deck.contains("<!-- at: src:notes.md:2 fingerprint: "),
         "the keyed locator resolves and is stamped: {deck}"
     );
@@ -5390,10 +5102,7 @@ fn a_member_facts_deck_reuses_the_manifest_key_holding_its_input_and_quotes_a_sp
     write(&ws, "alix.toml", "[cite]\ncode = \"repo\"\n");
     let (cli, request) = passage_echoing_claude(
         dir.path(),
-        &format!(
-            "---\nexam: \"{}\"\n---\n## What does lib.rs define?\none\n<!-- at: code:\"my dir/lib.rs\":1 -->\n",
-            ws.join("repo/my dir").display()
-        ),
+        "---\nchoices: single\n---\n## What does lib.rs define?\none\n<!-- at: code:\"my dir/lib.rs\":1 -->\n",
     );
     let config = write(
         dir.path(),
@@ -5487,7 +5196,7 @@ fn generate_refuses_to_rebuild_trace_checkpoints_without_force() {
     let stub = write(
         dir.path(),
         "t.md",
-        "---\ntrace: how it works\nexam: .\n---\n## old checkpoint\nold point\n<!-- at: src:notes.md:1 -->\n<!-- id: card-c1 -->\n",
+        "---\ntrace: how it works\ncite:\n  - src: .\n---\n## old checkpoint\nold point\n<!-- at: src:notes.md:1 -->\n<!-- id: card-c1 -->\n",
     );
     let original = std::fs::read_to_string(&stub).unwrap();
 
@@ -5558,7 +5267,6 @@ fn generate_trace_writes_an_explore_deck() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let text = std::fs::read_to_string(&out_path).unwrap();
     assert!(text.contains("trace: \"exploring"), "{text}");
-    assert!(text.contains("exam:"), "{text}");
     assert!(text.contains("what it is"), "{text}");
     let root = dir.path().canonicalize().unwrap();
     assert!(
@@ -5608,10 +5316,7 @@ fn generate_trace_refuses_to_clobber_an_existing_output() {
 #[test]
 fn ordinary_text_and_markdown_files_never_enter_trace_building() {
     for (name, source_text) in [
-        (
-            "trace-shaped.txt",
-            "---\ntrace: how it works\nexam: .\n---\n",
-        ),
+        ("trace-shaped.txt", "---\ntrace: how it works\n---\n"),
         (
             "ordinary.md",
             "---\nformat-version: 1\nid: deck-source\n---\n## Source question\nSource answer\n<!-- id: card-source1 -->\n",
@@ -5645,7 +5350,7 @@ fn ordinary_text_and_markdown_files_never_enter_trace_building() {
 // ── `deck generate`: a single deck from a URL/file source, fake backend ────
 
 #[test]
-fn generate_rejects_an_invalid_public_source_url_before_the_backend() {
+fn generate_rejects_an_invalid_link_before_the_backend() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(dir.path(), "## Generated Q\nGenerated A\n");
     let config = write(
@@ -5658,7 +5363,7 @@ fn generate_rejects_an_invalid_public_source_url_before_the_backend() {
         "deck",
         "generate",
         "https://example.org/page",
-        "--source-url",
+        "--link",
         "not-a-url",
         "--config",
         &config,
@@ -5667,7 +5372,7 @@ fn generate_rejects_an_invalid_public_source_url_before_the_backend() {
 
     assert!(!out.status.success(), "stdout: {}", stdout(&out));
     assert!(
-        stderr(&out).contains("`--source-url` must be an http or https URL"),
+        stderr(&out).contains("`--link` must be an http or https URL: `not-a-url`"),
         "stderr: {}",
         stderr(&out)
     );
@@ -6120,10 +5825,6 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
         manifest.contains(&format!("[cite]\nsrc = \"{}\"\n", source_root.display())),
         "the manifest declares the input root under `src`: {manifest}"
     );
-    assert!(
-        manifest.contains(&format!("exam = \"{}\"\n", source_root.display())),
-        "the manifest keeps its `exam`: {manifest}"
-    );
     for name in ["01-institutions.md", "02-terms.md"] {
         let deck = alix::deck::Deck::load(workspace.join("decks").join(name)).unwrap();
         assert!(
@@ -6218,11 +5919,11 @@ fn generated_workspace_reports_one_stub_and_stays_silent_at_zero_frozen_assets()
 }
 
 #[test]
-fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
+fn two_link_flags_write_two_link_entries() {
     let dir = TempDir::new().unwrap();
     let cli = fake_claude(
         dir.path(),
-        "---\nlink: https://mirror.example/page\nexam: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
+        "---\nlink: https://mirror.example/page\n---\n\n## Generated Q\nGenerated A\n",
     );
     let config = write(
         dir.path(),
@@ -6237,8 +5938,10 @@ fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
         "deck",
         "generate",
         "https://mirror.example/page",
-        "--source-url",
-        "https://canonical.example/page",
+        "--link",
+        "https://a.example/page",
+        "--link",
+        "https://b.example/page",
         "--config",
         &config,
         "--into",
@@ -6251,11 +5954,20 @@ fn generate_single_deck_records_the_explicit_public_url_as_a_source() {
     let deck = std::fs::read_to_string(ws.join("decks/gen.md")).unwrap();
     assert!(
         deck.contains(
-            "exam:\n  - \"https://mirror.example/page\"\n  - \"https://canonical.example/page\""
+            "link:\n  - \"https://mirror.example/page\"\n  - \"https://a.example/page\"\n  - \"https://b.example/page\"\n"
         ),
         "{deck}"
     );
-    assert!(!deck.contains("origin"), "{deck}");
+    assert_eq!(
+        vec![
+            "https://mirror.example/page",
+            "https://a.example/page",
+            "https://b.example/page"
+        ],
+        alix::deck::Deck::load(ws.join("decks/gen.md"))
+            .unwrap()
+            .links
+    );
 }
 
 #[test]
@@ -7165,7 +6877,7 @@ fn deck_init_freezes_its_excerpts_when_named_by_a_relative_path() {
     std::fs::write(
         decks.join("d.md"),
         format!(
-            "---\nexam: {0}\ncite:\n  - src: {0}\n---\n\n## what does it say\nthe cited paragraph\n\
+            "---\ncite:\n  - src: {0}\n---\n\n## what does it say\nthe cited paragraph\n\
              <!-- at: src:notes.md:1-2 -->\n",
             decks.display()
         ),
@@ -7295,22 +7007,67 @@ fn doctor_recommends_initializing_deck_like_markdown() {
 }
 
 #[test]
-fn doctor_names_a_decks_exam_entries_and_cite_roots_by_their_keys() {
+fn doctor_reports_a_manifest_exam_key_as_an_unknown_field_and_the_picker_shows_the_error() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"W\"\nexam = \"notes.md\"\n").unwrap();
+    write(
+        &ws.join("decks"),
+        "facts.md",
+        "---\nformat-version: 1\nid: deck-facts\n---\n## q\na\n<!-- id: card-facts1 -->\n",
+    );
+    let loose = write(
+        dir.path(),
+        "loose.md",
+        "---\nexam: notes.md\n---\n## q\na\n",
+    );
+
+    let out = alix(&["doctor", ws.to_str().unwrap()]);
+    assert!(!out.status.success(), "stdout: {}", stdout(&out));
+    let report = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        report.contains("unknown field `exam`"),
+        "the manifest key is an ordinary unknown field: {report}"
+    );
+
+    let out = alix(&["doctor", &loose]);
+    let report = format!("{}{}", stdout(&out), stderr(&out));
+    assert!(
+        report.contains("unknown key `exam` (ignored)"),
+        "the deck key is an ordinary unknown key: {report}"
+    );
+
+    let recent = alix::recent::RecentDecks::load(dir.path().join("recent.json"));
+    let picker =
+        alix::picker::catalog(dir.path(), &recent, &mut alix::cache::DeckCache::default()).unwrap();
+    let row = picker
+        .iter()
+        .find(|entry| entry.path == ws)
+        .expect("the workspace row");
+    assert!(
+        row.error
+            .as_deref()
+            .is_some_and(|error| error.contains("unknown field `exam`")),
+        "the picker row carries the parse message: {:?}",
+        row.error
+    );
+    assert!(row.members.is_empty(), "no member is listed");
+}
+
+#[test]
+fn doctor_names_a_decks_cite_roots_by_their_keys() {
     let dir = TempDir::new().unwrap();
     std::fs::create_dir(dir.path().join("book")).unwrap();
     let path = write(
         dir.path(),
         "deck.md",
-        "---\nexam: notes.md\ncite:\n  - rbe: book\n---\n## q\nanswer\n",
+        "---\ncite:\n  - rbe: book\n---\n## q\nanswer\n",
     );
 
     let out = alix(&["doctor", &path]);
 
     let printed = stdout(&out);
-    assert!(
-        printed.contains("  exam:     notes.md"),
-        "exam line: {printed}"
-    );
     assert!(
         printed.contains("  cite:     rbe: book"),
         "cite line: {printed}"
@@ -7327,13 +7084,13 @@ fn doctor_shows_what_a_member_deck_inherits_from_its_workspace() {
     std::fs::create_dir_all(ws.join("own")).unwrap();
     std::fs::write(
         ws.join("alix.toml"),
-        "title = \"W\"\nexam = \"sources\"\n[defaults]\nreveal = \"line\"\n[cite]\nsrc = \"sources\"\n",
+        "title = \"W\"\n[defaults]\nreveal = \"line\"\n[cite]\nsrc = \"sources\"\n",
     )
     .unwrap();
     let path = write(
         &ws.join("decks"),
         "deck.md",
-        "---\nexam: notes.md\ncite:\n  - mine: own\n---\n## q\nanswer\n",
+        "---\ncite:\n  - mine: own\n---\n## q\nanswer\n",
     );
 
     let out = alix(&["doctor", &path]);
@@ -7342,10 +7099,6 @@ fn doctor_shows_what_a_member_deck_inherits_from_its_workspace() {
     assert!(
         printed.contains("  settings: reveal: line (workspace)"),
         "settings line: {printed}"
-    );
-    assert!(
-        printed.contains("  exam:     notes.md, sources (workspace)"),
-        "exam line: {printed}"
     );
     assert!(
         printed.contains("  cite:     mine: own, src: sources (workspace)"),
@@ -7691,8 +7444,8 @@ fn workspace_init_on_an_existing_workspace_errors() {
 fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     let dir = TempDir::new().unwrap();
     // Staging canonicalizes the workspace root; on macOS the raw tempdir path
-    // traverses /var -> /private/var, so the embedded `exam:` must be the
-    // canonical form or the preserved-source comparison spuriously differs.
+    // traverses /var -> /private/var, so the embedded `cite:` root must be the
+    // canonical form or the preserved-root comparison spuriously differs.
     let root = dir.path().canonicalize().unwrap();
     let workspace = root.join("workspace");
     let source = root.join("source");
@@ -7704,14 +7457,14 @@ fn workspace_update_previews_then_applies_without_a_second_backend_call() {
     std::fs::write(
         &deck,
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Old?\nold\n<!-- at: src:facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: {0}\n---\n## Old?\nold\n<!-- at: src:facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )
     .unwrap();
     alix::assets::freeze_member(&deck).unwrap();
     let proposal = format!(
-        "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## New?\nnew\n<!-- at: src:facts.rs:2 -->\n",
+        "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: {0}\n---\n## New?\nnew\n<!-- at: src:facts.rs:2 -->\n",
         alix::parser::yaml_quote(source.to_str().unwrap())
     );
     let cli = fake_claude(dir.path(), &proposal);
@@ -8531,7 +8284,7 @@ fn workspace_update_stops_a_wedged_provider_at_the_inactivity_limit() {
     std::fs::write(
         &deck,
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Old?\nold\n<!-- at: src:facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: {0}\n---\n## Old?\nold\n<!-- at: src:facts.rs:1 -->\n<!-- id: card-oldcard -->\n",
             alix::parser::yaml_quote(source.to_str().unwrap())
         ),
     )

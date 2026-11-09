@@ -82,7 +82,9 @@ link:
 ```
 
 These are handed to the tutor with your first question as material to consult when
-useful: fetched once and remembered for the rest of the run. They're tutor-only:
+useful: fetched once and remembered for the rest of the run. A workspace
+member also reads the `link` entries of its workspace's `alix.toml`, after its
+own. They're tutor-only:
 a `link:` never becomes exam material (the exam reads only a deck's
 sources, covered in the AI exam chapter). And like every directive, they don't affect a
 card's identity.

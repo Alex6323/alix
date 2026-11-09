@@ -439,10 +439,10 @@ struct ReceiveArgs {
 /// The options both kinds of generation take.
 #[derive(Args)]
 struct GenerateCommonArgs {
-    /// Public URL recorded as an additional `exam:` (the workspace `exam`
-    /// for a generated workspace) for tutor context and exam grounding.
-    #[arg(long, value_name = "URL")]
-    source_url: Option<String>,
+    /// A reference URL recorded as a `link:` entry (the workspace `link`
+    /// for a generated workspace); repeat the flag for more than one.
+    #[arg(long = "link", value_name = "URL")]
+    links: Vec<String>,
 
     /// The learning goal that scopes what is generated (default: understand
     /// the whole source).

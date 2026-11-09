@@ -763,7 +763,7 @@ fn every_lifecycle_operation_carries_each_per_deck_folder_with_its_deck_and_neve
 }
 
 /// A frozen, source-backed member the way `alix workspace update` wants one:
-/// `exam:` and `cite:` point at a folder inside the workspace, the card cites
+/// `cite:` points at a folder inside the workspace, the card cites
 /// it, and one frozen source is bound to the deck's leading topic. Returns the
 /// deck text before freezing, which is also an unchanged proposal for it.
 #[cfg(unix)]
@@ -775,7 +775,7 @@ fn frozen_member_for_update(root: &Path) -> (String, Member) {
     fs::write(source.join("code.rs"), "Old answer\n").unwrap();
     let deck = root.join("decks").join(DECK_FILE);
     let unfrozen_text = format!(
-        "---\nformat-version: 1\nid: \"{DECK_ID}\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Old \
+        "---\nformat-version: 1\nid: \"{DECK_ID}\"\ncite:\n  - src: {0}\n---\n## Old \
          question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: {CARD_ID} -->\n",
         alix::parser::yaml_quote(&source.display().to_string())
     );

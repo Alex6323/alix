@@ -54,7 +54,6 @@ TraceSessionStateModel _stateFromBridge(bridge.TraceSessionState state) {
     },
     description: state.description,
     descriptionRuns: inlineRunsFromBridge(state.descriptionRuns),
-    source: state.source,
     total: state.total,
     current: state.current,
     prompt: state.prompt,

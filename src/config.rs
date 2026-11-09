@@ -1441,9 +1441,9 @@ pub fn default_config_toml() -> &'static str {
 # Tools the assistant may use. With "dontAsk" this is an exclusive
 # allowlist; the defaults let it consult deck links but nothing else.
 # allowed_tools = ["WebFetch", "WebSearch"]
-# Let the tutor READ the deck's first local `exam:` root (workspace `exam`
-# as fallback) with Read/Glob/Grep to verify its answer instead of relying on
-# memory. An `at:` citation never grants access by itself. Off by default
+# Let the tutor READ the local `cite:` root a card's `at:` locator names with
+# Read/Glob/Grep to verify its answer instead of relying on memory. An `at:`
+# citation never grants access by itself. Off by default
 # because this can expose local files to a possibly LAN-served tutor; enable it
 # only on a machine and network you trust.
 # source_access = false
@@ -1465,11 +1465,9 @@ pub fn default_config_toml() -> &'static str {
 # prompt = ""                   # override; supports {url}, {source}, {max_cards}, {card_format}
 # review = false                # run a second pass to drop redundant cards (--review)
 
-# AI exam. Generates open understanding questions from the deck's `exam:`
-# (the workspace `exam` joins as supporting context), then grades typed
-# answers; passing marks the deck
-# "mastered" and unlocks its dependents. Reuses the [ask] command, permission
-# mode and tool allowlist (WebFetch reads a source URL).
+# AI exam. Generates open understanding questions from the deck's frozen
+# sources (`alix deck source add`), then grades typed answers; passing marks
+# the deck "mastered" and unlocks its dependents. Reuses the [ask] command.
 [exam]
 # model = ""                    # --model override; empty = use [ask] / CLI default
 # effort = ""                   # --effort for writing questions; a workspace's alix.local.toml may override it
@@ -1478,8 +1476,8 @@ pub fn default_config_toml() -> &'static str {
 # strictness = "balanced"       # answer grading: strict | balanced | lenient
 # extra = ""                    # extra guidance appended to question generation
 
-# Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the `exam:`
-# to discover the path and writes the checkpoints back. Reuses the [ask] command,
+# Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the
+# deck's first local `cite:` root to discover the path and writes the checkpoints back. Reuses the [ask] command,
 # but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
 # source) and the source root as the working directory — never a write/shell tool.
 [trace]

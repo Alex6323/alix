@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1583179561;
+  int get rustContentHash => 970484286;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -109,7 +109,7 @@ abstract class RustLibApi extends BaseApi {
     BigInt? nowMs,
   });
 
-  bool crateApiReviewReviewSessionDeckHasExam({required ReviewSession that});
+  bool crateApiReviewReviewSessionDeckExamable({required ReviewSession that});
 
   ReviewState crateApiReviewReviewSessionGrade({
     required ReviewSession that,
@@ -605,7 +605,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateApiReviewReviewSessionDeckHasExam({required ReviewSession that}) {
+  bool crateApiReviewReviewSessionDeckExamable({required ReviewSession that}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
@@ -620,16 +620,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeSuccessData: sse_decode_bool,
           decodeErrorData: null,
         ),
-        constMeta: kCrateApiReviewReviewSessionDeckHasExamConstMeta,
+        constMeta: kCrateApiReviewReviewSessionDeckExamableConstMeta,
         argValues: [that],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiReviewReviewSessionDeckHasExamConstMeta =>
+  TaskConstMeta get kCrateApiReviewReviewSessionDeckExamableConstMeta =>
       const TaskConstMeta(
-        debugName: "ReviewSession_deck_has_exam",
+        debugName: "ReviewSession_deck_examable",
         argNames: ["that"],
       );
 
@@ -3045,7 +3045,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       examFilter: dco_decode_String(arr[9]),
       examChanged: dco_decode_bool(arr[10]),
       examDue: dco_decode_bool(arr[11]),
-      hasExam: dco_decode_bool(arr[12]),
+      examable: dco_decode_bool(arr[12]),
       locked: dco_decode_bool(arr[13]),
       progressError: dco_decode_bool(arr[14]),
       icon: dco_decode_opt_String(arr[15]),
@@ -3950,29 +3950,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TraceSessionState dco_decode_trace_session_state(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 20)
-      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return TraceSessionState(
       phase: dco_decode_trace_session_phase(arr[0]),
       description: dco_decode_String(arr[1]),
       descriptionRuns: dco_decode_list_inline_run(arr[2]),
-      source: dco_decode_opt_String(arr[3]),
-      total: dco_decode_u_32(arr[4]),
-      current: dco_decode_u_32(arr[5]),
-      prompt: dco_decode_opt_String(arr[6]),
-      promptRuns: dco_decode_opt_list_inline_run(arr[7]),
-      givens: dco_decode_list_String(arr[8]),
-      givenRuns: dco_decode_list_list_inline_run(arr[9]),
-      locator: dco_decode_opt_String(arr[10]),
-      prediction: dco_decode_opt_String(arr[11]),
-      excerpt: dco_decode_opt_box_autoadd_trace_session_excerpt(arr[12]),
-      excerptError: dco_decode_opt_String(arr[13]),
-      points: dco_decode_list_String(arr[14]),
-      pointRuns: dco_decode_list_list_inline_run(arr[15]),
-      note: dco_decode_opt_String(arr[16]),
-      noteRuns: dco_decode_opt_list_inline_run(arr[17]),
-      summary: dco_decode_opt_box_autoadd_trace_session_summary(arr[18]),
-      saveError: dco_decode_opt_String(arr[19]),
+      total: dco_decode_u_32(arr[3]),
+      current: dco_decode_u_32(arr[4]),
+      prompt: dco_decode_opt_String(arr[5]),
+      promptRuns: dco_decode_opt_list_inline_run(arr[6]),
+      givens: dco_decode_list_String(arr[7]),
+      givenRuns: dco_decode_list_list_inline_run(arr[8]),
+      locator: dco_decode_opt_String(arr[9]),
+      prediction: dco_decode_opt_String(arr[10]),
+      excerpt: dco_decode_opt_box_autoadd_trace_session_excerpt(arr[11]),
+      excerptError: dco_decode_opt_String(arr[12]),
+      points: dco_decode_list_String(arr[13]),
+      pointRuns: dco_decode_list_list_inline_run(arr[14]),
+      note: dco_decode_opt_String(arr[15]),
+      noteRuns: dco_decode_opt_list_inline_run(arr[16]),
+      summary: dco_decode_opt_box_autoadd_trace_session_summary(arr[17]),
+      saveError: dco_decode_opt_String(arr[18]),
     );
   }
 
@@ -4655,7 +4654,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_examFilter = sse_decode_String(deserializer);
     var var_examChanged = sse_decode_bool(deserializer);
     var var_examDue = sse_decode_bool(deserializer);
-    var var_hasExam = sse_decode_bool(deserializer);
+    var var_examable = sse_decode_bool(deserializer);
     var var_locked = sse_decode_bool(deserializer);
     var var_progressError = sse_decode_bool(deserializer);
     var var_icon = sse_decode_opt_String(deserializer);
@@ -4675,7 +4674,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       examFilter: var_examFilter,
       examChanged: var_examChanged,
       examDue: var_examDue,
-      hasExam: var_hasExam,
+      examable: var_examable,
       locked: var_locked,
       progressError: var_progressError,
       icon: var_icon,
@@ -5968,7 +5967,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_phase = sse_decode_trace_session_phase(deserializer);
     var var_description = sse_decode_String(deserializer);
     var var_descriptionRuns = sse_decode_list_inline_run(deserializer);
-    var var_source = sse_decode_opt_String(deserializer);
     var var_total = sse_decode_u_32(deserializer);
     var var_current = sse_decode_u_32(deserializer);
     var var_prompt = sse_decode_opt_String(deserializer);
@@ -5993,7 +5991,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       phase: var_phase,
       description: var_description,
       descriptionRuns: var_descriptionRuns,
-      source: var_source,
       total: var_total,
       current: var_current,
       prompt: var_prompt,
@@ -6701,7 +6698,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.examFilter, serializer);
     sse_encode_bool(self.examChanged, serializer);
     sse_encode_bool(self.examDue, serializer);
-    sse_encode_bool(self.hasExam, serializer);
+    sse_encode_bool(self.examable, serializer);
     sse_encode_bool(self.locked, serializer);
     sse_encode_bool(self.progressError, serializer);
     sse_encode_opt_String(self.icon, serializer);
@@ -7820,7 +7817,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_trace_session_phase(self.phase, serializer);
     sse_encode_String(self.description, serializer);
     sse_encode_list_inline_run(self.descriptionRuns, serializer);
-    sse_encode_opt_String(self.source, serializer);
     sse_encode_u_32(self.total, serializer);
     sse_encode_u_32(self.current, serializer);
     sse_encode_opt_String(self.prompt, serializer);
@@ -7972,8 +7968,8 @@ class ReviewSessionImpl extends RustOpaque implements ReviewSession {
   CrumbState? crumb({BigInt? nowMs}) => RustLib.instance.api
       .crateApiReviewReviewSessionCrumb(that: this, nowMs: nowMs);
 
-  bool deckHasExam() =>
-      RustLib.instance.api.crateApiReviewReviewSessionDeckHasExam(that: this);
+  bool deckExamable() =>
+      RustLib.instance.api.crateApiReviewReviewSessionDeckExamable(that: this);
 
   ReviewState grade({required Grade grade, BigInt? nowMs}) => RustLib
       .instance

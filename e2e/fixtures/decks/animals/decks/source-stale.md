@@ -1,6 +1,5 @@
 ---
 id: "deck-00000000000000000000000011"
-exam: source-stale.rs
 cite:
   - src: .
 title: Source Stale

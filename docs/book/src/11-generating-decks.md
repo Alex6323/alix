@@ -44,9 +44,9 @@ How the source is recorded depends on its kind, and it matters later:
 - A **web page** is read with the `WebFetch` tool, and the deck opens with a
   `link:` line back to it, so the [tutor](10-tutor.md) can
   consult the page on your cards.
-- A **local source** is explored read-only with `Read`/`Glob`/`Grep`, and the
-  deck opens with a `exam:` line, so the **AI exam** can later grade your
-  understanding against that same source (next chapter). Each fact that maps to
+- A **local source** is explored read-only with `Read`/`Glob`/`Grep`. To
+  let the **AI exam** grade your understanding against that source later, add
+  it to the deck as a [source](12-the-ai-exam.md#sources). Each fact that maps to
   specific lines also gets a fingerprinted
   [`<!-- at: -->` citation](06-cloze-direction-images.md#source-citations), so
   you can flip the card to its source on reveal without trusting a shifted
@@ -67,7 +67,11 @@ alix deck generate <source> --into ~/decks/rust/ # into that existing workspace'
 alix deck generate <source> --goal "pass the citizenship test"
 alix deck generate <source> --language German --audience "new voters"
 alix deck generate <source> --card-style authored-choices
+alix deck generate <source> --link https://example.com/a --link https://example.com/b
 ```
+
+`--link <URL>` (repeatable, http or https only) records each URL as a `link:`
+entry, a [tutor reference](10-tutor.md) the exam never reads.
 
 `--goal` controls what the learner should understand for every new deck or
 workspace, including a single deck generated from a URL or file. `--language`

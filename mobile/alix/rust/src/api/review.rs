@@ -407,7 +407,7 @@ pub struct ReviewSession {
     // association) is keyed by this, captured off the loaded Deck rather
     // than re-derived from deck_path by hand.
     deck_token: String,
-    has_exam: bool,
+    examable: bool,
     // The last failed per-grade save, kept until one succeeds (the serve
     // loop's banner semantics): review continues in memory, never dies on a
     // full disk mid-sitting.
@@ -430,7 +430,7 @@ impl ReviewSession {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let deck_token = loaded.deck_token.clone().unwrap_or_default();
-        let has_exam = loaded.declares_sources();
+        let examable = loaded.declares_sources();
         // Captured before `deck` moves into `assemble::select` below.
         let deck_path = deck.clone();
 
@@ -478,7 +478,7 @@ impl ReviewSession {
             label: build.label,
             deck_path,
             deck_token,
-            has_exam,
+            examable,
             save_error: None,
             load_warnings,
             topic_ids,
@@ -677,8 +677,8 @@ impl ReviewSession {
     }
 
     #[flutter_rust_bridge::frb(sync)]
-    pub fn deck_has_exam(&self) -> bool {
-        self.has_exam
+    pub fn deck_examable(&self) -> bool {
+        self.examable
     }
 }
 
@@ -709,7 +709,6 @@ pub struct TraceSessionState {
     pub phase: TraceSessionPhase,
     pub description: String,
     pub description_runs: Vec<InlineRun>,
-    pub source: Option<String>,
     pub total: u32,
     pub current: u32,
     pub prompt: Option<String>,
@@ -752,7 +751,6 @@ fn trace_state(session: &alix::trace::TraceSession) -> TraceSessionState {
         phase,
         description: trace.description.clone(),
         description_runs: projector.project(&trace.description),
-        source: trace.source.clone(),
         total: session.total() as u32,
         current: session.current_index() as u32 + 1,
         prompt: None,
@@ -2431,7 +2429,6 @@ mod tests {
             &path,
             "---\n\
              trace: how `it` works\n\
-             exam: source.txt\n\
              cite:\n\
                - src: .\n\
              ---\n\
@@ -2473,7 +2470,6 @@ mod tests {
                 .iter()
                 .any(|run| run.code && run.text == "it")
         );
-        assert_eq!(state.source.as_deref(), Some("source.txt"));
         assert_eq!(state.total, 2);
         assert_eq!(state.current, 1);
         assert_eq!(state.prompt.as_deref(), Some("Predict the `first` hop"));
@@ -2600,7 +2596,6 @@ mod tests {
             &deck_path,
             "---\n\
              trace: a member trace\n\
-             exam: source.txt\n\
              cite:\n\
                - src: .\n\
              ---\n\
@@ -2668,7 +2663,6 @@ mod tests {
             &url_source,
             "---\n\
              trace: a path with a URL source\n\
-             exam: https://example.com/readme.md\n\
              cite:\n\
                - guide: https://example.com/readme.md\n\
              ---\n\

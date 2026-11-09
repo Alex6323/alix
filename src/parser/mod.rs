@@ -5784,8 +5784,8 @@ a
 
     #[test]
     fn a_flow_mapping_frontmatter_parses_but_is_reported_unspliceable() {
-        let deck = parse("---\n{exam: [a]}\n---\n## q\nb\n");
-        assert_eq!(vec!["a".to_string()], deck.frontmatter.exam);
+        let deck = parse("---\n{requires: [a]}\n---\n## q\nb\n");
+        assert_eq!(vec!["a".to_string()], deck.frontmatter.requires);
         assert!(deck.frontmatter.unspliceable);
     }
 
@@ -5805,13 +5805,13 @@ a
         assert_eq!(None, parse("## q\na\n").frontmatter_span);
         assert_eq!(
             Some((1, 3)),
-            parse("---\nexam: x\n---\n## q\na\n").frontmatter_span
+            parse("---\ntitle: x\n---\n## q\na\n").frontmatter_span
         );
         assert_eq!(
             Some((2, 4)),
-            parse("\n---\nexam: x\n---\n## q\na\n").frontmatter_span
+            parse("\n---\ntitle: x\n---\n## q\na\n").frontmatter_span
         );
-        let deck = parse("---\n{exam: [a]}\n---\n## q\nb\n");
+        let deck = parse("---\n{requires: [a]}\n---\n## q\nb\n");
         assert_eq!(Some((1, 3)), deck.frontmatter_span);
         assert!(deck.frontmatter.unspliceable);
     }
@@ -5897,8 +5897,8 @@ a
 
     #[test]
     fn frontmatter_lists_accept_a_scalar_as_a_singleton() {
-        let deck = parse("---\nexam: notes.md\nrequires: basics\n---\n## q\na\n");
-        assert_eq!(vec!["notes.md".to_string()], deck.frontmatter.exam);
+        let deck = parse("---\nlink: notes.md\nrequires: basics\n---\n## q\na\n");
+        assert_eq!(vec!["notes.md".to_string()], deck.frontmatter.link);
         assert_eq!(vec!["basics".to_string()], deck.frontmatter.requires);
     }
 
@@ -5948,7 +5948,7 @@ a
         assert_eq!(Ok(None), deck_identity("## q\nid: \"abc\"\na\n"));
         assert_eq!(
             Ok(None),
-            deck_identity("---\nexam: notes.md\n---\n## q\na\n")
+            deck_identity("---\nlink: notes.md\n---\n## q\na\n")
         );
         assert!(matches!(
             deck_identity("---\nid: \"9w2c7x4k1m8q3z5t0v6b2n4d8f\"\n---\n## q\na\n"),
@@ -5975,7 +5975,7 @@ a
     #[test]
     fn a_header_only_stub_is_deck_content() {
         assert!(is_deck_content("---\ntrace: a walk\n---\n"));
-        assert!(is_deck_content("---\nexam: notes.md\n---\n"));
+        assert!(is_deck_content("---\nlink: notes.md\n---\n"));
     }
 
     #[test]
@@ -8398,7 +8398,7 @@ a
             (
                 "<!-- Generated 2026-06 from a working session -->",
                 false,
-                "a provenance note, which belongs in `exam:` or `description:`",
+                "a provenance note, which belongs in `description:`",
             ),
             (
                 "<!-- % origin: /home/me/dev -->",
@@ -9456,9 +9456,6 @@ a
         let text = r#"---
 format-version: 1
 id: "deck-9w2c7x4k1m8q3z5t0v6b2n4d8f"
-exam:
-  - https://example.org/book
-  - notes.md
 requires:
   - basics
 link:
@@ -9499,7 +9496,6 @@ the answer
                 license: Some("MIT".into()),
                 title: Some("The Title".into()),
                 description: None,
-                exam: vec!["https://example.org/book".into(), "notes.md".into()],
                 cite: Vec::new(),
                 requires: vec!["basics".into()],
                 link: vec!["https://docs.rs/tokio".into()],
@@ -9525,19 +9521,19 @@ the answer
                 crops: Vec::new(),
                 sites: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
-                token_line: Some(36),
+                token_line: Some(33),
                 topics: Vec::new(),
                 reveal: Some(Reveal::Flip),
-                reveal_line: Some(30),
+                reveal_line: Some(27),
                 input: Some(Input::Type),
                 direction: Some(Direction::Reverse),
-                direction_line: Some(32),
+                direction_line: Some(29),
                 sampling: None,
                 citations: vec![crate::card::SourceCitation {
                     locator: caching_locator(),
                     fingerprint: Some(0x0123456789abcdef),
                     asset: Some("asset-abc123.rs".into()),
-                    line: 33,
+                    line: 30,
                 }],
                 diagrams: Vec::new(),
                 givens: vec![
@@ -9564,7 +9560,7 @@ the answer
                 locator: caching_locator(),
                 fingerprint: Some(0x0123456789abcdef),
                 asset: Some("asset-abc123.rs".into()),
-                line: 33,
+                line: 30,
             }],
             card.citations
         );

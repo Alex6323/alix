@@ -154,7 +154,7 @@ function longContentState({
 
 async function mockExamPickerRows(
   page: Page,
-  states: Record<string, { state: string; examable: boolean }>,
+  states: Record<string, { state: string; examable_now: boolean }>,
 ) {
   await page.route("**/api/decks", async (route) => {
     const response = await route.fetch();
@@ -165,7 +165,7 @@ async function mockExamPickerRows(
       ...catalog.folders.flatMap((row) => row.members),
     ];
     const shared = {
-      has_exam: true,
+      examable: true,
       exam_prepared: true,
       is_trace: false,
       reviewable: true,
@@ -211,7 +211,7 @@ test("the picker lists the fixture workspace and its decks", async ({ page }) =>
 test("the exam chip stays put when focus moves between ready and locked exams", async ({ page }) => {
   // A normal workspace can contain both an exam a learner may take early and
   // one that is still locked. Pin every footer-relevant field to the same
-  // value except `examable`, so moving between the rows isolates the x/lock
+  // value except `examable_now`, so moving between the rows isolates the x/lock
   // hint swap that used to resize the centered action group.
   await page.route("**/api/decks", async (route) => {
     const response = await route.fetch();
@@ -225,7 +225,7 @@ test("the exam chip stays put when focus moves between ready and locked exams", 
     const cats = rows.find((row) => row.name.endsWith("cats.md"));
     const shared = {
       state: "learning",
-      has_exam: true,
+      examable: true,
       exam_prepared: true,
       is_trace: false,
       reviewable: true,
@@ -234,8 +234,8 @@ test("the exam chip stays put when focus moves between ready and locked exams", 
       reviewable_reconstruct: false,
       last_launch: null,
     };
-    Object.assign(wild, shared, { examable: true });
-    Object.assign(cats, shared, { examable: false });
+    Object.assign(wild, shared, { examable_now: true });
+    Object.assign(cats, shared, { examable_now: false });
     await route.fulfill({ response, json: catalog });
   });
 
@@ -265,9 +265,9 @@ test("the exam chip stays put when focus moves between ready and locked exams", 
 
 test("the drawer keeps one exam entry and accents only a due unlocked exam", async ({ page }) => {
   await mockExamPickerRows(page, {
-    "wild.md": { state: "examdue", examable: true },
-    "cats.md": { state: "examdue", examable: false },
-    "source-fact.md": { state: "learning", examable: true },
+    "wild.md": { state: "examdue", examable_now: true },
+    "cats.md": { state: "examdue", examable_now: false },
+    "source-fact.md": { state: "learning", examable_now: true },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
@@ -296,7 +296,7 @@ test("the drawer keeps one exam entry and accents only a due unlocked exam", asy
 
 test("Enter drills an exam-due deck and never starts its exam", async ({ page }) => {
   await mockExamPickerRows(page, {
-    "wild.md": { state: "examdue", examable: true },
+    "wild.md": { state: "examdue", examable_now: true },
   });
   let selectRequests = 0;
   let examRequests = 0;

@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    cite::{self, DeckPlace, ExamPlace},
+    cite::{self, DeckPlace},
     deck::{self, Deck},
     share,
     state::UserFiles,
@@ -187,7 +187,7 @@ impl Transfer {
             &deck_id,
         )?;
         ensure_requirements_resolve(&deck, &destination_files.decks())?;
-        ensure_citations_and_exam_resolve_alike(&deck, &source_root, &destination_root)?;
+        ensure_citations_resolve_alike(&deck, &source_root, &destination_root)?;
         if mode == TransferMode::Move {
             let dependents = deck::dependents(&source);
             if !dependents.is_empty() {
@@ -452,13 +452,13 @@ fn ensure_requirements_resolve(deck: &Deck, destination_decks: &Path) -> Result<
     Ok(())
 }
 
-fn ensure_citations_and_exam_resolve_alike(
+fn ensure_citations_resolve_alike(
     deck: &Deck,
     source_root: &Path,
     destination_root: &Path,
 ) -> Result<()> {
-    let source_cite = workspace::manifest_cite(source_root);
-    let destination_cite = workspace::manifest_cite(destination_root);
+    let source_cite = workspace::manifest_cite(source_root)?;
+    let destination_cite = workspace::manifest_cite(destination_root)?;
     let used = deck
         .cards
         .iter()
@@ -476,24 +476,7 @@ fn ensure_citations_and_exam_resolve_alike(
             manifest_cite: &destination_cite,
         },
     );
-    let source_exam = workspace::manifest_exam(source_root);
-    let destination_exam = workspace::manifest_exam(destination_root);
-    let exam_mismatches = cite::exam_transfer_mismatches(
-        &deck.exam,
-        ExamPlace {
-            base: source_root,
-            manifest_exam: &source_exam,
-        },
-        ExamPlace {
-            base: destination_root,
-            manifest_exam: &destination_exam,
-        },
-    );
-    let mismatches: Vec<String> = cite_mismatches
-        .iter()
-        .map(ToString::to_string)
-        .chain(exam_mismatches.iter().map(ToString::to_string))
-        .collect();
+    let mismatches: Vec<String> = cite_mismatches.iter().map(ToString::to_string).collect();
     if !mismatches.is_empty() {
         bail!(
             "cannot transfer {}: {}",
@@ -819,48 +802,6 @@ mod tests {
 
         assert!(format!("{error:#}").contains("already uses deck ID"));
         assert!(!destination.join("decks/facts.md").exists());
-    }
-
-    #[test]
-    fn an_exam_entry_that_resolves_differently_in_the_destination_refuses_before_writes() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let destination = dir.path().join("destination");
-        let shared = dir.path().join("shared");
-        std::fs::create_dir_all(&shared).unwrap();
-        let shared = shared.canonicalize().unwrap().display().to_string();
-        workspace(&source, &format!("exam = {shared:?}\n"));
-        workspace(&destination, &format!("exam = {shared:?}\n"));
-        std::fs::create_dir(source.join("material")).unwrap();
-        std::fs::create_dir(destination.join("material")).unwrap();
-        let path = deck(&source, "facts.md", "exam: material\n");
-
-        for mode in [TransferMode::Copy, TransferMode::Move] {
-            let error = format!("{:#}", transfer(&path, &destination, mode).unwrap_err());
-            let side = |root: &Path| {
-                root.canonicalize()
-                    .unwrap()
-                    .join("material")
-                    .display()
-                    .to_string()
-            };
-            assert!(
-                error.contains("`exam:` entry `material`")
-                    && error.contains(&side(&source))
-                    && error.contains(&side(&destination)),
-                "{mode:?}: the refusal names the entry and both sides: {error}"
-            );
-            assert!(path.is_file(), "{mode:?}");
-            assert!(!destination.join("decks/facts.md").exists(), "{mode:?}");
-        }
-
-        let path = deck(&source, "facts.md", "");
-        transfer(&path, &destination, TransferMode::Copy).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            std::fs::read_to_string(destination.join("decks/facts.md")).unwrap(),
-            "an allowed transfer never writes `exam:` into the deck"
-        );
     }
 
     #[test]

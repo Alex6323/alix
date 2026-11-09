@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::{
     ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
-    deck::{self, Deck},
+    deck::Deck,
     exam_ideas::{Idea, IdeaTopic, IdeasDocument},
     exam_prompt::{
         IDEA_LINE_MAX_CHARS, PreflightError, ideas_prompt, measure_topic, questions_prompt,
@@ -1424,21 +1424,6 @@ pub(crate) fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     }
 }
 
-pub fn unreadable_exam_entries(deck: &Deck) -> Vec<(String, String)> {
-    let root = workspace::content_root(&deck.path);
-    deck.exam
-        .iter()
-        .filter(|src| !deck::is_url(src))
-        .filter_map(|src| {
-            let path = crate::source::source_path(src, Some(&root))?;
-            std::fs::read_to_string(&path)
-                .with_context(|| format!("cannot read `exam:` {}", path.display()))
-                .err()
-                .map(|error| (src.trim().to_string(), format!("{error:#}")))
-        })
-        .collect()
-}
-
 pub fn preflight_topics(
     topics: &[ExamTopic],
     sources: &DeckSources,
@@ -1659,7 +1644,7 @@ mod tests {
         let path = dir.path().join("d.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-d\nexam: source.md\n---\n\
+            "---\nformat-version: 1\nid: deck-d\n---\n\
              ## old\nanswer\n<!-- id: card-old -->\n\n\
              ## new\nanswer\n\n```\nunclosed\n",
         )
@@ -1677,60 +1662,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_workspace_deck_resolves_its_exam_files_from_the_workspace_root_as_the_exam_does() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("alix.toml"), "title = \"W\"\n").unwrap();
-        std::fs::create_dir_all(dir.path().join("sources")).unwrap();
-        std::fs::write(dir.path().join("sources/notes.md"), "n").unwrap();
-        std::fs::create_dir_all(dir.path().join("decks")).unwrap();
-        let path = dir.path().join("decks/d.md");
-        std::fs::write(&path, "---\nexam: sources/notes.md\n---\n## q\na\n").unwrap();
-        crate::stamp::stamp_deck(&path).unwrap();
-        let deck = Deck::load(&path).unwrap();
-        assert!(
-            workspace::root_for_deck(&deck.path).is_some(),
-            "setup: the deck is a workspace member"
-        );
-        assert_eq!(
-            Vec::<(String, String)>::new(),
-            unreadable_exam_entries(&deck),
-            "a file the exam reads from the workspace root is not reported"
-        );
-    }
-
-    #[test]
-    fn unreadable_exam_entries_names_a_directory_and_a_missing_file_but_not_a_file_or_url() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("notes.md"), "n").unwrap();
-        std::fs::create_dir(dir.path().join("src")).unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "---\nexam: [notes.md, src, ghost.md, https://example.test/page]\n---\n## q\na\n",
-        )
-        .unwrap();
-        let deck = Deck::load(&path).unwrap();
-
-        let unreadable = unreadable_exam_entries(&deck);
-
-        let names: Vec<&str> = unreadable.iter().map(|(entry, _)| entry.as_str()).collect();
-        assert_eq!(
-            vec!["src", "ghost.md"],
-            names,
-            "unreadable entries: {unreadable:#?}"
-        );
-        assert!(
-            unreadable
-                .iter()
-                .all(|(_, why)| why.starts_with("cannot read `exam:`")),
-            "each reason is the exam's own start error: {unreadable:#?}"
-        );
-    }
-
-    /// Generated cards are recognized at every card depth: a check that
-    /// only knows `## ` would reject a valid generated sub-card set as
-    /// empty, or keep prose above the first front.
     #[test]
     fn generated_card_text_is_recognized_at_every_depth() {
         assert!(has_card_fronts("### only a sub-card\nanswer\n"));
@@ -2430,7 +2361,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn the_exam_reads_only_frozen_sources_never_exam_entries_cite_roots_or_cited_text() {
+    fn the_exam_reads_only_frozen_sources_never_cite_roots_or_cited_text() {
         let _lock = exec_lock();
         let ws = Workspace::new();
         let root = ws.root();
@@ -2442,14 +2373,13 @@ mod tests {
             "[cite]\nshared = \"lib\"\n",
         )
         .unwrap();
-        std::fs::write(root.join("own-exam.txt"), "DECK_EXAM_MARKER\n").unwrap();
         std::fs::write(root.join("code/cited.rs"), "CITED_TEXT_MARKER\n").unwrap();
         std::fs::write(root.join("code/uncited.rs"), "CITE_ROOT_MARKER\n").unwrap();
         std::fs::write(root.join("lib/shared.rs"), "MANIFEST_CITED_MARKER\n").unwrap();
         std::fs::write(
             ws.deck(),
             format!(
-                "---\nformat-version: 1\nid: {DECK}\nexam: own-exam.txt\n\
+                "---\nformat-version: 1\nid: {DECK}\n\
                  cite:\n  - code: code\n---\n\
                  ## q1\na\n<!-- at: code:cited.rs:1 -->\n\n\
                  ## q2\nb\n<!-- at: shared:shared.rs:1 -->\n"
@@ -2492,9 +2422,8 @@ mod tests {
 
         let code_root = root.join("code").canonicalize().unwrap();
         let lib_root = root.join("lib").canonicalize().unwrap();
-        let rows: [(&str, &str, bool); 7] = [
+        let rows: [(&str, &str, bool); 6] = [
             ("the deck's frozen source", "FROZEN_SOURCE_MARKER", true),
-            ("the deck's `exam:` entry", "DECK_EXAM_MARKER", false),
             ("text cited from a deck root", "CITED_TEXT_MARKER", false),
             (
                 "text cited from a manifest root",
@@ -2528,9 +2457,8 @@ mod tests {
 
     #[test]
     fn a_deck_declares_sources_only_through_a_manifest_with_a_row() {
-        let rows: [(&str, &str, bool, bool); 4] = [
+        let rows: [(&str, &str, bool, bool); 3] = [
             ("no sources folder", "", false, false),
-            ("an `exam:` entry alone", "exam: e.txt\n", false, false),
             ("a manifest with a row", "", true, true),
             (
                 "a trace deck with sources",

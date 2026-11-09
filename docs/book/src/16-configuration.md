@@ -175,7 +175,7 @@ you want to use and run its login command once.
 Each backend is granted **read-only tools only** (file reading; web fetch where
 the backend supports it). Codex runs under a network-blocking sandbox rather
 than a tool allowlist, so it can read local source files but can't fetch URLs:
-a URL-based exam or a `generate` subcommand will refuse and tell you to use a local
+a `generate` subcommand over a URL will refuse and tell you to use a local
 file instead, or switch backends.
 
 Run `alix doctor --backends` to send a quick test request to the configured

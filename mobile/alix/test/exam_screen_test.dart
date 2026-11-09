@@ -330,7 +330,7 @@ void main() {
       gaps: [],
       canRemediate: false,
       thinking: false,
-      error: 'cannot read `exam:` /src: Is a directory (os error 21)',
+      error: 'cannot read /src: Is a directory (os error 21)',
     );
     final client = FakeServerClient(examGetReplies: const [failed]);
     await pumpExam(tester, client: client);
@@ -338,7 +338,7 @@ void main() {
 
     expect(find.text('The exam backend failed.'), findsOneWidget);
     expect(
-      find.text('cannot read `exam:` /src: Is a directory (os error 21)'),
+      find.text('cannot read /src: Is a directory (os error 21)'),
       findsOneWidget,
     );
   });

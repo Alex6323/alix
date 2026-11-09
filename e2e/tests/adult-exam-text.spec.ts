@@ -142,7 +142,7 @@ test("an exam whose questions could not be generated shows the error without a w
     question: null,
     question_units: null,
     thinking: false,
-    error: "cannot read `exam:` /decks/src: Is a directory (os error 21)",
+    error: "cannot read /decks/src: Is a directory (os error 21)",
   });
   await expect(page.locator(".exam-error"), "failed generation: the error shows").toContainText("Is a directory");
   await expect(page.locator(".exam-wait"), "failed generation: no 'Preparing your exam…'").toHaveCount(0);

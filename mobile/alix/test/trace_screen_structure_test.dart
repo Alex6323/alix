@@ -41,7 +41,7 @@ void main() {
     writeTestDeck(
       '${root.path}/trace.md',
       '---\ntrace: how it works'
-          '${source ? '\nexam: source.txt\ncite:\n  - src: .' : ''}\n---\n'
+          '${source ? '\ncite:\n  - src: .' : ''}\n---\n'
           '## Predict the first hop\n'
           'it reads the first line\n'
           '<!-- at: src:source.txt:1 -->\n'

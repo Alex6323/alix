@@ -31,6 +31,8 @@ struct Entry {
     manifest: Option<ManifestMeta>,
 }
 
+type ManifestMeta = Result<workspace::ManifestData, String>;
+
 /// A member's card list depends on its workspace settings and its exam state
 /// on its sources manifest, files the deck's own (mtime, size) cannot see.
 #[derive(Clone)]
@@ -73,15 +75,6 @@ impl Entry {
     }
 }
 
-#[derive(Clone)]
-struct ManifestMeta {
-    title: Option<String>,
-    description: Option<String>,
-    settings: DeckSettings,
-    exam: Vec<String>,
-    icon: Option<String>,
-}
-
 impl DeckCache {
     fn slot(&mut self, path: &Path) -> Option<&mut Entry> {
         let Ok(meta) = std::fs::metadata(path) else {
@@ -120,7 +113,7 @@ impl DeckCache {
     }
 
     pub fn load(&mut self, path: &Path) -> Result<Arc<Deck>, Arc<DeckError>> {
-        let settings = self.workspace_settings(path);
+        let settings = self.workspace_settings(path)?;
         self.load_with(path, &settings)
     }
 
@@ -156,16 +149,19 @@ impl DeckCache {
         self.entries.is_empty()
     }
 
-    fn workspace_settings(&mut self, deck: &Path) -> DeckSettings {
+    fn workspace_settings(&mut self, deck: &Path) -> Result<DeckSettings, Arc<DeckError>> {
         let manifest = workspace::content_root(deck).join(workspace::MANIFEST);
-        match self.slot(&manifest) {
-            Some(entry) => entry
-                .manifest
-                .get_or_insert_with(|| read_manifest_meta(&manifest))
-                .settings
-                .clone(),
-            None => DeckSettings::default(),
+        if self.slot(&manifest).is_none() {
+            return Ok(DeckSettings::default());
         }
+        self.manifest_meta(&manifest)
+            .map(|meta| meta.settings)
+            .map_err(|message| {
+                Arc::new(DeckError::Io {
+                    path: manifest,
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, message),
+                })
+            })
     }
 
     /// The readdir itself is deliberately never memoized (only each member's
@@ -182,25 +178,24 @@ impl DeckCache {
         workspace::has_manifest(path)
     }
 
-    pub fn workspace(&mut self, dir: &Path) -> Workspace {
+    pub fn workspace(&mut self, dir: &Path) -> Result<Workspace, String> {
+        let meta = self.manifest_meta(&dir.join(workspace::MANIFEST))?;
         let (members, identities): (Vec<PathBuf>, HashMap<PathBuf, PathBuf>) =
             workspace::members_where_with_identity(dir, |p| self.is_deck(p))
                 .unwrap_or_default()
                 .into_iter()
                 .map(|(path, identity)| (path.clone(), (path, identity)))
                 .unzip();
-        let meta = self.manifest_meta(&dir.join(workspace::MANIFEST));
         let icon = workspace::resolve_icon(dir, meta.icon.as_deref());
-        Workspace {
+        Ok(Workspace {
             path: dir.to_path_buf(),
             title: meta.title,
             description: meta.description,
             settings: meta.settings,
-            exam: meta.exam,
             members,
             identities,
             icon,
-        }
+        })
     }
 
     fn manifest_meta(&mut self, path: &Path) -> ManifestMeta {
@@ -215,14 +210,7 @@ impl DeckCache {
 }
 
 fn read_manifest_meta(path: &Path) -> ManifestMeta {
-    let (title, description, settings, icon, exam) = workspace::read_manifest(path);
-    ManifestMeta {
-        title,
-        description,
-        settings,
-        exam,
-        icon,
-    }
+    workspace::read_manifest(path).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -402,7 +390,7 @@ mod tests {
         write(&ws.root().join("alix.toml"), "title = \"Renamed\"\n");
         assert_eq!(
             Some("Renamed".to_string()),
-            cache.workspace(ws.root()).title,
+            cache.workspace(ws.root()).unwrap().title,
             "step 3: the same server cache sees the edited workspace manifest"
         );
         let kept = cache.load(&ws.deck()).unwrap();

@@ -43,7 +43,7 @@ class PickerEntry {
     this.examFilter = 'none',
     this.examChanged = false,
     required this.examDue,
-    required this.hasExam,
+    required this.examable,
     required this.locked,
     required this.progressError,
     this.icon,
@@ -64,7 +64,7 @@ class PickerEntry {
   final String examFilter;
   final bool examChanged;
   final bool examDue;
-  final bool hasExam;
+  final bool examable;
   final bool locked;
   final bool progressError;
   final String? icon;

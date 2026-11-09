@@ -44,7 +44,6 @@ class TraceSessionStateModel {
     required this.phase,
     required this.description,
     required Iterable<InlineRunModel> descriptionRuns,
-    this.source,
     required this.total,
     required this.current,
     this.prompt,
@@ -72,7 +71,6 @@ class TraceSessionStateModel {
   final TraceSessionPhaseModel phase;
   final String description;
   final List<InlineRunModel> descriptionRuns;
-  final String? source;
   final int total;
   final int current;
   final String? prompt;
@@ -96,7 +94,6 @@ class TraceSessionStateModel {
     TraceSessionPhaseModel? phase,
     String? description,
     Iterable<InlineRunModel>? descriptionRuns,
-    Object? source = _unchanged,
     int? total,
     int? current,
     Object? prompt = _unchanged,
@@ -118,7 +115,6 @@ class TraceSessionStateModel {
       phase: phase ?? this.phase,
       description: description ?? this.description,
       descriptionRuns: descriptionRuns ?? this.descriptionRuns,
-      source: identical(source, _unchanged) ? this.source : source as String?,
       total: total ?? this.total,
       current: current ?? this.current,
       prompt: identical(prompt, _unchanged) ? this.prompt : prompt as String?,

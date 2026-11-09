@@ -112,9 +112,9 @@ AI authoring lives under the noun it produces, so the command names what you
 get: **`alix deck generate`** always writes one deck, **`alix workspace
 generate`** always builds a workspace.
 
-Both take the same steering options. `--source-url <URL>` records a public
-source (added to the deck or workspace `exam:`) for later tutor and exam
-context after local evidence is frozen. `--goal <TEXT>` scopes what the new
+Both take the same steering options. `--link <URL>` (repeatable, http or
+https only) records a tutor reference: the deck's `link:` list for `deck
+generate`, the workspace `alix.toml` `link` key for `workspace generate`. `--goal <TEXT>` scopes what the new
 deck or workspace teaches. `--language <LANGUAGE>` controls learner-facing
 output, and `--audience <TEXT>` controls assumed knowledge and difficulty.
 `--card-style mixed|plain|cloze|authored-choices` selects the facts-card shape;
@@ -204,9 +204,7 @@ The rest of the AI-and-deck surface:
   carry progress when the workspaces use different user roots, then remove the
   source. Refuses missing prerequisites and source dependents. Copy and move
   both refuse when a `cite:` key the deck's locators use would resolve to a
-  different root in the destination, when the deck's `exam:` (its own and
-  the workspace's) would resolve to different files, folders or URLs there,
-  or when a destination member already carries one of the deck's topic ids.
+  different root in the destination, or when a destination member already carries one of the deck's topic ids.
   Neither rewrites the deck.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
@@ -326,7 +324,7 @@ and the limit ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be
   running `alix deck init`. For `requires:` it separates a dangling filename edge
   from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, and
   a file that only shares a required id's name (the id wins, so add the `.md`
-  extension to mean the file). It flags a `exam:` pointing into `assets/`
+  extension to mean the file). It flags a `cite:` root pointing into `assets/`
   (a deck keeps its real source, never its frozen excerpt fragments). It
   warns when a sourced topic's exam prompt exceeds a backend's limit, with
   the line the exam would refuse with
@@ -344,9 +342,9 @@ and the limit ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be
   a URL root, a bare key under a directory root, a URL passage without an
   `asset:`) is an error in every mode, repair flags included, frozen or live,
   trace decks included. In `alix.toml` it warns about each unknown key or
-  invalid value in `[defaults]`, which alix ignores, and reports `cite`,
-  `exam` inside `[defaults]` as an error naming where the key
-  belongs. `--backends` additionally
+  invalid value in `[defaults]`, which alix ignores, and reports `cite`
+  inside `[defaults]` as an error naming where the key belongs. An
+  `alix.toml` that does not parse is an error. `--backends` additionally
   probes the configured AI backend end to end (one real, tiny request);
   `--all-backends` probes all four. `--grading` spot-checks the configured
   model's exam grading against the hand-labeled calibration probes (a few

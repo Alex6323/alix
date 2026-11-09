@@ -15,7 +15,7 @@ Each item is tagged `[trace]` or `[deck]`, chosen by the **shape of the
 knowledge**: a *path* you predict hop by hop becomes a trace; a *table of facts* —
 a config's knobs, a store's on-disk format — becomes a facts deck. Each carries its
 `requires:` prerequisites (the list is a valid dependency order, foundations
-first) and a `exam:` scope. The `--goal` scopes coverage: a broad goal spans
+first) and a source scope. The `--goal` scopes coverage: a broad goal spans
 every subsystem; a narrow one collapses to its slice and traces it in more detail.
 `--plan` is read-only — it prints the plan and stops, so you can author the items
 yourself (`alix deck generate` [a trace](13-trace-decks.md) or
@@ -25,7 +25,7 @@ yourself (`alix deck generate` [a trace](13-trace-decks.md) or
 
 ```sh
 alix workspace generate . --goal "how review scheduling works" --into ~/decks/scheduling/
-alix workspace generate . --source-url https://example.com/project --into ~/decks/project/
+alix workspace generate . --link https://example.com/project --into ~/decks/project/
 ```
 
 Without `--plan`, you always get a workspace, whatever the plan's size: a
@@ -39,18 +39,18 @@ predict-verify checkpoints for the traces, fact cards for the decks — so the
 [workspace](08-workspaces.md) comes out review-ready in one command: an
 `alix.toml` (carrying the goal and the source as the `[cite]` root `src`, which
 every generated locator names; `--title` names it) and one file per item under
-`decks/`: a `trace:` deck per trace and a `exam:` facts deck per deck, wired together
-with `requires:` so they unlock in dependency order, each `exam:` pointing
-back at the real source. Writing the whole set from one understanding keeps the
+`decks/`: a `trace:` deck per trace and a facts deck per deck, wired together
+with `requires:` so they unlock in dependency order, each citing the real
+source through that `src` root. Writing the whole set from one understanding keeps the
 items **coherent** (each builds on its prerequisites instead of repeating them).
 Before the hidden staging workspace becomes visible, Alix initializes every
 complete member and [freezes its evidence](13-trace-decks.md). Cited excerpts
 (from files and directories alike) and local card images land below each
 member's `assets/deck-<token>/` directory. A missing or changed required source
 aborts publication instead of leaving a live or partially frozen workspace.
-`--source-url <URL>` records a public source in the workspace defaults.
-Tutor and exam calls can use it for wider context and staleness checks after
-the local generation source is gone, while review continues to use the frozen
+`--link <URL>` (repeatable) records each URL in the workspace `alix.toml`
+as its `link` key, a tutor reference every member reads after its own
+`link:` entries; the exam never reads it. Review continues to use the frozen
 assets.
 
 The destination is `--into <dir>`, defaulting to a folder named after the

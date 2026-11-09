@@ -178,7 +178,7 @@ void main() {
         isTrace: false,
         mastered: false,
         examDue: false,
-        hasExam: false,
+        examable: false,
         locked: false,
         progressError: false,
         indent: 0,

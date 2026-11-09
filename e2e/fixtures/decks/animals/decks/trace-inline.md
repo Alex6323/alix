@@ -1,7 +1,6 @@
 ---
 id: "deck-00000000000000000000000001"
 trace: How `push` grows a `Vec`
-exam: trace-source.txt
 cite:
   - src: .
 title: Inline Trace

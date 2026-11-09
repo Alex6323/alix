@@ -153,22 +153,6 @@ pub(crate) fn resolve_source(
     }
 }
 
-#[cfg(feature = "full")]
-/// A source value is one expression: a URL, a file, or a directory (ADR 0026).
-pub(crate) fn source_path(value: &str, base: Option<&Path>) -> Option<PathBuf> {
-    let value = value.trim();
-    if value.is_empty() {
-        return None;
-    }
-    let path = Path::new(value);
-    Some(if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        base.map(|directory| directory.join(path))
-            .unwrap_or_else(|| path.to_path_buf())
-    })
-}
-
 impl CitationRoots {
     pub fn live_excerpt(&self, locator: &Locator) -> Result<Excerpt> {
         let Resolved::File { path, range, .. } = self.resolve(locator, false)? else {
@@ -942,23 +926,6 @@ mod tests {
         ] {
             assert_eq!(None, parse_locator_fingerprint(wrong), "accepted {wrong}");
         }
-    }
-
-    #[cfg(feature = "full")]
-    #[test]
-    fn source_path_resolves_one_expression_absolute_or_against_the_base() {
-        let directory = tempfile::tempdir().unwrap();
-        let project = directory.path().join("project");
-        std::fs::create_dir_all(project.join("src")).unwrap();
-        std::fs::write(project.join("src/lib.rs"), "l").unwrap();
-
-        assert_eq!(
-            Some(project.join("src/lib.rs")),
-            source_path("project/src/lib.rs", Some(directory.path()))
-        );
-        let one = project.join("src/lib.rs");
-        assert_eq!(Some(one.clone()), source_path(&one.to_string_lossy(), None));
-        assert_eq!(None, source_path("   ", None));
     }
 
     #[test]

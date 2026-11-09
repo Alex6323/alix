@@ -16,7 +16,7 @@ PickerEntry _entry({required bool examChanged}) => PickerEntry(
   examBadge: 'passed (2 Nov) · last (4 Nov) 15 / 18',
   examChanged: examChanged,
   examDue: false,
-  hasExam: true,
+  examable: true,
   locked: false,
   progressError: false,
   indent: 0,

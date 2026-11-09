@@ -16,7 +16,6 @@ use crate::{
     cite::CitationRoots,
     config::{AskConfig, GenerateDeckConfig},
     deck::{AtRewrite, Deck, DeckError},
-    parser,
     source::CitationIntegrity,
     token,
     workspace::{self, Workspace, WorkspaceFiles},
@@ -57,7 +56,7 @@ links, and unrelated frontmatter.
 - Remove cards the current source no longer supports.
 - Add only important new propositions that deepen understanding.
 - Keep one idea per card and avoid duplicates.
-- Keep `exam:` and `cite:` exactly as supplied in the input deck.
+- Keep `cite:` exactly as supplied in the input deck.
 - Use live `<!-- at: key:path:start-end -->` locators. `key` names one of the \
 citation roots listed below and `path` is relative to that root. Keep the key \
 of every existing locator. Read the real lines and never guess. Do not include \
@@ -204,9 +203,9 @@ fn eligible_members(
     let mut live_only = Vec::new();
     for path in &workspace.members {
         let deck = Deck::load_with_defaults(path, &workspace.settings)?;
-        if deck.exam.is_empty() {
+        let Some(live_source) = reconcile_scope(&deck)? else {
             continue;
-        }
+        };
         if !deck.cards.iter().any(|card| !card.citations.is_empty()) {
             live_only.push(relative_member(path, root)?);
             continue;
@@ -217,9 +216,8 @@ fn eligible_members(
                 path.display()
             );
         }
-        let pointer = reconcile_pointer(&deck)?;
         eligible.push(EligibleMember {
-            live_source: live_source_expression(&pointer, root)?,
+            live_source,
             relative: relative_member(path, root)?,
             deck,
         });
@@ -230,7 +228,7 @@ fn eligible_members(
 struct EligibleMember {
     deck: Deck,
     relative: PathBuf,
-    live_source: String,
+    live_source: PathBuf,
 }
 
 /// Everything a proposal is judged against is read from the authoritative
@@ -250,7 +248,7 @@ impl MemberBaseline {
             baseline: digest_file(&member.deck.path)?,
             augment_baseline: digest_optional(&files.augment_for(deck_id(&member.deck)))?,
             sources_baseline: digest_optional(&sources_manifest(&files, deck_id(&member.deck)))?,
-            live_deck: live_proposal_text(&member.deck, &member.live_source)?,
+            live_deck: live_proposal_text(&member.deck)?,
         })
     }
 }
@@ -542,7 +540,7 @@ fn stage_member(
             )),
         },
     )?;
-    validate_proposal_metadata(deck, &candidate, live_source)?;
+    validate_proposal_metadata(deck, &candidate)?;
     let identity = validate_unstamped_proposal(deck, &candidate)?;
     validate_topic_identity(deck, &candidate)?;
 
@@ -677,11 +675,9 @@ fn copy_workspace_for_staging(root: &Path, staging: &Path) -> Result<()> {
     Ok(())
 }
 
-fn live_proposal_text(deck: &Deck, source: &str) -> Result<String> {
+fn live_proposal_text(deck: &Deck) -> Result<String> {
     let text = fs::read_to_string(&deck.path)
         .with_context(|| format!("cannot read {}", deck.path.display()))?;
-    let parsed = parser::parse(&deck.subject, &text)
-        .with_context(|| format!("cannot parse {}", deck.path.display()))?;
     let mut ats = Vec::new();
     for card in &deck.cards {
         if card.reversed {
@@ -698,19 +694,17 @@ fn live_proposal_text(deck: &Deck, source: &str) -> Result<String> {
             });
         }
     }
-    crate::deck::rewrite_frozen_assets(&text, parsed.frontmatter_span, Some(source), &ats, &[])
-        .map_err(Into::into)
+    crate::deck::rewrite_frozen_assets(&text, &ats, &[]).map_err(Into::into)
 }
 
 fn reconcile_run_config(
-    source: &str,
+    source: &Path,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
 ) -> Result<AskConfig> {
-    let cwd = source_working_directory(source)?;
     let mut run = ask.clone();
     run.allowed_tools = vec!["Read".to_string(), "Glob".to_string(), "Grep".to_string()];
-    run.cwd = Some(cwd);
+    run.cwd = Some(source.to_path_buf());
     run.source_access = false;
     run.model = generate.model.clone().or_else(|| ask.model.clone());
     run.timeout_secs = generate.timeout_for(crate::backend::supports_structured_progress(ask));
@@ -722,7 +716,7 @@ fn reconcile_run_config(
 fn reconcile(
     live_deck: &str,
     deck: &Deck,
-    source: &str,
+    source: &Path,
     generate: &GenerateDeckConfig,
     ask: &AskConfig,
 ) -> Result<String> {
@@ -763,55 +757,34 @@ fn clean_model_output(raw: &str) -> Result<String> {
     Ok(text)
 }
 
-/// The reconcile pointer (ADR 0026): the member's own first local-path source,
-/// workspace source as fallback.
-fn reconcile_pointer(deck: &Deck) -> Result<String> {
-    let layers = deck.exam_layers();
-    if let Some(local) = layers
-        .own
-        .iter()
-        .chain(&layers.workspace)
-        .find(|source| !crate::deck::is_url(source))
-    {
-        return Ok(local.clone());
-    }
-    match layers.own.iter().chain(&layers.workspace).next() {
-        Some(url) => bail!(
-            "{} has only remote source `{url}`; remote workspace update is not supported yet",
+fn reconcile_scope(deck: &Deck) -> Result<Option<PathBuf>> {
+    let roots = CitationRoots::for_deck(deck);
+    let Some((key, path)) = roots.first_local().with_context(|| {
+        format!(
+            "cannot resolve the `cite:` roots of {}",
             deck.path.display()
-        ),
-        None => bail!(
-            "{} declares no `exam:` to reconcile against",
+        )
+    })?
+    else {
+        if let Some(url) = roots.visible().first() {
+            bail!(
+                "{} has only the remote `cite:` root `{}`; remote workspace update is not supported yet",
+                deck.path.display(),
+                url.key
+            );
+        }
+        return Ok(None);
+    };
+    path.canonicalize().map(Some).with_context(|| {
+        format!(
+            "cannot read `cite:` root `{key}` ({}) of {}",
+            path.display(),
             deck.path.display()
-        ),
-    }
-}
-
-fn live_source_expression(source: &str, root: &Path) -> Result<String> {
-    let path = crate::source::source_path(source, Some(root)).ok_or_else(|| {
-        anyhow::anyhow!("source `{source}` resolves to no local file or directory")
-    })?;
-    let path = path
-        .canonicalize()
-        .with_context(|| format!("cannot read live source {}", path.display()))?;
-    path_string(&path)
-}
-
-fn source_working_directory(source: &str) -> Result<PathBuf> {
-    let first = crate::source::source_path(source, None).ok_or_else(|| {
-        anyhow::anyhow!("source `{source}` resolves to no local file or directory")
-    })?;
-    let path = first
-        .canonicalize()
-        .with_context(|| format!("cannot read live source {}", first.display()))?;
-    Ok(if path.is_file() {
-        path.parent().unwrap_or(&path).to_path_buf()
-    } else {
-        path
+        )
     })
 }
 
-fn validate_proposal_metadata(current: &Deck, candidate: &Deck, source: &str) -> Result<()> {
+fn validate_proposal_metadata(current: &Deck, candidate: &Deck) -> Result<()> {
     if candidate.deck_token != current.deck_token {
         bail!("{} changed its stable deck ID", candidate.path.display());
     }
@@ -829,12 +802,6 @@ fn validate_proposal_metadata(current: &Deck, candidate: &Deck, source: &str) ->
     if candidate.cite != current.cite {
         bail!(
             "{} changed `cite:` instead of preserving the deck's citation roots",
-            candidate.path.display()
-        );
-    }
-    if candidate.exam != vec![source.to_string()] {
-        bail!(
-            "{} changed `exam:` instead of preserving the supplied live source",
             candidate.path.display()
         );
     }
@@ -1397,6 +1364,7 @@ fn copy_tree_if_present(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser;
     #[cfg(unix)]
     use crate::testutil::{ask_config, exec_lock, fake_cli, fake_reply};
 
@@ -1527,7 +1495,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         // Staging canonicalizes the workspace root; on macOS the raw tempdir
         // path traverses the /var -> /private/var symlink, so the fixture must
-        // embed the canonical form or `exam:` comparisons spuriously differ.
+        // embed the canonical form or root comparisons spuriously differ.
         // The root nests one level down so the staging sibling stays inside
         // the tempdir; at the tempdir root it would outlive the fixture.
         let root = directory.path().canonicalize().unwrap().join("ws");
@@ -1541,7 +1509,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n{body}",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: {0}\n---\n{body}",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1553,7 +1521,7 @@ mod tests {
     #[cfg(unix)]
     fn proposal(source: &Path, body: &str) -> String {
         format!(
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n{body}",
+            "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: {0}\n---\n{body}",
             parser::yaml_quote(&source.display().to_string())
         )
     }
@@ -1564,7 +1532,7 @@ mod tests {
     #[test]
     fn a_proposal_may_not_change_the_title_or_the_description() {
         let dir = tempfile::tempdir().unwrap();
-        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n<!-- id: card-q1 -->\n";
+        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\ntitle: Facts\ndescription: |\n  Two lines\n  of description.\n---\n## q\na\n<!-- id: card-q1 -->\n";
         let write_deck = |name: &str, text: &str| {
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
@@ -1574,7 +1542,7 @@ mod tests {
 
         let renamed = write_deck("renamed.md", &base.replace("title: Facts", "title: Other"));
         assert!(
-            validate_proposal_metadata(&current, &renamed, "src").is_err(),
+            validate_proposal_metadata(&current, &renamed).is_err(),
             "a renamed deck must be refused"
         );
 
@@ -1583,13 +1551,13 @@ mod tests {
             &base.replace("  of description.", "  of something else."),
         );
         assert!(
-            validate_proposal_metadata(&current, &redescribed, "src").is_err(),
+            validate_proposal_metadata(&current, &redescribed).is_err(),
             "a rewritten description must be refused"
         );
 
         let same = write_deck("same.md", base);
         assert!(
-            validate_proposal_metadata(&current, &same, "src").is_ok(),
+            validate_proposal_metadata(&current, &same).is_ok(),
             "an unchanged pair must pass"
         );
     }
@@ -1597,7 +1565,7 @@ mod tests {
     #[test]
     fn a_proposal_may_not_drop_or_change_the_cite_roots() {
         let dir = tempfile::tempdir().unwrap();
-        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\ncite:\n  - src: src\n---\n## q\na\n<!-- id: card-q1 -->\n";
+        let base = "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: src\n---\n## q\na\n<!-- id: card-q1 -->\n";
         let write_deck = |name: &str, text: &str| {
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
@@ -1620,14 +1588,14 @@ mod tests {
             ),
         ] {
             let candidate = write_deck("candidate.md", &text);
-            let error = validate_proposal_metadata(&current, &candidate, "src").unwrap_err();
+            let error = validate_proposal_metadata(&current, &candidate).unwrap_err();
             assert!(
                 format!("{error:#}").contains("`cite:`"),
                 "row `{label}`: {error:#}"
             );
         }
         assert!(
-            UPDATE_PROMPT.contains("Keep `exam:` and `cite:` exactly as supplied"),
+            UPDATE_PROMPT.contains("Keep `cite:` exactly as supplied"),
             "the prompt names the guarded key: {UPDATE_PROMPT}"
         );
         let prompt = update_prompt("BODY", &CitationRoots::for_deck(&current));
@@ -1974,7 +1942,7 @@ mod tests {
         fs::write(
             workspace.join("decks/plain.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck9\"\nexam: {}\n---\n## p\na\n<!-- id: card-plain1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck9\"\ncite:\n  - src: {}\n---\n## p\na\n<!-- id: card-plain1 -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2154,7 +2122,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"{deck_id}\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Other question\nOther answer\n<!-- at: src:code.rs:1 -->\n<!-- id: {card_id} -->\n",
+                "---\nformat-version: 1\nid: \"{deck_id}\"\ncite:\n  - src: {0}\n---\n## Other question\nOther answer\n<!-- at: src:code.rs:1 -->\n<!-- id: {card_id} -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2449,8 +2417,7 @@ mod tests {
             source.display().to_string()
         );
         fs::write(root.join(workspace::MANIFEST), &manifest_text).unwrap();
-        let exam = parser::yaml_quote(&source.display().to_string());
-        let head = format!("---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {exam}\n---\n");
+        let head = "---\nformat-version: 1\nid: \"deck-deck1\"\n---\n";
         fs::write(
             &deck,
             format!("{head}## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n"),
@@ -2520,12 +2487,10 @@ mod tests {
                 None => "# roots\n".to_string(),
             };
             fs::write(root.join(workspace::MANIFEST), &manifest_text).unwrap();
-            let exam = parser::yaml_quote(&source.display().to_string());
             let cite = deck_root(&source)
                 .map(|value| format!("cite:\n  - src: {}\n", parser::yaml_quote(&value)))
                 .unwrap_or_default();
-            let head =
-                format!("---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {exam}\n{cite}---\n");
+            let head = format!("---\nformat-version: 1\nid: \"deck-deck1\"\n{cite}---\n");
             fs::write(
                 &deck,
                 format!("{head}## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n"),
@@ -2617,7 +2582,7 @@ mod tests {
         fs::write(
             root.join(workspace::DECKS).join("live.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck2\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Live question\nLive answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-livecard -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck2\"\ncite:\n  - src: {0}\n---\n## Live question\nLive answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-livecard -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2812,23 +2777,20 @@ mod tests {
             idle_timeout_secs: 900,
             ..GenerateDeckConfig::default()
         };
-        let file = source.join("code.rs");
         let rows = [
             (
-                "a directory source, generation naming its own model",
-                source.display().to_string(),
+                "generation naming its own model",
                 Some("generate-model".to_string()),
                 Some("generate-model".to_string()),
             ),
             (
-                "a file source, generation deferring to the parent's model",
-                file.display().to_string(),
+                "generation deferring to the parent's model",
                 None,
                 Some("parent-model".to_string()),
             ),
         ];
 
-        for (label, source_expression, generate_model, expected_model) in rows {
+        for (label, generate_model, expected_model) in rows {
             let generate = GenerateDeckConfig {
                 model: generate_model,
                 ..timeouts.clone()
@@ -2844,7 +2806,7 @@ mod tests {
                 ..parent.clone()
             };
 
-            let derived = reconcile_run_config(&source_expression, &generate, &parent).unwrap();
+            let derived = reconcile_run_config(&source, &generate, &parent).unwrap();
 
             assert_eq!(expected, derived, "{label}");
         }
@@ -2978,7 +2940,7 @@ mod tests {
         fs::write(
             &raw,
             format!(
-                "---\nformat-version: 1\nid: \"deck-raw\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Q\nA\n<!-- at: src:code.rs:1 -->\n<!-- id: card-raw -->\n",
+                "---\nformat-version: 1\nid: \"deck-raw\"\ncite:\n  - src: {0}\n---\n## Q\nA\n<!-- at: src:code.rs:1 -->\n<!-- id: card-raw -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -2998,7 +2960,7 @@ mod tests {
         fs::write(
             &pictured,
             format!(
-                "---\nformat-version: 1\nid: \"deck-pictured\"\nexam: {}\n---\n## Q\nA\n![alt](missing.png)\n<!-- id: card-pictured -->\n",
+                "---\nformat-version: 1\nid: \"deck-pictured\"\ncite:\n  - src: {}\n---\n## Q\nA\n![alt](missing.png)\n<!-- id: card-pictured -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -3014,7 +2976,7 @@ mod tests {
         fs::write(
             &needy,
             format!(
-                "---\nformat-version: 1\nid: \"deck-needy\"\nrequires:\n  - ghost\nexam: {}\n---\n## Q\nA\n<!-- id: card-needy -->\n",
+                "---\nformat-version: 1\nid: \"deck-needy\"\nrequires:\n  - ghost\ncite:\n  - src: {}\n---\n## Q\nA\n<!-- id: card-needy -->\n",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )

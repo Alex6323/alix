@@ -15,6 +15,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   since they are copies of your own files, and says how many source files it
   left out (the receiver cannot take the exam without them); the flag carries
   them.
+
 - `alix deck source add|remove|update|bind|unbind|list|root set|root unset`
   manage a workspace deck's sources: frozen copies of local, non-empty UTF-8
   text files in `sources/<deck-id>/`, named by their SHA-256 and listed in a
@@ -260,16 +261,46 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- Breaking: the deck frontmatter key `exam` and the workspace `alix.toml` key
+  `exam` are gone, and with them URL exam material. A deck that still
+  declares `exam:` gets the ordinary unknown-key lint; an `alix.toml` that
+  still declares it fails to parse. The exam reads only a deck's frozen
+  sources (`alix deck source add`); a reference URL belongs in `link:`.
+
 - The phone's shared-folder decks root and its `MANAGE_EXTERNAL_STORAGE`
   permission, and the review screen's "another device wrote the store"
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
 
+- Breaking: a workspace `alix.toml` that does not parse is an error, never a
+  silent fallback to defaults. The picker lists the workspace as an `error`
+  row carrying the parse message and no members, `alix doctor` reports it, and
+  every other reader (review, the tutor, AI calls, transfer, freezing) fails
+  naming the file.
+
+- Breaking: a trace build (`alix deck generate <trace deck>`) and `alix
+  workspace update` take their scope from the deck's first local `cite:` root
+  (the workspace `[cite]` table first, then the deck's own), and refuse a deck
+  without one. The trace session no longer carries `source`
+  (`TraceSessionDto.source` is gone from the web API).
+
+- Breaking: `--source-url <URL>` is renamed `--link <URL>` and is repeatable;
+  each value must be an http or https URL. `alix deck generate` writes them as
+  the deck's `link:` list; `alix workspace generate` writes them as the new
+  workspace `alix.toml` key `link` (one URL or a list), which every member's
+  tutor reads after the member's own `link:` entries.
+
+- Breaking: `DeckItemDto` and `MemberDto` rename `has_exam` to `examable`
+  (declares sources) and `examable` to `examable_now` (can be sat right now);
+  the phone bridge renames `DeckEntry.has_exam` and `deck_has_exam` the same
+  way.
+
 - Breaking: content names carry no algorithm prefix. Frozen asset objects are
   `asset-<52 base32>.<ext>` (the SHA-256 digest in the token alphabet) and
   locator and diagram `fingerprint:` values are 13 base32 characters (a
   64-bit digest). Existing decks and asset folders need converting.
+
 - A deck's frozen exam sources travel with it: `alix deck copy|move|remove|
   restore`, `alix workspace remove`, paired sync, a workspace update, and
   `alix explore` merging carry or remove `sources/deck-<token>/` exactly as
@@ -280,6 +311,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a paired pull that lists one is refused; a same-machine `deck copy` or
   `move` carries it with the folder. `alix deck copy` and `move` refuse a
   destination whose member already carries one of the deck's topic ids.
+
 - The tutor reads a deck's frozen sources instead of its `exam:` list. On
   Claude and Copilot it browses the deck's sources folder read-only, with a
   map from each display path to its copy and the card's topic named as the
@@ -606,7 +638,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix deck generate --trace` add `- src: <dir>` to the deck's `cite:` (for a
   file, its folder), unless a root the deck already sees holds the input, in
   which case they reuse that key. `alix deck generate` from a local file or
-  folder does the same for its facts deck, beside the unchanged `exam:` line.
+  folder does the same for its facts deck.
   An input outside every root while `src` is taken stops the build before the
   model is called. Prompts quote a locator path that contains a space. `alix
   workspace update`
@@ -619,20 +651,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or file names on its behalf. A live range that runs past the end of its
   file is an error, no longer clamped. The `locator` label in `CitationDto`
   and `TraceSessionDto` carries the key, as does a tutor card's `at`.
-  Freezing keeps the locator exactly as authored. `alix doctor` no longer
-  nudges a long `exam:` list toward a common root, and it checks every live
-  citation of a workspace member whether or not the deck declares an `exam:`.
+  Freezing keeps the locator exactly as authored. `alix doctor` checks every
+  live citation of a workspace member.
 
 - `alix deck copy` and `alix deck move` refuse when a `cite:` key the deck's
   locators use would resolve to a different root in the destination workspace
   (or to none), naming each key and both roots. A relative root resolves
   against its own workspace, so the same relative `[cite]` entry in both
-  manifests names two folders. They also refuse when the deck's `exam:` (its
-  own and the workspace's) would resolve to different files, folders or URLs
-  in the destination, naming each entry and both sides in the same message.
-  Transfer never rewrites locators, `cite:` or `exam:` (it no longer writes an
-  inherited or relative `exam` into the transferred deck as absolute paths) and
-  changes neither manifest.
+  manifests names two folders. Transfer never rewrites locators or `cite:` and
+  changes
+  neither manifest.
 
 - `alix doctor` reports a trace checkpoint's locator problem only as an error,
   no longer also as a warning, and checks a frozen locator's key and shape even
@@ -641,8 +669,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - With `source_access` on, the tutor browses a `cite:` root instead of the
   first local `exam:` entry: the root of the card's first locator whose key
   names a local root, else the deck's only local root when it sees exactly
-  one, else none. A URL root is never browsed. `exam:` entries are still
-  listed to the tutor as context.
+  one, else none. A URL root is never browsed.
 
 - The deck frontmatter key and the workspace manifest key `source` are renamed
   `exam`. A deck or manifest that still uses `source` fails as an unknown key.

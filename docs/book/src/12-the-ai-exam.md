@@ -17,9 +17,8 @@ source is examined against its own sources alone; a topic with no source is
 never sent to the model and is not examined. A deck whose sources manifest
 lists no source, and any loose deck outside a workspace, has no exam.
 
-The `exam:` frontmatter key does not give a deck an exam, and the exam never
-reads it, nor `cite:` roots or the text your cards cite: to examine a file,
-add it as a source.
+The exam never reads `cite:` roots or the text your cards cite: to examine a
+file, add it as a source.
 
 Once every card in a deck with sources has been answered right at least
 once (a passing review at any depth, Recognize included, or a walk graded

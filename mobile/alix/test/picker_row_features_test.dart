@@ -143,7 +143,6 @@ void main() {
         '${root.path}/t.md',
         '---\n'
             'trace: a picker-launched trace\n'
-            'exam: source.txt\n'
             'cite:\n'
             '  - src: .\n'
             'title: T\n'

@@ -9,7 +9,9 @@ test.beforeEach(async ({ page, request }) => {
 
 type PickerState = {
   state: string;
-  examable: boolean;
+  examable?: boolean;
+  examable_now: boolean;
+  locked?: boolean;
   exam_filter: "none" | "partial" | "all";
   exam_prepared?: boolean;
   meta?: string | null;
@@ -30,7 +32,7 @@ async function mockExamRows(page: Page, states: Record<string, PickerState>) {
       const row = rows.find((candidate: any) => candidate.name.endsWith(suffix));
       expect(row, `mock row ${suffix}`).toBeDefined();
       Object.assign(row, {
-        has_exam: true,
+        examable: true,
         is_trace: false,
         reviewable: true,
         reviewable_recognize: true,
@@ -70,14 +72,14 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   await mockExamRows(page, {
     "wild.md": {
       state: "examdue",
-      examable: true,
+      examable_now: true,
       exam_filter: "partial",
       meta: "passed · 15.5 / 18",
       exam_changed: true,
     },
-    "cats.md": { state: "examdue", examable: false, exam_filter: "partial" },
-    "source-fact.md": { state: "new", examable: true, exam_filter: "all" },
-    "fronts.md": { state: "examdue", examable: true, exam_filter: "none" },
+    "cats.md": { state: "examdue", examable_now: false, exam_filter: "partial" },
+    "source-fact.md": { state: "new", examable_now: true, exam_filter: "all" },
+    "fronts.md": { state: "examdue", examable_now: true, exam_filter: "none" },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
@@ -141,6 +143,41 @@ test("the drawer always shows the exam filter, accents only due unlocked exams, 
   await capture(page, "drawer-writing-exam");
 });
 
+test("a_locked_deck_with_sources_shows_the_lock_and_does_not_launch_on_x", async ({ page }) => {
+  await mockExamRows(page, {
+    "cats.md": { state: "examdue", examable_now: false, locked: true, exam_filter: "partial" },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "none" },
+    "fronts.md": { state: "new", examable: false, examable_now: false, exam_filter: "none" },
+  });
+  const launched: string[] = [];
+  await page.route("**/api/exam/generate", (route) => {
+    launched.push(route.request().postDataJSON().deck);
+    return route.fulfill({ json: { sequence: 1_000_000, jobs: [] } });
+  });
+  await page.locator("#navRefresh").click();
+  await adultDeckRow(page, "Animals").click();
+
+  const takeExam = page.getByRole("button", { name: /^Generate exam/ });
+  const filter = page.getByRole("button", { name: /only what needs work/ });
+
+  await adultDeckRow(page, "cats").click();
+  await expect(takeExam, "a locked deck with sources keeps its exam chip").toHaveCount(1);
+  await expect(takeExam.locator(".exam-key"), "the chip shows the lock, not the x key").toHaveText("\u{1F512}");
+  await expect(takeExam, "the locked chip is disabled").toBeDisabled();
+  await expect(filter, "the needs-work filter is off for a locked deck").toBeDisabled();
+  await expect(filter).toHaveText(/☐ only what needs work/);
+  await adultDeckRow(page, "cats").press("x");
+
+  await adultDeckRow(page, "wild").click();
+  const generated = page.waitForRequest("**/api/exam/generate");
+  await adultDeckRow(page, "wild").press("x");
+  await generated;
+  expect(launched, "x launched only the unlocked deck, never the locked one").toEqual(["animals/wild.md"]);
+
+  await adultDeckRow(page, "fronts").click();
+  await expect(takeExam, "a deck without sources offers no exam chip").toHaveCount(0);
+});
+
 test("a finished exam announces itself and turns the chip into Take exam", async ({ page }) => {
   let prepared = false;
   await page.route("**/api/decks", async (route) => {
@@ -150,9 +187,9 @@ test("a finished exam announces itself and turns the chip into Take exam", async
       .flatMap((workspace: any) => workspace.members)
       .find((candidate: any) => candidate.name.endsWith("wild.md"));
     Object.assign(row, {
-      has_exam: true,
-      is_trace: false,
       examable: true,
+      is_trace: false,
+      examable_now: true,
       exam_filter: "none",
       exam_prepared: prepared,
     });
@@ -188,7 +225,7 @@ test("a finished exam announces itself and turns the chip into Take exam", async
 test("an older preparing response cannot erase a generation just started", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await mockExamRows(page, {
-    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: false },
   });
   const job = {
     deck: "animals/wild.md",
@@ -234,7 +271,7 @@ test("an older preparing response cannot erase a generation just started", async
 test("an empty refresh cannot hide a generation response still in flight", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await mockExamRows(page, {
-    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: false },
   });
   const job = {
     deck: "animals/wild.md",
@@ -283,7 +320,7 @@ test("an empty refresh cannot hide a generation response still in flight", async
 test("an older cancellation response cannot hide a newer generation", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await mockExamRows(page, {
-    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: false },
   });
   const job = {
     deck: "animals/wild.md",
@@ -343,7 +380,7 @@ test("an older cancellation response cannot hide a newer generation", async ({ p
 test("a delayed duplicate generation cannot hide an earlier generation response", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await mockExamRows(page, {
-    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: false },
   });
   const job = {
     deck: "animals/wild.md",
@@ -405,8 +442,8 @@ test("a delayed duplicate generation cannot hide an earlier generation response"
 test("a generation processed after a later stop response is still shown", async ({ page }) => {
   await page.waitForLoadState("networkidle");
   await mockExamRows(page, {
-    "wild.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
-    "source-fact.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: false },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: false },
+    "source-fact.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: false },
   });
   const job = (deck: string) => ({
     deck,
@@ -459,7 +496,7 @@ test("a generation processed after a later stop response is still shown", async 
 
 test("a prepared exam is taken, without the scope filter", async ({ page }) => {
   await mockExamRows(page, {
-    "wild.md": { state: "examdue", examable: true, exam_filter: "partial", exam_prepared: true },
+    "wild.md": { state: "examdue", examable_now: true, exam_filter: "partial", exam_prepared: true },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
@@ -476,7 +513,7 @@ test("a prepared exam is taken, without the scope filter", async ({ page }) => {
 
 test("the checked filter on an all-needs-work deck reaches the exam request", async ({ page }) => {
   await mockExamRows(page, {
-    "source-fact.md": { state: "new", examable: true, exam_filter: "all" },
+    "source-fact.md": { state: "new", examable_now: true, exam_filter: "all" },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
@@ -585,7 +622,7 @@ function resultsDto({
 
 async function openResults(page: Page, dto: object) {
   await mockExamRows(page, {
-    "source-fact.md": { state: "examdue", examable: true, exam_filter: "none", exam_prepared: true },
+    "source-fact.md": { state: "examdue", examable_now: true, exam_filter: "none", exam_prepared: true },
   });
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Animals").click();
@@ -598,14 +635,14 @@ test("a long exam badge truncates inside a narrow row and leaves the deck name s
   await mockExamRows(page, {
     "wild.md": {
       state: "finished",
-      examable: true,
+      examable_now: true,
       exam_filter: "none",
       meta: "mastered (4 Nov) · last (4 Nov) 17.5 / 18 · 12 to drill",
       exam_changed: true,
     },
     "cats.md": {
       state: "finished",
-      examable: true,
+      examable_now: true,
       exam_filter: "none",
       meta: "mastered (4 Nov) · last (4 Nov) 17.5 / 18 · 12 to drill",
     },
@@ -639,10 +676,10 @@ test("a long deck name ellipsizes inside a narrow row, with or without an exam b
   const longName = "A deck name that is far wider than a phone screen can show in one row";
   const longBadge = "mastered (4 Nov) · last (4 Nov) 17.5 / 18 · 12 to drill";
   await mockExamRows(page, {
-    "fronts.md": { state: "new", examable: true, exam_filter: "none", label: `${longName} one`, meta: null },
+    "fronts.md": { state: "new", examable_now: true, exam_filter: "none", label: `${longName} one`, meta: null },
     "source-fact.md": {
       state: "finished",
-      examable: true,
+      examable_now: true,
       exam_filter: "none",
       label: `${longName} two`,
       meta: longBadge,

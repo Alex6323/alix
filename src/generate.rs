@@ -260,12 +260,9 @@ code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
 Begin the file with exactly this frontmatter block:
 ---
-exam: {source}
 choices: single
 
 ---
-The `exam:` key ties the deck to its source, so `alix exam` can later grade \
-your understanding against it.
 
 PEDAGOGY — produce a balanced deck aiming for at most {max_cards} cards, spread across \
 four layers of understanding:
@@ -1574,7 +1571,6 @@ mod tests {
         let p = build_prompt("src/scheduler.rs", Some(&src_root()), &cfg(8), &spec());
         assert!(p.contains("src/scheduler.rs"));
         assert!(p.contains("Read, Glob and Grep"));
-        assert!(p.contains("exam: src/scheduler.rs"));
         assert!(p.contains("aiming for at most 8 cards"));
         assert!(!p.contains("WebFetch"));
         assert!(!p.contains("{source}"));
@@ -1596,14 +1592,14 @@ mod tests {
             (
                 "a reused root declares nothing",
                 src_root(),
-                "---\nexam: x\n---\n## Q\nA\n",
-                "---\nexam: x\n---\n## Q\nA\n",
+                "---\ntitle: x\n---\n## Q\nA\n",
+                "---\ntitle: x\n---\n## Q\nA\n",
             ),
             (
                 "a deck with frontmatter gains the cite entry",
                 declaring.clone(),
-                "---\nexam: x\n---\n## Q\nA\n",
-                "---\nexam: x\ncite:\n  - src: \"/in\"\n---\n## Q\nA\n",
+                "---\ntitle: x\n---\n## Q\nA\n",
+                "---\ntitle: x\ncite:\n  - src: \"/in\"\n---\n## Q\nA\n",
             ),
             (
                 "a deck without frontmatter gains one",

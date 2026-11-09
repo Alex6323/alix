@@ -1375,8 +1375,8 @@ fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
         "the prerequisite's owner-held mastery must unlock its dependent: {advanced:?}"
     );
     assert!(
-        advanced.examable == advanced.has_exam,
-        "an unlocked dependent's exam follows has_exam: {advanced:?}"
+        advanced.examable_now == advanced.examable,
+        "an unlocked dependent's exam follows examable: {advanced:?}"
     );
     let base = animals
         .members
@@ -1668,7 +1668,10 @@ fn a_deck_with_an_unreadable_progress_document_reds_out_alone_in_the_catalog() {
     assert!(!bad.reviewable_recognize, "row: {bad:?}");
     assert!(!bad.reviewable_recall, "row: {bad:?}");
     assert!(!bad.reviewable_reconstruct, "row: {bad:?}");
-    assert!(!bad.examable, "an exam would also write progress: {bad:?}");
+    assert!(
+        !bad.examable_now,
+        "an exam would also write progress: {bad:?}"
+    );
     assert!(!bad.mastered, "row: {bad:?}");
 
     let good = row_for("good.md");
@@ -2322,7 +2325,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\nexam: code/29.rs\ncite:\n  - src: code\n---\n## q\na\n\
+        "---\nformat-version: 1\nid: \"deck-frozendeck1\"\ncite:\n  - src: code\n---\n## q\na\n\
          <!-- at: src:29.rs:1 -->\n",
     )
     .unwrap();
@@ -2405,7 +2408,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
     let deck_path = dir.path().join("decks/d.md");
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\nexam: source.rs\ncite:\n  - src: .\n---\n\
+        "---\nformat-version: 1\nid: \"deck-livefrozen1\"\ncite:\n  - src: .\n---\n\
          ## q\na\n<!-- at: src:source.rs:1 -->\n<!-- id: card-livefrozen1 -->\n",
     )
     .unwrap();
@@ -2490,7 +2493,7 @@ fn trace_deck(dir: &Path) -> crate::trace::Trace {
     let path = dir.join("t.md");
     std::fs::write(
         &path,
-        "---\ntrace: how `it` works\nexam: source.txt\ncite:\n  - src: .\n---\n\
+        "---\ntrace: how `it` works\ncite:\n  - src: .\n---\n\
          ## Predict the `first` hop\n\
          it reads the `first` line\n\
          > [!NOTE]\n\

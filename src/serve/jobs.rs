@@ -1866,12 +1866,12 @@ impl Tracing {
         let frozen =
             checkpoint.and_then(|checkpoint| self.session.trace().frozen_block(checkpoint));
         let live_root = root.as_deref().filter(|path| path.exists());
-        let sources = &self.session.trace().exam_layers;
-        let has_url_source = sources
-            .own
+        let has_url_source = self
+            .session
+            .trace()
+            .links
             .iter()
-            .chain(&sources.workspace)
-            .any(|source| crate::deck::is_url(source));
+            .any(|link| crate::deck::is_url(link));
         let has_source_context =
             live_root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
         let action = match question {

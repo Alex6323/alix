@@ -2,7 +2,7 @@
 // embedded core (RustLib.init in setUpAll; real deck files on disk),
 // mirroring bridge_test.dart's own fixtures/pattern and the review screen's
 // exam-chip tests (review_screen_exam_chip_test.dart). A trace fixture always
-// carries an in-folder `% exam:`
+// carries an in-folder `cite:` root
 // so its checkpoints resolve real gutter lines, matching the rust bridge's
 // own `trace_fixture` (mobile/alix/rust/src/api/review.rs).
 import 'dart:async';
@@ -40,7 +40,6 @@ void main() {
       '${root.path}/t.md',
       '---\n'
       'trace: how it works\n'
-      'exam: source.txt\n'
       'cite:\n'
       '  - src: .\n'
       '---\n'
@@ -64,7 +63,6 @@ void main() {
       '${root.path}/t.md',
       '---\n'
       'trace: a short path\n'
-      'exam: source.txt\n'
       'cite:\n'
       '  - src: .\n'
       '---\n'
@@ -84,7 +82,6 @@ void main() {
       '${root.path}/t.md',
       '---\n'
       'trace: a highlighted path\n'
-      'exam: source.txt\n'
       'cite:\n'
       '  - src: .\n'
       '---\n'
@@ -298,7 +295,6 @@ void main() {
           '${root.path}/t.md',
           '---\n'
           'trace: a picker-launched trace\n'
-          'exam: source.txt\n'
           'cite:\n'
           '  - src: .\n'
           'title: T\n'

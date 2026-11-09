@@ -438,7 +438,7 @@ fn choice_answer(front: &str) -> &'static str {
 /// endpoint family; mirrors `src/serve/tests.rs`'s
 /// `trace_deck` fixture in miniature (kept to two hops; that's enough to
 /// exercise a hop transition without a bigger fixture to maintain).
-const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\ncite:\n  - src: .\n---\n\
+const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\ncite:\n  - src: .\n---\n\
 ## Predict the first hop\n\
 it reads the first line\n\
 <!-- given: line — the input line -->\n\
@@ -648,7 +648,7 @@ fn add_grounded_tutor_fixture(dir: &Path) {
     std::fs::write(dir.join("source.txt"), "source context\n").unwrap();
     std::fs::write(
         &deck_path,
-        "---\nformat-version: 1\nid: \"deck-grounded\"\nexam: source.txt\ncite:\n  - src: .\n---\n\
+        "---\nformat-version: 1\nid: \"deck-grounded\"\ncite:\n  - src: .\n---\n\
          ## server authored front\nserver authored back\n> [!NOTE]\n> authored note sentinel\n\
          <!-- at: src:source.txt:1 -->\n<!-- id: card-grounded -->\n",
     )
@@ -691,7 +691,7 @@ fn add_frozen_tutor_fixture(dir: &Path) {
     std::fs::write(
         decks.join("frozen.md"),
         format!(
-            "---\nformat-version: 1\nid: \"deck-frozen\"\nexam: missing-source-root\ncite:\n  - src: missing-source-root\n---\n\
+            "---\nformat-version: 1\nid: \"deck-frozen\"\ncite:\n  - src: missing-source-root\n---\n\
              ## frozen front\nfrozen back\n\
              <!-- at: src:src/lib.rs:1 fingerprint: {fingerprint} asset: {object} -->\n\
              <!-- id: card-frozen -->\n"
@@ -1812,6 +1812,44 @@ fn a_rejected_exam_start_keeps_the_active_progress_store() {
         after["revision"].as_u64().unwrap() > before["revision"].as_u64().unwrap(),
         "the accepted mutation must save through the still-active store: before={before}, after={after}"
     );
+}
+
+#[test]
+fn a_workspace_whose_manifest_fails_to_parse_lists_as_an_error_row_with_no_members() {
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            let ws = dir.join("broken");
+            std::fs::create_dir_all(ws.join("decks")).unwrap();
+            std::fs::write(ws.join("alix.toml"), "title = \"Broken\"\nexam = \"x\"\n").unwrap();
+            std::fs::write(
+                ws.join("decks/m.md"),
+                "---\nformat-version: 1\nid: \"deck-brokenm\"\n---\n## q\na\n<!-- id: card-brokenm -->\n",
+            )
+            .unwrap();
+        },
+        |_| {},
+    );
+
+    let response = http(&base, "GET", "/api/decks", &[], &[]);
+    assert_eq!(200, response.status);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let row = body["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(body["folders"].as_array().unwrap())
+        .find(|row| row["name"] == "broken")
+        .unwrap_or_else(|| panic!("the broken workspace row: {body}"))
+        .clone();
+    assert_eq!("error", row["state"], "{row}");
+    assert!(
+        row["meta"]
+            .as_str()
+            .is_some_and(|meta| meta.contains("unknown field `exam`")),
+        "the row carries the parse message: {row}"
+    );
+    assert_eq!(serde_json::json!([]), row["members"], "{row}");
 }
 
 #[test]
@@ -6120,9 +6158,21 @@ fn post_api_exam_start_with_an_unknown_deck_yields_400() {
 
 #[test]
 fn post_api_exam_start_on_each_deck_with_no_exam_yields_409() {
-    let (base, _guard) = spawn_full_server(None);
+    let (base, _guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            write_sourced_member(
+                dir,
+                "sourcedtrace.md",
+                "---\nformat-version: 1\nid: \"deck-sourcedtrace\"\ntrace: how it works\n---\n\
+                 ## hop\nstep\n<!-- id: card-st1 -->\n",
+                &[("tracesource.txt", "a step.\n", &[])],
+            );
+        },
+        |_| {},
+    );
 
-    for deck in ["sample.md", "trace.md"] {
+    for deck in ["sample.md", "trace.md", "examws/sourcedtrace.md"] {
         let resp = post_json(
             &base,
             "/api/exam/start",
@@ -6889,7 +6939,7 @@ fn generate_lands_the_deck_then_close_frees_the_slot() {
 #[test]
 fn law_review_server_generate_routes_preserve_nonempty_guidance() {
     let _lock = exec_lock();
-    let reply = "---\nexam: https://example.org\n---\n## Q\nA\n";
+    let reply = "---\nlink: https://example.org\n---\n## Q\nA\n";
     let guidance = "  focus on boundary identity  ";
     let expected = "Additional instructions:\nfocus on boundary identity";
 
@@ -9492,7 +9542,7 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 // `/api/remote/*` ever touches the server's own store
 // (`remote_endpoints_never_write_the_server_store`).
 
-/// A source-backed fact deck (`exam:` at a local file) alongside
+/// A fact deck with frozen sources alongside
 /// `spawn_full_server`'s other fixtures: enough for the AI exam's
 /// generate → answer → grade → remediate walk. One card is enough; the exam
 /// grades the source, never the deck's own cards.

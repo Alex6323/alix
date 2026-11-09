@@ -262,8 +262,8 @@ always about the walk's current item and minting into the walked deck. The
 walk's card routes take no `X-Alix-Study-Revision` and `403` for a kids
 audience like their review counterparts. On the tutorial walk (§4.13) the note
 and both card routes answer `403`; asking stays open.
-Frozen excerpts are always supplied as evidence. When no usable live
-`exam:` (deck or workspace) is available, `status` carries a deterministic
+Frozen excerpts are always supplied as evidence. When neither a readable
+local `cite:` root nor a fetchable `link:` URL is available, `status` carries a deterministic
 warning that the tutor has only the frozen evidence rather than the full
 current source.
 
@@ -1162,7 +1162,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `selectable` | bool | **structural**: this row's `name` is the kind of thing `/api/select` accepts (a deck; false for workspace/folder rows). `reviewable*` is state, not structure. |
 | `label` | string | Display title. |
 | `meta` | string? | Badge text: for an examined deck the highest exam standing with the day it was reached and the last full sitting's day and points (`last (4 Nov) 15 / 18`, `passed (2 Nov) · last (4 Nov) 15.5 / 18`, `mastered (4 Nov) · last (4 Nov) 17 / 18`, plus ` · N to drill` on a mastered deck with unretired cards); otherwise a completion state (`done ✓`, `exam due`); a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
-| `state` | string | `new` \| `started` \| `finished` \| `examdue` \| `error` for decks; `workspace` \| `folder` for groups (open set). An `error` deck's own progress document cannot be read: render it red, and treat it as unstartable: every `reviewable*` flag is false and `/api/select` and `/api/browse` both reject it with 400. |
+| `state` | string | `new` \| `started` \| `finished` \| `examdue` \| `error` for decks; `workspace` \| `folder` \| `error` for groups (open set). An `error` deck's own progress document cannot be read: render it red, and treat it as unstartable: every `reviewable*` flag is false and `/api/select` and `/api/browse` both reject it with 400. An `error` group is a workspace whose `alix.toml` does not parse: `meta` carries the parse message, `members` is empty. |
 | `locked` | bool | A `requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
 | `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both due at Recognize **and** recognizable (see `can_recognize`). |
@@ -1174,8 +1174,8 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `exam_changed` | bool | The deck holds a standing (`passed_at_ms` or `mastered`) and the material it was earned on has changed since: a sourced topic's fingerprint differs from the standing's stamp, or an unsourced topic holds a card id the stamp does not list. Render the badge dashed; it still unlocks. False without a standing. |
 | `exam_filter` | string | What "only topics needing work" would select: `none` (every topic passed) \| `partial` \| `all` (no topic passed) *(closed)*. `none` for a deck without an exam. |
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
-| `examable` | bool | Its exam can be sat right now. |
-| `has_exam` | bool | Declares sources, so has an exam at all (even if locked). |
+| `examable_now` | bool | Its exam can be sat right now. |
+| `examable` | bool | Declares sources, so has an exam at all (even if locked). |
 | `exam_prepared` | bool | An exam was written ahead over the deck's current sources and waits to be taken (`POST /api/exam/start`). |
 | `recent` | bool | Belongs in a recents view. |
 | `is_workspace` | bool | Group flavor. |
@@ -1608,7 +1608,7 @@ attempted and failed; one target's error doesn't stop the rest from running).
 |---|---|---|
 | `kind` | string | Always `"trace"`. |
 | `phase` | string | `predict` \| `reveal` \| `done` *(closed)*. |
-| `description` / `source` | string / string? | |
+| `description` | string | |
 | `description_runs` | [InlineRun] | Display projection of `description`. |
 | `total` / `current` | number | `current` is **1-based**. |
 | `path` | [HopDto] | The rail. |

@@ -144,6 +144,7 @@ pub struct DeckEntry {
     pub members: Vec<DeckEntry>,
     pub path_hint: Option<String>,
     pub icon: Option<PathBuf>,
+    pub error: Option<String>,
 }
 
 pub fn catalog(
@@ -155,7 +156,23 @@ pub fn catalog(
         .into_iter()
         .map(|c| {
             if c.is_workspace {
-                let ws = cache.workspace(&c.path);
+                let ws = match cache.workspace(&c.path) {
+                    Ok(ws) => ws,
+                    Err(error) => {
+                        return DeckEntry {
+                            label: c.name.clone(),
+                            path_hint: location_hint(&c.path, decks_dir),
+                            name: c.name,
+                            path: c.path,
+                            last_used_ms: c.last_used_ms,
+                            is_workspace: true,
+                            description: None,
+                            members: Vec::new(),
+                            icon: None,
+                            error: Some(error),
+                        };
+                    }
+                };
                 let members = ws
                     .members
                     .iter()
@@ -173,6 +190,7 @@ pub fn catalog(
                             members: Vec::new(),
                             path_hint: None, // shown only in the drill-in
                             icon: None,
+                            error: None,
                         }
                     })
                     .collect();
@@ -186,6 +204,7 @@ pub fn catalog(
                     description: ws.description,
                     members,
                     icon: ws.icon,
+                    error: None,
                 }
             } else {
                 DeckEntry {
@@ -198,6 +217,7 @@ pub fn catalog(
                     description: None,
                     members: Vec::new(),
                     icon: None,
+                    error: None,
                 }
             }
         })
@@ -495,7 +515,7 @@ mod tests {
         assert_eq!(1, entries.len());
     }
 
-    fn status_for_readiness(state: DeckState, passed: bool, has_exam: bool) -> DeckStatus {
+    fn status_for_readiness(state: DeckState, passed: bool, examable: bool) -> DeckStatus {
         DeckStatus {
             state,
             badge: String::new(),
@@ -509,8 +529,8 @@ mod tests {
             mastered: false,
             exam: Default::default(),
             is_trace: false,
-            examable: false,
-            has_exam,
+            examable_now: false,
+            examable,
             exam_prepared: false,
             badge_depth: None,
             badge_dotted: false,

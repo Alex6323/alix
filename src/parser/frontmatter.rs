@@ -66,7 +66,6 @@ pub struct Frontmatter {
     pub created_at: Option<String>,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub exam: Vec<String>,
     pub cite: Vec<(String, String)>,
     pub requires: Vec<String>,
     pub link: Vec<String>,
@@ -188,7 +187,6 @@ fn load_frontmatter(
                     });
                 }
             },
-            "exam" => frontmatter.exam = string_list(key, value, line, lints),
             "cite" => {
                 frontmatter.cite = cite_entries(value)
                     .map_err(|message| ParseError::InvalidCite { line, message })?;
@@ -411,7 +409,7 @@ pub enum Reorder {
 /// The canonical order for frontmatter alix itself writes and for the opt-in
 /// doctor repair: authored keys first, machine lines last. An author's own
 /// order is never diagnosed against it.
-const CANONICAL_KEY_ORDER: [&str; 19] = [
+const CANONICAL_KEY_ORDER: [&str; 18] = [
     "title",
     "description",
     "trace",
@@ -426,7 +424,6 @@ const CANONICAL_KEY_ORDER: [&str; 19] = [
     "direction",
     "sampling",
     "choices",
-    "exam",
     "cite",
     "requires",
     "link",
@@ -546,7 +543,6 @@ mod tests {
         let rows = [
             ("id", MultilineDisposition::HardError),
             ("format-version", MultilineDisposition::HardError),
-            ("exam", MultilineDisposition::Stored),
             ("requires", MultilineDisposition::Stored),
             ("link", MultilineDisposition::Stored),
             ("trace", MultilineDisposition::Stored),
@@ -718,13 +714,29 @@ mod tests {
     }
 
     #[test]
+    fn an_exam_key_is_an_unknown_key_with_no_dedicated_message() {
+        let mut lints = Vec::new();
+        let frontmatter = load_frontmatter(&["exam: notes.md"], 2, &mut lints).unwrap();
+        assert_eq!(Frontmatter::default(), frontmatter);
+        assert_eq!(
+            vec![Lint {
+                line: 2,
+                kind: LintKind::UnknownKey { key: "exam".into() },
+            }],
+            lints
+        );
+        assert_eq!(CANONICAL_KEY_ORDER.len(), 18);
+        assert!(!CANONICAL_KEY_ORDER.contains(&"exam"));
+    }
+
+    #[test]
     fn every_frontmatter_line_number_keeps_its_document_offset() {
         let block = ["title: ok", "\"choices\": nope", "id: nope"];
         for (key, expected) in [("title", 11), ("choices", 12), ("id", 13)] {
             assert_eq!(expected, key_line(&block, 11, key), "key {key}");
         }
 
-        let invalid = ["title: ok", "exam: [unterminated"];
+        let invalid = ["title: ok", "link: [unterminated"];
         let error = load_frontmatter(&invalid, 11, &mut Vec::new()).unwrap_err();
         assert!(
             matches!(error, ParseError::FrontmatterSyntax { line: 13, .. }),
@@ -771,7 +783,6 @@ mod tests {
             "link",
             "requires",
             "cite",
-            "exam",
             "choices",
             "sampling",
             "direction",
@@ -804,7 +815,6 @@ mod tests {
                 "direction",
                 "sampling",
                 "choices",
-                "exam",
                 "cite",
                 "requires",
                 "link",
@@ -837,8 +847,8 @@ mod tests {
     #[test]
     fn a_column_zero_list_item_travels_with_its_key() {
         assert_eq!(
-            "---\ntitle: T\nexam:\n- a\n- b\nid: \"deck-x\"\n---\n",
-            reordered("---\nid: \"deck-x\"\nexam:\n- a\n- b\ntitle: T\n---\n")
+            "---\ntitle: T\nlink:\n- a\n- b\nid: \"deck-x\"\n---\n",
+            reordered("---\nid: \"deck-x\"\nlink:\n- a\n- b\ntitle: T\n---\n")
         );
     }
 

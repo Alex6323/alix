@@ -44,7 +44,6 @@
       "text": "what does push do when full?"
     }
   ],
-  "source": "src/lib.rs",
   "summary": null,
   "total": 2
 }

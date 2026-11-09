@@ -35,13 +35,14 @@ pub struct DeckSummary {
     pub exam_filter: crate::exam_status::ExamFilter,
     pub exam_changed: bool,
     pub exam_due: bool,
-    pub has_exam: bool,
+    pub examable: bool,
     pub exam_prepared: bool,
     pub locked: bool,
     /// The deck's OWN progress document failed to load, so every
     /// progress-derived claim here is suppressed and review is refused;
     /// siblings are unaffected (per-document read granularity).
     pub progress_error: bool,
+    pub manifest_error: Option<String>,
     pub icon: Option<PathBuf>,
     pub indent: usize,
     pub tree: String,
@@ -177,7 +178,7 @@ pub fn list_members_with(
         .map(|(row, loaded)| {
             let blocked = *loaded
                 && (row.locked
-                    || !(row.is_trace || (row.exam_due && row.has_exam && !row.locked) || row.due));
+                    || !(row.is_trace || (row.exam_due && row.examable && !row.locked) || row.due));
             (blocked, row.title.clone())
         })
         .collect();
@@ -432,7 +433,10 @@ fn folder_summary(
     now_ms: u64,
     cache: &mut DeckCache,
 ) -> DeckSummary {
-    let ws = workspace::Workspace::load(dir).ok();
+    let (ws, manifest_error) = match workspace::Workspace::load(dir) {
+        Ok(ws) => (Some(ws), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     let title = ws.as_ref().map(|ws| ws.display_name()).unwrap_or_else(|| {
         dir.file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -462,10 +466,11 @@ fn folder_summary(
         exam_filter: crate::exam_status::ExamFilter::None,
         exam_changed: false,
         exam_due: false,
-        has_exam: false,
+        examable: false,
         exam_prepared: false,
         locked: false,
         progress_error: false,
+        manifest_error,
         icon,
         indent: 0,
         tree: String::new(),
@@ -494,7 +499,7 @@ fn deck_summary(
     let loaded = deck.is_some();
     let title = deck.map(|d| d.display_name()).unwrap_or_default();
     let is_trace = deck.is_some_and(|d| d.is_trace());
-    let has_exam = deck.is_some_and(|d| d.declares_sources());
+    let examable = deck.is_some_and(|d| d.declares_sources());
     let exam_prepared = deck.is_some_and(exam_prepared);
     // `augment` is `Some` exactly when `store` is, so gating on all three
     // preserves that invariant for `deck_due`.
@@ -517,7 +522,7 @@ fn deck_summary(
                 deadline_ready(
                     s.deck_passed(deck_id),
                     state == DeckState::Finished,
-                    has_exam,
+                    examable,
                 ),
                 deck::is_locked_with(d, Some(decks_dir), s, table),
             )
@@ -557,10 +562,11 @@ fn deck_summary(
         },
         exam_changed: exam.exam_changed && !progress_error,
         exam_due: exam_due && !progress_error,
-        has_exam,
+        examable,
         exam_prepared,
         locked,
         progress_error,
+        manifest_error: None,
         icon: None,
         indent: 0,
         tree: String::new(),
@@ -629,8 +635,8 @@ fn exam_prepared(_deck: &Deck) -> bool {
     false
 }
 
-pub fn deadline_ready(passed: bool, finished: bool, has_exam: bool) -> bool {
-    passed || (finished && !has_exam)
+pub fn deadline_ready(passed: bool, finished: bool, examable: bool) -> bool {
+    passed || (finished && !examable)
 }
 
 pub struct WorkspaceReadiness {
@@ -641,7 +647,7 @@ pub struct WorkspaceReadiness {
 pub fn workspace_readiness(statuses: &[DeckStatus]) -> WorkspaceReadiness {
     let ready = statuses
         .iter()
-        .filter(|s| deadline_ready(s.passed, s.state == DeckState::Finished, s.has_exam))
+        .filter(|s| deadline_ready(s.passed, s.state == DeckState::Finished, s.examable))
         .count();
     WorkspaceReadiness {
         ready,
@@ -663,8 +669,8 @@ pub struct DeckStatus {
     pub mastered: bool,
     pub exam: crate::exam_status::ExamRow,
     pub is_trace: bool,
+    pub examable_now: bool,
     pub examable: bool,
-    pub has_exam: bool,
     pub exam_prepared: bool,
     pub badge_depth: Option<Depth>,
     pub badge_dotted: bool,
@@ -727,10 +733,10 @@ pub fn deck_status(
     };
     let actually_locked = deck::is_locked(deck, decks_dir, store);
     let locked = enforce_locks && actually_locked;
-    // examable doesn't require drilling first: you can test out early. The
+    // examable_now doesn't require drilling first: you can test out early. The
     // exam re-sit cooldown is enforced at the launch sites, not here.
-    let has_exam = deck.declares_sources();
-    let examable = has_exam && !actually_locked;
+    let examable = deck.declares_sources();
+    let examable_now = examable && !actually_locked;
     let scheduler = crate::scheduler::Fsrs::new(review.retention, review.introduction_cooldown_ms);
     let now = session::now_ms();
     // A card counts only if it's both unrecognized AND recognizable; an
@@ -777,7 +783,7 @@ pub fn deck_status(
     // Locked never blocks drilling: a prerequisite-locked deck with due
     // cards is still reviewable.
     let reviewable = deck.is_trace()
-        || (matches!(state, DeckState::ExamDue) && examable)
+        || (matches!(state, DeckState::ExamDue) && examable_now)
         || reviewable_recognize
         || reviewable_recall
         || reviewable_reconstruct;
@@ -806,8 +812,8 @@ pub fn deck_status(
             exam
         },
         is_trace: deck.is_trace(),
-        examable: examable && !progress_error,
-        has_exam,
+        examable_now: examable_now && !progress_error,
+        examable,
         exam_prepared: exam_prepared(deck),
         badge_depth: badge_depth.filter(|_| !progress_error),
         badge_dotted: badge_dotted && !progress_error,
@@ -1065,6 +1071,35 @@ mod tests {
                 ("Loose Deck", false),
                 ("c-plain", true),
             ]
+        );
+    }
+
+    #[test]
+    fn a_workspace_whose_manifest_fails_to_parse_is_an_error_row_not_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("broken");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write(&ws.join("alix.toml"), "title = \"Broken\"\nexam = \"x\"\n");
+        write(&ws.join("decks/m.md"), "## q\na\n<!-- id: card-qm -->\n");
+
+        let rows = list_root(root, &ReviewConfig::default(), T0);
+        assert_eq!(1, rows.len(), "{rows:?}");
+        let row = &rows[0];
+        assert!(row.is_workspace, "{row:?}");
+        assert_eq!("broken", row.title, "never a default title");
+        assert!(
+            row.manifest_error
+                .as_deref()
+                .is_some_and(|error| error.contains("`exam`")),
+            "the row carries the parse message: {row:?}"
+        );
+        assert!(!row.due, "an error row lists no member state: {row:?}");
+        assert!(
+            list_members(root, &ws, &ReviewConfig::default(), T0)
+                .rows
+                .is_empty(),
+            "an unparseable workspace lists no members"
         );
     }
 
@@ -1350,7 +1385,7 @@ mod tests {
         assert!(status.badge_depth.is_none());
         assert!(!status.badge_dotted);
         assert!(!status.mastered);
-        assert!(!status.examable);
+        assert!(!status.examable_now);
         assert!(
             !status.crammable,
             "an unreadable document must not invite a cram either"
@@ -1493,13 +1528,13 @@ mod tests {
             false,
             review,
         );
-        assert!(status.has_exam, "precondition: an exam would be available");
+        assert!(status.examable, "precondition: an exam would be available");
         assert!(
             status.progress_error,
             "precondition: progress is unreadable"
         );
         assert!(
-            !status.examable,
+            !status.examable_now,
             "damaged progress suppresses an otherwise available exam"
         );
     }
@@ -1843,7 +1878,7 @@ mod tests {
                     "exam_due: {}",
                     row.title
                 );
-                assert_eq!(row.has_exam, status.has_exam, "has_exam: {}", row.title);
+                assert_eq!(row.examable, status.examable, "examable: {}", row.title);
                 assert_eq!(row.locked, status.locked, "locked: {}", row.title);
                 assert_eq!(row.is_trace, status.is_trace, "is_trace: {}", row.title);
                 assert_eq!(
@@ -1864,7 +1899,7 @@ mod tests {
         assert!(advanced.locked);
         let walk = rows.iter().find(|r| r.title == "How It Flows").unwrap();
         assert!(walk.is_trace);
-        assert!(!walk.has_exam);
+        assert!(!walk.examable);
 
         let mut store = crate::state::open_stores(&paths, &store_path).unwrap();
         let base_deck = Deck::load(ws.join("decks/base.md")).unwrap();
@@ -2825,7 +2860,7 @@ mod tests {
 
     #[test]
     fn workspace_readiness_keeps_finished_polarity_independent_of_mastery_and_exam() {
-        let status = |state, passed, has_exam| DeckStatus {
+        let status = |state, passed, examable| DeckStatus {
             state,
             badge: String::new(),
             locked: false,
@@ -2838,8 +2873,8 @@ mod tests {
             mastered: false,
             exam: Default::default(),
             is_trace: false,
-            examable: false,
-            has_exam,
+            examable_now: false,
+            examable,
             exam_prepared: false,
             badge_depth: None,
             badge_dotted: false,
@@ -2868,8 +2903,8 @@ mod tests {
             ("passed with exam", DeckState::Finished, true, true, true),
         ];
 
-        for (label, state, passed, has_exam, expected) in cases {
-            let readiness = workspace_readiness(&[status(state, passed, has_exam)]);
+        for (label, state, passed, examable, expected) in cases {
+            let readiness = workspace_readiness(&[status(state, passed, examable)]);
             assert_eq!(
                 (usize::from(expected), 1),
                 (readiness.ready, readiness.total),

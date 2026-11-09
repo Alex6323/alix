@@ -76,7 +76,7 @@ struct Manifest {
     title: Option<String>,
     description: Option<String>,
     icon: Option<String>,
-    exam: Option<ManifestExam>,
+    link: Option<ManifestList>,
     source_access: Option<bool>,
     #[serde(default)]
     cite: BTreeMap<String, String>,
@@ -86,12 +86,12 @@ struct Manifest {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum ManifestExam {
+enum ManifestList {
     One(String),
     Many(Vec<String>),
 }
 
-impl ManifestExam {
+impl ManifestList {
     fn into_values(self) -> Vec<String> {
         let values = match self {
             Self::One(value) => vec![value],
@@ -105,13 +105,61 @@ impl ManifestExam {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ManifestError {
+    #[error("cannot read {}: {error}", path.display())]
+    Io { path: PathBuf, error: io::Error },
+    #[error("cannot parse {}: {error}", path.display())]
+    Toml {
+        path: PathBuf,
+        error: toml::de::Error,
+    },
+}
+
+impl From<ManifestError> for io::Error {
+    fn from(error: ManifestError) -> Self {
+        io::Error::new(io::ErrorKind::InvalidData, error)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ManifestData {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub settings: DeckSettings,
+    pub icon: Option<String>,
+}
+
+fn load_manifest(path: &Path) -> Result<Option<Manifest>, ManifestError> {
+    profile::hit(Counter::ManifestReads);
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(ManifestError::Io {
+                path: path.to_path_buf(),
+                error,
+            });
+        }
+    };
+    toml::from_str(&text)
+        .map(Some)
+        .map_err(|error| ManifestError::Toml {
+            path: path.to_path_buf(),
+            error,
+        })
+}
+
+fn load_dir_manifest(dir: &Path) -> Result<Manifest, ManifestError> {
+    Ok(load_manifest(&dir.join(MANIFEST))?.unwrap_or_default())
+}
+
 #[derive(Debug, Clone)]
 pub struct Workspace {
     pub path: PathBuf,
     pub title: Option<String>,
     pub description: Option<String>,
     pub settings: DeckSettings,
-    pub exam: Vec<String>,
     pub members: Vec<PathBuf>,
     /// Each member's physical path, keyed by its spelling in `members`.
     pub identities: HashMap<PathBuf, PathBuf>,
@@ -128,14 +176,13 @@ impl Workspace {
             }
             Err(error) => return Err(error),
         };
-        let (title, description, settings, icon_key, exam) = read_manifest(&path.join(MANIFEST));
-        let icon = resolve_icon(&path, icon_key.as_deref());
+        let manifest = read_manifest(&path.join(MANIFEST))?;
+        let icon = resolve_icon(&path, manifest.icon.as_deref());
         Ok(Workspace {
             path,
-            title,
-            description,
-            settings,
-            exam,
+            title: manifest.title,
+            description: manifest.description,
+            settings: manifest.settings,
             members,
             identities,
             icon,
@@ -152,27 +199,15 @@ impl Workspace {
     }
 }
 
-pub fn manifest_exam(dir: &Path) -> Vec<String> {
-    profile::hit(Counter::ManifestReads);
-    let Ok(text) = std::fs::read_to_string(dir.join(MANIFEST)) else {
-        return Vec::new();
-    };
-    let Ok(manifest) = toml::from_str::<Manifest>(&text) else {
-        return Vec::new();
-    };
-    manifest
-        .exam
-        .map(ManifestExam::into_values)
-        .unwrap_or_default()
+pub fn manifest_cite(dir: &Path) -> Result<BTreeMap<String, String>, ManifestError> {
+    Ok(load_dir_manifest(dir)?.cite)
 }
 
-pub fn manifest_cite(dir: &Path) -> BTreeMap<String, String> {
-    profile::hit(Counter::ManifestReads);
-    std::fs::read_to_string(dir.join(MANIFEST))
-        .ok()
-        .and_then(|text| toml::from_str::<Manifest>(&text).ok())
-        .map(|manifest| manifest.cite)
-        .unwrap_or_default()
+pub fn manifest_links(dir: &Path) -> Result<Vec<String>, ManifestError> {
+    Ok(load_dir_manifest(dir)?
+        .link
+        .map(ManifestList::into_values)
+        .unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -213,7 +248,6 @@ pub fn manifest_findings(dir: &Path) -> Vec<ManifestFinding> {
     for (key, value) in &manifest.defaults {
         let place = match key.as_str() {
             "cite" => Some("the `[cite]` table"),
-            "exam" => Some("the top-level `exam`"),
             _ => None,
         };
         if let Some(place) = place {
@@ -244,39 +278,21 @@ pub fn manifest_parse_error(dir: &Path) -> Option<toml::de::Error> {
     toml::from_str::<Manifest>(&text).err()
 }
 
-/// A missing or malformed manifest yields no title/description and default
-/// settings, never an error.
-pub(crate) fn read_manifest(
-    path: &Path,
-) -> (
-    Option<String>,
-    Option<String>,
-    DeckSettings,
-    Option<String>,
-    Vec<String>,
-) {
-    profile::hit(Counter::ManifestReads);
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return (None, None, DeckSettings::default(), None, Vec::new());
-    };
-    let Ok(manifest) = toml::from_str::<Manifest>(&text) else {
-        return (None, None, DeckSettings::default(), None, Vec::new());
+pub(crate) fn read_manifest(path: &Path) -> Result<ManifestData, ManifestError> {
+    let Some(manifest) = load_manifest(path)? else {
+        return Ok(ManifestData::default());
     };
     let directives: Vec<(String, String)> = manifest
         .defaults
         .iter()
         .map(|(key, value)| (key.clone(), value_to_string(value)))
         .collect();
-    (
-        manifest.title,
-        manifest.description,
-        DeckSettings::from_directives(&directives),
-        manifest.icon,
-        manifest
-            .exam
-            .map(ManifestExam::into_values)
-            .unwrap_or_default(),
-    )
+    Ok(ManifestData {
+        title: manifest.title,
+        description: manifest.description,
+        settings: DeckSettings::from_directives(&directives),
+        icon: manifest.icon,
+    })
 }
 
 pub fn resolve_icon(dir: &Path, manifest_icon: Option<&str>) -> Option<PathBuf> {
@@ -680,16 +696,12 @@ pub fn root_store_path(dir: &Path) -> PathBuf {
         .unwrap_or_else(|| dir.to_path_buf())
 }
 
-pub fn manifest_source_access(dir: &Path) -> Option<bool> {
-    profile::hit(Counter::ManifestReads);
-    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
-    toml::from_str::<Manifest>(&text).ok()?.source_access
+pub fn manifest_source_access(dir: &Path) -> Result<Option<bool>, ManifestError> {
+    Ok(load_dir_manifest(dir)?.source_access)
 }
 
-pub fn manifest_icon(dir: &Path) -> Option<String> {
-    profile::hit(Counter::ManifestReads);
-    let text = std::fs::read_to_string(dir.join(MANIFEST)).ok()?;
-    toml::from_str::<Manifest>(&text).ok()?.icon
+pub fn manifest_icon(dir: &Path) -> Result<Option<String>, ManifestError> {
+    Ok(load_dir_manifest(dir)?.icon)
 }
 
 pub fn set_deadline(dir: &Path, date: Option<chrono::NaiveDate>) -> anyhow::Result<()> {
@@ -801,9 +813,9 @@ mod tests {
                 vec![unknown("source")],
             ),
             (
-                "exam inside defaults names the top-level key",
+                "exam inside defaults is an unknown default",
                 "[defaults]\nexam = \"notes.md\"\n",
-                vec![misplaced("exam", "the top-level `exam`")],
+                vec![unknown("exam")],
             ),
             (
                 "well-formed cite keys are silent",
@@ -978,38 +990,85 @@ mod tests {
     }
 
     #[test]
-    fn manifest_exam_accepts_a_string_or_a_list() {
+    fn a_manifest_that_fails_to_parse_is_an_error_never_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        write(&dir.path().join(MANIFEST), "exam = \"https://x.example\"\n");
-        assert_eq!(
-            vec!["https://x.example".to_string()],
-            Workspace::load(dir.path()).unwrap().exam
+        write(&dir.path().join(MANIFEST), "title = \"W\"\nexam = \"x\"\n");
+        let error = read_manifest(&dir.path().join(MANIFEST)).unwrap_err();
+        assert!(
+            matches!(error, ManifestError::Toml { .. }) && error.to_string().contains("`exam`"),
+            "the error names the unknown field: {error}"
         );
-
-        write(
-            &dir.path().join(MANIFEST),
-            "exam = [\"https://x.example\", \"  \", \"notes.md\"]\n",
-        );
-        assert_eq!(
-            vec!["https://x.example".to_string(), "notes.md".to_string()],
-            manifest_exam(dir.path())
-        );
-
-        write(&dir.path().join(MANIFEST), "title = \"W\"\n");
-        assert!(Workspace::load(dir.path()).unwrap().exam.is_empty());
+        let load = Workspace::load(dir.path()).unwrap_err();
+        assert!(load.to_string().contains("`exam`"), "{load}");
     }
 
     #[test]
-    fn malformed_manifest_is_forgiving() {
+    fn every_manifest_reader_fails_loud_on_a_manifest_that_does_not_parse() {
+        type Reader = fn(&Path) -> Result<String, ManifestError>;
+        let rows: [(&str, Reader, &str); 5] = [
+            (
+                "read_manifest",
+                |dir| read_manifest(&dir.join(MANIFEST)).map(|data| format!("{:?}", data.title)),
+                "None",
+            ),
+            (
+                "manifest_cite",
+                |dir| manifest_cite(dir).map(|cite| format!("{cite:?}")),
+                "{}",
+            ),
+            (
+                "manifest_source_access",
+                |dir| manifest_source_access(dir).map(|access| format!("{access:?}")),
+                "None",
+            ),
+            (
+                "manifest_icon",
+                |dir| manifest_icon(dir).map(|icon| format!("{icon:?}")),
+                "None",
+            ),
+            (
+                "manifest_links",
+                |dir| manifest_links(dir).map(|links| format!("{links:?}")),
+                "[]",
+            ),
+        ];
+        for (name, reader, absent) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            assert_eq!(
+                absent,
+                reader(dir.path()).unwrap(),
+                "`{name}` over an absent manifest is the empty default"
+            );
+            write(&dir.path().join(MANIFEST), "title = [unterminated\n");
+            let error = reader(dir.path()).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&dir.path().join(MANIFEST).display().to_string()),
+                "`{name}` over an unparseable manifest names its path: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_links_accepts_a_string_or_a_list() {
         let dir = tempfile::tempdir().unwrap();
-        let members = dir.path().join(DECKS);
-        std::fs::create_dir(&members).unwrap();
-        write(&members.join("a.md"), &deck("a", "## a\n1\n"));
-        write(&dir.path().join(MANIFEST), "this is not = = valid toml\n");
-        let ws = Workspace::load(dir.path()).unwrap();
-        assert_eq!(None, ws.title);
-        assert!(ws.settings.reveal.is_none());
-        assert_eq!(1, ws.members.len());
+        write(&dir.path().join(MANIFEST), "link = \"https://x.example\"\n");
+        assert_eq!(
+            vec!["https://x.example".to_string()],
+            manifest_links(dir.path()).unwrap()
+        );
+        write(
+            &dir.path().join(MANIFEST),
+            "link = [\"https://x.example\", \"  \", \"https://y.example\"]\n",
+        );
+        assert_eq!(
+            vec![
+                "https://x.example".to_string(),
+                "https://y.example".to_string()
+            ],
+            manifest_links(dir.path()).unwrap()
+        );
     }
 
     #[test]
@@ -1154,13 +1213,13 @@ mod tests {
     #[test]
     fn manifest_source_access_override() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(None, manifest_source_access(dir.path()));
+        assert_eq!(None, manifest_source_access(dir.path()).unwrap());
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
-        assert_eq!(None, manifest_source_access(dir.path()));
+        assert_eq!(None, manifest_source_access(dir.path()).unwrap());
         write(&dir.path().join(MANIFEST), "source_access = true\n");
-        assert_eq!(Some(true), manifest_source_access(dir.path()));
+        assert_eq!(Some(true), manifest_source_access(dir.path()).unwrap());
         write(&dir.path().join(MANIFEST), "source_access = false\n");
-        assert_eq!(Some(false), manifest_source_access(dir.path()));
+        assert_eq!(Some(false), manifest_source_access(dir.path()).unwrap());
     }
 
     #[test]
@@ -1504,11 +1563,14 @@ mod tests {
     #[test]
     fn manifest_icon_reads_the_icon_key_or_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(None, manifest_icon(dir.path()));
+        assert_eq!(None, manifest_icon(dir.path()).unwrap());
         write(&dir.path().join(MANIFEST), "title = \"W\"\n");
-        assert_eq!(None, manifest_icon(dir.path()));
+        assert_eq!(None, manifest_icon(dir.path()).unwrap());
         write(&dir.path().join(MANIFEST), "icon = \"logo.png\"\n");
-        assert_eq!(Some("logo.png".to_string()), manifest_icon(dir.path()));
+        assert_eq!(
+            Some("logo.png".to_string()),
+            manifest_icon(dir.path()).unwrap()
+        );
     }
 
     #[test]

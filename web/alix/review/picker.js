@@ -283,7 +283,7 @@ export function createPicker({
     for (const g of workspaces.concat(folders)) for (const m of g.members) if (m.mastered) mastered.push(m);
 
     // Can a row be started now, at *any* depth? Drilling is never gated by the
-    // prerequisite lock (only the exam is - an exam-locked deck's `examable` is
+    // prerequisite lock (only the exam is - an exam-locked deck's `examable_now` is
     // false), so a gated view refuses only a deck with nothing due at any depth.
     // `reviewable` already folds in trace handling alongside the per-depth
     // due-ness, so this reads as "any depth or trace is startable". The
@@ -558,7 +558,7 @@ export function createPicker({
         }
         const job = preparing[it.name];
         if (job && job.state === "generating") return;
-        const needsWorkOnly = it.examable && it.exam_filter !== "none" && row._examNeedsWorkOnly;
+        const needsWorkOnly = it.examable_now && it.exam_filter !== "none" && row._examNeedsWorkOnly;
         generateExam(it.name, needsWorkOnly);
       }
 
@@ -737,7 +737,7 @@ export function createPicker({
         // The exam entry of a fact deck: Generate exam, then Writing exam
         // while the server writes it, then Take exam once it is prepared.
         // It is filled only when the exam is due and unlocked.
-        if (f && f._item && f._item.has_exam && !f._item.is_trace) {
+        if (f && f._item && f._item.examable && !f._item.is_trace) {
           const it = f._item;
           const job = preparing[it.name];
           if (!it.exam_prepared && job && job.state === "generating") {
@@ -751,15 +751,15 @@ export function createPicker({
             legend.appendChild(stop);
             return;
           }
-          const accent = it.state === "examdue" && it.examable;
+          const accent = it.state === "examdue" && it.examable_now;
           const ex = el("button", "chip" + (accent ? " exam-due" : ""), it.exam_prepared ? "Take exam" : "Generate exam");
-          ex.appendChild(el("span", "k exam-key", it.examable ? "x" : "\u{1F512}"));
-          ex.disabled = !it.examable;
+          ex.appendChild(el("span", "k exam-key", it.examable_now ? "x" : "\u{1F512}"));
+          ex.disabled = !it.examable_now;
           if (job && job.state === "failed") ex.title = job.error || "";
-          if (it.examable) ex.addEventListener("click", () => launchExam(f));
+          if (it.examable_now) ex.addEventListener("click", () => launchExam(f));
           legend.appendChild(ex);
           if (it.exam_prepared) return;
-          const filterable = it.examable && it.exam_filter !== "none";
+          const filterable = it.examable_now && it.exam_filter !== "none";
           const ticked = filterable && f._examNeedsWorkOnly;
           const needsWork = el("button", "chip exam-filter", (ticked ? "☑" : "☐") + " only what needs work");
           needsWork.setAttribute("aria-pressed", String(ticked));
@@ -1091,7 +1091,7 @@ export function createPicker({
         else if (hit(e, keys.depth) && hasDepthSplit(cur) && canOpenDepths(cur._item, cur._gated)) { e.preventDefault(); depthMenuOpen = true; cramOn = false; trackOn = null; skipIntroOn = false; syncPrimary(); }
         else if (e.key === "r") { e.preventDefault(); refresh(); } // re-scan the decks (also the ⟳ nav button)
         else if (opts.allowMastered && hit(e, keys.mastered)) { e.preventDefault(); renderMastered(); }
-        else if (e.key === "x" && cur && cur._item && cur._item.examable) {
+        else if (e.key === "x" && cur && cur._item && cur._item.examable_now) {
           e.preventDefault(); launchExam(cur);
         }
       });

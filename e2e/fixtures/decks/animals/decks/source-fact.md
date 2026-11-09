@@ -1,6 +1,5 @@
 ---
 id: "deck-00000000000000000000000003"
-exam: source-fact.rs
 cite:
   - src: .
 title: Source Fact

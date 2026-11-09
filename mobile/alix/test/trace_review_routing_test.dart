@@ -17,7 +17,6 @@ import 'support/picker_listing.dart';
 const traceDeck = '''
 ---
 trace: Parser trace
-exam: source.txt
 cite:
   - src: .
 ---

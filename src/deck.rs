@@ -106,7 +106,6 @@ pub struct Deck {
     pub definitions: Vec<String>,
     pub links: Vec<String>,
     pub requires: Vec<String>,
-    pub exam: Vec<String>,
     pub cite: Vec<(String, String)>,
     pub settings: DeckSettings,
     pub title: Option<String>,
@@ -182,7 +181,6 @@ impl Deck {
         let topics = parsed.topics.clone();
         let links = parsed.frontmatter.link.clone();
         let requires = parsed.frontmatter.requires.clone();
-        let exam = parsed.frontmatter.exam.clone();
         let cite = parsed.frontmatter.cite.clone();
         let title = parsed.title.clone();
         let description = parsed.frontmatter.description.clone();
@@ -255,7 +253,6 @@ impl Deck {
             definitions,
             links,
             requires,
-            exam,
             cite,
             settings,
             title,
@@ -344,41 +341,17 @@ impl Deck {
         }
     }
 
-    pub fn reference_links(&self) -> Vec<String> {
+    /// The deck's own `link:` entries, then its workspace's `link` entries.
+    pub fn reference_links(&self) -> Result<Vec<String>, crate::workspace::ManifestError> {
         let mut out = self.links.clone();
-        for url in self.source_urls() {
+        let workspace =
+            crate::workspace::manifest_links(&crate::workspace::content_root(&self.path))?;
+        for url in workspace {
             if !out.contains(&url) {
                 out.push(url);
             }
         }
-        out
-    }
-
-    /// The workspace manifest's `exam`: the material the workspace is about,
-    /// layered under every member's own sources as supporting context.
-    pub fn workspace_exam(&self) -> Vec<String> {
-        crate::workspace::manifest_exam(&crate::workspace::content_root(&self.path))
-    }
-
-    pub fn exam_layers(&self) -> ExamLayers {
-        let own = self.exam.clone();
-        let workspace = self
-            .workspace_exam()
-            .into_iter()
-            .filter(|source| !own.contains(source))
-            .collect();
-        ExamLayers { own, workspace }
-    }
-
-    pub fn source_urls(&self) -> Vec<String> {
-        let layers = self.exam_layers();
-        let mut out = Vec::new();
-        for source in layers.own.iter().chain(&layers.workspace) {
-            if is_url(source) && !out.contains(source) {
-                out.push(source.clone());
-            }
-        }
-        out
+        Ok(out)
     }
 
     pub fn is_frozen(&self) -> bool {
@@ -469,18 +442,6 @@ impl DeclaredSources {
             .and_then(Option::as_ref)
             .and_then(|manifest| manifest.fingerprints().ok())
             .unwrap_or_default()
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ExamLayers {
-    pub own: Vec<String>,
-    pub workspace: Vec<String>,
-}
-
-impl ExamLayers {
-    pub fn is_empty(&self) -> bool {
-        self.own.is_empty() && self.workspace.is_empty()
     }
 }
 
@@ -972,7 +933,7 @@ fn rewrite_source_citations(text: &str, ats: &[AtRewrite]) -> Result<(String, us
     Ok((joined, rewritten))
 }
 
-pub fn with_exam(text: &str, entries: &[String]) -> Result<String, DeckError> {
+fn with_links(text: &str, entries: &[String]) -> Result<String, DeckError> {
     let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
         path: PathBuf::from("deck.md"),
         source,
@@ -993,9 +954,9 @@ pub fn with_exam(text: &str, entries: &[String]) -> Result<String, DeckError> {
         let line_number = index + 1;
         if line_number > open && line_number < close {
             if let Some(key) = top_level_yaml_key(line) {
-                skipping = key == "exam";
+                skipping = key == "link";
                 if skipping && !inserted {
-                    push_exam_lines(&mut out, entries);
+                    push_link_lines(&mut out, entries);
                     inserted = true;
                 }
                 if skipping {
@@ -1007,7 +968,7 @@ pub fn with_exam(text: &str, entries: &[String]) -> Result<String, DeckError> {
             }
         }
         if line_number == close && !inserted {
-            push_exam_lines(&mut out, entries);
+            push_link_lines(&mut out, entries);
             inserted = true;
         }
         out.push(line.to_string());
@@ -1019,17 +980,22 @@ pub fn with_exam(text: &str, entries: &[String]) -> Result<String, DeckError> {
     Ok(joined)
 }
 
-pub fn with_added_exam(text: &str, value: &str) -> Result<String, DeckError> {
+pub fn with_added_links(text: &str, values: &[String]) -> Result<String, DeckError> {
     let parsed = parser::parse("deck.md", text).map_err(|source| DeckError::Parse {
         path: PathBuf::from("deck.md"),
         source,
     })?;
-    let mut entries = parsed.frontmatter.exam.clone();
-    if entries.iter().any(|existing| existing == value) {
+    let mut entries = parsed.frontmatter.link.clone();
+    let before = entries.len();
+    for value in values {
+        if !entries.contains(value) {
+            entries.push(value.clone());
+        }
+    }
+    if entries.len() == before {
         return Ok(text.to_string());
     }
-    entries.push(value.to_string());
-    with_exam(text, &entries)
+    with_links(text, &entries)
 }
 
 pub fn with_added_cite(text: &str, key: &str, value: &str) -> Result<String, DeckError> {
@@ -1077,12 +1043,12 @@ pub fn with_added_cite(text: &str, key: &str, value: &str) -> Result<String, Dec
     Ok(joined)
 }
 
-fn push_exam_lines(out: &mut Vec<String>, entries: &[String]) {
+fn push_link_lines(out: &mut Vec<String>, entries: &[String]) {
     match entries {
         [] => {}
-        [only] => out.push(format!("exam: {}", parser::yaml_quote(only))),
+        [only] => out.push(format!("link: {}", parser::yaml_quote(only))),
         many => {
-            out.push("exam:".to_string());
+            out.push("link:".to_string());
             for entry in many {
                 out.push(format!("  - {}", parser::yaml_quote(entry)));
             }
@@ -1092,65 +1058,18 @@ fn push_exam_lines(out: &mut Vec<String>, entries: &[String]) {
 
 pub(crate) fn rewrite_frozen_assets(
     text: &str,
-    frontmatter_span: Option<crate::parser::LineSpan>,
-    exam: Option<&str>,
     ats: &[AtRewrite],
     replacements: &[(Range<usize>, String)],
 ) -> Result<String, DeckError> {
     let text = replace_ranges(text, replacements)?;
-    let Some((open, close)) = frontmatter_span else {
-        return rewrite_source_citations(&text, ats).map(|(text, _)| text);
-    };
-    let by_line = ats_by_line(ats);
-    let mut inserted = exam.is_none();
-    let mut skipping = false;
-    let mut at_index = 0;
-    let mut out: Vec<String> = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        let line_number = index + 1;
-        let in_frontmatter = line_number > open && line_number < close;
-        if in_frontmatter {
-            if let Some(key) = top_level_yaml_key(line) {
-                // With no replacement exam, the deck's own `exam:` stays
-                // untouched (ADR 0026: freezing never rewrites it).
-                skipping = exam.is_some() && key == "exam";
-                if skipping && !inserted {
-                    push_replacement_exam(&mut out, exam);
-                    inserted = true;
-                }
-                if skipping {
-                    continue;
-                }
-            }
-            if skipping {
-                continue;
-            }
-            out.push(line.to_string());
-            continue;
-        }
-        if line_number == close && !inserted {
-            push_replacement_exam(&mut out, exam);
-            inserted = true;
-        }
-        if let Some(rewrite) = by_line.get(&line_number)
-            && let Some(indent) = at_indent(line)
-        {
-            out.push(format_at_rewrite(indent, rewrite)?);
-            at_index += 1;
-        } else {
-            out.push(line.to_string());
-        }
-    }
-    let mut joined = out.join("\n");
-    if text.ends_with('\n') && !joined.ends_with('\n') {
-        joined.push('\n');
-    }
-    if at_index != by_line.len() {
+    let (joined, rewritten) = rewrite_source_citations(&text, ats)?;
+    let expected = ats_by_line(ats).len();
+    if rewritten != expected {
         return Err(DeckError::Io {
             path: PathBuf::from("deck.md"),
             source: std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("rewrote {at_index} of {} source citations", by_line.len()),
+                format!("rewrote {rewritten} of {expected} source citations"),
             ),
         });
     }
@@ -1196,12 +1115,6 @@ fn top_level_yaml_key(line: &str) -> Option<&str> {
     line.split_once(':')
         .map(|(key, _)| key.trim())
         .filter(|key| !key.is_empty())
-}
-
-fn push_replacement_exam(out: &mut Vec<String>, exam: Option<&str>) {
-    if let Some(exam) = exam {
-        out.push(format!("exam: {}", parser::yaml_quote(exam)));
-    }
 }
 
 pub fn remove_cards(path: &Path, front_lines: &[usize]) -> Result<(), DeckError> {
@@ -1504,7 +1417,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "trace.md",
-            "---\ntrace: how the request flows\nexam: .\n---\n## enter\nrequest enters\n<!-- id: card-trace1 -->\n## leave\nresponse leaves\n<!-- id: card-trace2 -->\n",
+            "---\ntrace: how the request flows\n---\n## enter\nrequest enters\n<!-- id: card-trace1 -->\n## leave\nresponse leaves\n<!-- id: card-trace2 -->\n",
         );
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
@@ -1711,7 +1624,7 @@ mod tests {
         let path = write_deck(
             dir.path(),
             "t.md",
-            "---\ntrace: how it works\nexam: .\n---\n\n## old question\nold point\n<!-- at: src:x.txt:1 -->\n",
+            "---\ntrace: how it works\n---\n\n## old question\nold point\n<!-- at: src:x.txt:1 -->\n",
         );
         set_trace_checkpoints(
             &path,
@@ -1720,7 +1633,7 @@ mod tests {
         .unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with("---\ntrace: how it works\nexam: .\n---\n"));
+        assert!(text.starts_with("---\ntrace: how it works\n---\n"));
         assert!(!text.contains("old question"));
         assert!(text.contains("## new q1"));
         let deck = Deck::load(&path).unwrap();
@@ -1730,9 +1643,9 @@ mod tests {
 
     #[test]
     fn replace_after_header_appends_when_no_cards_yet() {
-        let text = "---\ntrace: how it works\nexam: .\n---\n";
+        let text = "---\ntrace: how it works\n---\n";
         let out = replace_after_header(text, &fronts(text), "## q\np\n");
-        assert_eq!("---\ntrace: how it works\nexam: .\n---\n\n## q\np\n", out);
+        assert_eq!("---\ntrace: how it works\n---\n\n## q\np\n", out);
     }
 
     #[test]
@@ -1938,7 +1851,7 @@ mod tests {
         write_deck(
             dir.path(),
             &format!("{CANONICAL_DECK_ID}.md"),
-            "---\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+            "---\nlink: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
         );
         let adv = write_deck(
             dir.path(),
@@ -2278,32 +2191,6 @@ mod tests {
     }
 
     #[test]
-    fn exam_layers_carry_the_workspace_source_without_shadowing() {
-        let dir = tempfile::tempdir().unwrap();
-        let members = dir.path().join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&members).unwrap();
-        std::fs::write(
-            dir.path().join(crate::workspace::MANIFEST),
-            "exam = [\"https://ws.example\", \"notes.md\"]\n",
-        )
-        .unwrap();
-        let path = write_deck(&members, "d.md", "---\nexam: own.rs\n---\n## f\nb\n");
-        let deck = Deck::load(&path).unwrap();
-
-        assert_eq!(
-            ExamLayers {
-                own: vec!["own.rs".to_string()],
-                workspace: vec!["https://ws.example".to_string(), "notes.md".to_string()],
-            },
-            deck.exam_layers()
-        );
-        assert!(
-            !deck.declares_sources(),
-            "`exam:` entries no longer give a deck an exam"
-        );
-    }
-
-    #[test]
     fn only_a_sources_manifest_with_a_row_confers_an_exam() {
         let ws = crate::sources::testkit::Workspace::new();
         assert!(
@@ -2318,7 +2205,7 @@ mod tests {
         );
 
         let bare = tempfile::tempdir().unwrap();
-        let alone = write_deck(bare.path(), "d.md", "---\nexam: notes.md\n---\n## f\nb\n");
+        let alone = write_deck(bare.path(), "d.md", "---\ntitle: d\n---\n## f\nb\n");
         assert!(
             !Deck::load(&alone).unwrap().declares_sources(),
             "a loose deck has no sources"
@@ -2326,19 +2213,19 @@ mod tests {
     }
 
     #[test]
-    fn reference_links_union_deck_and_workspace_url_sources_excluding_files_and_dupes() {
+    fn a_member_inherits_the_workspace_links_after_its_own() {
         let dir = tempfile::tempdir().unwrap();
         let members = dir.path().join(crate::workspace::DECKS);
         std::fs::create_dir_all(&members).unwrap();
         std::fs::write(
             dir.path().join(crate::workspace::MANIFEST),
-            "exam = \"https://ws.example\"\n",
+            "link = [\"https://ws.example\", \"https://a.example\"]\n",
         )
         .unwrap();
         let path = write_deck(
             &members,
             "d.md",
-            "---\nlink: https://a.example\nexam:\n  - https://b.example\n  - notes.md\n  - https://a.example\n---\n## f\nb\n",
+            "---\nlink:\n  - https://a.example\n  - https://b.example\n---\n## f\nb\n",
         );
         let deck = Deck::load(&path).unwrap();
         assert_eq!(
@@ -2347,15 +2234,13 @@ mod tests {
                 "https://b.example",
                 "https://ws.example"
             ],
-            deck.reference_links()
+            deck.reference_links().unwrap()
         );
+        let (_, _, decks, _) = crate::assemble::load_decks(&[path], &HashMap::new()).unwrap();
         assert_eq!(
-            vec![
-                "https://b.example",
-                "https://a.example",
-                "https://ws.example"
-            ],
-            deck.source_urls()
+            deck.reference_links().unwrap(),
+            decks.values().next().unwrap().links,
+            "the tutor reads the merged list"
         );
     }
 
@@ -2730,7 +2615,7 @@ mod tests {
     /// every citation.
     #[test]
     fn every_citation_stamps_whatever_order_the_cards_supply_them() {
-        let text = "---\nexam: ../src\n---\n## one\na\n<!-- at: src:src/lib.rs:1 -->\n## two\nb\n<!-- at: src:src/lib.rs:2 -->\n";
+        let text = "---\ntitle: t\n---\n## one\na\n<!-- at: src:src/lib.rs:1 -->\n## two\nb\n<!-- at: src:src/lib.rs:2 -->\n";
         let ats = [
             AtRewrite {
                 at: locator("src:src/lib.rs:2"),
@@ -2778,8 +2663,7 @@ mod tests {
             assert!(out.contains(expected), "missing {expected}: {out}");
         }
 
-        let parsed = parser::parse("t.md", text).unwrap();
-        let frozen = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
+        let frozen = rewrite_frozen_assets(text, &ats, &[]).unwrap();
         for expected in [
             "<!-- at: src:src/lib.rs:1 fingerprint: 0000000000001 -->",
             "<!-- at: src:src/lib.rs:2 fingerprint: 0000000000002 -->",
@@ -2790,86 +2674,51 @@ mod tests {
 
     #[test]
     fn frozen_asset_rewrite_replaces_yaml_lists_and_image_destinations() {
-        let text = "---\nexam:\n  - ../README.md\n  - ../src/lib.rs\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src:src/lib.rs:2 -->\n";
-        let parsed = parser::parse("t.md", text).unwrap();
+        let text = "---\ntitle: kept\n---\n\n## q\n![diagram](<old image.png>)\na\n<!-- at: src:src/lib.rs:2 -->\n";
         let image = parser::image_references(text).remove(0);
         let ats = [AtRewrite {
             at: locator("src:src/lib.rs:2"),
             fingerprint: Some(7),
             asset: Some("asset-source.rs".into()),
-            line: 11,
+            line: 8,
         }];
 
         let out = rewrite_frozen_assets(
             text,
-            parsed.frontmatter_span,
-            Some("../source tree"),
             &ats,
             &[(image.destination, "assets/deck/asset-image.png".into())],
         )
         .unwrap();
 
         assert_eq!(
-            "---\nexam: \"../source tree\"\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/asset-image.png>)\na\n<!-- at: src:src/lib.rs:2 fingerprint: 0000000000007 asset: asset-source.rs -->\n",
+            "---\ntitle: kept\n---\n\n## q\n![diagram](<assets/deck/asset-image.png>)\na\n<!-- at: src:src/lib.rs:2 fingerprint: 0000000000007 asset: asset-source.rs -->\n",
             out
         );
     }
 
     #[test]
-    fn frozen_asset_rewrite_without_a_source_preserves_the_source_yaml_and_stamps_nothing() {
-        let text = "---\nexam: ../src\n---\n## q\na\n<!-- at: src:src/lib.rs:2 -->\n";
-        let parsed = parser::parse("t.md", text).unwrap();
-        let ats = [AtRewrite {
-            at: locator("src:src/lib.rs:2"),
-            fingerprint: Some(7),
-            asset: Some("asset-source.rs".into()),
-            line: 6,
-        }];
-
-        let out = rewrite_frozen_assets(text, parsed.frontmatter_span, None, &ats, &[]).unwrap();
-
-        assert!(out.contains("exam: ../src\n"), "{out}");
-        assert!(!out.contains("origin:"), "freezing stamps nothing: {out}");
-        assert!(out.contains(
-            "<!-- at: src:src/lib.rs:2 fingerprint: 0000000000007 asset: asset-source.rs -->"
-        ));
-    }
-
-    #[test]
-    fn with_exam_replaces_the_source_list_preserving_other_yaml() {
-        let text = "---\nexam:\n  - a.md\n  - b.md\ntrace: t\n---\n## q\na\n";
-        let out = with_exam(
+    fn with_added_links_appends_new_entries_once_preserving_other_yaml() {
+        let text = "---\nlink: page.md\ntrace: t\n---\n## q\na\n";
+        let out = with_added_links(
             text,
-            &["/abs/a.md".to_string(), "https://example.org".to_string()],
+            &["https://a.example".to_string(), "page.md".to_string()],
         )
         .unwrap();
         assert_eq!(
-            "---\nexam:\n  - \"/abs/a.md\"\n  - \"https://example.org\"\ntrace: t\n---\n## q\na\n",
+            "---\nlink:\n  - \"page.md\"\n  - \"https://a.example\"\ntrace: t\n---\n## q\na\n",
             out
-        );
-    }
-
-    #[test]
-    fn with_added_exam_appends_once_and_keeps_an_existing_value() {
-        let text = "---\nexam: page.md\n---\n## q\na\n";
-        let out = with_added_exam(text, "https://example.org/current").unwrap();
-        assert!(
-            out.contains("exam:\n  - \"page.md\"\n  - \"https://example.org/current\"\n"),
-            "{out}"
         );
         assert_eq!(
             out,
-            with_added_exam(&out, "https://example.org/current").unwrap(),
+            with_added_links(&out, &["https://a.example".to_string()]).unwrap(),
             "adding a duplicate is a no-op"
         );
 
-        let sourceless = "---\ntrace: t\n---\n## q\na\n";
-        let out = with_added_exam(sourceless, "https://example.org/current").unwrap();
-        assert!(
-            out.contains("exam: \"https://example.org/current\"\n"),
-            "{out}"
+        let linkless = "---\ntrace: t\n---\n## q\na\n";
+        assert_eq!(
+            "---\ntrace: t\nlink: \"https://a.example\"\n---\n## q\na\n",
+            with_added_links(linkless, &["https://a.example".to_string()]).unwrap()
         );
-        assert!(out.contains("trace: t\n"), "{out}");
     }
 
     #[test]
@@ -2877,8 +2726,8 @@ mod tests {
         for (label, text, expected) in [
             (
                 "a deck without cite",
-                "---\ntrace: t\nexam: .\n---\n## q\na\n",
-                "---\ntrace: t\nexam: .\ncite:\n  - src: \".\"\n---\n## q\na\n",
+                "---\ntrace: t\n---\n## q\na\n",
+                "---\ntrace: t\ncite:\n  - src: \".\"\n---\n## q\na\n",
             ),
             (
                 "a deck with a cite list",
@@ -2931,43 +2780,6 @@ mod tests {
     }
 
     #[test]
-    fn frozen_rewrites_preserve_frontmatter_order_and_final_newline() {
-        let text = "---\ntitle: kept\nexam: old.md\ntrace: path\n---\n## q\na";
-        let parsed = parser::parse("t.md", text).unwrap();
-        let expected = "---\ntitle: kept\nexam: \"new.md\"\ntrace: path\n---\n## q\na";
-
-        assert_eq!(
-            expected,
-            rewrite_frozen_assets(text, parsed.frontmatter_span, Some("new.md"), &[], &[]).unwrap()
-        );
-        assert_eq!(
-            format!("{expected}\n"),
-            rewrite_frozen_assets(
-                &format!("{text}\n"),
-                parsed.frontmatter_span,
-                Some("new.md"),
-                &[],
-                &[]
-            )
-            .unwrap()
-        );
-
-        let sourceless = "---\ntitle: kept\n---\n## q\na\n";
-        let parsed = parser::parse("t.md", sourceless).unwrap();
-        assert_eq!(
-            "---\ntitle: kept\nexam: \"new.md\"\n---\n## q\na\n",
-            rewrite_frozen_assets(
-                sourceless,
-                parsed.frontmatter_span,
-                Some("new.md"),
-                &[],
-                &[]
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
     fn markdown_replacements_accept_boundaries_and_reject_each_invalid_dimension() {
         assert_eq!(
             "AB",
@@ -3001,9 +2813,9 @@ mod tests {
 
     #[test]
     fn top_level_yaml_keys_exclude_each_non_top_level_shape() {
-        assert_eq!(Some("exam"), top_level_yaml_key("exam: x"));
-        assert_eq!(None, top_level_yaml_key("  exam: nested"));
-        assert_eq!(None, top_level_yaml_key("# exam: commented"));
+        assert_eq!(Some("link"), top_level_yaml_key("link: x"));
+        assert_eq!(None, top_level_yaml_key("  link: nested"));
+        assert_eq!(None, top_level_yaml_key("# link: commented"));
         assert_eq!(None, top_level_yaml_key("plain text"));
     }
 

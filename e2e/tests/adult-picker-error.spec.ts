@@ -93,7 +93,7 @@ test("an unreadable progress row offers no browse action", async ({ page }) => {
       reviewable_recognize: false,
       reviewable_recall: false,
       reviewable_reconstruct: false,
-      examable: false,
+      examable_now: false,
       mastered: false,
       new_cards: false,
     });

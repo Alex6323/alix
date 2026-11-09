@@ -36,7 +36,7 @@ abstract class ReviewSession implements RustOpaqueInterface {
 
   CrumbState? crumb({BigInt? nowMs});
 
-  bool deckHasExam();
+  bool deckExamable();
 
   ReviewState grade({required Grade grade, BigInt? nowMs});
 
@@ -900,7 +900,6 @@ class TraceSessionState {
   final TraceSessionPhase phase;
   final String description;
   final List<InlineRun> descriptionRuns;
-  final String? source;
   final int total;
   final int current;
   final String? prompt;
@@ -922,7 +921,6 @@ class TraceSessionState {
     required this.phase,
     required this.description,
     required this.descriptionRuns,
-    this.source,
     required this.total,
     required this.current,
     this.prompt,
@@ -946,7 +944,6 @@ class TraceSessionState {
       phase.hashCode ^
       description.hashCode ^
       descriptionRuns.hashCode ^
-      source.hashCode ^
       total.hashCode ^
       current.hashCode ^
       prompt.hashCode ^
@@ -972,7 +969,6 @@ class TraceSessionState {
           phase == other.phase &&
           description == other.description &&
           descriptionRuns == other.descriptionRuns &&
-          source == other.source &&
           total == other.total &&
           current == other.current &&
           prompt == other.prompt &&

@@ -1844,7 +1844,10 @@ impl StudyState {
 
     fn deck_drawer(&mut self, path: PathBuf) -> DeckDrawerDto {
         let root = workspace::content_root(&path);
-        let (_, _, defaults, _, _) = workspace::read_manifest(&root.join(workspace::MANIFEST));
+        let Ok(manifest) = workspace::read_manifest(&root.join(workspace::MANIFEST)) else {
+            return DeckDrawerDto::default();
+        };
+        let defaults = manifest.settings;
         match (
             Deck::load_with_defaults(&path, &defaults),
             assemble::store_for(

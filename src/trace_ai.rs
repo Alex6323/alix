@@ -249,13 +249,22 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Buil
         .trace
         .as_deref()
         .ok_or_else(|| anyhow!("{} declares no `trace:` to build", deck.subject))?;
-    let source = deck
-        .exam
-        .first()
-        .ok_or_else(|| anyhow!("{} declares no `exam:` scope to trace", deck.subject))?;
-    let root = trace_root(&deck.path, &deck.cite, source)?;
-    ensure_source_reachable(ask_cfg, root.url())?;
-    let prompt = build_prompt(description, source, &root.citing(), cfg);
+    let roots = crate::cite::CitationRoots::for_deck(deck);
+    let (key, dir) = roots
+        .first_local()?
+        .ok_or_else(|| anyhow!("{} declares no local `cite:` root to trace", deck.subject))?;
+    let root = TraceRoot {
+        cwd: Some(dir.to_path_buf()),
+        root: GeneratedRoot {
+            key: key.to_string(),
+            path_prefix: String::new(),
+            declare: None,
+        },
+        passage_token: None,
+    };
+    ensure_source_reachable(ask_cfg, false)?;
+    let source = dir.display().to_string();
+    let prompt = build_prompt(description, &source, &root.citing(), cfg);
     let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url());
     let raw = ask::run(&run_cfg, &prompt, &[])?;
     root.finish(&raw, "the build produced no checkpoints")
@@ -342,7 +351,7 @@ fn build_prompt(description: &str, source: &str, citing: &Citing, cfg: &TraceCon
          facts about the topic. Then write it as a series of CHECKPOINT cards, one \
          per hop.\n\n\
          FORMAT — output ONLY the checkpoint cards: no frontmatter, no `trace:` or \
-         `exam:` key, no preamble, no code fences. Each checkpoint is:\n\n\
+         `cite:` key, no preamble, no code fences. Each checkpoint is:\n\n\
          ## <the question for this hop, asked plainly>\n\
          <!-- given: <name> — <what it is> -->\n\
          <a key point a correct answer hits>\n\
@@ -889,30 +898,80 @@ mod tests {
         assert_eq!("## Q1", clean_to_cards("preamble\n## Q1\n\n```"));
     }
 
-    use crate::testutil::{ask_config, exec_lock, fake_reply};
+    use crate::testutil::{ask_config, exec_lock};
 
     #[test]
-    fn build_end_to_end_returns_cleaned_cards() {
+    fn a_trace_build_takes_its_scope_from_the_first_local_cite_root() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(
-            dir.path(),
-            "## Q1\np1\n<!-- at: src:a.rs:1 -->\n## Q2\np2\n<!-- at: src:a.rs:2 -->\n",
+        let root = dir.path().canonicalize().unwrap();
+        for folder in ["src", "other", "ws/decks", "probe"] {
+            std::fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        write(
+            &root.join("ws"),
+            "alix.toml",
+            "[cite]\nguide = \"https://example.org/guide\"\n",
+        );
+        let probe = root.join("probe");
+        std::fs::write(
+            probe.join("reply"),
+            "## Q1\np1\n<!-- at: code:a.rs:1 -->\n## Q2\np2\n<!-- at: code:a.rs:2 -->\n",
+        )
+        .unwrap();
+        let cli = crate::testutil::fake_cli(
+            &probe,
+            &format!(
+                "pwd > {0}/cwd; cat > {0}/prompt; cat {0}/reply",
+                probe.display()
+            ),
         );
         let path = write(
-            dir.path(),
+            &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: how it works\nexam: .\n---\n",
+            "---\ntrace: how it works\ncite:\n  - code: ../src\n  - more: ../other\n---\n",
         );
         let deck = Deck::load(&path).unwrap();
         let built = build(&deck, &TraceConfig::default(), &ask_config(&cli)).unwrap();
-        assert!(built.cards.starts_with("## Q1"));
-        assert!(built.cards.contains("## Q2"));
-        assert!(built.cards.contains("<!-- at: src:a.rs:2 -->"));
+        assert!(built.cards.starts_with("## Q1"), "{}", built.cards);
+        assert!(built.cards.contains("<!-- at: code:a.rs:2 -->"));
+        assert_eq!(None, built.cite, "the scope is already declared");
         assert_eq!(
-            Some(("src".to_string(), ".".to_string())),
-            built.cite,
-            "a loose deck tracing its own folder declares it as `src`"
+            root.join("src").display().to_string(),
+            std::fs::read_to_string(probe.join("cwd")).unwrap().trim(),
+            "the backend runs in the first local root"
+        );
+        let prompt = std::fs::read_to_string(probe.join("prompt")).unwrap();
+        assert!(prompt.contains("`code:<file>:start-end`"), "{prompt}");
+        let traced = write(
+            &root.join("ws/decks"),
+            "c.md",
+            "---\ntrace: t\ncite:\n  - code: ../src\n---\n## hop\np\n<!-- at: code:a.rs:1 -->\n",
+        );
+        assert_eq!(
+            Some("code".to_string()),
+            Trace::from_deck(&Deck::load(&traced).unwrap())
+                .unwrap()
+                .scope,
+            "the trace's scope is the first local root's key"
+        );
+
+        let unrooted = write(
+            &root.join("ws/decks"),
+            "u.md",
+            "---\ntrace: how it works\n---\n",
+        );
+        let error = build(
+            &Deck::load(&unrooted).unwrap(),
+            &TraceConfig::default(),
+            &ask_config(&cli),
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("declares no local `cite:` root to trace"),
+            "{error:#}"
         );
     }
 
@@ -921,16 +980,12 @@ mod tests {
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
         write(&root.join("src"), "b.rs", "one\ntwo\n");
         std::fs::create_dir_all(root.join("ws")).unwrap();
-        write(
-            &root.join("ws"),
-            "alix.toml",
-            "title = \"W\"\nexam = \"../src\"\n",
-        );
+        write(&root.join("ws"), "alix.toml", "title = \"W\"\n");
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
         write(
             &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: how it works\nexam: ../src\ncite:\n  - src: ../src\n---\n\
+            "---\ntrace: how it works\ncite:\n  - src: ../src\n---\n\
              ## hop 1\nit reads a\n<!-- at: src:a.rs:2-3 -->\n\
              ## hop 2\nit reads b\n<!-- at: src:b.rs:1 -->\n",
         )
@@ -958,8 +1013,8 @@ mod tests {
 
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains("exam: ../src"),
-            "the live source declaration stays untouched: {text}"
+            text.contains("cite:\n  - src: ../src\n"),
+            "the live root declaration stays untouched: {text}"
         );
         assert!(!text.contains("origin:"), "freezing stamps nothing: {text}");
         assert!(
@@ -1007,7 +1062,7 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "t.md",
-            "---\ntrace: t\nexam: ../notes.md\ncite:\n  - src: ..\n---\n## hop\np\n<!-- at: src:notes.md:2 -->\n",
+            "---\ntrace: t\ncite:\n  - src: ..\n---\n## hop\np\n<!-- at: src:notes.md:2 -->\n",
         );
         let report = crate::assets::initialize(&deck_path).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -1027,8 +1082,8 @@ mod tests {
         );
         let text = std::fs::read_to_string(&deck_path).unwrap();
         assert!(
-            text.contains("exam: ../notes.md"),
-            "the live source declaration stays untouched: {text}"
+            text.contains("cite:\n  - src: ..\n"),
+            "the live root declaration stays untouched: {text}"
         );
         assert!(
             text.contains("<!-- at: src:notes.md:2 fingerprint: ")
@@ -1054,7 +1109,7 @@ mod tests {
         let deck_path = write(
             &root.join("ws/decks"),
             "d.md",
-            "---\nexam:\n  - ../src/a.rs\n  - ../src/b.rs\ncite:\n  - src: ../src\n---\n\
+            "---\ncite:\n  - src: ../src\n---\n\
              ## q1\np\n<!-- at: src:a.rs:2-3 -->\n\
              ## q2\np\n<!-- at: src:b.rs:1 -->\n",
         );
@@ -1094,7 +1149,7 @@ mod tests {
         let loose = write(
             root,
             "t.md",
-            "---\ntrace: t\nexam: .\ncite:\n  - src: .\n---\n## h\np\n<!-- at: src:x.rs:1 -->\n",
+            "---\ntrace: t\ncite:\n  - src: .\n---\n## h\np\n<!-- at: src:x.rs:1 -->\n",
         );
         crate::stamp::stamp_deck(&loose).unwrap();
         let err = crate::assets::freeze_member(&loose).unwrap_err();
@@ -1105,7 +1160,7 @@ mod tests {
         let url = write(
             &root.join("ws/decks"),
             "u.md",
-            "---\ntrace: t\nexam: https://example.com/p\ncite:\n  - src: https://example.com/p\n---\n## h\np\n<!-- at: src -->\n",
+            "---\ntrace: t\ncite:\n  - src: https://example.com/p\n---\n## h\np\n<!-- at: src -->\n",
         );
         let err = crate::assets::initialize(&url).unwrap_err();
         assert!(

@@ -66,9 +66,8 @@ pub struct Checkpoint {
 pub struct Trace {
     pub description: String,
     pub subject: String,
-    pub source: Option<String>,
+    pub scope: Option<String>,
     pub links: Vec<String>,
-    pub exam_layers: crate::deck::ExamLayers,
     pub checkpoints: Vec<Checkpoint>,
     pub deck_path: PathBuf,
     roots: CitationRoots,
@@ -113,16 +112,20 @@ impl Trace {
                 })
             })
             .collect();
-        let source = deck.exam.first().cloned();
+        let roots = CitationRoots::for_deck(deck);
+        let scope = roots
+            .first_local()
+            .ok()
+            .flatten()
+            .map(|(key, _)| key.to_string());
         Ok(Trace {
             description,
             subject: deck.subject.clone(),
-            source,
-            links: deck.reference_links(),
-            exam_layers: deck.exam_layers(),
+            scope,
+            links: deck.reference_links()?,
             checkpoints,
             deck_path: deck.path.clone(),
-            roots: CitationRoots::for_deck(deck),
+            roots,
         })
     }
 
@@ -526,10 +529,7 @@ mod tests {
         let deck_path = dir.path().join("t.md");
         std::fs::write(
             &deck_path,
-            format!(
-                "---\ntrace: how a moves\nexam: {}\ncite:\n  - src: .\n---\n## what happens?\nit advances\n<!-- at: src:src.rs:1-2 -->\n",
-                dir.path().join("src.rs").display()
-            ),
+            "---\ntrace: how a moves\ncite:\n  - src: .\n---\n## what happens?\nit advances\n<!-- at: src:src.rs:1-2 -->\n",
         )
         .unwrap();
         // Stamped at open in production, so the checkpoint carries a token id.
@@ -567,7 +567,7 @@ mod tests {
             dir,
             "t.md",
             "---\ntrace: how it works\n\
-             exam: source.txt\ncite:\n  - src: .\n---\n\
+             cite:\n  - src: .\n---\n\
              ## Predict the first hop\n\
              it reads the first line\n\
              > [!NOTE]\n\
@@ -636,7 +636,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: source.txt\ncite:\n  - src: .\n---\n\
+            "---\ntrace: g\ncite:\n  - src: .\n---\n\
              ## q\na\n<!-- at: src:source.txt:1 -->\n<!-- at: src:source.txt:2 -->\n",
         );
         write(dir.path(), "source.txt", "one\ntwo\n");
@@ -695,7 +695,7 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src/lib.rs\ncite:\n  - src: src\n---\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - src: src\n---\n\
                  ## q\na\n<!-- at: src:lib.rs:1 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
@@ -734,7 +734,7 @@ mod tests {
             &dir.path().join("decks"),
             "t.md",
             &format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: src\ncite:\n  - code: .\n---\n\
+                "---\nformat-version: 1\nid: \"deck-deck1\"\ncite:\n  - code: .\n---\n\
                  ## q\na\n<!-- at: code:src/lib.rs:46-48 fingerprint: {fingerprint} asset: {name} -->\n"
             ),
         );
@@ -768,7 +768,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: src:x.txt:1 -->\n",
+            "---\ntrace: g\n---\n## q\na\n<!-- at: src:x.txt:1 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let err = trace.excerpt(&trace.checkpoints[0]).unwrap_err();
@@ -785,7 +785,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:2-3 -->\n",
+            "---\ntrace: g\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:2-3 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         assert!(trace.lint_locators().is_empty());
@@ -798,7 +798,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:3 -->\n",
+            "---\ntrace: g\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:3 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
 
@@ -822,7 +822,7 @@ mod tests {
             }),
         );
         let head = "---\nformat-version: 1\nid: \"deck-deck1\"\ntrace: g\n\
-                    exam: https://example.com/guide\ncite:\n  - guide: https://example.com/guide\n---\n";
+                    cite:\n  - guide: https://example.com/guide\n---\n";
         let frozen = write(
             &dir.path().join("decks"),
             "frozen.md",
@@ -871,7 +871,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:5-6 -->\n",
+            "---\ntrace: g\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:5-6 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -891,7 +891,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: src.txt\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:2-9 -->\n",
+            "---\ntrace: g\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:src.txt:2-9 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -908,7 +908,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: .\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:nope.rs:1-2 -->\n",
+            "---\ntrace: g\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:nope.rs:1-2 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -920,11 +920,7 @@ mod tests {
     fn lint_locators_flags_a_missing_locator() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "src.txt", "one\ntwo\n");
-        let path = write(
-            dir.path(),
-            "t.md",
-            "---\ntrace: g\nexam: src.txt\n---\n## q\na\n",
-        );
+        let path = write(dir.path(), "t.md", "---\ntrace: g\n---\n## q\na\n");
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
         assert_eq!(1, issues.len());
@@ -937,7 +933,7 @@ mod tests {
         let path = write(
             dir.path(),
             "t.md",
-            "---\ntrace: g\nexam: .\n---\n## q\na\n<!-- at: src:x.txt:1 -->\n",
+            "---\ntrace: g\n---\n## q\na\n<!-- at: src:x.txt:1 -->\n",
         );
         let trace = Trace::from_deck(&Deck::load(&path).unwrap()).unwrap();
         let issues = trace.lint_locators();
@@ -1029,16 +1025,12 @@ mod tests {
         write(&root.join("src"), "a.rs", "alpha\nbeta\ngamma\n");
         write(&root.join("src"), "b.rs", "one\ntwo\n");
         std::fs::create_dir_all(root.join("ws/decks")).unwrap();
-        write(
-            &root.join("ws"),
-            "alix.toml",
-            "title = \"W\"\nexam = \"../src\"\n",
-        );
+        write(&root.join("ws"), "alix.toml", "title = \"W\"\n");
         write(
             &root.join("ws/decks"),
             "t.md",
             "---\ntrace: how it works\n\
-             exam: ../src\ncite:\n  - src: ../src\n---\n\
+             cite:\n  - src: ../src\n---\n\
              ## hop 1\nit reads a\n<!-- at: src:a.rs:2-3 -->\n\
              ## hop 2\nit reads b\n<!-- at: src:b.rs:1 -->\n",
         )

@@ -711,7 +711,7 @@ class _PickerScreenState extends State<PickerScreen> {
           walk = true;
           Navigator.of(sheet).pop();
         },
-        exam: entry.hasExam
+        exam: entry.examable
             ? PickerExamOffer(
                 locked: entry.locked,
                 serverLive: isPaired && _controller.serverReachable,

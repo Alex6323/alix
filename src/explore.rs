@@ -188,7 +188,7 @@ fn trace_prompt(source: &str, spec: &GenerationSpec, citing: &Citing, cfg: &Trac
          The reveal is the real text; the source is the oracle, never invented. Every \
          hop has a locator.\n\n\
          FORMAT — output ONLY the checkpoint cards: no frontmatter, no `trace:`/\
-         `exam:` key, no preamble, no code fences. Each checkpoint:\n\n\
+         `cite:` key, no preamble, no code fences. Each checkpoint:\n\n\
          ## <the shape question, asked plainly>\n\
          <a key point a correct answer hits>\n\
          <another key point>\n\
@@ -316,7 +316,7 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          to that root as ONE consistent path per file across ALL items; never drop or \
          add a leading directory (always `src:src/foo.rs`, never sometimes \
          `src:foo.rs`), so the frozen citations all resolve.\n\n\
-         Do NOT emit any frontmatter (`trace:`, `exam:`, `requires:` keys) or a \
+         Do NOT emit any frontmatter (`trace:`, `cite:`, `requires:` keys) or a \
          `# ` title — those are already written; output only the `## ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
          between the last card of one item and the next `=== item ===` line.\n\n\
@@ -437,7 +437,7 @@ pub fn materialize(
     goal: &str,
     title: Option<&str>,
     source: &str,
-    public_url: Option<&str>,
+    links: &[String],
     filled: Option<&HashMap<usize, String>>,
 ) -> Result<Materialized> {
     let mut items = parse_plan(plan);
@@ -471,10 +471,16 @@ pub fn materialize(
         manifest.push_str(&format!("title = \"{}\"\n", toml_escape(title)));
     }
     manifest.push_str(&format!("description = \"{}\"\n", toml_escape(goal)));
-    // The workspace `exam`: the material the workspace is about, layered
-    // under every member deck's own sources (ADR 0026).
-    if let Some(source) = public_url.or_else(|| root.as_ref().and_then(|path| path.to_str())) {
-        manifest.push_str(&format!("exam = \"{}\"\n", toml_escape(source)));
+    match links {
+        [] => {}
+        [only] => manifest.push_str(&format!("link = \"{}\"\n", toml_escape(only))),
+        many => {
+            let quoted: Vec<String> = many
+                .iter()
+                .map(|link| format!("\"{}\"", toml_escape(link)))
+                .collect();
+            manifest.push_str(&format!("link = [{}]\n", quoted.join(", ")));
+        }
     }
     let cite_root = root
         .as_ref()
@@ -499,16 +505,6 @@ pub fn materialize(
             Kind::Deck => {
                 decks += 1;
                 body.push_str("choices: single\n");
-            }
-        }
-        match rewrite_scope(&item.source, root.as_deref()).as_slice() {
-            [] => {}
-            [only] => body.push_str(&format!("exam: {}\n", yaml_quote(only))),
-            many => {
-                body.push_str("exam:\n");
-                for entry in many {
-                    body.push_str(&format!("  - {}\n", yaml_quote(entry)));
-                }
             }
         }
         let deps: Vec<&&String> = item
@@ -773,7 +769,8 @@ pub fn freeze_workspace(dir: &Path) -> Result<FreezeSummary> {
         let has_local_image = crate::parser::image_references(&text)
             .iter()
             .any(|image| !crate::deck::is_url(&image.source));
-        if deck.deck_token.is_some() && deck.exam.is_empty() && !has_local_image {
+        let has_citation = deck.cards.iter().any(|card| !card.citations.is_empty());
+        if deck.deck_token.is_some() && !has_citation && !has_local_image {
             continue;
         }
         let result = if deck.deck_token.is_some() {
@@ -815,46 +812,6 @@ fn slug(title: &str) -> String {
     } else {
         words.join("-")
     }
-}
-
-/// The plan's `@source:` line may join several files with ` + ` (first full,
-/// rest relative to its directory); the deck format takes one source per list
-/// entry (ADR 0026), so the scope splits into resolved entries here.
-fn rewrite_scope(scope: &str, root: Option<&Path>) -> Vec<String> {
-    let scope = scope.trim();
-    if is_url(scope) || root.is_none() {
-        return scope
-            .split(" + ")
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-            .map(str::to_string)
-            .collect();
-    }
-    let root = root.unwrap_or_else(|| Path::new("."));
-    let mut out = Vec::new();
-    let mut anchor: Option<PathBuf> = None;
-    for part in scope
-        .split(" + ")
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-    {
-        let resolved = if part == "." {
-            root.to_path_buf()
-        } else if Path::new(part).is_absolute() {
-            PathBuf::from(part)
-        } else {
-            anchor
-                .as_ref()
-                .map(|anchor| anchor.join(part))
-                .filter(|candidate| candidate.exists())
-                .unwrap_or_else(|| root.join(part))
-        };
-        if anchor.is_none() {
-            anchor = resolved.parent().map(Path::to_path_buf);
-        }
-        out.push(resolved.display().to_string());
-    }
-    out
 }
 
 fn toml_escape(s: &str) -> String {
@@ -1209,7 +1166,7 @@ Spine   a -> b
             "understand the repo",
             None,
             ".",
-            None,
+            &[],
             None,
         )
         .unwrap();
@@ -1220,13 +1177,12 @@ Spine   a -> b
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(manifest.contains("description = \"understand the repo\""));
         assert!(!manifest.contains("title ="));
-        assert!(manifest.contains("exam = "), "{manifest}");
+        assert!(!manifest.contains("link ="), "{manifest}");
         assert!(manifest.contains("\n[cite]\nsrc = "), "{manifest}");
         assert!(!manifest.contains("origin"), "{manifest}");
 
         let deck = fs::read_to_string(dir.join("decks/01-the-deck-format.md")).unwrap();
         assert!(deck.contains("# The Deck Format"));
-        assert!(deck.contains("exam: "));
 
         let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
         assert!(trace.contains("trace: \"How Text Becomes Cards\""));
@@ -1242,7 +1198,7 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        materialize(SAMPLE_PLAN, &dir, "g", None, ".", None, None).unwrap();
+        materialize(SAMPLE_PLAN, &dir, "g", None, ".", &[], None).unwrap();
 
         assert_eq!(
             "existing",
@@ -1264,7 +1220,7 @@ Spine   a -> b
             "the goal",
             Some("Repo Internals"),
             ".",
-            None,
+            &[],
             None,
         )
         .unwrap();
@@ -1276,8 +1232,8 @@ Spine   a -> b
     }
 
     #[test]
-    fn materialize_prefers_an_explicit_public_url_as_the_manifest_exam() {
-        let dir = std::env::temp_dir().join(format!("alix-explore-src-{}", std::process::id()));
+    fn workspace_generate_link_writes_the_workspace_key() {
+        let dir = std::env::temp_dir().join(format!("alix-explore-link-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
 
         materialize(
@@ -1286,16 +1242,30 @@ Spine   a -> b
             "the goal",
             None,
             ".",
-            Some("https://example.org/source"),
+            &[
+                "https://example.org/a".to_string(),
+                "https://example.org/b".to_string(),
+            ],
             None,
         )
         .unwrap();
 
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
         assert!(
-            manifest.contains("exam = \"https://example.org/source\""),
+            manifest.contains("link = [\"https://example.org/a\", \"https://example.org/b\"]\n"),
             "{manifest}"
         );
+        assert_eq!(
+            vec![
+                "https://example.org/a".to_string(),
+                "https://example.org/b".to_string()
+            ],
+            crate::workspace::manifest_links(&dir).unwrap()
+        );
+        for member in crate::workspace::deck_files(&dir) {
+            let text = fs::read_to_string(&member).unwrap();
+            assert!(!text.contains("link:"), "{}: {text}", member.display());
+        }
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1331,7 +1301,7 @@ back a
                 .to_string(),
         );
 
-        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", None, Some(&filled)).unwrap();
+        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", &[], Some(&filled)).unwrap();
         assert_eq!(1, report.filled);
 
         let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();
@@ -1655,14 +1625,14 @@ back a
         fs::write(dir.join("src/a.rs"), "x\ny\nz\n").unwrap();
         fs::write(
             dir.join("alix.toml"),
-            "exam = \"https://example.org/current\"\n",
+            "link = \"https://example.org/current\"\n",
         )
         .unwrap();
         let src = dir.join("src");
         fs::write(
             dir.join("decks/01-t.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\nexam: {0}\ncite:\n  - src: {0}\n---\n## h\np\n<!-- at: src:a.rs:1-2 -->\n",
+                "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: t\ncite:\n  - src: {0}\n---\n## h\np\n<!-- at: src:a.rs:1-2 -->\n",
                 src.display()
             ),
         )
@@ -1670,7 +1640,7 @@ back a
         fs::write(
             dir.join("decks/02-d.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-facts\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## q\na\n<!-- at: src:a.rs:3 -->\n",
+                "---\nformat-version: 1\nid: \"deck-facts\"\ncite:\n  - src: {0}\n---\n## q\na\n<!-- at: src:a.rs:3 -->\n",
                 src.display()
             ),
         )
@@ -1690,10 +1660,9 @@ back a
         assert!(!dir.join("assets/a.rs").exists());
         let fact = fs::read_to_string(dir.join("decks/02-d.md")).unwrap();
         assert!(
-            fact.contains(&format!("exam: {}", src.display())),
-            "the live source declaration stays untouched: {fact}"
+            fact.contains(&format!("cite:\n  - src: {}\n", src.display())),
+            "the live root declaration stays untouched: {fact}"
         );
-        assert!(!fact.contains("exam: \"assets/"), "{fact}");
         assert!(!fact.contains("origin:"), "freezing stamps nothing: {fact}");
         assert!(!fact.contains("<!-- at: src:a.rs:3 -->"), "{fact}");
         assert!(
@@ -1714,7 +1683,7 @@ back a
         fs::write(
             dir.join("decks/01-broken.md"),
             format!(
-                "---\nformat-version: 1\nid: \"deck-broken\"\nexam: {0}/does-not-exist\ncite:\n  - src: {0}/does-not-exist\n---\n## q\na\n<!-- at: src:x.rs:1 -->\n",
+                "---\nformat-version: 1\nid: \"deck-broken\"\ncite:\n  - src: {0}/does-not-exist\n---\n## q\na\n<!-- at: src:x.rs:1 -->\n",
                 dir.display()
             ),
         )
@@ -1783,10 +1752,7 @@ back a
         fs::write(dir.path().join("diagram.png"), b"diagram").unwrap();
         fs::write(
             dir.path().join("decks/both.md"),
-            format!(
-                "---\nformat-version: 1\nid: \"deck-deck4\"\nexam: {}\ncite:\n  - src: .\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: src:notes.md:2 -->\n",
-                crate::parser::yaml_quote(&source.display().to_string())
-            ),
+            "---\nformat-version: 1\nid: \"deck-deck4\"\ncite:\n  - src: .\n---\n## q\n![diagram](diagram.png)\na\n<!-- at: src:notes.md:2 -->\n",
         )
         .unwrap();
 
@@ -1801,82 +1767,5 @@ back a
                 .count(),
             "one evidence object plus one image object"
         );
-    }
-
-    #[test]
-    fn rewrite_scope_discards_empty_components_with_and_without_a_root() {
-        assert_eq!(
-            vec!["alpha".to_string(), "beta".to_string()],
-            rewrite_scope("alpha +  + beta", None),
-            "a rootless scope keeps only its nonempty components in order"
-        );
-
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("alpha"), "a\n").unwrap();
-        fs::write(root.path().join("beta"), "b\n").unwrap();
-        assert_eq!(
-            vec![
-                root.path().join("alpha").display().to_string(),
-                root.path().join("beta").display().to_string(),
-            ],
-            rewrite_scope("alpha +  + beta", Some(root.path())),
-            "a rooted scope keeps only its nonempty components in order"
-        );
-    }
-
-    #[test]
-    fn rewrite_scope_joins_each_part_onto_the_root_and_never_searches_for_a_mistyped_path() {
-        // The property under test is WHICH files get selected, not the
-        // separator shape, so compare with separators normalized: on Windows
-        // Path::join-built expectations and rewrite_scope's string output mix
-        // `\` and `/` differently while naming the same files.
-        fn slashed(paths: Vec<String>) -> Vec<String> {
-            paths
-                .into_iter()
-                .map(|path| path.replace('\\', "/"))
-                .collect()
-        }
-        let root = std::env::temp_dir().join(format!("alix-scope-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let crate_src = root.join("crates/mycrate/src");
-        fs::create_dir_all(&crate_src).unwrap();
-        fs::write(crate_src.join("lib.rs"), "fn main() {}\n").unwrap();
-        let lib = crate_src.join("lib.rs").display().to_string();
-        let source = root.join("crates/mycrate");
-
-        assert_eq!(
-            slashed(vec![lib.clone()]),
-            slashed(rewrite_scope("src/lib.rs", Some(&source)))
-        );
-        assert_eq!(
-            slashed(vec![
-                source
-                    .join("crates/mycrate/src/lib.rs")
-                    .display()
-                    .to_string()
-            ]),
-            slashed(rewrite_scope("crates/mycrate/src/lib.rs", Some(&source))),
-            "a repo-relative path under a narrower root is joined as written, not rescued"
-        );
-        assert_eq!(
-            slashed(vec![source.display().to_string()]),
-            slashed(rewrite_scope(".", Some(&source)))
-        );
-        assert_eq!(
-            slashed(vec![lib.clone()]),
-            slashed(rewrite_scope(&lib, Some(&source)))
-        );
-        // A " + "-joined plan scope splits into one list entry per source,
-        // later parts anchored to the first entry's directory.
-        fs::write(crate_src.join("other.rs"), "x\n").unwrap();
-        assert_eq!(
-            slashed(vec![
-                lib.clone(),
-                crate_src.join("other.rs").display().to_string()
-            ]),
-            slashed(rewrite_scope("src/lib.rs + other.rs", Some(&source)))
-        );
-
-        let _ = fs::remove_dir_all(&root);
     }
 }

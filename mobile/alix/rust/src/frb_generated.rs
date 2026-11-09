@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1583179561;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 970484286;
 
 // Section: executor
 
@@ -300,14 +300,14 @@ fn wire__crate__api__review__ReviewSession_crumb_impl(
         },
     )
 }
-fn wire__crate__api__review__ReviewSession_deck_has_exam_impl(
+fn wire__crate__api__review__ReviewSession_deck_examable_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "ReviewSession_deck_has_exam",
+            debug_name: "ReviewSession_deck_examable",
             port: None,
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
         },
@@ -341,7 +341,7 @@ fn wire__crate__api__review__ReviewSession_deck_has_exam_impl(
                 }
                 let api_that_guard = api_that_guard.unwrap();
                 let output_ok = Result::<_, ()>::Ok(
-                    crate::api::review::ReviewSession::deck_has_exam(&*api_that_guard),
+                    crate::api::review::ReviewSession::deck_examable(&*api_that_guard),
                 )?;
                 Ok(output_ok)
             })())
@@ -3481,7 +3481,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_examFilter = <String>::sse_decode(deserializer);
         let mut var_examChanged = <bool>::sse_decode(deserializer);
         let mut var_examDue = <bool>::sse_decode(deserializer);
-        let mut var_hasExam = <bool>::sse_decode(deserializer);
+        let mut var_examable = <bool>::sse_decode(deserializer);
         let mut var_locked = <bool>::sse_decode(deserializer);
         let mut var_progressError = <bool>::sse_decode(deserializer);
         let mut var_icon = <Option<String>>::sse_decode(deserializer);
@@ -3501,7 +3501,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
             exam_filter: var_examFilter,
             exam_changed: var_examChanged,
             exam_due: var_examDue,
-            has_exam: var_hasExam,
+            examable: var_examable,
             locked: var_locked,
             progress_error: var_progressError,
             icon: var_icon,
@@ -4893,7 +4893,6 @@ impl SseDecode for crate::api::review::TraceSessionState {
         let mut var_description = <String>::sse_decode(deserializer);
         let mut var_descriptionRuns =
             <Vec<crate::api::review::InlineRun>>::sse_decode(deserializer);
-        let mut var_source = <Option<String>>::sse_decode(deserializer);
         let mut var_total = <u32>::sse_decode(deserializer);
         let mut var_current = <u32>::sse_decode(deserializer);
         let mut var_prompt = <Option<String>>::sse_decode(deserializer);
@@ -4918,7 +4917,6 @@ impl SseDecode for crate::api::review::TraceSessionState {
             phase: var_phase,
             description: var_description,
             description_runs: var_descriptionRuns,
-            source: var_source,
             total: var_total,
             current: var_current,
             prompt: var_prompt,
@@ -5123,7 +5121,7 @@ fn pde_ffi_dispatcher_sync_impl(
         4 => wire__crate__api__review__ReviewSession_choose_multi_impl(ptr, rust_vec_len, data_len),
         5 => wire__crate__api__review__ReviewSession_crumb_impl(ptr, rust_vec_len, data_len),
         6 => {
-            wire__crate__api__review__ReviewSession_deck_has_exam_impl(ptr, rust_vec_len, data_len)
+            wire__crate__api__review__ReviewSession_deck_examable_impl(ptr, rust_vec_len, data_len)
         }
         7 => wire__crate__api__review__ReviewSession_grade_impl(ptr, rust_vec_len, data_len),
         8 => wire__crate__api__review__ReviewSession_introduce_impl(ptr, rust_vec_len, data_len),
@@ -5612,7 +5610,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.exam_filter.into_into_dart().into_dart(),
             self.exam_changed.into_into_dart().into_dart(),
             self.exam_due.into_into_dart().into_dart(),
-            self.has_exam.into_into_dart().into_dart(),
+            self.examable.into_into_dart().into_dart(),
             self.locked.into_into_dart().into_dart(),
             self.progress_error.into_into_dart().into_dart(),
             self.icon.into_into_dart().into_dart(),
@@ -6576,7 +6574,6 @@ impl flutter_rust_bridge::IntoDart for crate::api::review::TraceSessionState {
             self.phase.into_into_dart().into_dart(),
             self.description.into_into_dart().into_dart(),
             self.description_runs.into_into_dart().into_dart(),
-            self.source.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
             self.current.into_into_dart().into_dart(),
             self.prompt.into_into_dart().into_dart(),
@@ -7053,7 +7050,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <String>::sse_encode(self.exam_filter, serializer);
         <bool>::sse_encode(self.exam_changed, serializer);
         <bool>::sse_encode(self.exam_due, serializer);
-        <bool>::sse_encode(self.has_exam, serializer);
+        <bool>::sse_encode(self.examable, serializer);
         <bool>::sse_encode(self.locked, serializer);
         <bool>::sse_encode(self.progress_error, serializer);
         <Option<String>>::sse_encode(self.icon, serializer);
@@ -8147,7 +8144,6 @@ impl SseEncode for crate::api::review::TraceSessionState {
         <crate::api::review::TraceSessionPhase>::sse_encode(self.phase, serializer);
         <String>::sse_encode(self.description, serializer);
         <Vec<crate::api::review::InlineRun>>::sse_encode(self.description_runs, serializer);
-        <Option<String>>::sse_encode(self.source, serializer);
         <u32>::sse_encode(self.total, serializer);
         <u32>::sse_encode(self.current, serializer);
         <Option<String>>::sse_encode(self.prompt, serializer);

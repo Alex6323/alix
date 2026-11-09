@@ -20,6 +20,8 @@ import 'support/fake_server_client.dart';
 void main() {
   setUpAll(() async => RustLib.init());
 
+  String deckPath(Directory root) => '${root.path}/decks/facts.md';
+
   Directory tempSupport() {
     final dir = Directory.systemTemp.createTempSync('alix-exam-chip-support-');
     addTearDown(() {
@@ -28,16 +30,15 @@ void main() {
     return dir;
   }
 
-  /// `examinable`: a deck with `% exam:` (never a trace), matching the
-  /// bridge's own `has_exam` capture (`!is_trace() && !exam.is_empty()`,
-  /// `mobile/alix/rust/src/api/review.rs`). `plain` has no source, so it
-  /// never sits an exam.
+  /// `examinable`: a workspace member with a source, so the bridge's
+  /// `examable` capture (`declares_sources()`) holds. `plain` has no source,
+  /// so it never sits an exam.
   Directory deckRoot({required bool examinable}) {
     final root = Directory.systemTemp.createTempSync('alix-exam-chip-decks-');
-    final text = examinable
-        ? '---\nexam: https://example.com\n---\n## q?\na\n'
-        : '## q?\na\n';
-    writeTestDeck('${root.path}/facts.md', text);
+    Directory('${root.path}/decks').createSync();
+    File('${root.path}/alix.toml').writeAsStringSync('');
+    writeTestDeck(deckPath(root), '## q?\na\n');
+    if (examinable) writeTestSources(deckPath(root));
     addTearDown(() => root.deleteSync(recursive: true));
     return root;
   }
@@ -53,7 +54,7 @@ void main() {
       MaterialApp(
         theme: alixDark(),
         home: ReviewScreen(
-          deckPath: '${root.path}/facts.md',
+          deckPath: deckPath(root),
           rootDir: root.path,
           depth: ReviewDepth.recall,
           supportDir: support,

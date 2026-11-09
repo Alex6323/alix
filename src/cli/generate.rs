@@ -12,10 +12,8 @@ fn prepare(common: &GenerateCommonArgs) -> Result<(Config, generate::GenerationS
     let mut config = Config::load(common.config.as_deref())?;
     config.ask.progress = true;
     config.ask.idle_timeout_secs = config.generate.idle_timeout();
-    if let Some(url) = &common.source_url
-        && !alix::deck::is_url(url)
-    {
-        bail!("`--source-url` must be an http or https URL");
+    if let Some(link) = common.links.iter().find(|link| !alix::deck::is_url(link)) {
+        bail!("`--link` must be an http or https URL: `{link}`");
     }
     let goal = common.goal.as_deref().unwrap_or(generate::DEFAULT_GOAL);
     let mut spec = generate::GenerationSpec::from_config(goal, &config.generate);
@@ -210,7 +208,7 @@ fn build_workspace(
         &spec.goal,
         args.title.as_deref(),
         source,
-        args.common.source_url.as_deref(),
+        &args.common.links,
         Some(&filled),
     )?;
     let frozen = alix::explore::freeze_workspace(&staging)?;
@@ -328,8 +326,8 @@ fn generate_single_deck(
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut text = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;
-    if let Some(url) = &args.common.source_url {
-        text = alix::deck::with_added_exam(&text, url)?;
+    if !args.common.links.is_empty() {
+        text = alix::deck::with_added_links(&text, &args.common.links)?;
     }
 
     if args.review || gen_cfg.review {
@@ -448,13 +446,15 @@ fn trace_build(
             deck.subject
         );
     }
-    if deck.exam.is_empty() {
+    let roots = alix::cite::CitationRoots::for_deck(deck);
+    let Some((_, scope)) = roots.first_local()? else {
         bail!(
-            "{} declares no `exam:` — add the scope to trace (a repo `.`, a \
-             directory, a file, or a URL)",
+            "{} declares no local `cite:` root to trace; add the directory to trace \
+             as one (e.g. `cite:` with `- src: .`)",
             deck.subject
         );
-    }
+    };
+    let source = scope.display().to_string();
     let rebuild = !deck.cards.is_empty();
     if rebuild && !force {
         bail!(
@@ -462,8 +462,7 @@ fn trace_build(
             deck.subject
         );
     }
-    let source = deck.exam.first().map(String::as_str).unwrap_or_default();
-    preflight_source(source, config.ask.preflight_threshold, yes)?;
+    preflight_source(&source, config.ask.preflight_threshold, yes)?;
     eprintln!(
         "Tracing a path through {source} (exploring the source — this can take a \
          few minutes)…"
@@ -519,8 +518,8 @@ fn trace_suggest(source: &str, yes: bool, config: &Config) -> Result<()> {
     let menu = alix::trace_ai::suggest(source, &config.trace, &config.ask)?;
     println!("{menu}");
     println!(
-        "\n{DIM}Paste a suggestion into a new deck's frontmatter (its `trace:` + \
-         `exam:` keys), then build it:  alix deck generate <deck>{RESET}"
+        "\n{DIM}Paste a suggestion into a new deck's frontmatter (its `trace:` key, \
+         with its source as a `cite:` root), then build it:  alix deck generate <deck>{RESET}"
     );
     Ok(())
 }
@@ -566,13 +565,9 @@ fn generate_trace(
         .as_ref()
         .map(|(key, value)| format!("cite:\n  - {key}: {}\n", parser::yaml_quote(value)))
         .unwrap_or_default();
-    let mut deck_text = format!(
-        "---\ntrace: {trace}\nexam: {}\n{cite}\n---\n\n{}\n",
-        parser::yaml_quote(&source),
-        built.cards
-    );
-    if let Some(url) = &args.common.source_url {
-        deck_text = alix::deck::with_added_exam(&deck_text, url)?;
+    let mut deck_text = format!("---\ntrace: {trace}\n{cite}\n---\n\n{}\n", built.cards);
+    if !args.common.links.is_empty() {
+        deck_text = alix::deck::with_added_links(&deck_text, &args.common.links)?;
     }
     let out_dir = out
         .parent()

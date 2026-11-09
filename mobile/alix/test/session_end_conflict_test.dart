@@ -46,7 +46,6 @@ void main() {
       '${workspace.path}/decks/trace.md',
       '---\n'
           'trace: a paired trace\n'
-          'exam: source.txt\n'
           'cite:\n'
           '  - src: decks\n'
           'title: Trace\n'
@@ -63,7 +62,6 @@ void main() {
       '${workspace.path}/decks/trace2.md',
       '---\n'
           'trace: a two-hop paired trace\n'
-          'exam: source.txt\n'
           'cite:\n'
           '  - src: decks\n'
           'title: Trace2\n'

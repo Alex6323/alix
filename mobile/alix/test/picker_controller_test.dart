@@ -555,7 +555,7 @@ PickerEntry _entry(
     isTrace: false,
     mastered: mastered,
     examDue: false,
-    hasExam: false,
+    examable: false,
     locked: false,
     progressError: false,
     indent: 0,

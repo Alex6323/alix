@@ -111,7 +111,7 @@ PickerEntry _entry(listing_bridge.DeckEntry entry) {
     examFilter: entry.examFilter,
     examChanged: entry.examChanged,
     examDue: entry.examDue,
-    hasExam: entry.hasExam,
+    examable: entry.examable,
     locked: entry.locked,
     progressError: entry.progressError,
     icon: entry.icon,

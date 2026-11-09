@@ -338,10 +338,10 @@ fn inline_emphasis_findings(cards: &[alix::card::Card], report: &mut Report) {
     }
 }
 
-/// `exam:` must point at real material, never into `assets/`: asset objects
-/// are excerpt fragments, and an examiner or tutor grounded on fragments would
+/// A `cite:` root must point at real material, never into `assets/`: asset
+/// objects are excerpt fragments, and a tutor grounded on fragments would
 /// confidently fill the gaps around them.
-fn exam_points_into_assets(source: &str) -> bool {
+fn points_into_assets(source: &str) -> bool {
     if alix::deck::is_url(source) {
         return false;
     }
@@ -507,23 +507,6 @@ fn geometry_agreement(
 
 fn deck_resource_findings(deck: &Deck, report: &mut Report) {
     let managed = workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some();
-    for source in &deck.exam {
-        if exam_points_into_assets(source) {
-            report.warn(format!(
-                "{}: `exam:` points into `assets/` (`{source}`); a frozen deck keeps its \
-                 real source, not its asset objects",
-                deck.path.display()
-            ));
-        }
-    }
-    if !deck.is_trace() {
-        for (_, reason) in alix::exam::unreadable_exam_entries(deck) {
-            report.warn(format!(
-                "{}: {reason}; the exam refuses to start",
-                deck.path.display()
-            ));
-        }
-    }
     if deck.declares_sources() {
         for (label, count) in alix::exam::oversized_topics(deck) {
             report.warn(format!(
@@ -536,7 +519,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         }
     }
     for (key, root) in &deck.cite {
-        if exam_points_into_assets(root) {
+        if points_into_assets(root) {
             report.warn(format!(
                 "{}: `cite:` root `{key}` points into `assets/` (`{root}`); a frozen deck keeps \
                  its real source, not its asset objects",
@@ -712,13 +695,14 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         if prereq.is_trace {
             report.warn(format!(
                 "{}: requires trace deck `{}`: this edge doesn't gate its exam; \
-                 convert it to a fact deck with an `exam:` to make it a real prerequisite",
+                 convert it to a fact deck with sources (`alix deck source add`) to make it \
+                 a real prerequisite",
                 deck.subject, prereq.requirement
             ));
         } else {
             report.warn(format!(
                 "{}: requires ungrounded `{}`: this edge doesn't gate its exam; \
-                 give it an `exam:` (deck or workspace) to make it a real prerequisite",
+                 give it sources (`alix deck source add`) to make it a real prerequisite",
                 deck.subject, prereq.requirement
             ));
         }
@@ -1067,6 +1051,7 @@ fn workspace_manifest_findings(dir: &Path, report: &mut Report) {
     let manifest = dir.join(alix::workspace::MANIFEST);
     if let Some(error) = alix::workspace::manifest_parse_error(dir) {
         report.error(format!("{}: {error}", manifest.display()));
+        return;
     }
     for finding in alix::workspace::manifest_findings(dir) {
         let message = format!("{}: {finding}", manifest.display());
@@ -1088,6 +1073,7 @@ fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
     };
     workspace_manifest_findings(dir, &mut report);
     if alix::workspace::has_manifest(dir)
+        && alix::workspace::manifest_parse_error(dir).is_none()
         && let Err(error) = alix::workspace::Workspace::load(dir)
     {
         report.error(format!("{error}"));
@@ -1296,7 +1282,7 @@ fn check_report(decks: Vec<PathBuf>, drift: DriftChecks, exam: ExamConfig) -> Re
             {
                 workspace_manifest_findings(path, &mut report);
             }
-            if let Some(rel) = alix::workspace::manifest_icon(path)
+            if let Ok(Some(rel)) = alix::workspace::manifest_icon(path)
                 && !path.join(&rel).is_file()
             {
                 report.warn(format!(
@@ -1367,24 +1353,9 @@ fn check_report(decks: Vec<PathBuf>, drift: DriftChecks, exam: ExamConfig) -> Re
             if !deck.requires.is_empty() {
                 println!("  requires: {}", deck.requires.join(", "));
             }
-            let layers = deck.exam_layers();
-            let exam: Vec<String> = layers
-                .own
-                .iter()
-                .cloned()
-                .chain(
-                    layers
-                        .workspace
-                        .iter()
-                        .map(|entry| format!("{entry} (workspace)")),
-                )
-                .collect();
-            if !exam.is_empty() {
-                println!("  exam:     {}", exam.join(", "));
-            }
             let manifest_roots = workspace
                 .as_deref()
-                .map(alix::workspace::manifest_cite)
+                .and_then(|root| alix::workspace::manifest_cite(root).ok())
                 .unwrap_or_default();
             let roots: Vec<String> = deck
                 .cite
@@ -2859,46 +2830,12 @@ mod tests {
 
     #[test]
     fn only_local_paths_inside_assets_are_asset_sources() {
-        assert!(exam_points_into_assets("assets/deck-one/object.md"));
-        assert!(exam_points_into_assets(
-            "workspace/assets/deck-one/object.md"
-        ));
-        assert!(!exam_points_into_assets("notes/assets-overview.md"));
-        assert!(!exam_points_into_assets(
+        assert!(points_into_assets("assets/deck-one/object.md"));
+        assert!(points_into_assets("workspace/assets/deck-one/object.md"));
+        assert!(!points_into_assets("notes/assets-overview.md"));
+        assert!(!points_into_assets(
             "https://example.test/assets/deck-one/object.md"
         ));
-    }
-
-    #[test]
-    fn an_exam_entry_the_exam_cannot_read_is_a_warning_but_a_trace_scope_directory_is_not() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("src")).unwrap();
-        w(dir.path(), "fact.md", "---\nexam: src\n---\n## q\na\n");
-        w(
-            dir.path(),
-            "walk.md",
-            "---\ntrace: how a walk goes\nexam: src\n---\n## hop\nstep\n",
-        );
-
-        let mut fact = Report::default();
-        deck_resource_findings(&Deck::load(dir.path().join("fact.md")).unwrap(), &mut fact);
-        assert!(
-            fact.warnings
-                .iter()
-                .any(|warning| warning.contains("cannot read `exam:`") && warning.contains("src")),
-            "fact deck: a directory entry is a warning: {:#?}",
-            fact.warnings
-        );
-
-        let mut walk = Report::default();
-        deck_resource_findings(&Deck::load(dir.path().join("walk.md")).unwrap(), &mut walk);
-        assert!(
-            walk.warnings
-                .iter()
-                .all(|warning| !warning.contains("cannot read `exam:`")),
-            "trace deck: `exam:` is its walk scope, not exam material: {:#?}",
-            walk.warnings
-        );
     }
 
     #[test]
@@ -2979,7 +2916,7 @@ mod tests {
         w(
             dir.path(),
             "four.md",
-            "---\nexam: [a, b, c, d]\n---\n## q\na\n",
+            "---\nlink: [a, b, c, d]\n---\n## q\na\n",
         );
         let mut report = Report::default();
         deck_findings(&four, &mut report);
@@ -3864,7 +3801,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_manifest_schema_is_closed_without_hiding_workspace_surfaces() {
+    fn workspace_manifest_schema_is_closed_and_an_unparseable_manifest_is_an_error_row() {
         let cases = [
             (
                 "unknown-key",
@@ -3880,7 +3817,7 @@ mod tests {
             ),
             (
                 "known-keys",
-                "title = \"Known\"\ndescription = \"Description\"\nicon = \"icon.svg\"\nexam = \"source.txt\"\nsource_access = true\n[defaults]\nreveal = \"line\"\n",
+                "title = \"Known\"\ndescription = \"Description\"\nicon = \"icon.svg\"\nsource_access = true\n[defaults]\nreveal = \"line\"\n",
                 None,
                 "Known",
             ),
@@ -3945,14 +3882,20 @@ mod tests {
 
             let review = alix::config::ReviewConfig::default();
             let listing = alix::listing::list_root(root.path(), &review, 1_000_000);
+            let members = usize::from(rejected_key.is_none());
             assert_eq!(1, listing.len(), "{name}: listing rows were {listing:?}");
             assert_eq!(expected_title, listing[0].title, "{name}: listing title");
             assert_eq!(
-                1,
+                rejected_key.is_some(),
+                listing[0].manifest_error.is_some(),
+                "{name}: listing error row"
+            );
+            assert_eq!(
+                members,
                 alix::listing::list_members(root.path(), &dir, &review, 1_000_000)
                     .rows
                     .len(),
-                "{name}: listing must retain the workspace member"
+                "{name}: an unparseable manifest lists no member"
             );
 
             let recent = alix::recent::RecentDecks::load(root.path().join("recent.json"));
@@ -3961,7 +3904,12 @@ mod tests {
                     .unwrap();
             assert_eq!(1, picker.len(), "{name}: picker row count");
             assert_eq!(expected_title, picker[0].label, "{name}: picker title");
-            assert_eq!(1, picker[0].members.len(), "{name}: picker members");
+            assert_eq!(
+                rejected_key.is_some(),
+                picker[0].error.is_some(),
+                "{name}: picker error row"
+            );
+            assert_eq!(members, picker[0].members.len(), "{name}: picker members");
             assert_eq!(dir, alix::workspace::store_path(&dir), "{name}: store");
 
             let no_manifest = root.path().join("without-manifest");
@@ -3984,7 +3932,7 @@ mod tests {
         w(
             dir.path(),
             "declared.md",
-            "---\nformat-version: 1\nid: deck-declared\nreveal: line\nreview: sequential\nrequires: ghost\nexam: https://example.test/source\n---\n## q\na\n<!-- id: card-q -->\n",
+            "---\nformat-version: 1\nid: deck-declared\nreveal: line\nreview: sequential\nrequires: ghost\n---\n## q\na\n<!-- id: card-q -->\n",
         );
         let plain = dir.path().join("plain.md");
         w(dir.path(), "plain.md", "## q\na\n");
@@ -4037,7 +3985,6 @@ mod tests {
             "{stdout}"
         );
         assert_eq!(1, stdout.matches("  requires:").count(), "{stdout}");
-        assert_eq!(1, stdout.matches("  exam:").count(), "{stdout}");
         assert!(stderr.contains("points at a missing file"), "{stderr}");
     }
 
@@ -4521,7 +4468,7 @@ printf ']}}'
         let path = decks.join("facts.md");
         std::fs::write(
             &path,
-            "---\nformat-version: 1\nid: deck-deck1\nexam: notes.md\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n<!-- id: card-card1 -->\n",
+            "---\nformat-version: 1\nid: deck-deck1\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:notes.md:1 -->\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
         let before = std::fs::read(&path).unwrap();
@@ -4549,10 +4496,7 @@ printf ']}}'
         std::fs::write(assets.join(&name), "changed\n").unwrap();
         std::fs::write(
             decks.join("facts.md"),
-            format!(
-                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
-                 ## q\na\n<!-- id: card-card1 -->\n"
-            ),
+            "---\nformat-version: 1\nid: deck-deck1\n---\n## q\na\n<!-- id: card-card1 -->\n",
         )
         .unwrap();
 
@@ -4991,7 +4935,7 @@ printf ']}}'
         w(
             &decks,
             "trace.md",
-            "---\ntrace: how the request flows\nexam: .\n---\n## enter\nrequest enters\n",
+            "---\ntrace: how the request flows\n---\n## enter\nrequest enters\n",
         );
         let exam_path = decks.join("exam.md");
         w(
@@ -5138,7 +5082,7 @@ printf ']}}'
         w(
             &decks,
             "unspliceable.md",
-            "---\n{exam: [a]}\n---\n## q\nb\n<!-- id: card-uq1 -->\n",
+            "---\n{link: [a]}\n---\n## q\nb\n<!-- id: card-uq1 -->\n",
         );
         w(
             &decks,
@@ -5158,7 +5102,7 @@ printf ']}}'
         w(
             &decks,
             "trace-bad.md",
-            "---\ntrace: a walk\nexam: trace-src.txt\ncite:\n  - src: .\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: src:trace-src.txt:5-6 -->\n",
+            "---\ntrace: a walk\ncite:\n  - src: .\n---\n## hop\nstep\n<!-- id: card-thop1 -->\n<!-- at: src:trace-src.txt:5-6 -->\n",
         );
         w(dir, "trace-src.txt", "one\ntwo\n");
         w(
@@ -5339,7 +5283,7 @@ printf ']}}'
     }
 
     #[test]
-    fn doctor_flags_a_source_pointing_into_assets() {
+    fn doctor_flags_a_cite_root_pointing_into_assets() {
         let dir = tempfile::tempdir().unwrap();
         let decks = dir.path().join(alix::workspace::DECKS);
         std::fs::create_dir(&decks).unwrap();
@@ -5351,21 +5295,17 @@ printf ']}}'
         w(
             &decks,
             "facts.md",
-            &format!(
-                "---\nformat-version: 1\nid: deck-deck1\nexam: assets/deck-deck1/{name}\n---\n\
-                 ## q\na\n<!-- id: card-card1 -->\n"
-            ),
+            "---\nformat-version: 1\nid: deck-deck1\ncite:\n  - src: assets/deck-deck1\n---\n\
+             ## q\na\n<!-- id: card-card1 -->\n",
         );
 
         let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
-            report
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("points into `assets/`")
-                    && warning.contains("keeps its real source")),
-            "source into assets: {:#?}",
+            report.warnings.iter().any(|warning| warning
+                .contains("`cite:` root `src` points into `assets/`")
+                && warning.contains("keeps its real source")),
+            "a root into assets: {:#?}",
             report.warnings
         );
     }

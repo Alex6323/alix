@@ -155,9 +155,10 @@ pub fn expand_workspaces(deck_paths: &[PathBuf]) -> Result<Expanded> {
     let mut defaults: HashMap<String, DeckSettings> = HashMap::new();
     for path in deck_paths {
         if let Some(root) = workspace::root_for_deck(path)
-            && let Ok(ws) = workspace::Workspace::load(root)
             && let Some(name) = path.file_name().and_then(|n| n.to_str())
         {
+            let ws = workspace::Workspace::load(&root)
+                .with_context(|| format!("cannot load workspace {}", root.display()))?;
             defaults.insert(name.to_string(), ws.settings);
         }
         decks.push(path.clone());
@@ -286,7 +287,7 @@ pub fn load_decks(
             DeckInfo {
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
-                links: deck.reference_links(),
+                links: deck.reference_links()?,
                 source_access: false,
                 source_base: CitationRoots::for_deck(&deck),
                 load_warnings: deck.load_warnings.clone(),
@@ -438,8 +439,10 @@ pub fn tutor_deck(path: &Path, cfg: &AssembleConfig) -> Result<TutorDeck> {
     let [settings] = settings.as_slice() else {
         bail!("the tutor loader accepts exactly one deck");
     };
-    let workspace_override = workspace::root_for_deck(&info.path)
-        .and_then(|root| workspace::manifest_source_access(&root));
+    let workspace_override = match workspace::root_for_deck(&info.path) {
+        Some(root) => workspace::manifest_source_access(&root)?,
+        None => None,
+    };
     info.source_access = workspace_override.unwrap_or(cfg.ask.source_access);
 
     let augment = AugmentCache::open_for_workspace(&workspace::content_root(path))
@@ -1613,7 +1616,7 @@ mod tests {
         assert_eq!(None, store_path_for(&[]));
     }
 
-    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\nexam: source.txt\ncite:\n  - src: .\n---\n\
+    const TRACE_DECK: &str = "---\nformat-version: 1\nid: \"deck-trace\"\ntrace: how it works\ncite:\n  - src: .\n---\n\
 ## Predict the first hop\n\
 it reads the first line\n\
 <!-- at: src:source.txt:1 -->\n\
@@ -2008,7 +2011,7 @@ it reads line two\n\
         let trace = dir.path().join("t.md");
         std::fs::write(
             &trace,
-            "---\ntrace: how it works\nexam: .\ncite:\n  - src: .\n---\n\n## q\npoint\n<!-- at: src:notes.txt:1 -->\n<!-- id: card-qq -->\n",
+            "---\ntrace: how it works\ncite:\n  - src: .\n---\n\n## q\npoint\n<!-- at: src:notes.txt:1 -->\n<!-- id: card-qq -->\n",
         )
         .unwrap();
         let fact = dir.path().join("f.md");
@@ -2162,7 +2165,7 @@ it reads line two\n\
         let fact = dir.path().join("rust.md");
         std::fs::write(
             &fact,
-            "---\nformat-version: 1\nid: \"deck-rust\"\nexam: https://example.org\n---\n\
+            "---\nformat-version: 1\nid: \"deck-rust\"\nlink: https://example.org\n---\n\
              ## q\na\n<!-- id: card-q1 -->\n",
         )
         .unwrap();

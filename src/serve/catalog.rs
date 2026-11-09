@@ -314,8 +314,8 @@ pub(super) fn deck_item_dto(
                 mastered: s.mastered,
                 exam: s.exam.into(),
                 is_trace: s.is_trace,
+                examable_now: s.examable_now,
                 examable: s.examable,
-                has_exam: s.has_exam,
                 exam_prepared: s.exam_prepared,
                 recent,
                 is_workspace: false,
@@ -353,8 +353,8 @@ pub(super) fn deck_item_dto(
             mastered: false,
             exam: crate::exam_status::ExamRow::default().into(),
             is_trace: false,
+            examable_now: false,
             examable: false,
-            has_exam: false,
             exam_prepared: false,
             recent,
             is_workspace: false,
@@ -566,8 +566,8 @@ pub(super) fn workspace_members(
                     mastered: s.mastered,
                     exam: s.exam.into(),
                     is_trace: s.is_trace,
+                    examable_now: s.examable_now,
                     examable: s.examable,
-                    has_exam: s.has_exam,
                     exam_prepared: s.exam_prepared,
                     indent,
                     tree: prefix.clone(),
@@ -597,8 +597,8 @@ pub(super) fn workspace_members(
                     mastered: false,
                     exam: crate::exam_status::ExamRow::default().into(),
                     is_trace: false,
+                    examable_now: false,
                     examable: false,
-                    has_exam: false,
                     exam_prepared: false,
                     indent,
                     tree: prefix.clone(),
@@ -689,7 +689,9 @@ pub(super) fn deck_catalog(
                         total: readiness.total,
                     }
                 });
-            let meta = if is_ws {
+            let meta = if let Some(error) = &e.error {
+                error.clone()
+            } else if is_ws {
                 match picker::workspace_last_progress(&e.path) {
                     Some(when) => format!("{} decks · {when}", members.len()),
                     None => format!("{} decks", members.len()),
@@ -707,7 +709,13 @@ pub(super) fn deck_catalog(
             let reviewable_reconstruct = members.iter().any(|m| m.reviewable_reconstruct);
             let dto = DeckItemDto {
                 meta: Some(meta),
-                state: if is_ws { "workspace" } else { "folder" },
+                state: if e.error.is_some() {
+                    "error"
+                } else if is_ws {
+                    "workspace"
+                } else {
+                    "folder"
+                },
                 locked: false,
                 selectable: false,
                 reviewable,
@@ -718,8 +726,8 @@ pub(super) fn deck_catalog(
                 mastered: false,
                 exam: crate::exam_status::ExamRow::default().into(),
                 is_trace: false,
+                examable_now: false,
                 examable: false,
-                has_exam: false,
                 exam_prepared: false,
                 recent: e.last_used_ms.is_some(),
                 is_workspace: true,

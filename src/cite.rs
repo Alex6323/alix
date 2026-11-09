@@ -51,6 +51,14 @@ pub enum CiteViolation {
     UrlRootInLooseDeck { key: String },
     #[error("`cite:` root `{key}` is empty; name a directory or a url")]
     EmptyRoot { key: String },
+    #[error("{message}")]
+    Manifest { message: String },
+}
+
+fn manifest_cite(workspace: &Path) -> Result<BTreeMap<String, String>, CiteViolation> {
+    crate::workspace::manifest_cite(workspace).map_err(|error| CiteViolation::Manifest {
+        message: error.to_string(),
+    })
 }
 
 pub fn visible_roots(
@@ -123,7 +131,10 @@ pub fn visible_roots(
 }
 
 pub fn manifest_violations(workspace: &Path) -> Vec<CiteViolation> {
-    let manifest_cite = crate::workspace::manifest_cite(workspace);
+    let manifest_cite = match manifest_cite(workspace) {
+        Ok(manifest_cite) => manifest_cite,
+        Err(violation) => return vec![violation],
+    };
     visible_roots(
         &[],
         DeckPlace::Member {
@@ -147,7 +158,9 @@ pub fn deck_violations(deck_path: &Path, deck_cite: &[(String, String)]) -> Vec<
             .unwrap_or_default();
     };
     let manifest_only = manifest_violations(&workspace);
-    let manifest_cite = crate::workspace::manifest_cite(&workspace);
+    let Ok(manifest_cite) = manifest_cite(&workspace) else {
+        return Vec::new();
+    };
     visible_roots(
         deck_cite,
         DeckPlace::Member {
@@ -309,7 +322,10 @@ pub fn generated_url_root_for_deck(
     with_deck_place(deck_path, |place| generated_url_root(deck_cite, place, url))
 }
 
-fn with_deck_place<T>(deck_path: &Path, act: impl FnOnce(DeckPlace) -> T) -> T {
+fn with_deck_place(
+    deck_path: &Path,
+    act: impl FnOnce(DeckPlace) -> Result<GeneratedRoot, GeneratedRootError>,
+) -> Result<GeneratedRoot, GeneratedRootError> {
     let deck_path = std::path::absolute(deck_path).unwrap_or_else(|_| deck_path.to_path_buf());
     let folder = deck_path
         .parent()
@@ -317,7 +333,8 @@ fn with_deck_place<T>(deck_path: &Path, act: impl FnOnce(DeckPlace) -> T) -> T {
         .unwrap_or_else(|| PathBuf::from("."));
     match crate::workspace::root_for_deck(&deck_path) {
         Some(workspace) => {
-            let manifest_cite = crate::workspace::manifest_cite(&workspace);
+            let manifest_cite = manifest_cite(&workspace)
+                .map_err(|violation| GeneratedRootError::InvalidRoots(vec![violation]))?;
             act(DeckPlace::Member {
                 workspace: &workspace,
                 manifest_cite: &manifest_cite,
@@ -408,85 +425,6 @@ fn same_root(from: &Root, to: &Root) -> bool {
         }
         _ => false,
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ExamPlace<'a> {
-    pub base: &'a Path,
-    pub manifest_exam: &'a [String],
-}
-
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-#[error(
-    "`exam:` entry `{entry}` resolves to {} in the source workspace but to {} in the destination",
-    exam_target(.from.as_ref()),
-    exam_target(.to.as_ref())
-)]
-pub struct ExamMismatch {
-    pub entry: String,
-    pub from: Option<Root>,
-    pub to: Option<Root>,
-}
-
-fn exam_target(root: Option<&Root>) -> String {
-    match root {
-        Some(Root::Local(path)) => path.display().to_string(),
-        Some(Root::Url(url)) => url.clone(),
-        None => "nothing".to_string(),
-    }
-}
-
-#[cfg(feature = "full")]
-pub fn exam_transfer_mismatches(
-    deck_exam: &[String],
-    from: ExamPlace,
-    to: ExamPlace,
-) -> Vec<ExamMismatch> {
-    let from = effective_exam(deck_exam, from);
-    let mut to = effective_exam(deck_exam, to);
-    let mut mismatches = Vec::new();
-    for (entry, root) in from {
-        if let Some(found) = to.iter().position(|(_, there)| same_root(&root, there)) {
-            to.remove(found);
-            continue;
-        }
-        let there = to
-            .iter()
-            .position(|(declared, _)| *declared == entry)
-            .map(|found| to.remove(found).1);
-        mismatches.push(ExamMismatch {
-            entry,
-            from: Some(root),
-            to: there,
-        });
-    }
-    mismatches.extend(to.into_iter().map(|(entry, root)| ExamMismatch {
-        entry,
-        from: None,
-        to: Some(root),
-    }));
-    mismatches
-}
-
-#[cfg(feature = "full")]
-fn effective_exam(deck_exam: &[String], place: ExamPlace) -> Vec<(String, Root)> {
-    let supporting = place
-        .manifest_exam
-        .iter()
-        .filter(|entry| !deck_exam.contains(entry));
-    deck_exam
-        .iter()
-        .chain(supporting)
-        .filter_map(|entry| {
-            let entry = entry.trim();
-            let root = if crate::deck::is_url(entry) {
-                Root::Url(entry.to_string())
-            } else {
-                Root::Local(crate::source::source_path(entry, Some(place.base))?)
-            };
-            Some((entry.to_string(), root))
-        })
-        .collect()
 }
 
 fn lexical(path: &Path) -> PathBuf {
@@ -590,17 +528,20 @@ impl CitationRoots {
             .zip(deck.deck_token.as_deref())
             .and_then(|(root, deck_id)| crate::assets::deck_dir(root, deck_id).ok());
         match &workspace {
-            Some(workspace) => {
-                let manifest_cite = crate::workspace::manifest_cite(workspace);
-                Self::from_place(
+            Some(workspace) => match manifest_cite(workspace) {
+                Ok(manifest_cite) => Self::from_place(
                     &deck.cite,
                     DeckPlace::Member {
                         workspace: real_workspace.unwrap_or(workspace),
                         manifest_cite: &manifest_cite,
                     },
                     asset_dir,
-                )
-            }
+                ),
+                Err(violation) => Self {
+                    roots: Err(vec![violation]),
+                    asset_dir,
+                },
+            },
             None => Self::from_place(&deck.cite, DeckPlace::Loose { folder: &folder }, asset_dir),
         }
     }
@@ -622,6 +563,17 @@ impl CitationRoots {
 
     pub fn asset_dir(&self) -> Option<&Path> {
         self.asset_dir.as_deref()
+    }
+
+    pub fn first_local(&self) -> Result<Option<(&str, &Path)>, ResolveError> {
+        let roots = self
+            .roots
+            .as_ref()
+            .map_err(|found| ResolveError::InvalidRoots(found.clone()))?;
+        Ok(roots.iter().find_map(|visible| match &visible.root {
+            Root::Local(path) => Some((visible.key.as_str(), path.as_path())),
+            Root::Url(_) => None,
+        }))
     }
 
     pub fn root_of(&self, key: &str) -> Option<&Root> {
@@ -1732,193 +1684,6 @@ mod tests {
     }
 
     #[cfg(feature = "full")]
-    #[test]
-    fn a_transfer_is_refused_for_every_exam_entry_that_resolves_differently_in_the_destination() {
-        #[derive(Debug, PartialEq, Eq)]
-        enum Refusal {
-            Differs,
-            MissingThere,
-            AddedThere,
-        }
-        let dir = tempfile::TempDir::new().unwrap();
-        let top = canonical(dir.path());
-        let from_ws = top.join("from");
-        let to_ws = top.join("to");
-        let loose = top.join("loose");
-        let shared = top.join("shared");
-        for folder in [
-            from_ws.join("material"),
-            to_ws.join("material"),
-            loose.join("material"),
-            shared.clone(),
-        ] {
-            std::fs::create_dir_all(folder).unwrap();
-        }
-        let shared = shared.display().to_string();
-        let other = top.join("other").display().to_string();
-        let url = "https://example.org/guide";
-        type Row = (
-            &'static str,
-            Vec<String>,
-            Vec<String>,
-            Option<Vec<String>>,
-            Vec<(String, Refusal)>,
-        );
-        let v = |entries: &[&str]| entries.iter().map(ToString::to_string).collect::<Vec<_>>();
-        let r = |entry: &str, refusal| (entry.to_string(), refusal);
-        let rows: Vec<Row> = vec![
-            (
-                "the deck's own relative entry resolves against the new workspace",
-                v(&["material"]),
-                vec![],
-                Some(vec![]),
-                vec![r("material", Refusal::Differs)],
-            ),
-            (
-                "the deck's own absolute entry travels with it",
-                v(&[&shared]),
-                vec![],
-                Some(vec![]),
-                vec![],
-            ),
-            (
-                "the deck's own url travels with it",
-                v(&[url]),
-                vec![],
-                Some(vec![]),
-                vec![],
-            ),
-            (
-                "the destination manifest adds material beside the deck's own entries",
-                v(&[&shared]),
-                vec![],
-                Some(v(&[&other])),
-                vec![r(&other, Refusal::AddedThere)],
-            ),
-            (
-                "the source manifest's material beside the deck's own entries is lost",
-                v(&[&shared]),
-                v(&[url]),
-                Some(vec![]),
-                vec![r(url, Refusal::MissingThere)],
-            ),
-            (
-                "an own entry the manifest repeats counts once",
-                v(&[&shared]),
-                v(&[&shared]),
-                Some(vec![]),
-                vec![],
-            ),
-            (
-                "an inherited manifest entry that is the same in the destination",
-                vec![],
-                v(&[&shared, url]),
-                Some(v(&[url, &shared])),
-                vec![],
-            ),
-            (
-                "an inherited relative manifest entry names two folders",
-                vec![],
-                v(&["material"]),
-                Some(v(&["material"])),
-                vec![r("material", Refusal::Differs)],
-            ),
-            (
-                "inherited urls compare byte for byte",
-                vec![],
-                v(&[url]),
-                Some(v(&["https://example.org/guide/"])),
-                vec![
-                    r(url, Refusal::MissingThere),
-                    r("https://example.org/guide/", Refusal::AddedThere),
-                ],
-            ),
-            (
-                "the destination manifest declares nothing",
-                vec![],
-                v(&[&shared]),
-                Some(vec![]),
-                vec![r(&shared, Refusal::MissingThere)],
-            ),
-            (
-                "the destination manifest adds an entry",
-                vec![],
-                v(&[&shared]),
-                Some(v(&[&shared, url])),
-                vec![r(url, Refusal::AddedThere)],
-            ),
-            (
-                "the deck's own relative entry in a loose destination folder",
-                v(&["material"]),
-                vec![],
-                None,
-                vec![r("material", Refusal::Differs)],
-            ),
-            (
-                "a loose destination has no manifest to inherit",
-                vec![],
-                v(&[&shared]),
-                None,
-                vec![r(&shared, Refusal::MissingThere)],
-            ),
-            (
-                "missing local entries compare lexically after absolutizing",
-                v(&[&top.join("shared/../gone").display().to_string()]),
-                vec![],
-                Some(vec![]),
-                vec![],
-            ),
-            (
-                "a deck without any `exam:` anywhere",
-                vec![],
-                vec![],
-                Some(vec![]),
-                vec![],
-            ),
-        ];
-        for (label, deck_exam, from_manifest, to_manifest, expected) in rows {
-            let (to_base, to_manifest) = match &to_manifest {
-                Some(manifest) => (to_ws.as_path(), manifest.as_slice()),
-                None => (loose.as_path(), [].as_slice()),
-            };
-            let actual: Vec<(String, Refusal)> = exam_transfer_mismatches(
-                &deck_exam,
-                ExamPlace {
-                    base: &from_ws,
-                    manifest_exam: &from_manifest,
-                },
-                ExamPlace {
-                    base: to_base,
-                    manifest_exam: to_manifest,
-                },
-            )
-            .into_iter()
-            .map(|mismatch| {
-                let refusal = match (&mismatch.from, &mismatch.to) {
-                    (Some(_), Some(_)) => Refusal::Differs,
-                    (Some(_), None) => Refusal::MissingThere,
-                    _ => Refusal::AddedThere,
-                };
-                (mismatch.entry, refusal)
-            })
-            .collect();
-            assert_eq!(expected, actual, "row `{label}`");
-        }
-    }
-
-    #[test]
-    fn an_exam_mismatch_names_its_entry_and_both_sides() {
-        let mismatch = ExamMismatch {
-            entry: "material".into(),
-            from: Some(Root::Local(PathBuf::from("/a/material"))),
-            to: None,
-        };
-        assert_eq!(
-            "`exam:` entry `material` resolves to /a/material in the source workspace but to nothing in the destination",
-            mismatch.to_string()
-        );
-    }
-
     #[test]
     fn a_root_mismatch_names_its_key_and_both_roots() {
         let mismatch = RootMismatch {

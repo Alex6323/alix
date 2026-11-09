@@ -67,12 +67,17 @@ direction = "both"
 reveal = "line"
 ```
 
-Besides `title`, `description`, `icon`, a shared `exam`, and a `[cite]`
+Besides `title`, `description`, `icon`, a shared `link` (one URL or a
+list, read by the tutor after each member's own `link:` entries), and a `[cite]`
 table of [citation roots](06-cloze-direction-images.md#source-citations)
 every member sees, the manifest may set a top-level `source_access`, which overrides the global
 `[ask] source_access` for this workspace's decks in either direction (see
 [the tutor](10-tutor.md)). The manifest travels with the folder when
 shared, so review a received workspace's `alix.toml` before an AI call.
+An `alix.toml` that does not parse (bad TOML, or a key alix does not know) is
+an error, never a fallback to defaults: the picker lists the workspace as an
+error row with the parse message and no members, and `alix doctor` names the
+problem.
 
 Starting from nothing instead? `alix workspace init <dir>` (`--title` to name
 it) scaffolds an empty workspace: an `alix.toml`, an `alix.local.toml`, and an
@@ -129,8 +134,8 @@ in the background. Reconcile every frozen source-backed member explicitly:
 alix workspace update ~/decks/spanish
 ```
 
-The command gives its AI backend read-only access to each recorded local
-`exam`, then writes one exact proposal into a dot-prefixed sibling workspace.
+The command gives its AI backend read-only access to each member's first
+local `cite:` root, then writes one exact proposal into a dot-prefixed sibling workspace.
 The original workspace remains untouched. Inspect the proposed decks and
 evidence there, then publish those exact bytes without another model call:
 
@@ -163,9 +168,10 @@ topic or invents one is refused. A new `#` topic in the proposal receives a
 fresh ID during staging. A deck that already repeats a topic ID is refused
 before the update asks the backend, with the duplicate named; fix it first.
 
-The first update implementation accepts local file and directory sources. A
-remote URL source remains review and tutor context, but cannot yet be captured
-as a new portable snapshot.
+Update reads each member's first local `cite:` root (the workspace `[cite]`
+table first, then the deck's own `cite:`); a member without roots is skipped.
+A member whose only roots are URLs is refused: a remote root remains review
+and tutor context, but cannot yet be captured as a new portable snapshot.
 
 ## Moving decks between workspaces
 
@@ -191,7 +197,7 @@ stable-ID collisions, a topic id a destination member already carries,
 missing required decks, and moves that would break a source deck's
 dependents.
 
-Transfer never rewrites a deck's locators, `cite:` or `exam:`, and changes
+Transfer never rewrites a deck's locators or `cite:`, and changes
 neither workspace's `alix.toml`. It is allowed only when every key the deck's locators
 use resolves in the destination, through the deck's own `cite:` or the
 destination's `[cite]` table, to the same root as in the source. Local roots
@@ -200,18 +206,6 @@ exactly. A relative root resolves against its workspace folder, so a key
 written as `code = "crates"` in both manifests names two different folders,
 and the transfer refuses. The refusal names each key and both roots. Keys that
 no locator uses are not checked.
-
-The same holds for `exam:`. The deck's exam material is its own `exam:` list
-plus the workspace's `exam`, and every entry must resolve to the same file,
-folder or URL in the destination as in the source. In the destination the
-deck's own entries are read against the destination workspace folder, and the
-destination's `exam` takes the place of the source's. Paths are compared like `cite:` roots, URLs exactly, and the
-lists are compared as sets. A relative `exam: material` therefore names a
-different folder after the transfer, and the transfer refuses; so does a deck
-whose workspace `exam` the destination does not declare, or whose destination
-adds `exam` material the source did not have. The refusal
-names each entry and what it resolves to on both sides, in one message with
-any `cite:` refusals.
 
 Now open the cluster and drill its members one at a time:
 

@@ -551,7 +551,6 @@ mod tests {
             title: None,
             description: None,
             settings: Default::default(),
-            exam: Vec::new(),
             members: vec![traced, plain],
             identities: Default::default(),
             icon: None,
