@@ -661,8 +661,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (or to none), naming each key and both roots. A relative root resolves
   against its own workspace, so the same relative `[cite]` entry in both
   manifests names two folders. Transfer never rewrites locators or `cite:` and
-  changes
-  neither manifest.
+  changes neither manifest.
 
 - `alix doctor` reports a trace checkpoint's locator problem only as an error,
   no longer also as a warning, and checks a frozen locator's key and shape even

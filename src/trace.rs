@@ -66,7 +66,6 @@ pub struct Checkpoint {
 pub struct Trace {
     pub description: String,
     pub subject: String,
-    pub scope: Option<String>,
     pub links: Vec<String>,
     pub checkpoints: Vec<Checkpoint>,
     pub deck_path: PathBuf,
@@ -113,11 +112,9 @@ impl Trace {
             })
             .collect();
         let roots = CitationRoots::for_deck(deck);
-        let scope = roots.first().ok().flatten().map(|first| first.key.clone());
         Ok(Trace {
             description,
             subject: deck.subject.clone(),
-            scope,
             links: deck.reference_links()?,
             checkpoints,
             deck_path: deck.path.clone(),

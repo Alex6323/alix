@@ -341,7 +341,6 @@ impl Deck {
         }
     }
 
-    /// The deck's own `link:` entries, then its workspace's `link` entries.
     pub fn reference_links(&self) -> Result<Vec<String>, crate::workspace::ManifestError> {
         let mut out = self.links.clone();
         let workspace =

@@ -1477,9 +1477,10 @@ pub fn default_config_toml() -> &'static str {
 # extra = ""                    # extra guidance appended to question generation
 
 # Trace building (`alix deck generate <trace-stub>` / `--trace`). Explores the
-# deck's first local `cite:` root to discover the path and writes the checkpoints back. Reuses the [ask] command,
-# but runs with read-only file tools (Read/Glob/Grep, + WebFetch for a URL
-# source) and the source root as the working directory — never a write/shell tool.
+# deck's first `cite:` root, local or URL, to discover the path and writes the
+# checkpoints back. Reuses the [ask] command, but runs with read-only tools
+# (Read/Glob/Grep with a local root as the working directory, plus WebFetch for
+# a URL root), never a write or shell tool.
 [trace]
 # model = ""                    # empty = each backend's strong model (Claude: opus), then [ask] / CLI default
 # effort = "high"               # default; --effort: low|medium|high|xhigh|max

@@ -196,7 +196,7 @@ src/parser/cloze.rs:161: replace - with / in unbracketed_src
 # `:` and `skipping` is still false, so the branch pushes the line unchanged,
 # as it would be outside the branch. The output is identical for every input.
 # Line-pinned.
-src/deck.rs:1026: replace > with >= in with_added_cite
+src/deck.rs:1025: replace > with >= in with_added_cite
 
 # EQUIVALENT. `candidate_count` returns 0 for a card without both a table
 # token and a row, and only card-table rows carry those; the parser rejects a

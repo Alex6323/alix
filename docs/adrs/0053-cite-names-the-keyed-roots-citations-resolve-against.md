@@ -16,7 +16,9 @@
 - Amended by: 0064 (rule 15's sole-root clause: a card without a local
   locator browses the deck's only local root; 0064 rule 13 replaces it, and
   such a card browses no `cite:` root, while the rest of rule 15 still
-  binds; and rule 17's `exam:` condition on transfer)
+  binds; rule 16's trace-build clauses: declaring the input as `src`,
+  reusing a containing manifest key, refusing an input outside every root;
+  and rule 17's `exam:` condition on transfer)
 - Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
 
 ## Context

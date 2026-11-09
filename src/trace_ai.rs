@@ -954,19 +954,6 @@ mod tests {
         );
         let prompt = std::fs::read_to_string(probe.join("prompt")).unwrap();
         assert!(prompt.contains("`code:<file>:start-end`"), "{prompt}");
-        let traced = write(
-            &root.join("ws/decks"),
-            "c.md",
-            "---\ntrace: t\ncite:\n  - code: ../src\n---\n## hop\np\n<!-- at: code:a.rs:1 -->\n",
-        );
-        assert_eq!(
-            Some("code".to_string()),
-            Trace::from_deck(&Deck::load(&traced).unwrap())
-                .unwrap()
-                .scope,
-            "the trace's scope is the first root's key"
-        );
-
         let unrooted = write(
             &root.join("ws/decks"),
             "u.md",

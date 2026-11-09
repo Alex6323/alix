@@ -414,8 +414,11 @@ This record replaces, once accepted:
   rule 14 (the exam reads `exam:`); rule 15's sole-root clause (a card
   without a local locator browses the deck's only local root; rule 13 here
   replaces it, and such a card browses no `cite:` root, while the rest of
-  rule 15 still binds); rule 16's facts-deck `exam:` input; rule
-  17's `exam:` condition on transfer; and the Security clause on local
+  rule 15 still binds); rule 16's facts-deck `exam:` input and its
+  trace-build clauses (declaring the input as `src`, reusing a containing
+  manifest key, refusing an input outside every root), replaced by: a trace
+  build reads the deck's first `cite:` root, local or URL, and declares
+  nothing; rule 17's `exam:` condition on transfer; and the Security clause on local
   `exam:` entries;
 - in ADR 0063: the card-level `CardState.exam_result` and the section
   status derived from member records (per-topic `topic_results` with the

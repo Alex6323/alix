@@ -360,7 +360,7 @@ warns, and the fence shows as a plain code block until you install the
 renderer and re-run `alix deck init`; a fence sekien cannot render, or a
 theme whose colors alix cannot read (below), is reported the same way and
 that one diagram stays unfrozen. A standalone deck (no workspace) always
-shows exam: freezing needs the workspace's asset store.
+shows the fence as code: freezing needs the workspace's asset store.
 
 Editing a frozen fence makes its stamp stale, and the fence falls back to
 its source until the next `deck init` re-freezes it. Fallback always means

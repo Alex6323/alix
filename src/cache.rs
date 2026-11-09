@@ -151,7 +151,9 @@ impl DeckCache {
 
     fn workspace_settings(&mut self, deck: &Path) -> Result<DeckSettings, Arc<DeckError>> {
         let manifest = workspace::content_root(deck).join(workspace::MANIFEST);
-        if self.slot(&manifest).is_none() {
+        if std::fs::symlink_metadata(&manifest)
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
             return Ok(DeckSettings::default());
         }
         self.manifest_meta(&manifest)
@@ -435,6 +437,30 @@ mod tests {
             2,
             cache.load(&path).unwrap().cards.len(),
             "a workspace `direction: both` must mint the reversed twin of a cached member"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_manifest_that_cannot_be_read_fails_the_load_as_the_manifest_readers_do() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = dir.path().join("alix.toml");
+        std::os::unix::fs::symlink(&manifest, &manifest).unwrap();
+        let path = dir.path().join("d.md");
+        write(
+            &path,
+            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
+        );
+        assert!(
+            workspace::manifest_links(dir.path()).is_err(),
+            "the manifest readers fail on a manifest that cannot be read"
+        );
+
+        let loaded = DeckCache::default().load(&path);
+
+        assert!(
+            loaded.is_err(),
+            "the cache must fail the same way, not load with default settings: {loaded:?}"
         );
     }
 }
