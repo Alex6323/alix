@@ -157,6 +157,7 @@ pub(super) struct Ask {
     pub(super) draft: Option<ask::DraftCard>,
     pub(super) context_warning: Option<String>,
     visible_line: Option<String>,
+    notice: ask::CardOnlyNotice,
     session_paste: Option<Vec<crate::sources::SourceText>>,
 }
 
@@ -172,6 +173,7 @@ impl Ask {
             draft: None,
             context_warning: None,
             visible_line: None,
+            notice: ask::CardOnlyNotice::default(),
             session_paste: None,
         }
     }
@@ -183,6 +185,7 @@ impl Ask {
             self.noted_through = 0;
             self.draft = None;
             self.context_warning = None;
+            self.notice = ask::CardOnlyNotice::default();
             // A note still condensing settles on the card it was asked on
             // (ADR 0056); a late answer or draft is dropped (ADR 0027).
             self.pending = self
@@ -258,11 +261,7 @@ impl Ask {
         }
         self.context_warning = (context.frozen.is_some() && !has_source_context)
             .then(|| ask::FROZEN_ONLY_WARNING.to_string());
-        self.visible_line = context
-            .sources
-            .visible_line()
-            .filter(|_| self.transcript.is_empty())
-            .map(str::to_string);
+        self.visible_line = context.sources.visible_line().map(str::to_string);
         if let (ask::TutorSources::Pasted(texts), AskAction::Question(_)) =
             (context.sources, &action)
         {
@@ -330,7 +329,8 @@ impl Ask {
         match (reply, purpose) {
             (Reply::Answer(answer), Purpose::Question(question)) => {
                 self.cli.started = true;
-                let answer = ask::with_visible_line(self.visible_line.take().as_deref(), answer);
+                let line = self.notice.deliver(self.visible_line.take());
+                let answer = ask::with_visible_line(line.as_deref(), answer);
                 self.transcript_units
                     .push(crate::render::tutor_answer_units(&answer));
                 self.transcript.push((question, answer));
@@ -635,11 +635,7 @@ impl RemoteAsk {
         let status = (context.frozen.is_some() && !has_source_context)
             .then(|| ask::FROZEN_ONLY_WARNING.to_string());
         let run_cfg = ask::tutor_run_config(cfg, &context);
-        let visible_line = context
-            .sources
-            .visible_line()
-            .filter(|_| prior.is_empty())
-            .map(str::to_string);
+        let visible_line = context.sources.visible_line().map(str::to_string);
         let prompt = ask::question_prompt_with_history(&card, audience, &context, &prior, question);
         let mut remote = Self::spawn(
             &run_cfg,
@@ -2130,6 +2126,98 @@ mod tests {
 
         assert_eq!(Some(2), ask.dto().elapsed);
         assert_eq!(Some(2), generating.dto().elapsed);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_remote_tutor_reports_source_damage_on_every_answer_that_falls_back() {
+        use crate::sources::testkit::{TOPIC_A, Workspace};
+
+        let _lock = crate::testutil::exec_lock();
+        let w = Workspace::new();
+        w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+        w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+        crate::stamp::stamp_deck(&w.deck()).unwrap();
+        let deck = crate::deck::Deck::load(w.deck()).unwrap();
+        let card = deck.cards.iter().find(|card| card.front == "q1").unwrap();
+        let requested = RemoteCard {
+            deck_id: deck.deck_token.clone().unwrap(),
+            card_id: card.id().unwrap(),
+            subject: "d.md".to_string(),
+            front: card.front.clone(),
+            back: card.back.clone(),
+            at: None,
+        };
+        let sources = deck.sources().unwrap().unwrap();
+        let (source_id, row) = sources.manifest.sources.iter().next().unwrap();
+        let display = row.path.parse::<crate::sources::DisplayPath>().unwrap();
+        let copy = sources
+            .dir
+            .join(crate::sources::copy_name(source_id, &display));
+        let dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            dir.path(),
+            &["grounded", "card only", "still card only"],
+        );
+        let cfg = AssembleConfig {
+            review: crate::config::ReviewConfig::default(),
+            ask: AskConfig {
+                backend: crate::config::BackendKind::Codex,
+                ..crate::testutil::ask_config(&cli)
+            },
+            pacing: crate::assemble::Pacing {
+                max_session: 10,
+                new_cards_percent: 30,
+            },
+            instance_store: None,
+        };
+        let mut history: Vec<RemoteTurn> = Vec::new();
+        let mut answers: Vec<String> = Vec::new();
+
+        for (turn, question) in ["why?", "and now?", "and still?"].into_iter().enumerate() {
+            if turn == 1 {
+                std::fs::remove_file(&copy).unwrap();
+            }
+            let resolution = resolve_remote_target(&w.deck(), &cfg, &requested);
+            let mut remote = RemoteAsk::ask(
+                &cfg.ask,
+                Audience::Adult,
+                resolution,
+                history
+                    .iter()
+                    .map(|t| RemoteTurn {
+                        q: t.q.clone(),
+                        a: t.a.clone(),
+                    })
+                    .collect(),
+                question,
+            );
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while remote.thinking() && std::time::Instant::now() < deadline {
+                remote.poll();
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let dto = remote.dto();
+            assert_eq!(None, dto.error, "turn {turn}");
+            history.push(RemoteTurn {
+                q: question.to_string(),
+                a: dto.answer.unwrap(),
+            });
+            answers.push(history.last().unwrap().a.clone());
+        }
+
+        assert_eq!("grounded", answers[0], "the first answer used the source");
+        let damage = "answering from the card alone: this deck's sources cannot be read: ";
+        for (turn, reply) in [(1, "card only"), (2, "still card only")] {
+            assert!(
+                answers[turn].starts_with(damage),
+                "turn {turn}: a card-only answer discloses the fallback: {answers:?}"
+            );
+            assert!(
+                answers[turn].ends_with(&format!("\n\n{reply}")),
+                "turn {turn}: the backend answer follows the line: {answers:?}"
+            );
+        }
     }
 
     #[test]

@@ -3181,3 +3181,96 @@ fn a_review_tutor_pastes_the_cards_topic_or_leads_with_one_card_alone_line() {
         "the oversized topic is not pasted"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_review_tutor_reports_source_damage_that_appears_after_its_first_answer() {
+    use crate::sources::testkit::{TOPIC_A, Workspace};
+
+    let _lock = crate::testutil::exec_lock();
+    let w = Workspace::new();
+    w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+    w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+    crate::stamp::stamp_deck(&w.deck()).unwrap();
+    let deck = Deck::load(w.deck()).unwrap();
+    let deck_id = deck.deck_token.clone().unwrap();
+    let card = deck
+        .cards
+        .iter()
+        .find(|card| card.front == "q1")
+        .unwrap()
+        .clone();
+    let sources = deck.sources().unwrap().unwrap();
+    let (source_id, row) = sources.manifest.sources.iter().next().unwrap();
+    let display = row.path.parse::<crate::sources::DisplayPath>().unwrap();
+    let copy = sources
+        .dir
+        .join(crate::sources::copy_name(source_id, &display));
+    let dir = tempfile::tempdir().unwrap();
+    let cli = crate::testutil::fake_replies(dir.path(), &["grounded", "card only"]);
+    let cfg = AskConfig {
+        backend: crate::config::BackendKind::Codex,
+        ..crate::testutil::ask_config(&cli)
+    };
+    let mut store = Store::open(dir.path().join("store.json")).unwrap();
+    let session = Session::new(
+        vec![card],
+        &mut store,
+        Box::new(Fsrs::default()),
+        crate::session::SessionOptions::default(),
+        now_ms(),
+    );
+    let mut reviewing = Reviewing::new(SessionBuild {
+        session,
+        label: "d.md".to_string(),
+        decks: HashMap::from([(deck_id.clone(), w.deck())]),
+        load_warnings: Vec::new(),
+        topic_ids: HashMap::from([(deck_id, deck.topic_ids())]),
+        links: HashMap::new(),
+        browsable: std::collections::HashSet::new(),
+        source_bases: HashMap::new(),
+        topology_name: None,
+        region_name: None,
+        augment: AugmentCache::open(dir.path().join("augment.json")),
+    });
+
+    for (turn, question) in ["why?", "and now?"].into_iter().enumerate() {
+        if turn == 1 {
+            std::fs::remove_file(&copy).unwrap();
+        }
+        assert!(
+            reviewing.start_ask(
+                &cfg,
+                Audience::Adult,
+                AskAction::Question(question.to_string())
+            ),
+            "turn {turn}: the ask starts"
+        );
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        while reviewing.ask_dto(None, None).thinking && Instant::now() < deadline {
+            let (_, error) = reviewing.poll_ask();
+            assert!(error.is_none(), "turn {turn}: {error:?}");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    let answers: Vec<&str> = reviewing
+        .ask
+        .transcript
+        .iter()
+        .map(|(_, answer)| answer.as_str())
+        .collect();
+    assert_eq!("grounded", answers[0], "the first answer used the source");
+    assert!(
+        answers[1]
+            .starts_with("answering from the card alone: this deck's sources cannot be read: "),
+        "the first answer after source damage must disclose the card-only fallback: {answers:?}"
+    );
+    assert_eq!(
+        "card only",
+        answers[1]
+            .split_once("\n\n")
+            .map_or(answers[1], |(_, answer)| answer),
+        "the backend answer follows the visible damage line"
+    );
+}

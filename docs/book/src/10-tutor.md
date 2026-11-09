@@ -109,14 +109,21 @@ reads them depends on the backend:
   instead; sources never pile up in the conversation.
 - When a topic's sources are too large for the backend's prompt limit (the
   same limit and measure the exam uses), the tutor answers from the card
-  alone, and its first answer on that card starts with one line saying so:
+  alone, and its answer starts with one line saying so:
   `answering from the card alone: this topic's sources exceed codex's limit`.
 
 Browsing the sources folder needs no `source_access` setting: the copies are
-part of the deck, not files elsewhere on your machine. A deck whose sources
-fail verification (a missing or altered copy) gets a first answer line naming
-the problem, and the tutor answers from the card alone; `alix doctor` reports
-the damage.
+part of the deck, not files elsewhere on your machine. The sources are
+checked again for every question, so a deck whose sources fail verification (a
+missing or altered copy), even after earlier answers on the card, gets an
+answer line naming the problem, and the tutor answers from the card alone;
+`alix doctor` reports the damage.
+
+In the web app, during review or a walk, the answering-from-the-card-alone line
+appears whenever an answer falls back to the card after a grounded one or for a
+different reason, and a follow-up falling back for the same reason repeats
+nothing. In the mobile app's tutor, every answer that falls back to the card
+starts with the line.
 
 ## Grounding a frozen card: `cite:`
 

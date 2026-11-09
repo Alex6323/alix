@@ -233,6 +233,21 @@ pub fn tutor_run_config(cfg: &AskConfig, context: &TutorContext) -> AskConfig {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct CardOnlyNotice {
+    last: Option<String>,
+}
+
+impl CardOnlyNotice {
+    /// Takes the card-only line of the question just answered (`None` when it
+    /// was grounded) and returns the line to show with that answer.
+    pub fn deliver(&mut self, line: Option<String>) -> Option<String> {
+        let shown = line.clone().filter(|line| self.last.as_ref() != Some(line));
+        self.last = line;
+        shown
+    }
+}
+
 pub fn with_visible_line(line: Option<&str>, answer: String) -> String {
     match line {
         Some(line) => format!("{line}\n\n{answer}"),
@@ -2257,6 +2272,29 @@ mod tests {
     fn parse_drafted_card_errors_on_two_cards() {
         let reply = "## q1?\na1\n## q2?\na2\n";
         assert!(parse_drafted_card(reply).is_err());
+    }
+
+    #[test]
+    fn a_card_only_line_shows_on_each_transition_and_change_but_never_as_an_identical_repeat() {
+        let x = Some("answering from the card alone: x");
+        let y = Some("answering from the card alone: y");
+        let mut notice = CardOnlyNotice::default();
+
+        for (step, line, shown) in [
+            ("grounded first", None, None),
+            ("into card-only", x, x),
+            ("identical repeat", x, None),
+            ("identical repeat again", x, None),
+            ("line changes", y, y),
+            ("back to grounded", None, None),
+            ("into card-only again", y, y),
+        ] {
+            assert_eq!(
+                shown.map(str::to_string),
+                notice.deliver(line.map(str::to_string)),
+                "{step}: {line:?}"
+            );
+        }
     }
 
     mod tutor_sources {
