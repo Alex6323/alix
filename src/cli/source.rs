@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use alix::{
-    config::Config,
+    config::{Config, ExamConfig},
+    exam_prompt::PreflightError,
     sources::commands::{self, AddRequest},
 };
 use anyhow::{Result, bail};
@@ -137,14 +138,21 @@ fn parse_root(text: &str) -> Result<(String, PathBuf), String> {
     }
 }
 
-fn resolve(deck: &str) -> Result<PathBuf> {
+fn resolve(deck: &str, config: &Config) -> Result<PathBuf> {
     let cwd = std::env::current_dir()?;
     let decks_dir = if cwd.join(deck).is_file() {
         None
     } else {
-        Config::load(None)?.decks_dir()
+        config.decks_dir()
     };
     commands::resolve_deck(deck, &cwd, decks_dir.as_deref())
+}
+
+fn exam_for(deck: &Path, config: &Config) -> ExamConfig {
+    config
+        .exam
+        .clone()
+        .for_workspace(&alix::workspace::content_root(deck))
 }
 
 fn print_collected(collected: &[String]) {
@@ -153,28 +161,39 @@ fn print_collected(collected: &[String]) {
     }
 }
 
+fn warn_over_limit(over_limit: &[PreflightError]) {
+    for line in over_limit {
+        eprintln!("warning: {line}");
+    }
+}
+
 fn shown(path: Option<&Path>) -> String {
     path.map_or_else(|| "(none)".to_string(), |path| path.display().to_string())
 }
 
 pub(crate) fn run(action: SourceAction) -> Result<()> {
+    let config = Config::load(None)?;
     match action {
         SourceAction::Add(args) => {
-            let deck = resolve(&args.deck)?;
-            let report = commands::add(AddRequest {
-                deck: &deck,
-                files: args.files,
-                root: args.root,
-                key: args.key,
-                topics: args.topics,
-            })?;
+            let deck = resolve(&args.deck, &config)?;
+            let report = commands::add(
+                AddRequest {
+                    deck: &deck,
+                    files: args.files,
+                    root: args.root,
+                    key: args.key,
+                    topics: args.topics,
+                },
+                &exam_for(&deck, &config),
+            )?;
             for (id, path) in &report.added {
                 println!("added {id} {path}");
             }
             print_collected(&report.collected);
+            warn_over_limit(&report.over_limit);
         }
         SourceAction::Remove(args) => {
-            let deck = resolve(&args.deck)?;
+            let deck = resolve(&args.deck, &config)?;
             let report = commands::remove(&deck, &args.sources)?;
             for (id, path) in &report.removed {
                 println!("removed {id} {path}");
@@ -182,13 +201,14 @@ pub(crate) fn run(action: SourceAction) -> Result<()> {
             print_collected(&report.collected);
         }
         SourceAction::Update(args) => {
-            let deck = resolve(&args.deck)?;
+            let deck = resolve(&args.deck, &config)?;
             let report = commands::update(
                 &deck,
                 &args.source,
                 &args.file,
                 args.key.as_deref(),
                 args.keep_results,
+                &exam_for(&deck, &config),
             )?;
             println!(
                 "updated {} -> {} {}",
@@ -198,17 +218,20 @@ pub(crate) fn run(action: SourceAction) -> Result<()> {
                 println!("kept range, review it: {entry}");
             }
             print_collected(&report.collected);
+            warn_over_limit(&report.over_limit);
         }
         SourceAction::Bind(args) => {
-            let deck = resolve(&args.deck)?;
-            commands::bind(&deck, &args.source, &args.topics)?;
+            let deck = resolve(&args.deck, &config)?;
+            let report =
+                commands::bind(&deck, &args.source, &args.topics, &exam_for(&deck, &config))?;
+            warn_over_limit(&report.over_limit);
         }
         SourceAction::Unbind(args) => {
-            let deck = resolve(&args.deck)?;
+            let deck = resolve(&args.deck, &config)?;
             commands::unbind(&deck, &args.source, &args.topics)?;
         }
         SourceAction::Root(RootAction::Set(args)) => {
-            let deck = resolve(&args.deck)?;
+            let deck = resolve(&args.deck, &config)?;
             let change = commands::root_set(&deck, &args.key, &args.dir)?;
             println!(
                 "root {}: {} -> {}",
@@ -218,7 +241,7 @@ pub(crate) fn run(action: SourceAction) -> Result<()> {
             );
         }
         SourceAction::Root(RootAction::Unset(args)) => {
-            let deck = resolve(&args.deck)?;
+            let deck = resolve(&args.deck, &config)?;
             let old = commands::root_unset(&deck, &args.key)?;
             if old.is_none() {
                 bail!("no root `{}` is saved", args.key);
@@ -226,14 +249,28 @@ pub(crate) fn run(action: SourceAction) -> Result<()> {
             println!("root {}: {} -> (none)", args.key, shown(old.as_deref()));
         }
         SourceAction::List(args) => {
-            let deck = resolve(&args.deck)?;
-            let listing = commands::list(&deck)?;
+            let deck = resolve(&args.deck, &config)?;
+            let listing = commands::list(&deck, &exam_for(&deck, &config))?;
             println!("topics:");
             for topic in &listing.topics {
                 println!(
                     "  {}  {}  {} source(s), {} bytes",
                     topic.id, topic.label, topic.source_count, topic.source_bytes
                 );
+                for measure in &topic.measures {
+                    let flag = if measure.exceeds() {
+                        "  exceeds the limit"
+                    } else {
+                        ""
+                    };
+                    println!(
+                        "    {:<7}  {} of {} {}{flag}",
+                        measure.backend.name(),
+                        measure.size,
+                        measure.limit.limit,
+                        measure.limit.measure.label()
+                    );
+                }
             }
             println!("sources:");
             for source in &listing.sources {

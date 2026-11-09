@@ -61,6 +61,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   count) and keeps drilling progress. It names the decks whose exams it will
   lock before asking.
 
+- Per-backend prompt limits for the exam: each sourced topic's exam prompt
+  is measured ahead of the call (Codex 1,048,576 characters; Copilot and
+  Gemini 128,000 estimated tokens; Claude 1,000,000 estimated tokens), and
+  Generate exam or a fresh sitting refuses to start on a topic over the
+  configured backend's limit, naming the topic, the backend, the size and
+  the limit. `alix deck source list` shows every sourced topic's measure per
+  backend and marks the ones it exceeds; `alix deck source add|bind|update`,
+  `alix doctor --repair-sources` and `alix doctor` warn with the same line
+  and never refuse.
+
 - The AI exam sets a standing only through a sitting that meets the review
   condition at its start: every card of every topic without a source,
   retired cards included, has graduated at Recall or deeper, its latest

@@ -6385,13 +6385,16 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     .unwrap();
     let live = guard.dir().join("examlive");
     std::fs::write(live.join("bsource.txt"), "b is a concept.\n").unwrap();
-    alix::sources::commands::add(alix::sources::commands::AddRequest {
-        deck: &deck_path,
-        files: vec![live.join("bsource.txt")],
-        root: None,
-        key: Some("src".to_string()),
-        topics: vec!["topic-sb".to_string()],
-    })
+    alix::sources::commands::add(
+        alix::sources::commands::AddRequest {
+            deck: &deck_path,
+            files: vec![live.join("bsource.txt")],
+            root: None,
+            key: Some("src".to_string()),
+            topics: vec!["topic-sb".to_string()],
+        },
+        &alix::config::ExamConfig::default(),
+    )
     .unwrap();
     std::fs::write(&grades_path, r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["p1"]},{"verdict":"fail","feedback":"no","missed":["p1"]}]}"#).unwrap();
     prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
@@ -6421,6 +6424,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         &live.join("bsource.txt"),
         None,
         false,
+        &alix::config::ExamConfig::default(),
     )
     .unwrap();
     assert_eq!(
@@ -9319,13 +9323,16 @@ fn write_sourced_member(
     std::fs::create_dir_all(&live).unwrap();
     for (name, content, topics) in sources {
         std::fs::write(live.join(name), content).unwrap();
-        alix::sources::commands::add(alix::sources::commands::AddRequest {
-            deck: &deck,
-            files: vec![live.join(name)],
-            root: Some(("src".to_string(), live.clone())),
-            key: None,
-            topics: topics.iter().map(|topic| topic.to_string()).collect(),
-        })
+        alix::sources::commands::add(
+            alix::sources::commands::AddRequest {
+                deck: &deck,
+                files: vec![live.join(name)],
+                root: Some(("src".to_string(), live.clone())),
+                key: None,
+                topics: topics.iter().map(|topic| topic.to_string()).collect(),
+            },
+            &alix::config::ExamConfig::default(),
+        )
         .unwrap();
     }
     deck

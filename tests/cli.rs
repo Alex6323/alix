@@ -1627,13 +1627,16 @@ fn reset_exam_clears_exam_state_only_and_lists_never_examined_dependents() {
             Path::new(deck).file_stem().unwrap().to_str().unwrap()
         ));
         std::fs::write(&file, deck.as_bytes()).unwrap();
-        alix::sources::commands::add(alix::sources::commands::AddRequest {
-            deck: Path::new(deck),
-            files: vec![file],
-            root: Some(("live".to_string(), live)),
-            key: None,
-            topics: Vec::new(),
-        })
+        alix::sources::commands::add(
+            alix::sources::commands::AddRequest {
+                deck: Path::new(deck),
+                files: vec![file],
+                root: Some(("live".to_string(), live)),
+                key: None,
+                topics: Vec::new(),
+            },
+            &alix::config::ExamConfig::default(),
+        )
         .unwrap();
     }
     let mut store = decks_store(&[&a, &b]);
@@ -9638,6 +9641,72 @@ fn deck_source_add_list_bind_unbind_remove_round_trip_by_id_prefix() {
         stdout(&out)
     );
     assert!(!copy.exists(), "remove: the copy is deleted");
+}
+
+#[test]
+fn deck_source_add_warns_on_a_topic_over_a_backends_limit_and_list_and_doctor_show_it() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let run = |args: &[&str]| alix_in(root.path(), home.path(), args);
+    write(
+        &root.path().join("live"),
+        "big.txt",
+        &format!("{}\n", "x".repeat(329_999)),
+    );
+    let root_arg = format!("sdk={}", root.path().join("live").display());
+
+    let out = run(&[
+        "deck",
+        "source",
+        "add",
+        "decks/d.md",
+        "live/big.txt",
+        "--root",
+        &root_arg,
+        "--topic",
+        "topic-al",
+    ]);
+    assert!(
+        out.status.success(),
+        "add: an oversized topic is never refused: {}",
+        stderr(&out)
+    );
+    let warnings = stderr(&out);
+    assert!(
+        warnings.lines().any(|line| {
+            line.starts_with("warning: topic `Alpha` exceeds copilot's limit: ")
+                && line.ends_with(" of 128000 estimated tokens")
+        }),
+        "add: warns for the 128,000-token backend: {warnings}"
+    );
+    assert!(
+        !warnings.contains("claude's limit"),
+        "add: 330 KB is under claude's limit: {warnings}"
+    );
+
+    let listing = stdout(&run(&["deck", "source", "list", "deck-sourced"]));
+    assert!(
+        listing.lines().any(|line| {
+            line.trim_start().starts_with("copilot")
+                && line.ends_with("of 128000 estimated tokens  exceeds the limit")
+        }),
+        "list: copilot's reading is marked: {listing}"
+    );
+    assert!(
+        listing.lines().any(|line| {
+            line.trim_start().starts_with("codex")
+                && line.contains(" of 1048576 characters")
+                && !line.contains("exceeds")
+        }),
+        "list: codex's reading is within its limit: {listing}"
+    );
+
+    let report = stderr(&run(&["doctor", "decks/d.md"]));
+    assert!(
+        report.lines().any(|line| line.starts_with("warning: ")
+            && line.contains("topic `Alpha` exceeds copilot's limit: ")),
+        "doctor: the same warning: {report}"
+    );
 }
 
 #[test]

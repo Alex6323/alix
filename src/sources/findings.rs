@@ -5,12 +5,12 @@ use std::{
 
 use super::{
     DeckSources, DisplayPath, Manifest, Roots, SourceError,
-    commands::{Drift, live_state},
+    commands::{Drift, live_state, over_limit, topic_measures},
     load_verified,
     roots::{root_fix, root_issue},
     stray_copies,
 };
-use crate::{deck::Deck, workspace::WorkspaceFiles};
+use crate::{config::ExamConfig, deck::Deck, workspace::WorkspaceFiles};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Findings {
@@ -19,7 +19,12 @@ pub struct Findings {
     pub notes: Vec<String>,
 }
 
-pub fn deck_findings(workspace_root: &Path, deck: &Deck, check_drift: bool) -> Findings {
+pub fn deck_findings(
+    workspace_root: &Path,
+    deck: &Deck,
+    check_drift: bool,
+    exam: &ExamConfig,
+) -> Findings {
     let mut findings = Findings::default();
     let Some(deck_id) = deck.deck_token.as_deref() else {
         return findings;
@@ -41,6 +46,12 @@ pub fn deck_findings(workspace_root: &Path, deck: &Deck, check_drift: bool) -> F
                 Err(error) => findings.errors.push(error.to_string()),
             }
             residue_notes(&dir, sources.residue(), &mut findings);
+            match topic_measures(deck, &sources, exam) {
+                Ok(measured) => findings
+                    .warnings
+                    .extend(over_limit(&measured).iter().map(ToString::to_string)),
+                Err(error) => findings.errors.push(error.to_string()),
+            }
             let DeckSources { manifest, .. } = sources;
             manifest
         }
@@ -148,14 +159,14 @@ mod tests {
             let deck = Deck::load(&deck_path).unwrap();
             assert_eq!(
                 Findings::default(),
-                deck_findings(fixture.root.path(), &deck, false),
+                deck_findings(fixture.root.path(), &deck, false, &ExamConfig::default()),
                 "{name}: the intact fixture draws no finding"
             );
             apply(&fixture);
             let refused = load_verified(fixture.root.path(), DECK)
                 .expect_err("the fault table only holds faults")
                 .to_string();
-            let findings = deck_findings(fixture.root.path(), &deck, false);
+            let findings = deck_findings(fixture.root.path(), &deck, false, &ExamConfig::default());
             assert_eq!(
                 vec![refused],
                 findings.errors,
@@ -178,7 +189,7 @@ mod tests {
             .collect();
         assert_eq!(2, copies.len(), "precondition: both copies remain");
 
-        let findings = deck_findings(fixture.root.path(), &deck, true);
+        let findings = deck_findings(fixture.root.path(), &deck, true, &ExamConfig::default());
 
         assert!(
             findings.errors.is_empty() && findings.warnings.is_empty(),
@@ -214,13 +225,16 @@ mod tests {
                 fs::write(dir.join(name), format!("{key} {name}\n")).unwrap();
                 files.push(dir.join(name));
             }
-            commands::add(commands::AddRequest {
-                deck: &workspace.deck(),
-                files,
-                root: Some((key.to_string(), dir)),
-                key: None,
-                topics: vec![TOPIC_A.to_string()],
-            })
+            commands::add(
+                commands::AddRequest {
+                    deck: &workspace.deck(),
+                    files,
+                    root: Some((key.to_string(), dir)),
+                    key: None,
+                    topics: vec![TOPIC_A.to_string()],
+                },
+                &ExamConfig::default(),
+            )
             .unwrap();
         }
         commands::root_unset(&workspace.deck(), "dl").unwrap();
@@ -233,14 +247,14 @@ mod tests {
         fs::remove_file(workspace.live().join("b.rs")).unwrap();
         let deck = Deck::load(workspace.deck()).unwrap();
 
-        let quiet = deck_findings(workspace.root(), &deck, false);
+        let quiet = deck_findings(workspace.root(), &deck, false, &ExamConfig::default());
         assert_eq!(
             Findings::default(),
             quiet,
             "without the flag: no drift line"
         );
 
-        let loud = deck_findings(workspace.root(), &deck, true);
+        let loud = deck_findings(workspace.root(), &deck, true, &ExamConfig::default());
         assert_eq!(
             vec![
                 "source `sdk:a.rs` changed since it was frozen; `alix doctor --repair-sources` \
@@ -267,7 +281,7 @@ mod tests {
         let gone = workspace.root().join("gone");
         roots.roots.insert("web".to_string(), gone.clone());
         roots.save(&workspace.dir()).unwrap();
-        let line = deck_findings(workspace.root(), &deck, true)
+        let line = deck_findings(workspace.root(), &deck, true, &ExamConfig::default())
             .warnings
             .pop()
             .unwrap();
@@ -294,7 +308,7 @@ mod tests {
                 "source `{}` is bound to `topic-gone`, which names no topic of the deck",
                 source_id(b"a\n")
             )],
-            deck_findings(workspace.root(), &deck, false).errors,
+            deck_findings(workspace.root(), &deck, false, &ExamConfig::default()).errors,
             "a binding to no topic"
         );
         workspace.rewrite_manifest("\"topic-gone\"", "\"topic-alpha\"");
@@ -303,7 +317,7 @@ mod tests {
             format!("version = {ROOTS_VERSION}\nnote = 1\n\n[roots]\n"),
         )
         .unwrap();
-        let errors = deck_findings(workspace.root(), &deck, false).errors;
+        let errors = deck_findings(workspace.root(), &deck, false, &ExamConfig::default()).errors;
         assert_eq!(
             1,
             errors.len(),

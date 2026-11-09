@@ -16,8 +16,9 @@ use super::{
     transaction::{Candidate, CommitReport, commit, save_roots},
 };
 use crate::{
-    config::BackendKind,
+    config::{BackendKind, ExamConfig},
     deck::{self, Deck},
+    exam_prompt::{PreflightError, TopicMeasure, measured_prompt},
     exam_status, locator, parser, state,
     store::{Store, StoreError},
     topic,
@@ -45,6 +46,7 @@ pub struct AddRequest<'a> {
 pub struct AddReport {
     pub added: Vec<(String, String)>,
     pub collected: Vec<String>,
+    pub over_limit: Vec<PreflightError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +62,12 @@ pub struct UpdateReport {
     pub path: String,
     pub kept_ranges: Vec<String>,
     pub collected: Vec<String>,
+    pub over_limit: Vec<PreflightError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindReport {
+    pub over_limit: Vec<PreflightError>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -69,6 +77,63 @@ pub struct RepairReport {
     pub skipped: Vec<(String, String)>,
     pub kept_ranges: Vec<(String, String)>,
     pub collected: Vec<String>,
+    pub over_limit: Vec<PreflightError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeasuredTopic {
+    pub topic_id: String,
+    pub label: String,
+    pub measures: Vec<TopicMeasure>,
+}
+
+/// Every sourced topic's prompt, measured for every backend.
+pub fn topic_measures(
+    deck: &Deck,
+    sources: &DeckSources,
+    exam: &ExamConfig,
+) -> Result<Vec<MeasuredTopic>, super::SourceError> {
+    let mut measured = Vec::new();
+    for topic in exam_status::exam_topics(deck, Some(&sources.manifest)) {
+        if !topic.sourced {
+            continue;
+        }
+        let texts = sources.texts_of(&topic.topic_id)?;
+        let prompt = measured_prompt(&topic, &texts, exam);
+        measured.push(MeasuredTopic {
+            measures: BackendKind::ALL
+                .iter()
+                .map(|&kind| TopicMeasure::of(kind, &prompt))
+                .collect(),
+            topic_id: topic.topic_id,
+            label: topic.label,
+        });
+    }
+    Ok(measured)
+}
+
+pub fn over_limit(measured: &[MeasuredTopic]) -> Vec<PreflightError> {
+    measured
+        .iter()
+        .flat_map(|topic| {
+            topic
+                .measures
+                .iter()
+                .filter(|measure| measure.exceeds())
+                .map(|&measure| PreflightError {
+                    topic: topic.label.clone(),
+                    measure,
+                })
+        })
+        .collect()
+}
+
+fn over_limit_of(
+    deck: &Deck,
+    sources: &DeckSources,
+    exam: &ExamConfig,
+) -> Result<Vec<PreflightError>> {
+    Ok(over_limit(&topic_measures(deck, sources, exam)?))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,7 +154,7 @@ pub struct TopicLine {
     pub label: String,
     pub source_count: usize,
     pub source_bytes: u64,
-    pub measure: Vec<(BackendKind, u64, u64)>,
+    pub measures: Vec<TopicMeasure>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,8 +556,8 @@ fn parse_root_key(key: &str) -> Result<String> {
     })
 }
 
-pub fn add(req: AddRequest) -> Result<AddReport> {
-    let opened = open(req.deck)?;
+pub fn add(req: AddRequest, exam: &ExamConfig) -> Result<AddReport> {
+    let mut opened = open(req.deck)?;
     let bindings = if req.topics.is_empty() {
         if opened
             .deck
@@ -531,6 +596,7 @@ pub fn add(req: AddRequest) -> Result<AddReport> {
         key = key.or(Some(root_key));
     }
     let mut manifest = opened.manifest.clone();
+    let mut copies = std::mem::take(&mut opened.copies);
     let mut new_copies = Vec::with_capacity(req.files.len());
     let mut added = Vec::with_capacity(req.files.len());
     for file in &req.files {
@@ -560,18 +626,26 @@ pub fn add(req: AddRequest) -> Result<AddReport> {
                 bound_to: bindings.iter().map(Binding::render).collect(),
             },
         );
-        new_copies.push((copy_name(&id, &placed.display), placed.bytes));
+        new_copies.push((copy_name(&id, &placed.display), placed.bytes.clone()));
+        copies.insert(id.clone(), placed.bytes);
         added.push((id, path));
     }
+    let sources = DeckSources {
+        dir: opened.dir.clone(),
+        manifest,
+        copies,
+    };
+    let over_limit = over_limit_of(&opened.deck, &sources, exam)?;
     let report = finish(
         &opened,
-        manifest,
+        sources.manifest,
         new_copies,
         roots_changed.then_some(roots),
     )?;
     Ok(AddReport {
         added,
         collected: report.collected,
+        over_limit,
     })
 }
 
@@ -598,8 +672,9 @@ pub fn update(
     file: &Path,
     key: Option<&str>,
     keep_results: bool,
+    exam: &ExamConfig,
 ) -> Result<UpdateReport> {
-    let opened = open(deck)?;
+    let mut opened = open(deck)?;
     let keep = keep_results
         .then(|| open_keep_results(&opened))
         .transpose()?;
@@ -640,10 +715,19 @@ pub fn update(
             bound_to: old_row.bound_to,
         },
     );
+    let mut copies = std::mem::take(&mut opened.copies);
+    copies.remove(&old_id);
+    copies.insert(new_id.clone(), placed.bytes.clone());
+    let sources = DeckSources {
+        dir: opened.dir.clone(),
+        manifest,
+        copies,
+    };
+    let over_limit = over_limit_of(&opened.deck, &sources, exam)?;
     let new_copies = vec![(copy_name(&new_id, &placed.display), placed.bytes)];
-    let report = finish(&opened, manifest.clone(), new_copies, None)?;
+    let report = finish(&opened, sources.manifest.clone(), new_copies, None)?;
     if let Some(keep) = keep {
-        keep_topic_results(&opened, &manifest, keep)?;
+        keep_topic_results(&opened, &sources.manifest, keep)?;
     }
     Ok(UpdateReport {
         old_id,
@@ -651,11 +735,12 @@ pub fn update(
         path,
         kept_ranges,
         collected: report.collected,
+        over_limit,
     })
 }
 
-pub fn bind(deck: &Path, source: &str, topics: &[String]) -> Result<()> {
-    let opened = open(deck)?;
+pub fn bind(deck: &Path, source: &str, topics: &[String], exam: &ExamConfig) -> Result<BindReport> {
+    let mut opened = open(deck)?;
     let id = resolve_source_prefix(&opened.manifest, source)?.to_string();
     let bindings = parse_topic_args(&opened.deck, topics)?;
     let lines = opened.copies.get(&id).map_or(0, |bytes| line_count(bytes));
@@ -676,8 +761,14 @@ pub fn bind(deck: &Path, source: &str, topics: &[String]) -> Result<()> {
             None => row.bound_to.push(entry),
         }
     }
-    finish(&opened, manifest, Vec::new(), None)?;
-    Ok(())
+    let sources = DeckSources {
+        dir: opened.dir.clone(),
+        manifest,
+        copies: std::mem::take(&mut opened.copies),
+    };
+    let over_limit = over_limit_of(&opened.deck, &sources, exam)?;
+    finish(&opened, sources.manifest, Vec::new(), None)?;
+    Ok(BindReport { over_limit })
 }
 
 pub fn unbind(deck: &Path, source: &str, topics: &[String]) -> Result<()> {
@@ -729,14 +820,28 @@ pub fn root_unset(deck: &Path, key: &str) -> Result<Option<PathBuf>> {
     Ok(old)
 }
 
-pub fn list(deck: &Path) -> Result<Listing> {
-    let opened = open(deck)?;
+pub fn list(deck: &Path, exam: &ExamConfig) -> Result<Listing> {
+    let Opened {
+        deck,
+        deck_id,
+        dir,
+        manifest,
+        copies,
+        roots,
+        ..
+    } = open(deck)?;
+    let held = DeckSources {
+        dir,
+        manifest,
+        copies,
+    };
+    let measured = topic_measures(&deck, &held, exam)?;
     let mut topics = Vec::new();
-    for (index, topic) in opened.deck.topics.iter().enumerate() {
-        let Some(id) = topic.id(&opened.deck_id) else {
+    for (index, topic) in deck.topics.iter().enumerate() {
+        let Some(id) = topic.id(&deck_id) else {
             continue;
         };
-        let bound: Vec<&String> = opened
+        let bound: Vec<&String> = held
             .manifest
             .sources
             .iter()
@@ -746,31 +851,36 @@ pub fn list(deck: &Path) -> Result<Listing> {
         let label = match &topic.heading {
             Some(heading) => heading.clone(),
             None => {
-                let holds_card = opened.deck.cards.iter().any(|card| card.topic == index);
+                let holds_card = deck.cards.iter().any(|card| card.topic == index);
                 if !holds_card && bound.is_empty() {
                     continue;
                 }
-                opened.deck.display_name()
+                deck.display_name()
             }
         };
         let source_bytes = bound
             .iter()
-            .filter_map(|source| opened.copies.get(*source))
+            .filter_map(|source| held.copies.get(*source))
             .map(|bytes| bytes.len() as u64)
             .sum();
+        let measures = measured
+            .iter()
+            .find(|topic| topic.topic_id == id)
+            .map(|topic| topic.measures.clone())
+            .unwrap_or_default();
         topics.push(TopicLine {
             id,
             label,
             source_count: bound.len(),
             source_bytes,
-            measure: Vec::new(),
+            measures,
         });
     }
-    let mut sources = Vec::with_capacity(opened.manifest.sources.len());
-    for (id, row) in &opened.manifest.sources {
+    let mut sources = Vec::with_capacity(held.manifest.sources.len());
+    for (id, row) in &held.manifest.sources {
         let display: DisplayPath = row.path.parse()?;
-        let issue = root_issue(&opened.roots.roots, &display.key);
-        let drift = match (&issue, opened.roots.roots.get(&display.key)) {
+        let issue = root_issue(&roots.roots, &display.key);
+        let drift = match (&issue, roots.roots.get(&display.key)) {
             (None, Some(dir)) => live_state(id, &display, dir).0,
             _ => Drift::Unchecked,
         };
@@ -778,7 +888,7 @@ pub fn list(deck: &Path) -> Result<Listing> {
             display,
             SourceLine {
                 id: id.clone(),
-                bytes: opened.copies.get(id).map_or(0, |bytes| bytes.len() as u64),
+                bytes: held.copies.get(id).map_or(0, |bytes| bytes.len() as u64),
                 path: row.path.clone(),
                 bound: row.bound_to.clone(),
                 drift,
@@ -818,14 +928,15 @@ pub(super) fn live_state(id: &str, display: &DisplayPath, dir: &Path) -> (Drift,
     }
 }
 
-pub fn repair(deck: &Path, keep_results: bool) -> Result<RepairReport> {
-    let opened = open(deck)?;
+pub fn repair(deck: &Path, keep_results: bool, exam: &ExamConfig) -> Result<RepairReport> {
+    let mut opened = open(deck)?;
     let keep = keep_results
         .then(|| open_keep_results(&opened))
         .transpose()?;
     let mut report = RepairReport::default();
     let mut rows: Vec<(String, Row)> = Vec::with_capacity(opened.manifest.sources.len());
     let mut new_copies = Vec::new();
+    let mut copies = std::mem::take(&mut opened.copies);
     let mut ordered: Vec<(&String, &Row)> = opened.manifest.sources.iter().collect();
     ordered.sort_by(|a, b| a.1.path.cmp(&b.1.path));
     for (id, row) in ordered {
@@ -848,7 +959,9 @@ pub fn repair(deck: &Path, keep_results: bool) -> Result<RepairReport> {
                     }
                 }
                 let new_id = source_id(&bytes);
-                new_copies.push((copy_name(&new_id, &display), bytes));
+                new_copies.push((copy_name(&new_id, &display), bytes.clone()));
+                copies.remove(id);
+                copies.insert(new_id.clone(), bytes);
                 report.refrozen.push((new_id.clone(), row.path.clone()));
                 new_id
             }
@@ -888,13 +1001,18 @@ pub fn repair(deck: &Path, keep_results: bool) -> Result<RepairReport> {
     if report.refrozen.is_empty() && stray_copies(&opened.dir)?.is_empty() {
         return Ok(report);
     }
-    let manifest = Manifest {
-        version: MANIFEST_VERSION,
-        sources: rows.into_iter().collect(),
+    let sources = DeckSources {
+        dir: opened.dir.clone(),
+        manifest: Manifest {
+            version: MANIFEST_VERSION,
+            sources: rows.into_iter().collect(),
+        },
+        copies,
     };
-    report.collected = finish(&opened, manifest.clone(), new_copies, None)?.collected;
+    report.over_limit = over_limit_of(&opened.deck, &sources, exam)?;
+    report.collected = finish(&opened, sources.manifest.clone(), new_copies, None)?.collected;
     if let Some(keep) = keep {
-        keep_topic_results(&opened, &manifest, keep)?;
+        keep_topic_results(&opened, &sources.manifest, keep)?;
     }
     Ok(report)
 }
@@ -925,6 +1043,160 @@ mod tests {
 
     fn first(_: &Workspace) -> String {
         source_id(A)
+    }
+
+    fn exam() -> ExamConfig {
+        ExamConfig::default()
+    }
+
+    fn over_limit_lines(listing: &Listing) -> Vec<String> {
+        listing
+            .topics
+            .iter()
+            .flat_map(|line| {
+                line.measures
+                    .iter()
+                    .filter(|measure| measure.exceeds())
+                    .map(|&measure| {
+                        PreflightError {
+                            topic: line.label.clone(),
+                            measure,
+                        }
+                        .to_string()
+                    })
+            })
+            .collect()
+    }
+
+    fn lines(over_limit: &[PreflightError]) -> Vec<String> {
+        over_limit.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn source_commands_warn_but_never_refuse_on_an_oversized_topic_and_list_shows_the_same_number()
+    {
+        let workspace = Workspace::new();
+        let big = format!("{}\n", "x".repeat(329_999));
+        workspace.write_live("big.txt", big.as_bytes());
+        let id = source_id(big.as_bytes());
+
+        let added = workspace
+            .add(&["big.txt"], &[TOPIC_A])
+            .unwrap_or_else(|error| panic!("add: {error:#}"));
+        let listing = list(&workspace.deck(), &exam()).unwrap();
+        let alpha = listing
+            .topics
+            .iter()
+            .find(|line| line.id == TOPIC_A)
+            .unwrap();
+        assert_eq!(
+            vec![BackendKind::Gemini, BackendKind::Copilot],
+            alpha
+                .measures
+                .iter()
+                .filter(|measure| measure.exceeds())
+                .map(|measure| measure.backend)
+                .collect::<Vec<_>>(),
+            "list: 330 KB exceeds the 128,000-token backends only: {:?}",
+            alpha.measures
+        );
+        let from_list = over_limit_lines(&listing);
+        assert_eq!(
+            from_list,
+            lines(&added.over_limit),
+            "add: warns with list's numbers and never refuses"
+        );
+        for line in &from_list {
+            assert!(
+                line.starts_with("topic `Alpha` exceeds ")
+                    && line.ends_with(" of 128000 estimated tokens"),
+                "add: the warning names the topic, the backend, both sizes and the unit: {line}"
+            );
+        }
+
+        let deck = Deck::load(workspace.deck()).unwrap();
+        let sources = load_verified(workspace.root(), DECK).unwrap().unwrap();
+        let topics = exam_status::examined_topics(&deck);
+        for kind in BackendKind::ALL {
+            let ask = crate::config::AskConfig {
+                backend: kind,
+                ..Default::default()
+            };
+            let expected = from_list
+                .iter()
+                .find(|line| line.contains(&format!(" exceeds {}'s ", kind.name())))
+                .cloned()
+                .map_or(Ok(()), Err);
+            assert_eq!(
+                expected,
+                crate::exam::preflight_topics(&topics, &sources, &exam(), &ask)
+                    .map_err(|error| format!("{error:#}")),
+                "preflight for {kind:?} says what add said"
+            );
+        }
+        assert_eq!(
+            from_list,
+            crate::sources::deck_findings(workspace.root(), &deck, false, &exam()).warnings,
+            "doctor: the same lines as warnings"
+        );
+
+        let bound = bind(&workspace.deck(), &id, &strings(&[TOPIC_B]), &exam())
+            .unwrap_or_else(|error| panic!("bind: {error:#}"));
+        let listing = list(&workspace.deck(), &exam()).unwrap();
+        assert_eq!(
+            over_limit_lines(&listing),
+            lines(&bound.over_limit),
+            "bind: Beta's lines join Alpha's, with list's numbers"
+        );
+        assert_eq!(
+            (4, 2),
+            (
+                bound.over_limit.len(),
+                bound
+                    .over_limit
+                    .iter()
+                    .filter(|line| line.topic == "Beta")
+                    .count()
+            ),
+            "bind: two backends per bound topic"
+        );
+        let alpha_before = listing.topics[0].measures.to_vec();
+
+        let bigger = format!("{}\n", "y".repeat(400_000));
+        workspace.write_live("big.txt", bigger.as_bytes());
+        let updated = update(
+            &workspace.deck(),
+            &id,
+            &workspace.live().join("big.txt"),
+            None,
+            false,
+            &exam(),
+        )
+        .unwrap_or_else(|error| panic!("update: {error:#}"));
+        let listing = list(&workspace.deck(), &exam()).unwrap();
+        assert_eq!(
+            over_limit_lines(&listing),
+            lines(&updated.over_limit),
+            "update: warns with list's numbers and never refuses"
+        );
+        assert!(
+            listing.topics[0]
+                .measures
+                .iter()
+                .zip(&alpha_before)
+                .all(|(after, before)| after.size > before.size),
+            "update: every backend's reading grew with the file"
+        );
+
+        workspace.write_live("big.txt", format!("{}\n", "z".repeat(350_000)).as_bytes());
+        let repaired = repair(&workspace.deck(), false, &exam())
+            .unwrap_or_else(|error| panic!("repair: {error:#}"));
+        let listing = list(&workspace.deck(), &exam()).unwrap();
+        assert_eq!(
+            (1, over_limit_lines(&listing)),
+            (repaired.refrozen.len(), lines(&repaired.over_limit)),
+            "repair: refreezes and warns with list's numbers"
+        );
     }
 
     fn base() -> Workspace {
@@ -1009,10 +1281,20 @@ mod tests {
             (
                 "update out of bounds",
                 |w| {
-                    bind(&w.deck(), &first(w), &strings(&["2-5|topic-beta"])).unwrap();
+                    bind(&w.deck(), &first(w), &strings(&["2-5|topic-beta"]), &exam()).unwrap();
                     w.write_live("a.rs", b"one\ntwo\n");
                 },
-                |w| update(&w.deck(), &first(w), &w.live().join("a.rs"), None, false).map(drop),
+                |w| {
+                    update(
+                        &w.deck(),
+                        &first(w),
+                        &w.live().join("a.rs"),
+                        None,
+                        false,
+                        &exam(),
+                    )
+                    .map(drop)
+                },
                 &["range 2-5 lies beyond line 2 of the new copy"],
             ),
             (
@@ -1024,7 +1306,17 @@ mod tests {
             (
                 "empty file on update",
                 |w| drop(w.write_live("a.rs", b"")),
-                |w| update(&w.deck(), &first(w), &w.live().join("a.rs"), None, false).map(drop),
+                |w| {
+                    update(
+                        &w.deck(),
+                        &first(w),
+                        &w.live().join("a.rs"),
+                        None,
+                        false,
+                        &exam(),
+                    )
+                    .map(drop)
+                },
                 &["the file is empty"],
             ),
             (
@@ -1046,13 +1338,16 @@ mod tests {
                 "root overwrite",
                 |w| fs::create_dir_all(w.root().join("other")).unwrap(),
                 |w| {
-                    add(AddRequest {
-                        deck: &w.deck(),
-                        files: vec![w.live().join("c.rs")],
-                        root: Some(("sdk".to_string(), w.root().join("other"))),
-                        key: None,
-                        topics: strings(&[TOPIC_A]),
-                    })
+                    add(
+                        AddRequest {
+                            deck: &w.deck(),
+                            files: vec![w.live().join("c.rs")],
+                            root: Some(("sdk".to_string(), w.root().join("other"))),
+                            key: None,
+                            topics: strings(&[TOPIC_A]),
+                        },
+                        &exam(),
+                    )
                     .map(drop)
                 },
                 &["root set"],
@@ -1079,13 +1374,16 @@ mod tests {
                 "unknown key",
                 |_| {},
                 |w| {
-                    add(AddRequest {
-                        deck: &w.deck(),
-                        files: vec![w.live().join("c.rs")],
-                        root: None,
-                        key: Some("dl".to_string()),
-                        topics: strings(&[TOPIC_A]),
-                    })
+                    add(
+                        AddRequest {
+                            deck: &w.deck(),
+                            files: vec![w.live().join("c.rs")],
+                            root: None,
+                            key: Some("dl".to_string()),
+                            topics: strings(&[TOPIC_A]),
+                        },
+                        &exam(),
+                    )
                     .map(drop)
                 },
                 &["no root `dl`"],
@@ -1132,7 +1430,7 @@ mod tests {
                     )
                     .unwrap();
                 },
-                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B])),
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B]), &exam()).map(drop),
                 &["topic id `topic-beta` is also at", "other.md"],
             ),
             (
@@ -1141,7 +1439,7 @@ mod tests {
                     let text = fs::read_to_string(w.deck()).unwrap();
                     fs::write(w.deck(), text.replace("topic-beta", "topic-alpha")).unwrap();
                 },
-                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_A])),
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_A]), &exam()).map(drop),
                 &["topic id `topic-alpha` is also at", "d.md:"],
             ),
             (
@@ -1178,13 +1476,16 @@ mod tests {
                     .unwrap()
                 },
                 |w| {
-                    add(AddRequest {
-                        deck: &w.root().join("loose.md"),
-                        files: vec![w.live().join("c.rs")],
-                        root: Some(("sdk".to_string(), w.live())),
-                        key: None,
-                        topics: Vec::new(),
-                    })
+                    add(
+                        AddRequest {
+                            deck: &w.root().join("loose.md"),
+                            files: vec![w.live().join("c.rs")],
+                            root: Some(("sdk".to_string(), w.live())),
+                            key: None,
+                            topics: Vec::new(),
+                        },
+                        &exam(),
+                    )
                     .map(drop)
                 },
                 &["not a workspace member"],
@@ -1198,19 +1499,19 @@ mod tests {
             (
                 "empty bound-to",
                 |w| w.rewrite_manifest("bound-to = [\"topic-alpha\"]", "bound-to = []"),
-                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B])),
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B]), &exam()).map(drop),
                 &["bound-to"],
             ),
             (
                 "missing topic binding",
                 |w| w.rewrite_manifest("\"topic-alpha\"", "\"topic-gone\""),
-                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B])),
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B]), &exam()).map(drop),
                 &["names no topic", "topic-gone"],
             ),
             (
                 "version",
                 |w| w.rewrite_manifest("version = 1", "version = 2"),
-                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B])),
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B]), &exam()).map(drop),
                 &["version 2"],
             ),
             (
@@ -1221,7 +1522,7 @@ mod tests {
                     bytes[0] ^= 1;
                     fs::write(copy, bytes).unwrap();
                 },
-                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B])),
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B]), &exam()).map(drop),
                 &["does not match its id"],
             ),
             (
@@ -1300,6 +1601,7 @@ mod tests {
             &workspace.deck(),
             &id,
             &strings(&["2-4|topic-alpha", TOPIC_B]),
+            &exam(),
         )
         .unwrap();
         let longer = [A, b"six\nseven\n"].concat();
@@ -1311,6 +1613,7 @@ mod tests {
             &workspace.live().join("a.rs"),
             None,
             false,
+            &exam(),
         )
         .unwrap_or_else(|error| panic!("update: {error:#}"));
 
@@ -1355,6 +1658,7 @@ mod tests {
             &workspace.deck(),
             "source",
             &strings(&["1-2|topic-alpha", TOPIC_B]),
+            &exam(),
         )
         .unwrap();
         let sources = load_verified(workspace.root(), DECK).unwrap().unwrap();
@@ -1366,7 +1670,7 @@ mod tests {
 
         workspace.add(&["c.rs"], &["topic-be"]).unwrap();
         workspace.write_live("c.rs", b"drifted\n");
-        let listing = list(&workspace.deck()).unwrap();
+        let listing = list(&workspace.deck(), &exam()).unwrap();
         let rows: Vec<(&str, u64, &str, Drift)> = listing
             .sources
             .iter()
@@ -1405,7 +1709,7 @@ mod tests {
 
         root_unset(&workspace.deck(), "sdk").unwrap();
         assert!(
-            list(&workspace.deck())
+            list(&workspace.deck(), &exam())
                 .unwrap()
                 .sources
                 .iter()
@@ -1441,7 +1745,7 @@ mod tests {
             strings(&[DECK]),
             sources.manifest.sources[&source_id(A)].bound_to
         );
-        let listing = list(&workspace.deck()).unwrap();
+        let listing = list(&workspace.deck(), &exam()).unwrap();
         assert_eq!(1, listing.topics.len(), "the leading topic holds a card");
         assert_eq!(
             "d", listing.topics[0].label,
@@ -1482,13 +1786,16 @@ mod tests {
 
         root_set(&workspace.deck(), "dl", &other)
             .unwrap_or_else(|error| panic!("root set beside a stale root: {error:#}"));
-        add(AddRequest {
-            deck: &workspace.deck(),
-            files: vec![other.join("o.txt")],
-            root: Some(("web".to_string(), other.clone())),
-            key: Some("web".to_string()),
-            topics: strings(&[TOPIC_A]),
-        })
+        add(
+            AddRequest {
+                deck: &workspace.deck(),
+                files: vec![other.join("o.txt")],
+                root: Some(("web".to_string(), other.clone())),
+                key: Some("web".to_string()),
+                topics: strings(&[TOPIC_A]),
+            },
+            &exam(),
+        )
         .unwrap_or_else(|error| panic!("add --root beside a stale root: {error:#}"));
         let roots = Roots::load(&workspace.dir()).unwrap().unwrap();
         assert_eq!(
@@ -1503,7 +1810,8 @@ mod tests {
         let workspace = base();
         fs::remove_file(workspace.live().join("a.rs")).unwrap();
         fs::create_dir(workspace.live().join("a.rs")).unwrap();
-        let listing = list(&workspace.deck()).unwrap_or_else(|error| panic!("list: {error:#}"));
+        let listing =
+            list(&workspace.deck(), &exam()).unwrap_or_else(|error| panic!("list: {error:#}"));
         assert_eq!(
             vec![Drift::Unreadable],
             listing
@@ -1525,7 +1833,7 @@ mod tests {
         fs::remove_file(workspace.live().join("a.rs")).unwrap();
         std::os::unix::fs::symlink(outside.join("a.rs"), workspace.live().join("a.rs")).unwrap();
         let drift = |workspace: &Workspace| -> Vec<Drift> {
-            list(&workspace.deck())
+            list(&workspace.deck(), &exam())
                 .unwrap()
                 .sources
                 .iter()
@@ -1557,7 +1865,13 @@ mod tests {
         fs::rename(workspace.dir(), &real).unwrap();
         std::os::unix::fs::symlink(&real, workspace.dir()).unwrap();
 
-        let error = bind(&workspace.deck(), &source_id(A), &strings(&[TOPIC_B])).unwrap_err();
+        let error = bind(
+            &workspace.deck(),
+            &source_id(A),
+            &strings(&[TOPIC_B]),
+            &exam(),
+        )
+        .unwrap_err();
 
         assert!(
             format!("{error:#}").contains("is a symbolic link"),
@@ -1589,7 +1903,8 @@ mod tests {
             let before = workspace.snapshot();
             let error = format!(
                 "{:#}",
-                repair(&workspace.deck(), false).expect_err("a convergence refuses the repair")
+                repair(&workspace.deck(), false, &exam())
+                    .expect_err("a convergence refuses the repair")
             );
             for path in ["`sdk:a.rs`", "`sdk:c.rs`"] {
                 assert!(error.contains(path), "{label}: names {path}: {error}");
@@ -1603,8 +1918,8 @@ mod tests {
 
         let edited = b"one\ntwo\nthree\nfour\nfive, edited\n";
         workspace.write_live("a.rs", edited);
-        let report =
-            repair(&workspace.deck(), false).unwrap_or_else(|error| panic!("repair: {error:#}"));
+        let report = repair(&workspace.deck(), false, &exam())
+            .unwrap_or_else(|error| panic!("repair: {error:#}"));
         assert_eq!(
             vec![(source_id(edited), "sdk:a.rs".to_string())],
             report.refrozen,
@@ -1615,7 +1930,7 @@ mod tests {
             report.collected,
             "repair: the old copy is collected"
         );
-        let listed: Vec<(String, Drift)> = list(&workspace.deck())
+        let listed: Vec<(String, Drift)> = list(&workspace.deck(), &exam())
             .unwrap()
             .sources
             .into_iter()
@@ -1631,7 +1946,7 @@ mod tests {
         );
         assert_eq!(
             RepairReport::default(),
-            repair(&workspace.deck(), false).unwrap(),
+            repair(&workspace.deck(), false, &exam()).unwrap(),
             "a second repair finds nothing to do"
         );
     }
@@ -1644,11 +1959,15 @@ mod tests {
             &workspace.deck(),
             &source_id(C),
             &strings(&["20-21|topic-beta"]),
+            &exam(),
         )
         .unwrap();
         workspace.write_live("c.rs", b"1\n2\n");
         let before = workspace.snapshot();
-        let error = format!("{:#}", repair(&workspace.deck(), false).unwrap_err());
+        let error = format!(
+            "{:#}",
+            repair(&workspace.deck(), false, &exam()).unwrap_err()
+        );
         assert!(
             error.contains("range 20-21 lies beyond line 2 of the live `sdk:c.rs`"),
             "range: {error}"
@@ -1656,7 +1975,10 @@ mod tests {
         assert_eq!(before, workspace.snapshot(), "range: nothing written");
 
         workspace.write_live("c.rs", b"");
-        let error = format!("{:#}", repair(&workspace.deck(), false).unwrap_err());
+        let error = format!(
+            "{:#}",
+            repair(&workspace.deck(), false, &exam()).unwrap_err()
+        );
         assert!(
             error.contains("`sdk:c.rs`: the file is empty"),
             "empty: {error}"
@@ -1665,7 +1987,7 @@ mod tests {
 
         workspace.write_live("c.rs", C);
         fs::remove_file(workspace.live().join("a.rs")).unwrap();
-        let report = repair(&workspace.deck(), false).unwrap();
+        let report = repair(&workspace.deck(), false, &exam()).unwrap();
         assert_eq!(
             (vec!["sdk:a.rs".to_string()], Vec::new()),
             (report.missing, report.refrozen),
@@ -1682,7 +2004,7 @@ mod tests {
         roots.roots.insert("sdk".to_string(), PathBuf::from("src"));
         roots.save(&workspace.dir()).unwrap();
         let before = workspace.snapshot();
-        let report = repair(&workspace.deck(), false).unwrap();
+        let report = repair(&workspace.deck(), false, &exam()).unwrap();
         assert_eq!(
             ["sdk:a.rs", "sdk:c.rs"]
                 .map(|path| {
@@ -1698,7 +2020,7 @@ mod tests {
             "a root that is not an absolute folder is never used, and the reason names the fix"
         );
         assert_eq!(before, workspace.snapshot(), "unchecked: nothing written");
-        let listed: Vec<(Drift, Option<String>)> = list(&workspace.deck())
+        let listed: Vec<(Drift, Option<String>)> = list(&workspace.deck(), &exam())
             .unwrap()
             .sources
             .into_iter()
@@ -1796,6 +2118,7 @@ mod tests {
             &workspace.live().join("a.rs"),
             None,
             keep_results,
+            &exam(),
         )
     }
 
@@ -1837,6 +2160,7 @@ mod tests {
             &workspace.deck(),
             &source_id(A),
             &strings(&["2-4|topic-alpha"]),
+            &exam(),
         )
         .unwrap();
         let f1 = current_fingerprint(&Deck::load(workspace.deck()).unwrap(), TOPIC_A);
@@ -1947,8 +2271,8 @@ mod tests {
         workspace.write_live("a.rs", EDITED);
         workspace.write_live("c.rs", b"1\n2\n3, edited\n");
 
-        let report =
-            repair(&workspace.deck(), true).unwrap_or_else(|error| panic!("repair: {error:#}"));
+        let report = repair(&workspace.deck(), true, &exam())
+            .unwrap_or_else(|error| panic!("repair: {error:#}"));
 
         assert_eq!(
             2,

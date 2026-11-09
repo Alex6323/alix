@@ -164,23 +164,31 @@ The rest of the AI-and-deck surface:
     `--root` saves `<dir>` as the folder of `<key>` (refused when `<key>` is
     already saved to another folder); `--key` picks the root when several
     hold a file. `--topic` may be left out only on a deck without `#`
-    topics, which binds the deck id.
+    topics, which binds the deck id. Warns, and never refuses, when a bound
+    topic's exam prompt exceeds a backend's limit
+    ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be)).
   - `remove <deck> <source>...`: drop sources and delete their copies.
   - `update <deck> <source> <file> [--key <key>] [--keep-results]`: refreeze
     a source from a file, keeping its bindings and their ranges; prints each
     kept range for review. `--keep-results` declares that the new bytes keep
     the meaning: a result of a topic the source grounds moves to the new
     material unless it already was stale, and the standing stays solid if it
-    was solid before ([sources](12-the-ai-exam.md#sources)).
+    was solid before ([sources](12-the-ai-exam.md#sources)). Warns like
+    `add` on a topic over a backend's limit.
   - `bind <deck> <source> <topic>...`: add a topic's entry, or replace it
-    when the topic is already bound.
+    when the topic is already bound. Warns like `add` on a topic over a
+    backend's limit.
   - `unbind <deck> <source> <topic>...`: drop topics, named without ranges;
     the last topic of a source cannot be unbound (remove the source
     instead).
   - `root set <deck> <key> <dir>` and `root unset <deck> <key>`: save or
     forget where a key's live files are on this machine, printing
     `old -> new`.
-  - `list <deck>`: each topic with its source count and bytes, and each
+  - `list <deck>`: each topic with its source count and bytes, then one
+    line per backend with the topic's exam prompt measured against that
+    backend's limit (`copilot  133649 of 128000 estimated tokens  exceeds
+    the limit`; [how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be)),
+    and each
     source with its id, bytes, display path, drift (`same`, `changed`,
     `missing`, `unreadable`, `linked` for a live path that is a symbolic
     link or leaves its root, which is never followed, or `unchecked` for a
@@ -241,8 +249,9 @@ The rest of the AI-and-deck surface:
 The agentic `generate` runs measure the source size before running and prompt
 for confirmation when it's large. Pass `--yes` to skip the prompts in
 non-interactive scripts. The [AI exam](12-the-ai-exam.md) runs unattended in
-the browser instead, so it can't prompt: it truncates an oversized source and
-notes it.
+the browser instead, so it can't prompt: it refuses to start on a topic whose
+prompt exceeds the backend's limit, naming the topic, the backend, the size
+and the limit ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be)).
 
 ## Sharing
 
@@ -310,7 +319,10 @@ notes it.
   from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, and
   a file that only shares a required id's name (the id wins, so add the `.md`
   extension to mean the file). It flags a `exam:` pointing into `assets/`
-  (a deck keeps its real source, never its frozen excerpt fragments). It also
+  (a deck keeps its real source, never its frozen excerpt fragments). It
+  warns when a sourced topic's exam prompt exceeds a backend's limit, with
+  the line the exam would refuse with
+  ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be)). It also
   names deck-like Markdown ignored until explicitly
   initialized, invalid or orphaned per-deck progress or augmentation documents,
   and synchronization conflict copies. Workspace checks also reject live source
@@ -379,7 +391,8 @@ notes it.
   line. A live file that is gone is reported and its source kept; a key
   without a usable root is never read, and the warning names why with the
   `alix deck source root set` command that fixes it. Copies no row names
-  are deleted. `--keep-results` (only beside `--repair-sources`) keeps each
+  are deleted, and a refrozen topic over a backend's limit is warned about,
+  never refused. `--keep-results` (only beside `--repair-sources`) keeps each
   refrozen topic's result and the standing, as
   `alix deck source update --keep-results` does.
 - `alix doctor [dir-or-deck] --repair-diagrams`: after you review the

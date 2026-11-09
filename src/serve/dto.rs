@@ -1846,13 +1846,16 @@ mod tests {
         std::fs::create_dir_all(&live).unwrap();
         let file = live.join("base.txt");
         std::fs::write(&file, "the source of base\n").unwrap();
-        crate::sources::commands::add(crate::sources::commands::AddRequest {
-            deck: &base,
-            files: vec![file],
-            root: Some(("live".to_string(), live)),
-            key: None,
-            topics: vec!["topic-core".to_string()],
-        })
+        crate::sources::commands::add(
+            crate::sources::commands::AddRequest {
+                deck: &base,
+                files: vec![file],
+                root: Some(("live".to_string(), live)),
+                key: None,
+                topics: vec!["topic-core".to_string()],
+            },
+            &crate::config::ExamConfig::default(),
+        )
         .unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),

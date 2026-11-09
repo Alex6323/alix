@@ -143,10 +143,13 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::sources::{
-        commands::{self, bind, list},
-        load_verified,
-        testkit::{DECK, TOPIC_A, TOPIC_B, Workspace},
+    use crate::{
+        config::ExamConfig,
+        sources::{
+            commands::{self, bind, list},
+            load_verified,
+            testkit::{DECK, TOPIC_A, TOPIC_B, Workspace},
+        },
     };
 
     const FIRST: &[u8] = b"first\n";
@@ -178,13 +181,16 @@ mod tests {
     }
 
     fn add_under_a_new_root(workspace: &Workspace) -> anyhow::Result<()> {
-        commands::add(commands::AddRequest {
-            deck: &workspace.deck(),
-            files: vec![workspace.root().join("dl").join("page.txt")],
-            root: Some(("dl".to_string(), workspace.root().join("dl"))),
-            key: None,
-            topics: vec![TOPIC_B.to_string()],
-        })
+        commands::add(
+            commands::AddRequest {
+                deck: &workspace.deck(),
+                files: vec![workspace.root().join("dl").join("page.txt")],
+                root: Some(("dl".to_string(), workspace.root().join("dl"))),
+                key: None,
+                topics: vec![TOPIC_B.to_string()],
+            },
+            &ExamConfig::default(),
+        )
         .map(drop)
     }
 
@@ -269,14 +275,19 @@ mod tests {
                 replaced_after_rename |= commit_error.manifest_replaced;
                 left_temporaries |= !temporaries(&workspace).is_empty();
                 let residue = loaded.residue().unwrap();
-                list(&workspace.deck()).unwrap();
+                list(&workspace.deck(), &ExamConfig::default()).unwrap();
                 assert_eq!(
                     residue,
                     loaded.residue().unwrap(),
                     "{step}: list collected residue"
                 );
-                bind(&workspace.deck(), &source_id(FIRST), &[TOPIC_A.to_string()])
-                    .unwrap_or_else(|error| panic!("{step}: bind: {error:#}"));
+                bind(
+                    &workspace.deck(),
+                    &source_id(FIRST),
+                    &[TOPIC_A.to_string()],
+                    &ExamConfig::default(),
+                )
+                .unwrap_or_else(|error| panic!("{step}: bind: {error:#}"));
                 let collected = load_verified(workspace.root(), DECK).unwrap().unwrap();
                 assert!(
                     collected.residue().unwrap().is_empty(),

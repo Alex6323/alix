@@ -10,7 +10,7 @@ use super::{
     MANIFEST, ROOTS,
     commands::{self, AddReport, AddRequest},
 };
-use crate::workspace::WorkspaceFiles;
+use crate::{config::ExamConfig, workspace::WorkspaceFiles};
 
 pub(crate) const DECK: &str = "deck-fixture";
 pub(crate) const TOPIC_A: &str = "topic-alpha";
@@ -59,23 +59,29 @@ impl Workspace {
     }
 
     pub(crate) fn add(&self, names: &[&str], topics: &[&str]) -> anyhow::Result<AddReport> {
-        commands::add(AddRequest {
-            deck: &self.deck(),
-            files: names.iter().map(|name| self.live().join(name)).collect(),
-            root: Some(("sdk".to_string(), self.live())),
-            key: None,
-            topics: topics.iter().map(|topic| topic.to_string()).collect(),
-        })
+        commands::add(
+            AddRequest {
+                deck: &self.deck(),
+                files: names.iter().map(|name| self.live().join(name)).collect(),
+                root: Some(("sdk".to_string(), self.live())),
+                key: None,
+                topics: topics.iter().map(|topic| topic.to_string()).collect(),
+            },
+            &ExamConfig::default(),
+        )
     }
 
     pub(crate) fn add_bare(&self, files: &[PathBuf], topics: &[&str]) -> anyhow::Result<AddReport> {
-        commands::add(AddRequest {
-            deck: &self.deck(),
-            files: files.to_vec(),
-            root: None,
-            key: None,
-            topics: topics.iter().map(|topic| topic.to_string()).collect(),
-        })
+        commands::add(
+            AddRequest {
+                deck: &self.deck(),
+                files: files.to_vec(),
+                root: None,
+                key: None,
+                topics: topics.iter().map(|topic| topic.to_string()).collect(),
+            },
+            &ExamConfig::default(),
+        )
     }
 
     pub(crate) fn manifest_text(&self) -> String {
@@ -132,19 +138,22 @@ pub(crate) fn sourced(path: PathBuf) -> PathBuf {
     let stem = path.file_stem().unwrap().to_str().unwrap().to_string();
     let file = live.join(format!("{stem}.txt"));
     fs::write(&file, format!("the source of {stem}\n")).unwrap();
-    commands::add(AddRequest {
-        deck: &path,
-        files: vec![file],
-        root: Some(("live".to_string(), live)),
-        key: None,
-        topics: deck
-            .topic_ids()
-            .into_iter()
-            .enumerate()
-            .filter(|(at, _)| deck.cards.iter().any(|card| card.topic == *at))
-            .filter_map(|(_, id)| id)
-            .collect(),
-    })
+    commands::add(
+        AddRequest {
+            deck: &path,
+            files: vec![file],
+            root: Some(("live".to_string(), live)),
+            key: None,
+            topics: deck
+                .topic_ids()
+                .into_iter()
+                .enumerate()
+                .filter(|(at, _)| deck.cards.iter().any(|card| card.topic == *at))
+                .filter_map(|(_, id)| id)
+                .collect(),
+        },
+        &ExamConfig::default(),
+    )
     .unwrap();
     path
 }

@@ -62,6 +62,7 @@ mod entities;
 #[cfg(feature = "full")]
 pub mod exam;
 pub mod exam_ideas;
+pub mod exam_prompt;
 pub mod exam_status;
 #[cfg(feature = "full")]
 pub mod explore;

@@ -5,6 +5,7 @@ use std::{
 
 use alix::{
     cite::CitationRoots,
+    config::ExamConfig,
     deck::{AtRewrite, Deck},
     source::CitationIntegrity,
     trace::{DriftKind, Trace},
@@ -36,6 +37,7 @@ struct Report {
     warnings: Vec<String>,
     notes: Vec<String>,
     drift: DriftChecks,
+    exam: ExamConfig,
 }
 
 impl Report {
@@ -241,7 +243,8 @@ fn deck_source_findings(deck: &Deck, report: &mut Report) {
     let Some(root) = workspace::root_for_deck(&deck.path) else {
         return;
     };
-    let found = alix::sources::deck_findings(&root, deck, report.drift.sources);
+    let exam = report.exam.clone().for_workspace(&root);
+    let found = alix::sources::deck_findings(&root, deck, report.drift.sources, &exam);
     let at = deck.path.display();
     report
         .errors
@@ -1267,16 +1270,19 @@ fn findings_in(dir: &Path, drift: DriftChecks) -> Report {
     report
 }
 
-fn check(decks: Vec<PathBuf>, drift: DriftChecks) -> Result<()> {
-    let report = check_report(decks, drift);
+fn check(decks: Vec<PathBuf>, drift: DriftChecks, exam: ExamConfig) -> Result<()> {
+    let report = check_report(decks, drift, exam);
     if report.render() {
         bail!("{} error(s) found", report.errors.len());
     }
     Ok(())
 }
 
-fn check_report(decks: Vec<PathBuf>, drift: DriftChecks) -> Report {
-    let mut report = Report::new(drift);
+fn check_report(decks: Vec<PathBuf>, drift: DriftChecks, exam: ExamConfig) -> Report {
+    let mut report = Report {
+        exam,
+        ..Report::new(drift)
+    };
     let mut manifests_reported = std::collections::HashSet::new();
     let mut inherited_settings: HashMap<PathBuf, alix::deck::DeckSettings> = HashMap::new();
     for path in &decks {
@@ -1667,7 +1673,7 @@ fn repair_cite_locators(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn repair_sources(paths: &[PathBuf], keep_results: bool) -> Result<()> {
+fn repair_sources(paths: &[PathBuf], keep_results: bool, exam: &ExamConfig) -> Result<()> {
     for path in paths {
         let Some(root) = workspace::root_for_deck(path) else {
             continue;
@@ -1681,9 +1687,13 @@ fn repair_sources(paths: &[PathBuf], keep_results: bool) -> Result<()> {
         {
             continue;
         }
-        let report = alix::sources::commands::repair(path, keep_results)
+        let exam = exam.clone().for_workspace(&root);
+        let report = alix::sources::commands::repair(path, keep_results, &exam)
             .with_context(|| format!("cannot repair the sources of {}", path.display()))?;
         let at = path.display();
+        for line in &report.over_limit {
+            eprintln!("warning: {at}: {line}");
+        }
         for (id, source) in &report.refrozen {
             println!("{at}: refroze {source} as {id}");
         }
@@ -1739,7 +1749,7 @@ impl Repairs {
             || self.comment_order
     }
 
-    fn run(self, paths: &[PathBuf]) -> Result<()> {
+    fn run(self, paths: &[PathBuf], exam: &ExamConfig) -> Result<()> {
         if self.normalize {
             normalize_decks(paths)?;
         }
@@ -1747,7 +1757,7 @@ impl Repairs {
             repair_cite_locators(paths)?;
         }
         if self.sources {
-            repair_sources(paths, self.keep_results)?;
+            repair_sources(paths, self.keep_results, exam)?;
         }
         if self.positions {
             repair_positions(paths)?;
@@ -1867,19 +1877,19 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         cite_locators: args.warn_on_cite_locator_drift,
         sources: args.warn_on_source_drift,
     };
+    let (config_finding, config) = doctor::check_config(args.config.as_deref());
     if let Some(path) = &args.dir {
         if path.is_file() {
-            repairs.run(std::slice::from_ref(path))?;
-            return check(vec![path.clone()], drift);
+            repairs.run(std::slice::from_ref(path), &config.exam)?;
+            return check(vec![path.clone()], drift, config.exam);
         }
         if alix::workspace::is_workspace(path) {
             if repairs.any() {
-                repairs.run(&alix::workspace::diagnosable_deck_files(path))?;
+                repairs.run(&alix::workspace::diagnosable_deck_files(path), &config.exam)?;
             }
-            check(vec![path.clone()], drift)?;
+            check(vec![path.clone()], drift, config.exam.clone())?;
         }
     }
-    let (config_finding, config) = doctor::check_config(args.config.as_deref());
     let mut findings = vec![config_finding];
     let instance =
         crate::profile::instance_name_for_launch(args.config.as_deref(), args.dir.as_deref());
@@ -1893,7 +1903,10 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
         }
     };
     if repairs.any() && repair_after_explicit_path {
-        repairs.run(&alix::workspace::diagnosable_deck_files(&decks_dir))?;
+        repairs.run(
+            &alix::workspace::diagnosable_deck_files(&decks_dir),
+            &config.exam,
+        )?;
     }
     if args.remove_backup_files {
         let baks = doctor::backup_files(&decks_dir);
@@ -2177,13 +2190,16 @@ mod tests {
         .unwrap();
         w(&ws.join("live"), "a.rs", "a\n");
         w(&ws.join("live"), "b.rs", "b\n");
-        alix::sources::commands::add(alix::sources::commands::AddRequest {
-            deck: &deck,
-            files: vec![ws.join("live").join("a.rs"), ws.join("live").join("b.rs")],
-            root: Some(("sdk".to_string(), ws.join("live"))),
-            key: None,
-            topics: vec!["topic-alpha".to_string()],
-        })
+        alix::sources::commands::add(
+            alix::sources::commands::AddRequest {
+                deck: &deck,
+                files: vec![ws.join("live").join("a.rs"), ws.join("live").join("b.rs")],
+                root: Some(("sdk".to_string(), ws.join("live"))),
+                key: None,
+                topics: vec!["topic-alpha".to_string()],
+            },
+            &ExamConfig::default(),
+        )
         .unwrap();
         let folder = workspace::WorkspaceFiles::new(ws).sources_for("deck-sourced");
         let stray = folder.join(format!("{}.txt", alix::sources::source_id(b"stray\n")));
@@ -2200,7 +2216,7 @@ mod tests {
         );
         let report_of = |target: &str, drift: DriftChecks| match target {
             "workspace" => findings_in(ws, drift),
-            _ => check_report(vec![deck.clone()], drift),
+            _ => check_report(vec![deck.clone()], drift, ExamConfig::default()),
         };
         for target in ["workspace", "deck file"] {
             let plain = report_of(target, DriftChecks::default());
@@ -2252,13 +2268,16 @@ mod tests {
         let text = "---\nid: \"deck-sourced\"\n---\n# A\n<!-- id: topic-alpha -->\n## q\na\n<!-- id: \
                     card-q -->\n# B\n<!-- id: topic-beta -->\n## r\nb\n<!-- id: card-r -->\n";
         std::fs::write(&deck, text).unwrap();
-        alix::sources::commands::add(alix::sources::commands::AddRequest {
-            deck: &deck,
-            files: vec![ws.join("live").join("a.rs")],
-            root: Some(("sdk".to_string(), ws.join("live"))),
-            key: None,
-            topics: vec!["topic-alpha".to_string(), "topic-beta".to_string()],
-        })
+        alix::sources::commands::add(
+            alix::sources::commands::AddRequest {
+                deck: &deck,
+                files: vec![ws.join("live").join("a.rs")],
+                root: Some(("sdk".to_string(), ws.join("live"))),
+                key: None,
+                topics: vec!["topic-alpha".to_string(), "topic-beta".to_string()],
+            },
+            &ExamConfig::default(),
+        )
         .unwrap();
         std::fs::write(&deck, text.replace("topic-beta", "topic-alpha")).unwrap();
         let mut report = Report::default();
@@ -2746,7 +2765,13 @@ mod tests {
                 "---\nformat-version: 1\nid: deck-00000000000000000000000001\n---\n## q\na\n<!-- id: card-00000000000000000000000002 -->\n",
             );
 
-            if check(vec![decks.join("ready.md")], DriftChecks::default()).is_ok() {
+            if check(
+                vec![decks.join("ready.md")],
+                DriftChecks::default(),
+                ExamConfig::default(),
+            )
+            .is_ok()
+            {
                 missed.push(label);
             }
         }
@@ -3268,15 +3293,23 @@ mod tests {
         } else {
             alix::workspace::diagnosable_deck_files(target)
         };
-        if let Err(error) = repairs.run(&paths) {
+        if let Err(error) = repairs.run(&paths, &ExamConfig::default()) {
             report.error(format!("{error:#}"));
             return report;
         }
         if target.is_file() {
-            return check_report(vec![target.to_path_buf()], DriftChecks::default());
+            return check_report(
+                vec![target.to_path_buf()],
+                DriftChecks::default(),
+                ExamConfig::default(),
+            );
         }
         if alix::workspace::is_workspace(target) {
-            report = check_report(vec![target.to_path_buf()], DriftChecks::default());
+            report = check_report(
+                vec![target.to_path_buf()],
+                DriftChecks::default(),
+                ExamConfig::default(),
+            );
             if !report.errors.is_empty() {
                 return report;
             }
@@ -3784,7 +3817,14 @@ mod tests {
     fn check_rejects_a_directory_without_a_workspace_manifest() {
         let dir = tempfile::tempdir().unwrap();
 
-        assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_err());
+        assert!(
+            check(
+                vec![dir.path().to_path_buf()],
+                DriftChecks::default(),
+                ExamConfig::default()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -3805,8 +3845,9 @@ mod tests {
             })
             .collect();
 
-        let (_, counts) =
-            alix::profile::collect(|| check_report(decks.clone(), DriftChecks::default()));
+        let (_, counts) = alix::profile::collect(|| {
+            check_report(decks.clone(), DriftChecks::default(), ExamConfig::default())
+        });
 
         assert!(
             counts.canonicalize_calls <= decks.len() as u64,
@@ -3885,7 +3926,12 @@ mod tests {
             }
             assert_eq!(
                 rejected_key.is_some(),
-                check(vec![dir.clone()], DriftChecks::default()).is_err(),
+                check(
+                    vec![dir.clone()],
+                    DriftChecks::default(),
+                    ExamConfig::default()
+                )
+                .is_err(),
                 "{name}: explicit doctor status"
             );
 
@@ -3940,7 +3986,12 @@ mod tests {
             "empty.md",
             "---\nformat-version: 1\nid: deck-empty\n---\n## q\na\n<!-- id: card-qempty -->\n",
         );
-        check(vec![declared, empty, plain], DriftChecks::default()).unwrap();
+        check(
+            vec![declared, empty, plain],
+            DriftChecks::default(),
+            ExamConfig::default(),
+        )
+        .unwrap();
 
         let workspace = dir.path().join("workspace");
         std::fs::create_dir(&workspace).unwrap();
@@ -3949,7 +4000,12 @@ mod tests {
             alix::workspace::MANIFEST,
             "icon = \"gone.svg\"\n",
         );
-        check(vec![workspace], DriftChecks::default()).unwrap();
+        check(
+            vec![workspace],
+            DriftChecks::default(),
+            ExamConfig::default(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -4348,7 +4404,14 @@ printf ']}}'
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "icon = \"assets/gone.svg\"\n").unwrap();
         std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
-        assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_ok());
+        assert!(
+            check(
+                vec![dir.path().to_path_buf()],
+                DriftChecks::default(),
+                ExamConfig::default()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -4361,7 +4424,14 @@ printf ']}}'
         )
         .unwrap();
         std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
-        assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_ok());
+        assert!(
+            check(
+                vec![dir.path().to_path_buf()],
+                DriftChecks::default(),
+                ExamConfig::default()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -4528,13 +4598,16 @@ printf ']}}'
         let stem = deck.file_stem().unwrap().to_string_lossy().into_owned();
         let file = live.join(format!("{stem}.txt"));
         std::fs::write(&file, format!("the source of {stem}\n")).unwrap();
-        alix::sources::commands::add(alix::sources::commands::AddRequest {
-            deck,
-            files: vec![file],
-            root: Some(("live".to_string(), live)),
-            key: None,
-            topics,
-        })
+        alix::sources::commands::add(
+            alix::sources::commands::AddRequest {
+                deck,
+                files: vec![file],
+                root: Some(("live".to_string(), live)),
+                key: None,
+                topics,
+            },
+            &ExamConfig::default(),
+        )
         .unwrap();
     }
 

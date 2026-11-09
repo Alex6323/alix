@@ -81,3 +81,6 @@ Result:
   alix's argv omits `--skip-git-repo-check`; the probe ran from a folder
   set up with `git init`. Named as `{#codex-needs-skip-git-repo-check}`.
 - Gemini's bare `-p` predates this arc. Named as `{#gemini-bare-p-rejected}`.
+- The constants live in `src/exam_prompt.rs`: `prompt_limit` holds each
+  backend's `PromptLimit` (Gemini's arm shares Copilot's), and `Measure::of`
+  does the counting.

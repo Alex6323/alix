@@ -294,6 +294,13 @@ pub enum BackendKind {
 }
 
 impl BackendKind {
+    pub const ALL: [BackendKind; 4] = [
+        BackendKind::Claude,
+        BackendKind::Gemini,
+        BackendKind::Codex,
+        BackendKind::Copilot,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             BackendKind::Claude => "claude",
@@ -1666,6 +1673,19 @@ mod tests {
     #[test]
     fn review_rejects_a_malformed_retire_after() {
         assert!(Config::from_toml("[review]\nretire_after = \"soon\"\n").is_err());
+    }
+
+    #[test]
+    fn every_backend_kind_is_listed_in_all_once() {
+        for kind in BackendKind::ALL {
+            let at = match kind {
+                BackendKind::Claude => 0,
+                BackendKind::Gemini => 1,
+                BackendKind::Codex => 2,
+                BackendKind::Copilot => 3,
+            };
+            assert_eq!(kind, BackendKind::ALL[at], "{kind:?} sits at its own slot");
+        }
     }
 
     #[test]

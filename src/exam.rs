@@ -12,6 +12,7 @@ use crate::{
     config::{AskConfig, ExamConfig, Strictness},
     deck::{self, Deck},
     exam_ideas::{Idea, IdeaTopic, IdeasDocument},
+    exam_prompt::{PreflightError, ideas_prompt, measure_topic, questions_prompt},
     sources::DeckSources,
     store::Store,
     workspace,
@@ -683,6 +684,7 @@ pub fn spawn_prepare(
                 })
             };
             let stale: Vec<ExamTopic> = topics.iter().filter(|t| !kept(t)).cloned().collect();
+            preflight_topics(&stale, &sources, &cfg, &ask_cfg)?;
             let written = generate_topics(
                 &stale,
                 &sources,
@@ -967,6 +969,11 @@ impl Sitting {
                 topics
                     .is_empty()
                     .then(|| "the deck has no topic with sources to examine".to_string())
+            })
+            .or_else(|| {
+                preflight_topics(&topics, &sources, &cfg, &ask_cfg)
+                    .err()
+                    .map(|error| format!("{error:#}"))
             });
         if let Some(error) = refusal {
             return Self::refused(deck, error, strictness, cfg, ask_cfg);
@@ -1425,137 +1432,25 @@ pub fn unreadable_exam_entries(deck: &Deck) -> Vec<(String, String)> {
         .collect()
 }
 
-fn source_section(sources: &[SourceText]) -> String {
-    let mut out = String::new();
-    for source in sources {
-        out.push_str(&format!("\nSource `{}`:\n<<<SOURCE\n", source.display));
-        out.push_str(&source.text);
-        if !source.text.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str("SOURCE\n");
-    }
-    out
-}
-
-fn topic_scope(topic: &ExamTopic) -> String {
-    let mut scope = format!("Topic: {}\n", topic.label);
-    for line in topic.context.iter().skip(1) {
-        scope.push_str(line);
-        scope.push('\n');
-    }
-    scope.push_str("Cards:\n");
-    for card in &topic.cards {
-        scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
-    }
-    scope.push('\n');
-    scope
-}
-
-pub fn ideas_prompt(topic: &ExamTopic, sources: &[SourceText], cfg: &ExamConfig) -> String {
-    let sources = source_section(sources);
-    let scope = topic_scope(topic);
-    let mut prompt = format!(
-        "You are preparing an oral exam that verifies a student truly UNDERSTANDS a \
-         topic.\n\n\
-         {sources}\n\
-         The student drilled flashcards on this material. The topic below is marked out \
-         by its heading, with the prose under it when there is any. Its cards show only \
-         what the student has drilled so far; they do not mark the edge of the topic.\n\n\
-         {scope}\
-         List the topic's ideas: the distinct ideas a student must understand to master \
-         this topic, as the sources above teach them. Cover everything the sources teach \
-         within the topic, whether or not a card states it. List as many as the topic \
-         really holds, at least one; name each idea in a short phrase.\n\n\
-         Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
-         {{\"ideas\": [\"...\", \"...\"]}}"
-    );
-    push_extra(&mut prompt, cfg);
-    prompt
-}
-
-fn push_extra(prompt: &mut String, cfg: &ExamConfig) {
-    if let Some(extra) = cfg
-        .extra
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        prompt.push_str("\n\nAdditional instructions:\n");
-        prompt.push_str(extra);
-    }
-}
-
-pub fn questions_prompt(
-    topic: &ExamTopic,
-    sources: &[SourceText],
-    ideas: &[String],
+pub fn preflight_topics(
+    topics: &[ExamTopic],
+    sources: &DeckSources,
     cfg: &ExamConfig,
-) -> String {
-    let sources = source_section(sources);
-    let mut scope = String::from(
-        "The student drilled flashcards on this material. The topic's cards are SCOPE \
-         ONLY: they show what the student already drilled. NEVER ask what a card states, \
-         and never rephrase a card; test the mental model behind the topic instead.\n\n",
-    );
-    scope.push_str(&topic_scope(topic));
-    scope.push_str("The ideas this exam examines, numbered:\n");
-    for (n, idea) in ideas.iter().enumerate() {
-        scope.push_str(&format!("{}. {idea}\n", n + 1));
+    ask_cfg: &AskConfig,
+) -> Result<()> {
+    for topic in topics {
+        let texts = sources.texts_of(&topic.topic_id)?;
+        let measure = measure_topic(topic, &texts, cfg, ask_cfg.backend);
+        if measure.exceeds() {
+            return Err(PreflightError {
+                topic: topic.label.clone(),
+                measure,
+            }
+            .into());
+        }
     }
-    scope.push('\n');
-    let ask = format!(
-        "{scope}Write EXACTLY one question for every idea listed, no more. An idea a \
-         card states is still examined: ask the student to apply it, never to recite the \
-         card. Start with an instance and then take the three shapes in turn:\n\
-         - instance: a concrete case the sources support but no card shows \
-         (\"given this program, what does the compiler report?\");\n\
-         - boundary: when does the topic's idea stop holding, or what changes \
-         if a condition flips;\n\
-         - fix: a short statement or snippet with exactly one seeded mistake about \
-         the topic's idea; the student must find and correct it.\n\
-         Every question must be answerable from the sources above and demand \
-         reasoning in the student's own words. Tag every question with its shape and \
-         the number of the idea it tests.\n\n"
-    );
-    let shape = "{\"questions\": [{\"shape\": \"instance|boundary|fix\", \
-                 \"idea\": 1, \"prompt\": \"...\", \
-                 \"points\": [\"...\", \"...\"]}]}";
-    let mut prompt = format!(
-        "You are a strict examiner writing an oral exam that verifies a student \
-         truly UNDERSTANDS a topic, not whether they memorized isolated facts.\n\n\
-         {sources}\n\
-         {ask}\
-         {QUESTION_FORM}\
-         For each question, list the key points a correct answer MUST contain: \
-         the specific, source-grounded facts or reasoning steps you will grade \
-         against. Be concrete; these are the rubric.\n\n\
-         Output ONLY JSON in exactly this shape, no prose, no code fences around \
-         it (a fence inside a `prompt` string is fine):\n\
-         {shape}"
-    );
-    push_extra(&mut prompt, cfg);
-    prompt
+    Ok(())
 }
-
-const QUESTION_FORM: &str = "\
-How each question reads:
-- It stands alone. The student sees only the question, never the source: \
-reproduce any example, listing or claim you build on in full. Never point at \
-what the student cannot see (\"the book's shadowing example\", \"the \
-Reference shows\", \"the idiom's form\"); naming the source is fine only \
-beside the reproduced content, never instead of it.
-- Code goes in a fenced block (```rust and so on) after the prose, one \
-statement per line, so the student can refer to its lines; a quoted claim \
-goes in a `>` quote. Inline backticks only for a short name or expression \
-inside a sentence.
-- Write only the finished question: no thinking aloud and no self-correction \
-(\"wait\", \"actually\") in the question or in a claim it quotes.
-- Never give the answer away. A fix question names neither the mistake, nor \
-its line, nor the rule it breaks; any question avoids wording that states \
-what the student must work out.
-
-";
 
 fn strictness_criteria(strictness: Strictness) -> &'static str {
     match strictness {
@@ -1842,7 +1737,7 @@ mod tests {
     /// topic as scope.
     #[test]
     fn exam_prompt_signatures_ban_topic_like_names() {
-        let source = include_str!("exam.rs");
+        let source = [include_str!("exam.rs"), include_str!("exam_prompt.rs")].concat();
         let builders: [(&str, &[&str]); 4] = [
             ("fn questions_prompt(", &["topic: &ExamTopic"]),
             ("fn ideas_prompt(", &["topic: &ExamTopic"]),
@@ -4294,13 +4189,16 @@ mod tests {
         let other = ws.root().join("other");
         std::fs::create_dir_all(&other).unwrap();
         std::fs::write(other.join("dl.txt"), &dl_text).unwrap();
-        sources::commands::add(sources::commands::AddRequest {
-            deck: &ws.deck(),
-            files: vec![other.join("dl.txt")],
-            root: Some(("dl".to_string(), other.clone())),
-            key: None,
-            topics: vec!["topic-alpha".to_string()],
-        })
+        sources::commands::add(
+            sources::commands::AddRequest {
+                deck: &ws.deck(),
+                files: vec![other.join("dl.txt")],
+                root: Some(("dl".to_string(), other.clone())),
+                key: None,
+                topics: vec!["topic-alpha".to_string()],
+            },
+            &ExamConfig::default(),
+        )
         .unwrap();
         source(&ws, "sdk.txt", sdk_text, &["topic-alpha"]);
         let cli_dir = tempfile::tempdir().unwrap();
@@ -4577,7 +4475,13 @@ mod tests {
         source(&ws, "nine.txt", &nine, &["2-3|topic-alpha", "topic-beta"]);
         prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
         let id = sources::source_id(nine.as_bytes());
-        sources::commands::bind(&ws.deck(), &id, &["5-6|topic-alpha".to_string()]).unwrap();
+        sources::commands::bind(
+            &ws.deck(),
+            &id,
+            &["5-6|topic-alpha".to_string()],
+            &ExamConfig::default(),
+        )
+        .unwrap();
         let (_cli, seen) = prepare(&opened(&ws), &[IDEAS, ONE_QUESTION]);
         assert_eq!(2, seen.len(), "one listing and one question call: {seen:?}");
         assert!(
@@ -4872,5 +4776,124 @@ mod tests {
             !crate::exam_status::exam_row(&deck, &store, Some(&[])).exam_changed,
             "the standing is solid again"
         );
+    }
+
+    const SIZED_TOPIC: &str = "# Moves\n<!-- id: topic-moves -->\n\n## Why move?\nownership\n";
+
+    /// A workspace whose one topic's measured prompt is exactly `target` in
+    /// `kind`'s unit, found by sizing the source's filler.
+    fn workspace_measuring(kind: crate::config::BackendKind, target: u64) -> (Workspace, Deck) {
+        let probe = workspace_with(SIZED_TOPIC);
+        source(&probe, "src.txt", "x\n", &["topic-moves"]);
+        let deck = opened(&probe);
+        let topic = examined_topics(&deck).remove(0);
+        let texts = deck
+            .sources()
+            .unwrap()
+            .unwrap()
+            .texts_of(&topic.topic_id)
+            .unwrap();
+        let fixed =
+            crate::exam_prompt::measured_prompt(&topic, &texts, &ExamConfig::default()).len() - 2;
+        let measure = crate::exam_prompt::prompt_limit(kind).measure;
+        let (mut low, mut high) = (1u64, 4 * target);
+        while low < high {
+            let middle = (low + high).div_ceil(2);
+            let sized = measure.of(&"x".repeat(fixed + middle as usize));
+            if sized <= target {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        let ws = workspace_with(SIZED_TOPIC);
+        let filler = format!("{}\n", "x".repeat(low as usize - 1));
+        source(&ws, "src.txt", &filler, &["topic-moves"]);
+        let deck = opened(&ws);
+        let topic = examined_topics(&deck).remove(0);
+        let texts = deck
+            .sources()
+            .unwrap()
+            .unwrap()
+            .texts_of(&topic.topic_id)
+            .unwrap();
+        assert_eq!(
+            target,
+            measure_topic(&topic, &texts, &ExamConfig::default(), kind).size,
+            "setup: {kind:?}'s fixture measures {target}"
+        );
+        (ws, deck)
+    }
+
+    #[test]
+    fn preflight_refuses_a_topic_over_the_current_backends_limit_naming_topic_backend_size_and_limit()
+     {
+        let _lock = exec_lock();
+        for kind in crate::config::BackendKind::ALL {
+            let limit = crate::exam_prompt::prompt_limit(kind);
+            let ask_cfg = |cli: &std::path::Path| AskConfig {
+                backend: kind,
+                ..ask_config(cli)
+            };
+
+            let (_at, deck) = workspace_measuring(kind, limit.limit);
+            let cli_dir = tempfile::tempdir().unwrap();
+            let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+            let (rx, _job) = spawn_prepare(
+                &deck,
+                examined_topics(&deck),
+                ExamConfig::default(),
+                ask_cfg(&cli),
+            );
+            assert_eq!(
+                Ok(()),
+                rx.recv().unwrap(),
+                "{kind:?}: at the limit, prepared"
+            );
+            assert_eq!(
+                2,
+                crate::testutil::fake_reply_calls(cli_dir.path()),
+                "{kind:?}: at the limit, the ideas and the questions were asked"
+            );
+
+            let (_over, deck) = workspace_measuring(kind, limit.limit + 1);
+            let expected = format!(
+                "topic `Moves` exceeds {}'s limit: {} of {} {}",
+                kind.name(),
+                limit.limit + 1,
+                limit.limit,
+                limit.measure.label()
+            );
+            let cli_dir = tempfile::tempdir().unwrap();
+            let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+            let (rx, _job) = spawn_prepare(
+                &deck,
+                examined_topics(&deck),
+                ExamConfig::default(),
+                ask_cfg(&cli),
+            );
+            assert_eq!(
+                Err(expected.clone()),
+                rx.recv().unwrap(),
+                "{kind:?}: one over the limit, prepare refused"
+            );
+            let sitting = Sitting::start(
+                &deck,
+                SittingStart::default(),
+                Strictness::Balanced,
+                ExamConfig::default(),
+                ask_cfg(&cli),
+            );
+            assert_eq!(
+                (Some(expected.as_str()), &Phase::Results),
+                (sitting.error(), sitting.phase()),
+                "{kind:?}: one over the limit, the sitting is refused"
+            );
+            assert_eq!(
+                0,
+                crate::testutil::fake_reply_calls(cli_dir.path()),
+                "{kind:?}: one over the limit, the model was never called"
+            );
+        }
     }
 }
