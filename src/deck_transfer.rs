@@ -24,6 +24,7 @@ pub struct TransferReport {
     pub source: PathBuf,
     pub destination: PathBuf,
     pub assets: usize,
+    pub sources: usize,
     pub augmentation: bool,
     pub progress: bool,
     pub leftovers: Vec<PathBuf>,
@@ -39,6 +40,7 @@ struct Transfer {
     source_progress: PathBuf,
     destination_progress: PathBuf,
     assets: usize,
+    sources: usize,
     augmentation: bool,
     progress: bool,
     baseline: SourceBaseline,
@@ -49,6 +51,20 @@ struct SourceBaseline {
     augmentation: Option<Vec<u8>>,
     progress: Option<Vec<u8>>,
     assets: BTreeMap<PathBuf, Vec<u8>>,
+    sources: BTreeMap<PathBuf, Vec<u8>>,
+}
+
+impl SourceBaseline {
+    fn traveling_sources(&self) -> usize {
+        self.sources
+            .keys()
+            .filter(|path| {
+                !path
+                    .file_name()
+                    .is_some_and(|name| workspace::is_private_name(&name.to_string_lossy()))
+            })
+            .count()
+    }
 }
 
 pub fn transfer(
@@ -69,7 +85,12 @@ fn transfer_with_remove(
 ) -> Result<TransferReport> {
     let transfer = Transfer::prepare(source, destination_workspace, mode)?;
     let scratch = tempfile::tempdir().context("cannot create deck transfer staging directory")?;
-    let (bundle, _) = share::stage_deck_bundle(&transfer.source, scratch.path())?;
+    let bundle = share::stage_deck_bundle(
+        &transfer.source,
+        scratch.path(),
+        share::SourcesPolicy::Carry,
+    )?
+    .path;
     transfer.verify_staged_identity(&bundle)?;
 
     if let Err(error) = share::land_deck_bundle(&bundle, &transfer.destination_files.decks()) {
@@ -158,6 +179,7 @@ impl Transfer {
             &destination_deck,
             &destination_progress,
             &source_progress,
+            &deck,
             &deck_id,
         )?;
         ensure_requirements_resolve(&deck, &destination_files.decks())?;
@@ -187,8 +209,10 @@ impl Transfer {
             augmentation: read_optional(&source_augmentation)?,
             progress: read_optional(&source_progress)?,
             assets: read_tree(&source_assets)?,
+            sources: read_tree(&source_files.sources_for(&deck_id))?,
         };
         let assets = baseline.assets.len();
+        let sources = baseline.traveling_sources();
         let augmentation = baseline.augmentation.is_some();
         let progress = baseline.progress.is_some();
 
@@ -202,6 +226,7 @@ impl Transfer {
             source_progress,
             destination_progress,
             assets,
+            sources,
             augmentation,
             progress,
             baseline,
@@ -273,12 +298,23 @@ impl Transfer {
                 self.source_files.assets_for(&self.deck_id).display()
             );
         }
+        let sources = read_tree(&self.source_files.sources_for(&self.deck_id))?;
+        if sources != self.baseline.sources {
+            bail!(
+                "{} changed during the move",
+                self.source_files.sources_for(&self.deck_id).display()
+            );
+        }
         Ok(())
     }
 
     fn remove_source_sidecars(&self, moved_progress: bool) -> Vec<PathBuf> {
         let mut leftovers = Vec::new();
         remove_dir_if_present(&self.source_files.assets_for(&self.deck_id), &mut leftovers);
+        remove_dir_if_present(
+            &self.source_files.sources_for(&self.deck_id),
+            &mut leftovers,
+        );
         remove_file_if_present(
             &self.source_files.augment_for(&self.deck_id),
             &mut leftovers,
@@ -296,6 +332,10 @@ impl Transfer {
             &self.destination_files.assets_for(&self.deck_id),
             &mut leftovers,
         );
+        remove_dir_if_present(
+            &self.destination_files.sources_for(&self.deck_id),
+            &mut leftovers,
+        );
         remove_file_if_present(
             &self.destination_files.augment_for(&self.deck_id),
             &mut leftovers,
@@ -311,6 +351,7 @@ impl Transfer {
             source: self.source.clone(),
             destination: self.destination_deck.clone(),
             assets: self.assets,
+            sources: self.sources,
             augmentation: self.augmentation,
             progress: moved_progress,
             leftovers,
@@ -323,11 +364,13 @@ fn ensure_destination_available(
     destination_deck: &Path,
     destination_progress: &Path,
     source_progress: &Path,
+    deck: &Deck,
     deck_id: &str,
 ) -> Result<()> {
     for path in [
         destination_deck.to_path_buf(),
         destination.assets_for(deck_id),
+        destination.sources_for(deck_id),
         destination.augment_for(deck_id),
     ] {
         if path.exists() {
@@ -337,13 +380,36 @@ fn ensure_destination_available(
     if destination_progress != source_progress && destination_progress.exists() {
         bail!("{} already exists", destination_progress.display());
     }
+    let moving_topics = marked_topic_ids(deck);
     for member in workspace::deck_files(destination.root()) {
         let candidate = Deck::load(&member)?;
         if candidate.deck_token.as_deref() == Some(deck_id) {
             bail!("{} already uses deck ID `{deck_id}`", member.display());
         }
+        for (id, line) in marked_topic_ids(&candidate) {
+            if let Some((_, moving_line)) = moving_topics.iter().find(|(moving, _)| *moving == id) {
+                bail!(
+                    "{}",
+                    crate::dedup::TopicDupe {
+                        id,
+                        keeper: (member.clone(), line),
+                        copies: vec![(deck.path.clone(), *moving_line)],
+                    }
+                );
+            }
+        }
     }
     Ok(())
+}
+
+/// The deck's `topic-<token>` ids with the line of each id marker; the
+/// implicit whole-deck topic has no marker and is not an id to collide on.
+fn marked_topic_ids(deck: &Deck) -> Vec<(String, usize)> {
+    deck.topic_ids()
+        .into_iter()
+        .zip(&deck.topics)
+        .filter_map(|(id, topic)| Some((id?, topic.marker_line?)))
+        .collect()
 }
 
 fn ensure_requirements_resolve(deck: &Deck, destination_decks: &Path) -> Result<()> {

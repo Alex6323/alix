@@ -982,6 +982,168 @@ fn sync_entries_and_pull_carry_one_root_and_exact_rootless_manifest() {
     assert!(guard.dir().join(".alix/sync.toml").is_file());
 }
 
+const FROZEN_DECK_ID: &str = "deck-travel1";
+
+/// A workspace `frozen/` whose one member owns a frozen source with a roots
+/// file, the shape every travel surface must carry minus that roots file.
+fn write_frozen_workspace(dir: &Path) -> String {
+    let root = dir.join("frozen");
+    std::fs::create_dir_all(root.join("decks")).unwrap();
+    std::fs::write(root.join("alix.toml"), "title = \"Frozen\"\n").unwrap();
+    let deck = root.join("decks").join("facts.md");
+    std::fs::write(
+        &deck,
+        format!(
+            "---\nformat-version: 1\nid: \"{FROZEN_DECK_ID}\"\n---\n# Alpha\n<!-- id: \
+             topic-alpha1 -->\n\n## q\na\n<!-- id: card-c1 -->\n"
+        ),
+    )
+    .unwrap();
+    let live = root.join("live");
+    std::fs::create_dir_all(&live).unwrap();
+    let file = live.join("notes.txt");
+    std::fs::write(&file, b"the source\n").unwrap();
+    let report = alix::sources::commands::add(
+        alix::sources::commands::AddRequest {
+            deck: &deck,
+            files: vec![file],
+            root: Some(("sdk".to_string(), live)),
+            key: None,
+            topics: vec!["topic-alpha1".to_string()],
+        },
+        &alix::config::ExamConfig::default(),
+    )
+    .unwrap();
+    let roots = root
+        .join(alix::sources::ROOT)
+        .join(FROZEN_DECK_ID)
+        .join(alix::sources::ROOTS);
+    assert!(
+        roots.is_file(),
+        "the fixture has a roots file to leave home"
+    );
+    format!("{}.txt", report.added[0].0)
+}
+
+fn zip_names(body: &[u8]) -> Vec<String> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(body)).unwrap();
+    let mut names: Vec<String> = (0..archive.len())
+        .map(|index| archive.by_index(index).unwrap().name().unwrap().to_string())
+        .collect();
+    names.sort();
+    names
+}
+
+fn zip_entry(body: &[u8], name: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(body)).unwrap();
+    let mut bytes = Vec::new();
+    archive
+        .by_name(name)
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    bytes
+}
+
+#[test]
+fn sync_carries_sources_and_never_the_roots_file() {
+    let mut copy = String::new();
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| copy = write_frozen_workspace(dir));
+    let manifest_rel = format!("sources/{FROZEN_DECK_ID}/manifest.toml");
+    let copy_rel = format!("sources/{FROZEN_DECK_ID}/{copy}");
+    let roots_rel = format!("sources/{FROZEN_DECK_ID}/manifest.local.toml");
+
+    let entries = http(&base, "GET", "/api/sync/entries", &[], &[]);
+    assert_eq!(200, entries.status);
+    let entries_json: serde_json::Value = serde_json::from_slice(&entries.body).unwrap();
+    let frozen = entries_json["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "frozen")
+        .unwrap();
+
+    let pull = http(&base, "GET", "/api/sync/pull?entry=frozen", &[], &[]);
+    assert_eq!(200, pull.status);
+    let names = zip_names(&pull.body);
+    assert!(
+        names.contains(&manifest_rel),
+        "sync pull: the manifest travels: {names:?}"
+    );
+    assert!(
+        names.contains(&copy_rel),
+        "sync pull: the copy travels: {names:?}"
+    );
+    assert!(
+        !names.contains(&roots_rel),
+        "sync pull: the roots file never travels: {names:?}"
+    );
+    let manifest: alix::sync::SyncPullManifest =
+        serde_json::from_slice(&zip_entry(&pull.body, ".alix/pull.json")).unwrap();
+    let mut manifested: Vec<String> = manifest
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .chain(std::iter::once(".alix/pull.json".to_string()))
+        .collect();
+    manifested.sort();
+    assert_eq!(
+        names, manifested,
+        "sync pull: the manifest lists exactly the archive"
+    );
+    assert_eq!(
+        frozen["unpacked_bytes"].as_u64().unwrap(),
+        manifest.files.iter().map(|file| file.bytes).sum::<u64>(),
+        "sync entries: unpacked_bytes counts the sources it will send"
+    );
+}
+
+#[test]
+fn share_zip_omits_sources_unless_asked_and_never_sends_the_roots_file() {
+    let mut copy = String::new();
+    let (base, _guard) = spawn_test_server_fixture(None, |dir| copy = write_frozen_workspace(dir));
+
+    let omitted = http(&base, "GET", "/api/share/zip?deck=frozen", &[], &[]);
+    assert_eq!(200, omitted.status);
+    let names = zip_names(&omitted.body);
+    assert!(
+        names.iter().any(|name| name.ends_with("decks/facts.md")),
+        "share zip: the deck travels: {names:?}"
+    );
+    assert!(
+        !names.iter().any(|name| name.contains("sources/")),
+        "share zip: sources stay home by default: {names:?}"
+    );
+
+    let carried = http(
+        &base,
+        "GET",
+        "/api/share/zip?deck=frozen&with_sources=1",
+        &[],
+        &[],
+    );
+    assert_eq!(200, carried.status);
+    let names = zip_names(&carried.body);
+    assert!(
+        names
+            .iter()
+            .any(|name| name.ends_with(&format!("sources/{FROZEN_DECK_ID}/manifest.toml"))),
+        "share zip with sources: the manifest travels: {names:?}"
+    );
+    assert!(
+        names
+            .iter()
+            .any(|name| name.ends_with(&format!("sources/{FROZEN_DECK_ID}/{copy}"))),
+        "share zip with sources: the copy travels: {names:?}"
+    );
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.ends_with("manifest.local.toml")),
+        "share zip with sources: the roots file never travels: {names:?}"
+    );
+}
+
 #[test]
 fn sync_push_accepts_none_then_conflicts_and_backs_up_an_equal_revision() {
     let (base, guard) = spawn_test_server();

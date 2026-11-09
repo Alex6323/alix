@@ -565,7 +565,7 @@ pub struct MergeReport {
 }
 
 fn merge_rank(name: &std::ffi::OsStr) -> u8 {
-    if name == crate::assets::ROOT {
+    if name == crate::assets::ROOT || name == crate::sources::ROOT {
         0
     } else if name == crate::workspace::DECKS {
         2
@@ -595,6 +595,10 @@ pub fn merge_built(
         let to = dest.join(&name);
         if name == crate::assets::ROOT && from.is_dir() {
             moved += merge_assets(&from, &to, force, &mut conflicts)?;
+            continue;
+        }
+        if name == crate::sources::ROOT && from.is_dir() {
+            moved += merge_sources(staging, &from, &to, force, &mut conflicts)?;
             continue;
         }
         if name == crate::workspace::DECKS && from.is_dir() {
@@ -689,6 +693,49 @@ fn merge_assets(from: &Path, to: &Path, force: bool, conflicts: &mut Vec<String>
         }
         if destination.exists() {
             fs::remove_file(&destination)?;
+        }
+        share::move_into(&source, &destination)?;
+        moved += 1;
+    }
+    let _ = fs::remove_dir(from);
+    Ok(moved)
+}
+
+/// Each `sources/<deck-id>/` is one unit: verified where it was built, then
+/// moved whole. A forced replacement keeps the destination's roots file when
+/// the replacement brought none, since roots are this machine's, not the
+/// staging's.
+fn merge_sources(
+    staging: &Path,
+    from: &Path,
+    to: &Path,
+    force: bool,
+    conflicts: &mut Vec<String>,
+) -> Result<usize> {
+    fs::create_dir_all(to).with_context(|| format!("cannot create {}", to.display()))?;
+    let mut moved = 0;
+    for entry in fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let source = entry.path();
+        let destination = to.join(&name);
+        if !source.is_dir() {
+            bail!("{} is not a deck's sources folder", source.display());
+        }
+        crate::sources::load_verified(staging, &name)?;
+        if destination.exists() {
+            if !force {
+                conflicts.push(format!("{}/{name}", crate::sources::ROOT));
+                continue;
+            }
+            let roots = destination.join(crate::sources::ROOTS);
+            let kept = source.join(crate::sources::ROOTS);
+            if roots.is_file() && !kept.exists() {
+                fs::rename(&roots, &kept)
+                    .with_context(|| format!("cannot keep {}", roots.display()))?;
+            }
+            fs::remove_dir_all(&destination)
+                .with_context(|| format!("cannot remove {}", destination.display()))?;
         }
         share::move_into(&source, &destination)?;
         moved += 1;
@@ -1309,6 +1356,7 @@ back a
     fn merge_rank_orders_assets_before_ordinary_entries_and_decks_last() {
         for (name, expected) in [
             (crate::assets::ROOT, 0),
+            (crate::sources::ROOT, 0),
             ("alix.toml", 1),
             (crate::workspace::DECKS, 2),
         ] {

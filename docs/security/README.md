@@ -509,10 +509,24 @@ data rather than executable HTML.
 implementation are part of the sharing trust boundary. Staging excludes the
 private `.alix/` and `*.local.*` set, temporary and backup-shaped files, hidden
 files, and synchronization conflicts. From a workspace root only the manifest,
-`decks/`, `assets/` and `augment/` are staged, for share and paired sync alike,
-so cited source trees and other root files never leave the machine
-(`a_workspace_root_sends_only_its_manifest_decks_assets_and_augmentation`,
-`src/share.rs`). Receive
+`decks/`, `assets/`, `sources/` and `augment/` are staged, for share and paired
+sync alike, so cited source trees and other root files never leave the machine
+(`a_workspace_root_sends_only_its_manifest_decks_assets_sources_and_augmentation`,
+`src/share.rs`). Frozen exam sources (`sources/<deck-id>/`) are copies of the
+user's own files, so a public share leaves them home unless asked
+(`alix share --with-sources`, `with_sources` on `/api/share` and
+`/api/share/zip`) and reports how many files it left out, while local
+`alix deck copy|move`, paired sync, a workspace update and `alix explore`
+merging always carry them: the phone takes exams against its own copy. Every
+landing verifies each `sources/<deck-id>/` with `sources::load_verified`
+before the deck is written and refuses a tampered or linked copy. The
+machine-local roots file `sources/<deck-id>/manifest.local.toml` never
+travels in either direction: staging and the sync listing skip it, receive
+strips it, a receiver's own roots file survives an incoming copy, and a pull
+manifest that lists one is refused by name before anything is written
+(`tests/travel.rs`; `sync_carries_sources_and_never_the_roots_file` and
+`share_zip_omits_sources_unless_asked_and_never_sends_the_roots_file`,
+`tests/api.rs`). Receive
 strips private state recursively even if the sender used another tool
 (`src/share.rs`). Matching `augment/<deck-id>.json`
 documents are intentionally shareable generated deck material; unrelated or
@@ -686,6 +700,10 @@ The most relevant deterministic checks currently live beside their controls:
   refusal;
 - `src/paired.rs` and `mobile/alix/rust/src/api/sync.rs`: the phone's paired
   directory is derived only from a canonical root id;
+- `tests/travel.rs`: every lifecycle operation (deck copy, move, remove and
+  restore, workspace remove, share and receive, paired pull and remove,
+  explore merge, workspace update) carries a deck's `sources/<deck-id>/` with
+  it, verified on landing, and never its machine-local roots file;
 - `src/deck.rs`: explicit-source precedence and no origin-root inference;
 - `src/parser/mod.rs`, `src/stamp.rs`, and `src/workspace.rs`: explicit deck
   identity, byte-preserving refusal, and initialized-only discovery;

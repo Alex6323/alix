@@ -1689,6 +1689,7 @@ pub(super) struct Sharing {
     pub(super) code: Option<String>,
     pub(super) started: Instant,
     pub(super) outcome: Option<Result<(), String>>,
+    pub(super) sources_omitted: usize,
 }
 
 impl Sharing {
@@ -1704,40 +1705,49 @@ impl Sharing {
 
     pub(super) fn dto(&self) -> ShareDto {
         let elapsed = Some(self.started.elapsed().as_secs());
+        let sources_omitted = self.sources_omitted;
         match (&self.outcome, &self.code) {
             (Some(Err(e)), _) => ShareDto {
                 phase: "error",
                 code: self.code.clone(),
                 elapsed,
                 error: Some(e.clone()),
+                sources_omitted,
             },
             (Some(Ok(())), _) => ShareDto {
                 phase: "sent",
                 code: self.code.clone(),
                 elapsed,
                 error: None,
+                sources_omitted,
             },
             (None, Some(_)) => ShareDto {
                 phase: "code",
                 code: self.code.clone(),
                 elapsed,
                 error: None,
+                sources_omitted,
             },
             (None, None) => ShareDto {
                 phase: "staging",
                 code: None,
                 elapsed,
                 error: None,
+                sources_omitted,
             },
         }
     }
 }
 
-pub(super) fn stage_for_share(path: &Path, tmp: &tempfile::TempDir) -> Result<PathBuf> {
+pub(super) fn stage_for_share(
+    path: &Path,
+    tmp: &tempfile::TempDir,
+    sources: share::SourcesPolicy,
+) -> Result<share::Staged> {
     if !path.is_file() && !crate::workspace::has_decks(path) {
         bail!("no decks in `{}`, nothing to share", path.display());
     }
-    share::stage_path(path, tmp.path()).map(|(stage, _)| stage)
+    share::stage_path(path, tmp.path(), sources)
 }
 
 pub(super) struct Receiving {
@@ -2341,9 +2351,10 @@ mod tests {
         let empty = root.path().join("empty");
         std::fs::create_dir(&empty).unwrap();
 
-        assert!(stage_for_share(&deck, &stage).is_ok());
-        assert!(stage_for_share(&workspace, &stage).is_ok());
-        assert!(stage_for_share(&empty, &stage).is_err());
+        let omit = share::SourcesPolicy::Omit;
+        assert!(stage_for_share(&deck, &stage, omit).is_ok());
+        assert!(stage_for_share(&workspace, &stage, omit).is_ok());
+        assert!(stage_for_share(&empty, &stage, omit).is_err());
     }
 
     #[cfg(unix)]
@@ -2356,6 +2367,7 @@ mod tests {
             code: None,
             started: Instant::now(),
             outcome: None,
+            sources_omitted: 0,
         };
         tx.send(share::ShareEvent::Code("7-alpha-bravo".to_string()))
             .unwrap();

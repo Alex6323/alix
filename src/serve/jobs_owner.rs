@@ -64,6 +64,7 @@ pub(super) enum JobsCommand {
     GenerateClose(Reply<()>),
     ShareStart {
         path: PathBuf,
+        sources: share::SourcesPolicy,
         reply: Reply<Started<ShareDto>>,
     },
     SharePoll(Reply<Option<ShareDto>>),
@@ -181,8 +182,16 @@ impl JobsHandle {
     pub(super) fn generate_close(&self) -> Option<()> {
         self.call(JobsCommand::GenerateClose)
     }
-    pub(super) fn share_start(&self, path: PathBuf) -> Option<Started<ShareDto>> {
-        self.call(|reply| JobsCommand::ShareStart { path, reply })
+    pub(super) fn share_start(
+        &self,
+        path: PathBuf,
+        sources: share::SourcesPolicy,
+    ) -> Option<Started<ShareDto>> {
+        self.call(|reply| JobsCommand::ShareStart {
+            path,
+            sources,
+            reply,
+        })
     }
     pub(super) fn share_poll(&self) -> Option<Option<ShareDto>> {
         self.call(JobsCommand::SharePoll)
@@ -387,8 +396,12 @@ impl JobsState {
                 self.generating = None;
                 let _ = reply.send(());
             }
-            JobsCommand::ShareStart { path, reply } => {
-                let _ = reply.send(self.share_start(path));
+            JobsCommand::ShareStart {
+                path,
+                sources,
+                reply,
+            } => {
+                let _ = reply.send(self.share_start(path, sources));
             }
             JobsCommand::SharePoll(reply) => {
                 let out = self.sharing.as_mut().map(|s| {
@@ -747,24 +760,27 @@ impl JobsState {
         Started::Dto(dto)
     }
 
-    fn share_start(&mut self, path: PathBuf) -> Started<ShareDto> {
+    fn share_start(&mut self, path: PathBuf, sources: share::SourcesPolicy) -> Started<ShareDto> {
         if let Some(s) = self.sharing.as_mut() {
             s.poll();
         }
         if self.sharing.as_ref().is_some_and(|s| s.outcome.is_none()) {
             return Started::Conflict;
         }
+        let mut sources_omitted = 0;
         let started = tempfile::tempdir()
             .map_err(|e| anyhow!("{e}"))
             .and_then(|tmp| {
-                let to_send = stage_for_share(&path, &tmp)?;
-                let job = share::send_spawn(&to_send)?;
+                let staged = stage_for_share(&path, &tmp, sources)?;
+                sources_omitted = staged.sources_omitted;
+                let job = share::send_spawn(&staged.path)?;
                 Ok(Sharing {
                     job,
                     _stage: tmp,
                     code: None,
                     started: Instant::now(),
                     outcome: None,
+                    sources_omitted,
                 })
             });
         match started {
@@ -778,6 +794,7 @@ impl JobsState {
                 code: None,
                 elapsed: Some(0),
                 error: Some(format!("{e:#}")),
+                sources_omitted,
             }),
         }
     }

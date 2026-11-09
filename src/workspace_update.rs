@@ -404,6 +404,9 @@ struct MemberSnapshot {
     assets: PathBuf,
     assets_existed: bool,
     asset_names: BTreeSet<OsString>,
+    sources: PathBuf,
+    sources_existed: bool,
+    source_names: BTreeSet<OsString>,
 }
 
 impl MemberSnapshot {
@@ -412,15 +415,19 @@ impl MemberSnapshot {
         let deck = staging.join(relative);
         let augment = files.augment_for(deck_id);
         let assets = files.assets_for(deck_id);
+        let sources = files.sources_for(deck_id);
         Ok(MemberSnapshot {
             deck_bytes: fs::read(&deck)
                 .with_context(|| format!("cannot read {}", deck.display()))?,
             augment_bytes: read_optional(&augment)?,
             asset_names: directory_names(&assets)?,
             assets_existed: assets.is_dir(),
+            source_names: directory_names(&sources)?,
+            sources_existed: sources.is_dir(),
             deck,
             augment,
             assets,
+            sources,
         })
     }
 
@@ -438,16 +445,21 @@ impl MemberSnapshot {
                 .with_context(|| format!("cannot remove {}", self.augment.display()))?,
             None => {}
         }
-        for name in directory_names(&self.assets)? {
-            if !self.asset_names.contains(&name) {
-                let path = self.assets.join(&name);
-                fs::remove_file(&path)
-                    .with_context(|| format!("cannot remove {}", path.display()))?;
+        for (directory, names, existed) in [
+            (&self.assets, &self.asset_names, self.assets_existed),
+            (&self.sources, &self.source_names, self.sources_existed),
+        ] {
+            for name in directory_names(directory)? {
+                if !names.contains(&name) {
+                    let path = directory.join(&name);
+                    fs::remove_file(&path)
+                        .with_context(|| format!("cannot remove {}", path.display()))?;
+                }
             }
-        }
-        if !self.assets_existed && self.assets.is_dir() {
-            fs::remove_dir(&self.assets)
-                .with_context(|| format!("cannot remove {}", self.assets.display()))?;
+            if !existed && directory.is_dir() {
+                fs::remove_dir(directory)
+                    .with_context(|| format!("cannot remove {}", directory.display()))?;
+            }
         }
         Ok(())
     }
@@ -592,6 +604,7 @@ pub fn apply(workspace_root: &Path) -> Result<UpdateReport> {
 
     preflight_apply(&root, &staging, &manifest)?;
     publish_assets(&root, &staging, &manifest)?;
+    publish_sources(&root, &staging, &manifest)?;
     publish_documents(&root, &staging, &manifest)?;
 
     let reports = manifest
@@ -651,6 +664,7 @@ fn copy_workspace_for_staging(root: &Path, staging: &Path) -> Result<()> {
         copy_file(&path, &staging.join(relative))?;
     }
     copy_tree_if_present(&files.assets(), &WorkspaceFiles::new(staging).assets())?;
+    copy_tree_if_present(&files.sources(), &WorkspaceFiles::new(staging).sources())?;
     copy_tree_if_present(&files.augment(), &WorkspaceFiles::new(staging).augment())?;
     Ok(())
 }
@@ -1123,6 +1137,7 @@ fn preflight_apply(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Re
         }
         validate_staged_identity(&current, &staged, &update.added_tokens)?;
         assets::validate_member(&staged)?;
+        crate::sources::load_verified(staging, &update.deck_id)?;
         validate_citations(&staged)?;
         validate_images(&staged)?;
 
@@ -1165,6 +1180,50 @@ fn publish_assets(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Res
                     path.display()
                 );
             }
+        }
+    }
+    Ok(())
+}
+
+/// Copies are content-addressed, so an existing one is verified equal and
+/// never rewritten; the manifest is replaced atomically; the live roots file
+/// is this machine's and stays untouched.
+fn publish_sources(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Result<()> {
+    for update in &manifest.decks {
+        if crate::sources::load_verified(staging, &update.deck_id)?.is_none() {
+            continue;
+        }
+        let source = WorkspaceFiles::new(staging).sources_for(&update.deck_id);
+        let destination = WorkspaceFiles::new(root).sources_for(&update.deck_id);
+        fs::create_dir_all(&destination)
+            .with_context(|| format!("cannot create {}", destination.display()))?;
+        let mut staged_manifest = None;
+        for entry in fs::read_dir(&source)
+            .with_context(|| format!("cannot read staged sources {}", source.display()))?
+        {
+            let path = entry?.path();
+            let name = path.file_name().unwrap_or_default().to_os_string();
+            if !path.is_file() || workspace::is_private_name(&name.to_string_lossy()) {
+                continue;
+            }
+            let bytes =
+                fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
+            if name == crate::sources::MANIFEST {
+                staged_manifest = Some(bytes);
+                continue;
+            }
+            let target = destination.join(&name);
+            match read_optional(&target)? {
+                Some(existing) if existing == bytes => {}
+                Some(_) => bail!("{} has different bytes in the workspace", target.display()),
+                None => copy_file(&path, &target)?,
+            }
+        }
+        if let Some(bytes) = staged_manifest {
+            let target = destination.join(crate::sources::MANIFEST);
+            let tmp = target.with_extension("toml.tmp");
+            crate::fsio::replace_file(&tmp, &target, &bytes)
+                .with_context(|| format!("cannot write {}", target.display()))?;
         }
     }
     Ok(())

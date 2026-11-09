@@ -2,5 +2,6 @@
   "code": "7-alpha-bravo",
   "elapsed": 3,
   "error": null,
-  "phase": "code"
+  "phase": "code",
+  "sources_omitted": 2
 }

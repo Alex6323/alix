@@ -322,15 +322,21 @@ Augment.
 
 ### 4.8 Share
 
-`POST /api/share {deck?}` stages a row and starts a `wormhole send` on it,
+`POST /api/share {deck?, with_sources?}` stages a row and starts a `wormhole send` on it,
 following §3's polling pattern: poll `GET /api/share` while
 `phase:"staging"`/`"code"`, then read `error` or `"sent"`. A folder includes
 only augmentation documents whose stable IDs match its initialized decks and
 recursively excludes `.alix/`, `*.local.*`, temporary files,
 backups, hidden files, and conflict copies. A single
-deck with augmentation or deck-owned assets travels in an internal bundle
-containing the `.md` file, `assets/deck-<token>/`, and
-`augment/deck-<token>.json` when present. Progress never travels. `deck` is the same resolution-map name
+deck with augmentation, deck-owned assets, or carried sources travels in an
+internal bundle containing the `.md` file, `assets/deck-<token>/`,
+`augment/deck-<token>.json`, and `sources/deck-<token>/` when present.
+Progress never travels. Each deck's frozen exam sources
+(`sources/deck-<token>/`) are copies of the sender's own files, so they stay
+home unless `with_sources` is `true` (default `false`); without them the
+receiver cannot take the exam, and `ShareDto.sources_omitted` counts the
+source files left out. The machine-local roots file
+`sources/deck-<token>/manifest.local.toml` never travels. `deck` is the same resolution-map name
 `/api/select` uses; absent/`null` shares the served root. `phase` walks
 `"staging"` (job started, no code yet) → `"code"`
 (`code` set, show it to the other side) → `"sent"`, or `"error"` at any
@@ -340,8 +346,9 @@ status. Only one share runs at a time: `POST` while one is in flight is 409; a
 **finished** job (an `error` or `sent` phase) is replaced by the next `POST`,
 mirroring Generate. `POST /api/share/close` cancels an in-flight transfer
 (kills the wormhole child) and clears the job unconditionally.
-`GET /api/share/zip[?deck]` is the offline fallback: synchronous, no polling,
-it stages the same way and streams back a `.zip` instead of a wormhole code.
+`GET /api/share/zip[?deck][&with_sources=1]` is the offline fallback:
+synchronous, no polling, it stages the same way and streams back a `.zip`
+instead of a wormhole code.
 
 ### 4.9 Receive
 
@@ -751,10 +758,10 @@ returns, refreshed, so the picker re-renders the `deadline` readout (§6
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/share` | `{deck?}` | `ShareDto` | 400 unknown `deck`; 409 a share is already in flight |
+| POST | `/api/share` | `{deck?, with_sources?}` | `ShareDto` | 400 unknown `deck`; 409 a share is already in flight |
 | GET | `/api/share` | – | `ShareDto` (poll) | 409 no share |
 | POST | `/api/share/close` | – | 200 | – |
-| GET | `/api/share/zip` | – (`?deck=` query, optional) | zip bytes (§8) | 400 unknown `deck` / staging or zip failure |
+| GET | `/api/share/zip` | – (`?deck=` and `?with_sources=1` queries, optional) | zip bytes (§8) | 400 unknown `deck` / staging or zip failure |
 
 ### Sync (paired phone)
 
@@ -1512,8 +1519,9 @@ The result of `POST`/`GET /api/share`, polled per §3's pattern (§4.8).
 | `code` | string? | The wormhole code mnemonic, once received — shown to the other side. |
 | `elapsed` | number? | Seconds since the job started (kept ticking even after it finishes). |
 | `error` | string? | Set on `error` — including a spawn failure (`wormhole` not installed), which surfaces the install hint here rather than a bare error status. |
+| `sources_omitted` | number | Source files left home because the request did not set `with_sources`; `0` when they were carried or the share has none. |
 
-Example (from the pinned test): `{"phase":"code","code":"7-alpha-bravo","elapsed":3,"error":null}`.
+Example (from the pinned test): `{"phase":"code","code":"7-alpha-bravo","elapsed":3,"error":null,"sources_omitted":2}`.
 
 ### ReceiveDto
 

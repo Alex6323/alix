@@ -196,20 +196,22 @@ The rest of the AI-and-deck surface:
     machine, or a saved root that is not an absolute existing folder), and
     bindings.
 - `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
-  its owned frozen assets, and its augmentation into another workspace. Stable
+  its owned frozen assets, its frozen exam sources (never their machine-local
+  `manifest.local.toml`), and its augmentation into another workspace. Stable
   deck and card IDs are preserved; progress is not copied.
 - `alix deck move <deck> <workspace> [--yes]`: move the same public bundle,
   carry progress when the workspaces use different user roots, then remove the
   source. Refuses missing prerequisites and source dependents. Copy and move
   both refuse when a `cite:` key the deck's locators use would resolve to a
-  different root in the destination, or when the deck's `exam:` (its own and
-  the workspace's) would resolve to different files, folders or URLs there.
+  different root in the destination, when the deck's `exam:` (its own and
+  the workspace's) would resolve to different files, folders or URLs there,
+  or when a destination member already carries one of the deck's topic ids.
   Neither rewrites the deck.
 - `alix deck import <file.tsv>`: import an Anki TSV export (no model CLI
   needed; `--workspace <dir>` imports into a workspace).
 - `alix deck remove <deck> [--yes]`: remove a deck and everything that is
-  its alone: the file, its review history, its frozen assets, its
-  augmentations, and any `.bak` backups. Total by design: nothing is backed
+  its alone: the file, its review history, its frozen assets, its frozen exam
+  sources, its augmentations, and any `.bak` backups. Total by design: nothing is backed
   up and it cannot be undone, which the confirmation states along with the
   stakes (cards with progress, reviewed-since date, the exact file list).
   A deck that others `require:` warns and names them; they unlock rather
@@ -262,6 +264,11 @@ and the limit ([how big a topic may be](12-the-ai-exam.md#how-big-a-topic-may-be
   temporary files, and conflict or backup files never travel. From a
   workspace only its alix files go: the manifest, `decks/`, owned `assets/`,
   and augmentation; source trees and other files at its root stay home.
+  Frozen exam sources (`sources/deck-<token>/`) stay home too unless you pass
+  `--with-sources`, since they are copies of your own files; the receiver
+  cannot take the exam without them, and the command says how many source
+  files it left out. The machine-local `sources/deck-<token>/manifest.local.toml`
+  never travels either way.
   Matching `augment/deck-<token>.json` documents do travel, including when sharing
   one deck. A single frozen deck also carries its complete
   `assets/deck-<token>/` directory. A symbolic link inside what you share is

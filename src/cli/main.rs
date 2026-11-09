@@ -411,6 +411,12 @@ struct ShareArgs {
     /// to put `<name>.zip` in (default: the current directory).
     #[arg(long, requires = "zip")]
     output: Option<PathBuf>,
+
+    /// Include each deck's frozen exam sources (`sources/deck-<token>/`), so
+    /// the receiver can take the exam. Left out by default: they are copies
+    /// of your own files.
+    #[arg(long)]
+    with_sources: bool,
 }
 
 #[derive(Args)]

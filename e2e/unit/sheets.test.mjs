@@ -127,6 +127,94 @@ test("sheets own visibility and cancel live work when closed", () => {
   }]);
 });
 
+function shareHarness(row) {
+  const calls = [];
+  const listeners = (initial = {}) => ({
+    ...initial,
+    isConnected: true,
+    textContent: "",
+    addEventListener(type, handler) { this.listeners[type] = handler; },
+    async fire(type) { return this.listeners[type]?.({ target: this }); },
+    listeners: {},
+  });
+  const sheet = listeners({ hidden: true, dataset: {} });
+  const nodes = { sheet };
+  const panel = {
+    querySelector: (selector) => selector === "b" ? nodes.subject : null,
+    get innerHTML() { return this.html || ""; },
+    set innerHTML(value) {
+      this.html = value;
+      if (!value.includes("shareGo")) return;
+      Object.assign(nodes, {
+        subject: listeners(),
+        shareGo: listeners(),
+        shareZip: listeners(),
+        shareSources: listeners({ checked: false }),
+        jobLine: listeners(),
+      });
+    },
+  };
+  nodes.sheetPanel = panel;
+  const sheets = createSheets({
+    api: async (path, options) => {
+      calls.push({ path, options });
+      return {};
+    },
+    fetchApi: async () => {},
+    post: (body) => ({ method: "POST", body }),
+    withToken: (path) => "token:" + path,
+    focusedRowName: () => row,
+    pickerKeys: () => ({}),
+    notice: () => {},
+    refreshPicker: () => {},
+    timers: { setInterval: () => 1, clearInterval: () => {} },
+    ui: {
+      document: {
+        addEventListener: () => {},
+        getElementById: (id) => nodes[id],
+      },
+      FileReader: class {},
+      label,
+      Option: class {},
+    },
+  });
+  return { calls, nodes, panel, sheets };
+}
+
+test("share leaves exam sources home unless the folded option is ticked", async () => {
+  const run = shareHarness("animals");
+
+  run.sheets.openShare();
+
+  assert.match(run.panel.innerHTML, /<details class="sheet-more"><summary>More<\/summary>/);
+  assert.equal(run.nodes.subject.textContent, "animals");
+  assert.equal(run.nodes.shareZip.href, "token:/api/share/zip?deck=animals");
+
+  run.nodes.shareSources.checked = true;
+  await run.nodes.shareSources.fire("change");
+  assert.equal(run.nodes.shareZip.href, "token:/api/share/zip?deck=animals&with_sources=1");
+
+  await run.nodes.shareGo.fire("click");
+  assert.deepEqual(run.calls[0], {
+    path: "/api/share",
+    options: { method: "POST", body: { deck: "animals", with_sources: true } },
+  });
+});
+
+test("sharing the whole library posts a null deck and sources off by default", async () => {
+  const run = shareHarness(null);
+
+  run.sheets.openShare();
+  await run.nodes.shareGo.fire("click");
+
+  assert.equal(run.nodes.subject.textContent, "the whole library");
+  assert.equal(run.nodes.shareZip.href, "token:/api/share/zip");
+  assert.deepEqual(run.calls[0], {
+    path: "/api/share",
+    options: { method: "POST", body: { deck: null, with_sources: false } },
+  });
+});
+
 test("about offers one token-guarded bug report download", async () => {
   const run = harness();
 

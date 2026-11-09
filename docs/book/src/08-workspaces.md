@@ -89,6 +89,11 @@ spanish/
 │   ├── icon.svg
 │   └── deck-<token>/
 │       └── sha256-<digest>.<ext>
+├── sources/
+│   └── deck-<token>/
+│       ├── manifest.toml
+│       ├── source-<digest>.<ext>
+│       └── manifest.local.toml
 ├── .alix/
 │   ├── progress/deck-<token>.json
 │   └── recent.json
@@ -173,15 +178,17 @@ alix deck move ~/decks/spanish/decks/verbs.md ~/decks/exam
 ```
 
 Both commands preserve the filename, deck ID, and card IDs. Copy installs the
-same public bundle that wormhole sharing sends: the deck,
-`assets/deck-<token>/`, and `augment/deck-<token>.json`. It never copies progress.
-Move requires confirmation, installs that public bundle first, carries
-`.alix/progress/deck-<token>.json` to the destination workspace, then removes
-the source.
+same public bundle that wormhole sharing sends with its sources: the deck,
+`assets/deck-<token>/`, `sources/deck-<token>/` (verified on landing, without
+its machine-local `manifest.local.toml`), and `augment/deck-<token>.json`. It
+never copies progress. Move requires confirmation, installs that public
+bundle first, carries `.alix/progress/deck-<token>.json` to the destination
+workspace, then removes the source.
 
 The destination must be another Alix workspace. Transfer refuses overwrites,
-stable-ID collisions, missing required decks, and moves that would break a
-source deck's dependents.
+stable-ID collisions, a topic id a destination member already carries,
+missing required decks, and moves that would break a source deck's
+dependents.
 
 Transfer never rewrites a deck's locators, `cite:` or `exam:`, and changes
 neither workspace's `alix.toml`. It is allowed only when every key the deck's locators
@@ -289,6 +296,8 @@ workspace root:
 ```text
 augment/deck-<token>.json    # shareable generated choices, notes, and topologies
 assets/deck-<token>/         # shareable frozen excerpts and local images
+sources/deck-<token>/        # frozen exam sources: manifest.toml and the copies
+sources/deck-<token>/manifest.local.toml # private: where each key's folder is on this machine
 .alix/progress/deck-<token>.json # private schedules, history, exam state
 .alix/exam/deck-<token>.json # private exam idea lists and what was asked
 .alix/exam/deck-<token>.prepared.json # a written exam waiting to be taken
@@ -346,8 +355,13 @@ Sharing a workspace sends its alix files, not the whole folder: the
 `alix.toml` manifest, `decks/`, the `assets/` its decks own, and their
 augmentation. Everything else at the workspace root, such as the source trees
 your `cite:` roots point at, notes, or a README, stays home: the frozen
-excerpts in `assets/` already carry what the cards show. The phone's paired
-sync sends the same set.
+excerpts in `assets/` already carry what the cards show. The frozen exam
+sources in `sources/deck-<token>/` are copies of your own files, so they stay
+home too unless you pass `--with-sources`; the receiver cannot take the exam
+without them, and the command says how many source files it left out. The
+machine-local `sources/deck-<token>/manifest.local.toml` never travels either
+way. The phone's paired sync sends the same set with the sources always
+included: the phone takes exams against its own copy.
 `alix share <dir>` does that over magic-wormhole with the personal files
 (`.alix/`, `*.local.*`, backups, and conflict copies) left home; the
 other side runs `alix receive <code>` and gets it beside their own decks, ready

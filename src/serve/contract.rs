@@ -2552,11 +2552,13 @@ fn sharedto_code_phase_wire_shape() {
         code: Some("7-alpha-bravo".to_string()),
         elapsed: Some(3),
         error: None,
+        sources_omitted: 2,
     };
     pin(
         "ShareDto",
         &dto,
-        json!({"phase": "code", "code": "7-alpha-bravo", "elapsed": 3, "error": null}),
+        json!({"phase": "code", "code": "7-alpha-bravo", "elapsed": 3, "error": null,
+               "sources_omitted": 2}),
     );
 }
 

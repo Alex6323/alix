@@ -132,7 +132,10 @@ The Ask chip and the Exam row both depend on the phone having
 confirmed the paired desktop is reachable and
 running at least version 0.6.0; there is no retry chrome for a dead or
 too-old server: the Ask chip simply is not there, and the Exam row is
-disabled with a short hint.
+disabled with a short hint. The exam itself reads the frozen sources a pull
+carried to the phone (`sources/deck-<token>/`), never the desktop's files;
+the roots file beside them, `manifest.local.toml`, names folders on one
+machine and is never synced in either direction.
 
 If the desktop answers but rejects the token partway through a review, an
 exam, a note, or a generation (the restart case above, caught mid-session

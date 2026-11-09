@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix share --with-sources`, the web Share sheet's folded "Include exam
+  sources" option, `with_sources` on `POST /api/share` and
+  `GET /api/share/zip`, and `ShareDto.sources_omitted`: a public share leaves
+  each deck's frozen exam sources (`sources/deck-<token>/`) home by default,
+  since they are copies of your own files, and says how many source files it
+  left out (the receiver cannot take the exam without them); the flag carries
+  them.
 - `alix deck source add|remove|update|bind|unbind|list|root set|root unset`
   manage a workspace deck's sources: frozen copies of local, non-empty UTF-8
   text files in `sources/<deck-id>/`, named by their SHA-256 and listed in a
@@ -259,6 +266,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A deck's frozen exam sources travel with it: `alix deck copy|move|remove|
+  restore`, `alix workspace remove`, paired sync, a workspace update, and
+  `alix explore` merging carry or remove `sources/deck-<token>/` exactly as
+  they do the deck's assets, and every landing verifies the copies before the
+  deck is written. The machine-local roots file
+  `sources/deck-<token>/manifest.local.toml` never travels in either
+  direction, a receiver's own roots file survives an incoming copy, and a
+  paired pull that lists one is refused. `alix deck copy` and `move` refuse a
+  destination whose member already carries one of the deck's topic ids.
 - The tutor reads a deck's frozen sources instead of its `exam:` list. On
   Claude and Copilot it browses the deck's sources folder read-only, with a
   map from each display path to its copy and the card's topic named as the

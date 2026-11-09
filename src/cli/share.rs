@@ -1,6 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use alix::{config::Config, workspace};
+use alix::{
+    config::Config,
+    share::{SourcesPolicy, Staged},
+    workspace,
+};
 use anyhow::{Context, Result, bail};
 
 use crate::{ReceiveArgs, ShareArgs, common::deck_out_dir};
@@ -17,7 +21,22 @@ pub(crate) fn share_cmd(args: ShareArgs) -> Result<()> {
     if path.is_dir() && !workspace::has_decks(path) {
         bail!("no decks in `{}`; nothing to share", path.display());
     }
-    let (to_send, staged) = alix::share::stage_path(path, tmp.path())?;
+    let sources = if args.with_sources {
+        SourcesPolicy::Carry
+    } else {
+        SourcesPolicy::Omit
+    };
+    let Staged {
+        path: to_send,
+        files: staged,
+        sources_omitted,
+    } = alix::share::stage_path(path, tmp.path(), sources)?;
+    if sources_omitted > 0 {
+        println!(
+            "left out {sources_omitted} source files; the receiver cannot take the exam \
+             (`--with-sources` includes them)"
+        );
+    }
 
     if args.zip {
         let stem = name.strip_suffix(".md").unwrap_or(&name);

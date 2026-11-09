@@ -58,6 +58,14 @@ fn loopback_pump_target(addr: tiny_http::ListenAddr) -> Option<SocketAddr> {
     Some(SocketAddr::from(([127, 0, 0, 1], port)))
 }
 
+fn sources_policy(with_sources: bool) -> share::SourcesPolicy {
+    if with_sources {
+        share::SourcesPolicy::Carry
+    } else {
+        share::SourcesPolicy::Omit
+    }
+}
+
 fn json_body<T: serde::de::DeserializeOwned>(request: &mut Request) -> Option<T> {
     let bytes = read_capped(request.as_reader(), MAX_JSON_BODY)?;
     serde_json::from_slice(&bytes).ok()
@@ -1073,9 +1081,14 @@ pub fn run_review(
                 #[derive(Deserialize)]
                 struct Body {
                     deck: Option<String>,
+                    #[serde(default)]
+                    with_sources: bool,
                 }
                 let body: Option<Body> = json_body::<Body>(&mut request);
-                let path = match body.and_then(|b| b.deck) {
+                let (deck, with_sources) = body
+                    .map(|b| (b.deck, b.with_sources))
+                    .unwrap_or((None, false));
+                let path = match deck {
                     None => catalog.decks_root(),
                     Some(name) => catalog.resolve_path(name).flatten(),
                 };
@@ -1083,7 +1096,7 @@ pub fn run_review(
                     respond_status(request, 400);
                     continue;
                 };
-                match jobs.share_start(path) {
+                match jobs.share_start(path, sources_policy(with_sources)) {
                     None => respond_status(request, 503),
                     Some(Started::Conflict) => respond_status(request, 409),
                     Some(Started::Dto(dto)) => respond_json(request, &dto),
@@ -1100,6 +1113,8 @@ pub fn run_review(
             },
             (Method::Get, "/api/share/zip") => {
                 let name = query_param(request.url(), "deck");
+                let with_sources = query_param(request.url(), "with_sources")
+                    .is_some_and(|value| value == "1" || value == "true");
                 let path = match &name {
                     None => catalog.decks_root(),
                     Some(n) => catalog.resolve_path(n.clone()).flatten(),
@@ -1109,9 +1124,9 @@ pub fn run_review(
                     continue;
                 };
                 let zipped = tempfile::tempdir().ok().and_then(|tmp| {
-                    let staged = stage_for_share(&path, &tmp).ok()?;
+                    let staged = stage_for_share(&path, &tmp, sources_policy(with_sources)).ok()?;
                     let out = tmp.path().join("share.zip");
-                    share::zip_to(&staged, &out).ok()?;
+                    share::zip_to(&staged.path, &out).ok()?;
                     std::fs::read(&out).ok()
                 });
                 match zipped {

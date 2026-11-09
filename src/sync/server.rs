@@ -276,6 +276,7 @@ impl SyncCatalog {
                     &path,
                     &excluded_decks,
                     &excluded_deck_ids,
+                    crate::share::SourcesPolicy::Carry,
                 )
                 .map_err(|_| {
                     SyncFailure::unreadable("cannot list the files of a workspace entry")
@@ -283,7 +284,7 @@ impl SyncCatalog {
             } else if entry_decks.is_empty() {
                 Vec::new()
             } else {
-                crate::share::staged_deck_contents_files(&path)
+                crate::share::staged_deck_contents_files(&path, crate::share::SourcesPolicy::Carry)
                     .map_err(|_| SyncFailure::unreadable("cannot list the files of a deck entry"))?
             };
             staged.extend(private_files(&store_root, &entry_decks)?);
@@ -472,13 +473,15 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
     std::fs::create_dir_all(stage).map_err(|_| staging())?;
     let root = stage.join(&entry.name);
     if entry.kind == "workspace" {
-        let (staged, _) = crate::share::stage_workspace_excluding(
+        let staged = crate::share::stage_workspace_excluding(
             &entry.path,
             stage,
             &entry.excluded_decks,
             &entry.excluded_deck_ids,
+            crate::share::SourcesPolicy::Carry,
         )
-        .map_err(|_| SyncFailure::unreadable("cannot stage the workspace entry for pull"))?;
+        .map_err(|_| SyncFailure::unreadable("cannot stage the workspace entry for pull"))?
+        .path;
         if staged != root {
             return Err(SyncFailure::damaged(
                 "the staged entry did not keep its name",
@@ -487,8 +490,10 @@ fn stage_entry(entry: &SyncEntry, root_id: &str, stage: &Path) -> Result<StagedP
     } else if entry.decks.is_empty() {
         std::fs::create_dir_all(&root).map_err(|_| staging())?;
     } else {
-        let (bundle, _) = crate::share::stage_deck_bundle(&entry.path, stage)
-            .map_err(|_| SyncFailure::unreadable("cannot stage the deck entry for pull"))?;
+        let bundle =
+            crate::share::stage_deck_bundle(&entry.path, stage, crate::share::SourcesPolicy::Carry)
+                .map_err(|_| SyncFailure::unreadable("cannot stage the deck entry for pull"))?
+                .path;
         std::fs::remove_file(bundle.join(crate::share::DECK_BUNDLE_MARKER))
             .map_err(|_| staging())?;
         std::fs::rename(&bundle, &root).map_err(|_| staging())?;
@@ -1218,7 +1223,13 @@ mod tests {
         .unwrap();
 
         let share_stage = tempfile::tempdir().unwrap();
-        let (shared, _) = crate::share::stage_path(&workspace, share_stage.path()).unwrap();
+        let shared = crate::share::stage_path(
+            &workspace,
+            share_stage.path(),
+            crate::share::SourcesPolicy::Carry,
+        )
+        .unwrap()
+        .path;
         let shared_files: HashSet<_> = files(&shared).into_iter().collect();
         std::fs::write(
             workspace.join("decks/broken.md"),

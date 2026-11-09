@@ -3676,7 +3676,9 @@ mod tests {
         std::os::unix::fs::symlink(outside.path(), dir.path().join("assets/deck-zz")).unwrap();
 
         let stage = tempfile::tempdir().unwrap();
-        let share_error = alix::share::stage_path(dir.path(), stage.path()).unwrap_err();
+        let share_error =
+            alix::share::stage_path(dir.path(), stage.path(), alix::share::SourcesPolicy::Carry)
+                .unwrap_err();
         assert!(
             format!("{share_error:#}").contains("is a link"),
             "the linked orphan blocks sharing: {share_error:#}"
@@ -3716,7 +3718,9 @@ mod tests {
         std::os::unix::fs::symlink(outside.path(), dir.path().join("assets")).unwrap();
 
         let stage = tempfile::tempdir().unwrap();
-        let share_error = alix::share::stage_path(dir.path(), stage.path()).unwrap_err();
+        let share_error =
+            alix::share::stage_path(dir.path(), stage.path(), alix::share::SourcesPolicy::Carry)
+                .unwrap_err();
         assert!(
             format!("{share_error:#}").contains("is a link"),
             "the linked assets root blocks sharing: {share_error:#}"
@@ -3757,7 +3761,8 @@ mod tests {
 
         let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let stage = tempfile::tempdir().unwrap();
-        let share = alix::share::stage_path(dir.path(), stage.path());
+        let share =
+            alix::share::stage_path(dir.path(), stage.path(), alix::share::SourcesPolicy::Carry);
 
         std::fs::set_permissions(&assets, original).unwrap();
         let share_error = share.unwrap_err();

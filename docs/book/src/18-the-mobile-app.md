@@ -160,9 +160,12 @@ review session's summary silently pushes that deck's progress too, with
 no visible step on a normal pass.
 
 A pull replaces the files the desktop owns for that entry (its decks,
-their augment and asset files) with the desktop's current copies; anything
+their augment, asset, and frozen exam source files) with the desktop's
+current copies, verifying every source copy before anything lands; anything
 the phone added on its own inside the entry is left alone and reported as
-phone-only. Every card arrives with its id: a card you added on the desktop
+phone-only. A deck's `sources/deck-<token>/manifest.local.toml` is this
+phone's own (see [Pairing a device](19-pairing.md)): it is never pulled,
+survives a pull, and is not counted as phone-only. Every card arrives with its id: a card you added on the desktop
 gets one there before it travels, so reviews and exam results the phone
 records for it stay attached after the next pull. A member the desktop deleted stays on the phone while its
 progress is not yet pushed, listed as kept, so nothing you reviewed is

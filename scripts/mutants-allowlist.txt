@@ -246,4 +246,4 @@ src/parser/stream.rs:195: replace < with <= in MaskableStream::word_bounded
 # become another component kind, which the `_` arm already refuses. The
 # check is kept as a loud guard, so weakening its `||` chain to `&&`
 # changes nothing observable. Line-pinned.
-src/sync/server.rs:613: replace || with && in wire_path
+src/sync/server.rs:618: replace || with && in wire_path

@@ -413,7 +413,11 @@ fn workspace_removal_plan(
     }
 
     let workspace_files = WorkspaceFiles::new(workspace_root);
-    for directory in [workspace_files.assets(), workspace_files.augment()] {
+    for directory in [
+        workspace_files.assets(),
+        workspace_files.sources(),
+        workspace_files.augment(),
+    ] {
         if directory.is_dir() {
             preview.directories.push(directory.clone());
             plan.directory_if_present(directory);
@@ -590,9 +594,13 @@ fn removal_set(deck_path: &Path, store: &Store) -> (Vec<PathBuf>, Vec<PathBuf>, 
             files.extend(existing_with_bak(&progress));
         }
         files.extend(existing_with_bak(&workspace_files.augment_for(token)));
-        let assets = workspace_files.assets_for(token);
-        if assets.is_dir() {
-            directories.push(assets);
+        for directory in [
+            workspace_files.assets_for(token),
+            workspace_files.sources_for(token),
+        ] {
+            if directory.is_dir() {
+                directories.push(directory);
+            }
         }
     }
     if let Some(bak) = bak_sibling(deck_path) {

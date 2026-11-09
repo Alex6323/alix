@@ -305,6 +305,7 @@ fn member_files(manifest: &SyncPullManifest, deck: &SyncDeckDto) -> Vec<String> 
     let sidecar = sidecar_rel(&deck.path);
     let augment = format!("augment/{}.json", deck.deck_id);
     let assets = format!("assets/{}/", deck.deck_id);
+    let sources = format!("{}/{}/", crate::sources::ROOT, deck.deck_id);
     let document = document_rel(&deck.deck_id);
     manifest
         .files
@@ -317,8 +318,33 @@ fn member_files(manifest: &SyncPullManifest, deck: &SyncDeckDto) -> Vec<String> 
                 || *path == augment
                 || *path == document
                 || path.starts_with(&assets)
+                || path.starts_with(&sources)
         })
         .collect()
+}
+
+/// A deck's roots file lives under `sources/<deck-id>/` on the phone alone:
+/// a pull never lists it, and a landing never counts it as phone-only.
+fn stays_on_phone(rel: &str) -> bool {
+    let mut parts = rel.split('/');
+    parts.next() == Some(crate::sources::ROOT) && parts.any(crate::workspace::is_private_name)
+}
+
+/// Keeps the phone's roots file when an incoming `sources/<deck-id>/`
+/// replaces the live one: it moves into the incoming folder first.
+fn carry_roots(live: &Path, incoming: &Path) -> Result<()> {
+    let roots = live.join(crate::sources::ROOTS);
+    if roots.is_file() {
+        std::fs::rename(&roots, incoming.join(crate::sources::ROOTS))
+            .with_context(|| format!("cannot keep {}", roots.display()))?;
+    }
+    Ok(())
+}
+
+fn per_deck_unit(rel: &str) -> Option<String> {
+    let parts: Vec<&str> = rel.split('/').collect();
+    (parts.len() >= 3 && (parts[0] == "assets" || parts[0] == crate::sources::ROOT))
+        .then(|| format!("{}/{}", parts[0], parts[1]))
 }
 
 fn sidecar_rel(rel: &str) -> String {
@@ -352,6 +378,9 @@ fn owned_path(manifest: &SyncPullManifest, path: &str) -> Result<Vec<String>> {
             bail!("`{path}` is private phone state, never desktop-owned");
         }
     }
+    if stays_on_phone(path) {
+        bail!("`{path}` is machine-local and never travels");
+    }
     if manifest.kind == KIND_DECK {
         let sidecar = crate::personal::sidecar_path(Path::new(&manifest.entry))
             .file_name()
@@ -363,6 +392,7 @@ fn owned_path(manifest: &SyncPullManifest, path: &str) -> Result<Vec<String>> {
             || (single && parts[0] == crate::config::LOCAL_MANIFEST)
             || parts[0] == "augment"
             || parts[0] == "assets"
+            || parts[0] == crate::sources::ROOT
             || parts[0] == ".alix";
         if !allowed {
             bail!(
@@ -707,6 +737,9 @@ pub fn apply_unpacked(
     check_manifest(root, &manifest)?;
     let present = walk_files(unpacked)?;
     verify_files(unpacked, &manifest, &present)?;
+    for deck in &manifest.decks {
+        crate::sources::load_verified(unpacked, &deck.deck_id)?;
+    }
     let previous_path = root.manifest_path(&manifest.entry);
     let previous = previous_path
         .exists()
@@ -828,7 +861,7 @@ pub fn apply_unpacked(
                 }
                 std::fs::create_dir_all(dest.parent().unwrap_or(unpacked))?;
                 std::fs::copy(rel_path(&entry_root, &rel), &dest)?;
-                if !carried {
+                if !carried && !stays_on_phone(&rel) {
                     report.phone_only.push(rel);
                 }
             }
@@ -873,6 +906,9 @@ pub fn apply_unpacked(
             if is_dir {
                 let old = old_path(&dest);
                 if dest.exists() {
+                    if rel.starts_with(crate::sources::ROOT) {
+                        carry_roots(&dest, &src)?;
+                    }
                     std::fs::rename(&dest, &old)?;
                 }
                 std::fs::rename(&src, &dest)?;
@@ -938,15 +974,14 @@ fn old_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Assets land per deck directory (one rename), everything else per file,
-/// the deck file last so a crash never shows a new deck beside old parts.
+/// Assets and sources land per deck directory (one rename), everything else
+/// per file, the deck file last so a crash never shows a new deck beside old
+/// parts.
 fn landing_units(unpacked: &Path, deck_file: &str) -> Result<Vec<(String, bool)>> {
     let mut units: Vec<(String, bool)> = Vec::new();
     let mut seen = BTreeSet::new();
     for rel in walk_files(unpacked)? {
-        let parts: Vec<&str> = rel.split('/').collect();
-        if parts.len() >= 3 && parts[0] == "assets" {
-            let dir = format!("{}/{}", parts[0], parts[1]);
+        if let Some(dir) = per_deck_unit(&rel) {
             if seen.insert(dir.clone()) {
                 units.push((dir, true));
             }
@@ -998,7 +1033,11 @@ fn staged_entries(root: &PairedRoot) -> BTreeSet<String> {
 pub fn recover(root: &PairedRoot) -> Result<Vec<String>> {
     let mut actions = Vec::new();
     let unpacked = staged_entries(root);
-    for dir in [root.dir.clone(), root.dir.join(crate::assets::ROOT)] {
+    for dir in [
+        root.dir.clone(),
+        root.dir.join(crate::assets::ROOT),
+        root.dir.join(crate::sources::ROOT),
+    ] {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -1154,12 +1193,7 @@ pub fn remove_entry(root: &PairedRoot, entry: &str) -> Result<()> {
     } else {
         let mut seen = BTreeSet::new();
         for file in &manifest.files {
-            let parts: Vec<&str> = file.path.split('/').collect();
-            let unit = if parts.len() >= 3 && parts[0] == "assets" {
-                format!("{}/{}", parts[0], parts[1])
-            } else {
-                file.path.clone()
-            };
+            let unit = per_deck_unit(&file.path).unwrap_or_else(|| file.path.clone());
             if !seen.insert(unit.clone()) {
                 continue;
             }
@@ -1246,7 +1280,7 @@ fn has_phone_only(root: &PairedRoot, manifest: &SyncPullManifest) -> Result<bool
     let owned: BTreeSet<&str> = manifest.files.iter().map(|f| f.path.as_str()).collect();
     Ok(walk_files(&entry_root)?
         .iter()
-        .any(|rel| !owned.contains(rel.as_str())))
+        .any(|rel| !owned.contains(rel.as_str()) && !stays_on_phone(rel)))
 }
 
 pub fn needs_space(compressed: u64, unpacked: u64) -> u64 {
@@ -3054,9 +3088,30 @@ mod tests {
     }
 
     #[test]
+    fn a_roots_file_under_sources_is_refused_for_either_entry_kind() {
+        for kind in [KIND_WORKSPACE, KIND_DECK] {
+            let manifest = bare_manifest(kind, "organs.md");
+            let error = owned_path(&manifest, "sources/deck-x/manifest.local.toml").unwrap_err();
+            assert!(
+                error.to_string().contains("manifest.local.toml"),
+                "{kind}: the roots file is refused by name: {error}"
+            );
+            assert!(
+                owned_path(&manifest, "sources/deck-x/manifest.toml").is_ok(),
+                "{kind}: the sources manifest travels"
+            );
+        }
+    }
+
+    #[test]
     fn a_deck_entry_owns_only_its_own_file_and_the_shared_directories() {
         let manifest = bare_manifest(KIND_DECK, "organs.md");
-        for path in ["organs.md", "augment/x.json", "assets/deck/card.webp"] {
+        for path in [
+            "organs.md",
+            "augment/x.json",
+            "assets/deck/card.webp",
+            "sources/deck/manifest.toml",
+        ] {
             assert!(
                 owned_path(&manifest, path).is_ok(),
                 "deck entry `organs.md` owns `{path}` and must accept it"

@@ -187,25 +187,39 @@ export function createSheets({
   // device-to-device via a wormhole code, or fall back to a plain zip download.
   // `deck: null` in the POST body shares the served root, matching the zip
   // link's bare (no `?deck=`) href — both resolve server-side the same way.
+  // Exam sources are copies of the sender's own files, so they stay home
+  // unless asked for; the rarely needed option sits folded under "More".
   function openShare() {
     const row = focusedRowName();
-    const zipHref = "/api/share/zip" + (row ? "?deck=" + encodeURIComponent(row) : "");
+    const zipHref = (withSources) => {
+      const query = [];
+      if (row) query.push("deck=" + encodeURIComponent(row));
+      if (withSources) query.push("with_sources=1");
+      return "/api/share/zip" + (query.length ? "?" + query.join("&") : "");
+    };
     show(
       '<h2>Share</h2><div class="sheet-add">' +
       '<p>Share <b></b> device-to-device. Progress and personal config stay home.</p>' +
       '<button id="shareGo" class="bar-chip">Get code</button>' +
       '<p><a id="shareZip" download>or download as .zip</a></p>' +
+      '<details class="sheet-more"><summary>More</summary>' +
+      '<label class="sheet-check"><input id="shareSources" type="checkbox"> ' +
+      'Include exam sources (copies of your own files; the receiver can take the exam)</label>' +
+      '</details>' +
       '<p id="jobLine"></p></div>'
     );
     sheetPanel.querySelector("b").textContent = row || "the whole library";
-    doc.getElementById("shareZip").href = withToken(zipHref);
+    const zip = doc.getElementById("shareZip");
+    const sources = doc.getElementById("shareSources");
+    zip.href = withToken(zipHref(false));
+    sources.addEventListener("change", () => { zip.href = withToken(zipHref(sources.checked)); });
     doc.getElementById("shareGo").addEventListener("click", () => {
       // Captured once, here at kick time, rather than re-resolved by id when
       // the response lands or on every tick — a re-resolve could find the
       // sheet already closed (null) or a different sheet's line. See
       // jobPoll's comment for why that matters.
       const line = doc.getElementById("jobLine");
-      api("/api/share", post({ deck: row }))
+      api("/api/share", post({ deck: row, with_sources: sources.checked }))
         .then((d) => {
           if (d && d.phase === "error") {
             const msg = d.error || "could not start sharing";

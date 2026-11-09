@@ -222,8 +222,9 @@ fn print_transfer_report(action: &str, report: &alix::deck_transfer::TransferRep
         report.destination.display()
     );
     println!(
-        "  {} asset file(s), augmentation: {}, progress moved: {}",
+        "  {} asset file(s), {} source file(s), augmentation: {}, progress moved: {}",
         report.assets,
+        report.sources,
         if report.augmentation { "yes" } else { "no" },
         if report.progress { "yes" } else { "no" }
     );

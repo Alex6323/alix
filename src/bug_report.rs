@@ -392,7 +392,7 @@ fn collect_decks(dir: &Path, paths: &mut Vec<PathBuf>) {
             continue;
         };
         if kind.is_dir() {
-            if !matches!(name.as_ref(), "progress" | "augment" | "assets") {
+            if !matches!(name.as_ref(), "progress" | "augment" | "assets" | "sources") {
                 collect_decks(&path, paths);
             }
         } else if kind.is_file()
@@ -745,13 +745,14 @@ mod tests {
     fn the_inventory_counts_only_real_decks_wherever_they_sit() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        for sub in ["progress", "sub"] {
+        for sub in ["progress", "sources", "sub"] {
             std::fs::create_dir(root.join(sub)).unwrap();
         }
         for (name, text) in [
             ("a.md", DECK),
             ("sub/b.md", DECK),
             ("progress/skipped.md", DECK),
+            ("sources/skipped.md", DECK),
             ("notes.txt", DECK),
             ("README.md", DECK),
             ("c.sync-conflict-20261030-000000-ABCDEFG.md", DECK),

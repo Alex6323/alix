@@ -1084,6 +1084,7 @@ pub(super) struct ShareDto {
     pub(super) code: Option<String>,
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,
+    pub(super) sources_omitted: usize,
 }
 
 #[derive(Serialize)]
