@@ -593,6 +593,47 @@ async function openResults(page: Page, dto: object) {
   await page.getByRole("button", { name: /^Take exam/ }).click();
 }
 
+test("a long exam badge truncates inside a narrow row and leaves the deck name showing", async ({ page }) => {
+  await mockExamRows(page, {
+    "wild.md": {
+      state: "finished",
+      examable: true,
+      exam_filter: "none",
+      meta: "mastered (4 Nov) · last (4 Nov) 17.5 / 18 · 12 to drill",
+      exam_changed: true,
+    },
+    "cats.md": {
+      state: "finished",
+      examable: true,
+      exam_filter: "none",
+      meta: "mastered (4 Nov) · last (4 Nov) 17.5 / 18 · 12 to drill",
+    },
+  });
+  await page.locator("#navRefresh").click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await adultDeckRow(page, "Animals").click();
+
+  for (const suffix of ["wild", "cats"]) {
+    const row = adultDeckRow(page, suffix);
+    const rowBox = await row.boundingBox();
+    const nameBox = await row.locator(".name").boundingBox();
+    const metaBox = await row.locator(".meta").boundingBox();
+    expect(rowBox, `${suffix}: row has layout`).not.toBeNull();
+    expect(nameBox!.width, `${suffix}: the deck name keeps width`).toBeGreaterThan(0);
+    const clipped = await row.locator(".name").evaluate((n) => n.scrollWidth > n.clientWidth);
+    expect(clipped, `${suffix}: a short deck name is not ellipsized by the badge`).toBe(false);
+    expect(
+      metaBox!.x + metaBox!.width,
+      `${suffix}: the badge ends inside the row`,
+    ).toBeLessThanOrEqual(rowBox!.x + rowBox!.width);
+  }
+  const directory = process.env.ALIX_RENDER_DIR;
+  if (directory) {
+    await adultDeckRow(page, "cats").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${directory}/long-badge-narrow-390.png`, animations: "disabled" });
+  }
+});
+
 test("a full perfect sitting shows its count, topic counts, shapes, and mastered", async ({ page }) => {
   await openResults(
     page,

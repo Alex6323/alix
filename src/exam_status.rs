@@ -172,7 +172,7 @@ pub fn exam_row(deck: &Deck, store: &Store, personal: Option<&[Card]>) -> ExamRo
         return ExamRow::default();
     }
     let status = exam_status(deck, store);
-    let exam_changed = standing && store.exam_stamp(deck_id).is_some() && {
+    let exam_changed = standing_stamp(store, deck_id).is_some() && {
         let read;
         let personal = match personal {
             Some(cards) => cards,
@@ -309,17 +309,17 @@ pub fn exam_topics(deck: &Deck, sources: Option<&Manifest>) -> Vec<ExamTopic> {
 pub fn unsourced_topic_labels(deck: &Deck, personal: &[Card]) -> Vec<String> {
     let (sourced_by_index, _) = topic_sourcing(deck, manifest_of(deck));
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+    let mut holds_cards = vec![false; deck.topics.len()];
+    for card in deck.cards.iter().chain(personal) {
+        if let Some(slot) = holds_cards.get_mut(card.topic) {
+            *slot = true;
+        }
+    }
     deck.topics
         .iter()
         .enumerate()
         .filter(|(at, topic)| {
-            topic.id(deck_id).is_some()
-                && !sourced_by_index[*at]
-                && deck
-                    .cards
-                    .iter()
-                    .chain(personal)
-                    .any(|card| card.topic == *at)
+            topic.id(deck_id).is_some() && !sourced_by_index[*at] && holds_cards[*at]
         })
         .map(|(_, topic)| topic.heading.clone().unwrap_or_else(|| deck.display_name()))
         .collect()
@@ -389,13 +389,14 @@ pub fn current_stamp(deck: &Deck, personal: &[Card], manifest: Option<&Manifest>
     )
 }
 
-pub fn standing_changed(store: &Store, deck_id: &str, current: &ExamStamp) -> bool {
+fn standing_stamp<'a>(store: &'a Store, deck_id: &str) -> Option<&'a ExamStamp> {
     let has_standing =
         store.deck_passed_at(deck_id).is_some() || store.deck_mastered_at(deck_id).is_some();
-    has_standing
-        && store
-            .exam_stamp(deck_id)
-            .is_some_and(|recorded| exam_changed(current, recorded))
+    store.exam_stamp(deck_id).filter(|_| has_standing)
+}
+
+pub fn standing_changed(store: &Store, deck_id: &str, current: &ExamStamp) -> bool {
+    standing_stamp(store, deck_id).is_some_and(|recorded| exam_changed(current, recorded))
 }
 
 pub fn exam_changed(current: &ExamStamp, recorded: &ExamStamp) -> bool {
