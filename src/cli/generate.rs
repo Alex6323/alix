@@ -447,14 +447,17 @@ fn trace_build(
         );
     }
     let roots = alix::cite::CitationRoots::for_deck(deck);
-    let Some((_, scope)) = roots.first_local()? else {
+    let Some(first) = roots.first()? else {
         bail!(
-            "{} declares no local `cite:` root to trace; add the directory to trace \
+            "{} declares no `cite:` root to trace; add the directory or url to trace \
              as one (e.g. `cite:` with `- src: .`)",
             deck.subject
         );
     };
-    let source = scope.display().to_string();
+    let source = match &first.root {
+        alix::cite::Root::Local(dir) => dir.display().to_string(),
+        alix::cite::Root::Url(url) => url.clone(),
+    };
     let rebuild = !deck.cards.is_empty();
     if rebuild && !force {
         bail!(

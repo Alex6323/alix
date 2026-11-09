@@ -113,11 +113,7 @@ impl Trace {
             })
             .collect();
         let roots = CitationRoots::for_deck(deck);
-        let scope = roots
-            .first_local()
-            .ok()
-            .flatten()
-            .map(|(key, _)| key.to_string());
+        let scope = roots.first().ok().flatten().map(|first| first.key.clone());
         Ok(Trace {
             description,
             subject: deck.subject.clone(),

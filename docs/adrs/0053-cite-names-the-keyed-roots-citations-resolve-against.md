@@ -11,12 +11,12 @@
 - Evidence: fn a_generator_reuses_the_root_holding_its_input_or_declares_src_or_refuses in src/cite.rs
 - Evidence: fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root in tests/cli.rs
 - Evidence: fn a_transfer_is_refused_for_every_used_key_whose_root_differs_in_the_destination in src/cite.rs
-- Evidence: fn a_transfer_is_refused_for_every_exam_entry_that_resolves_differently_in_the_destination in src/cite.rs
 - Recorded: 2026-10-17
 - Retrospective: No
 - Amended by: 0064 (rule 15's sole-root clause: a card without a local
   locator browses the deck's only local root; 0064 rule 13 replaces it, and
-  such a card browses no `cite:` root, while the rest of rule 15 still binds)
+  such a card browses no `cite:` root, while the rest of rule 15 still
+  binds; and rule 17's `exam:` condition on transfer)
 - Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
 
 ## Context

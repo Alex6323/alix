@@ -74,16 +74,25 @@ You don't have to hand-write checkpoints. Declare just the `trace:` and a
 alix deck generate mytrace.md
 ```
 
-The build's scope is the deck's **first local `cite:` root**, in the order
-the deck sees its roots: a member deck's workspace `[cite]` table first (in
-key order), then the deck's own `cite:` list, skipping URL roots.
-A deck with no local root is refused before the model is called. The model
-explores that folder (**read-only** `Read`/`Glob`/`Grep`, the folder as its
-working directory, no write or shell access), finds the single load-bearing
-path, and writes the checkpoints (with their `<!-- at: -->` locators) back
-into the deck. The locators use that root's key, so a root declared as
-`- code: src` yields `code:<file>:<lines>`. Alix fingerprints those locators
-before placing the result. The result is
+The build's scope is the deck's **first `cite:` root**, local or URL, in the
+order the deck sees its roots: a member deck's workspace `[cite]` table first
+(in key order), then the deck's own `cite:` list. A deck with no `cite:` root
+is refused before the model is called. For a local root the model explores
+that folder (**read-only** `Read`/`Glob`/`Grep`, the folder as its working
+directory, no write or shell access), finds the single load-bearing path, and
+writes the checkpoints (with their `<!-- at: -->` locators) back into the
+deck. The locators use that root's key, so a root declared as `- code: src`
+yields `code:<file>:<lines>`.
+
+A URL root works only in a workspace member deck (a loose deck cannot
+declare one). The model reads the page and copies each checkpoint's passage
+verbatim between a `PASSAGE <token>` line and an `END PASSAGE <token>` line,
+with a token alix mints for that build. Alix freezes each passage as an
+`asset-<52 base32>.txt` object in the deck's asset folder and cites it as
+`<!-- at: <key> fingerprint: ... asset: ... -->`. A missing or altered
+marker, or a checkpoint without a passage, fails the build naming the
+checkpoint, and nothing is written. Alix fingerprints the locators before
+placing the result. The result is
 cached and version-controlled there, so review it (especially the locators) and
 edit freely; re-run it to regenerate.
 

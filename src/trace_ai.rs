@@ -7,7 +7,7 @@ use anyhow::{Result, anyhow, bail};
 use crate::{
     ask,
     backend::{backend_for, ensure_source_reachable},
-    cite::GeneratedRoot,
+    cite::{GeneratedRoot, Root},
     config::{AskConfig, TraceConfig},
     deck::{Deck, is_url},
     source::resolve_source,
@@ -250,20 +250,35 @@ pub fn build(deck: &Deck, cfg: &TraceConfig, ask_cfg: &AskConfig) -> Result<Buil
         .as_deref()
         .ok_or_else(|| anyhow!("{} declares no `trace:` to build", deck.subject))?;
     let roots = crate::cite::CitationRoots::for_deck(deck);
-    let (key, dir) = roots
-        .first_local()?
-        .ok_or_else(|| anyhow!("{} declares no local `cite:` root to trace", deck.subject))?;
-    let root = TraceRoot {
-        cwd: Some(dir.to_path_buf()),
-        root: GeneratedRoot {
-            key: key.to_string(),
-            path_prefix: String::new(),
-            declare: None,
-        },
-        passage_token: None,
+    let first = roots
+        .first()?
+        .ok_or_else(|| anyhow!("{} declares no `cite:` root to trace", deck.subject))?;
+    let generated = GeneratedRoot {
+        key: first.key.clone(),
+        path_prefix: String::new(),
+        declare: None,
     };
-    ensure_source_reachable(ask_cfg, false)?;
-    let source = dir.display().to_string();
+    let (root, source) = match &first.root {
+        Root::Local(dir) => (
+            TraceRoot {
+                cwd: Some(dir.clone()),
+                root: generated,
+                passage_token: None,
+            },
+            dir.display().to_string(),
+        ),
+        Root::Url(url) => {
+            let token = crate::token::mint()
+                .map_err(|error| anyhow!("cannot mint a passage token: {error}"))?;
+            let root = TraceRoot {
+                cwd: None,
+                root: generated,
+                passage_token: Some(token),
+            };
+            (root, url.clone())
+        }
+    };
+    ensure_source_reachable(ask_cfg, root.url())?;
     let prompt = build_prompt(description, &source, &root.citing(), cfg);
     let run_cfg = build_run_config(cfg, ask_cfg, root.cwd.clone(), root.url());
     let raw = ask::run(&run_cfg, &prompt, &[])?;
@@ -901,18 +916,14 @@ mod tests {
     use crate::testutil::{ask_config, exec_lock};
 
     #[test]
-    fn a_trace_build_takes_its_scope_from_the_first_local_cite_root() {
+    fn a_trace_build_takes_its_scope_from_the_first_cite_root() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         for folder in ["src", "other", "ws/decks", "probe"] {
             std::fs::create_dir_all(root.join(folder)).unwrap();
         }
-        write(
-            &root.join("ws"),
-            "alix.toml",
-            "[cite]\nguide = \"https://example.org/guide\"\n",
-        );
+        write(&root.join("ws"), "alix.toml", "");
         let probe = root.join("probe");
         std::fs::write(
             probe.join("reply"),
@@ -939,7 +950,7 @@ mod tests {
         assert_eq!(
             root.join("src").display().to_string(),
             std::fs::read_to_string(probe.join("cwd")).unwrap().trim(),
-            "the backend runs in the first local root"
+            "the backend runs in the first root"
         );
         let prompt = std::fs::read_to_string(probe.join("prompt")).unwrap();
         assert!(prompt.contains("`code:<file>:start-end`"), "{prompt}");
@@ -953,7 +964,7 @@ mod tests {
             Trace::from_deck(&Deck::load(&traced).unwrap())
                 .unwrap()
                 .scope,
-            "the trace's scope is the first local root's key"
+            "the trace's scope is the first root's key"
         );
 
         let unrooted = write(
@@ -970,7 +981,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("declares no local `cite:` root to trace"),
+                .contains("declares no `cite:` root to trace"),
             "{error:#}"
         );
     }

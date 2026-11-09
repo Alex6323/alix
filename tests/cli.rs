@@ -4943,7 +4943,7 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
 }
 
 #[test]
-fn a_trace_build_without_a_local_cite_root_is_refused_before_the_backend() {
+fn a_trace_build_without_a_cite_root_is_refused_before_the_backend() {
     let dir = TempDir::new().unwrap();
     let stub = write(dir.path(), "t.md", "---\ntrace: how it works\n---\n");
     let called = dir.path().join("called");
@@ -4967,7 +4967,7 @@ fn a_trace_build_without_a_local_cite_root_is_refused_before_the_backend() {
 
     assert!(!out.status.success());
     assert!(
-        stderr(&out).contains("declares no local `cite:` root to trace"),
+        stderr(&out).contains("declares no `cite:` root to trace"),
         "stderr: {}",
         stderr(&out)
     );
@@ -5037,6 +5037,178 @@ fn passage_echoing_claude(dir: &Path, reply: &str) -> (String, PathBuf) {
         std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     (cli, request)
+}
+
+fn url_trace_member(dir: &Path) -> (PathBuf, String) {
+    let ws = dir.join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    write(&ws, "alix.toml", "");
+    let stub = write(
+        &ws.join("decks"),
+        "t.md",
+        "---\ntrace: how a guard gates the body\ncite:\n  - src: \"https://example.com/guide\"\n---\n",
+    );
+    (ws, stub)
+}
+
+#[test]
+fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root() {
+    let dir = TempDir::new().unwrap();
+    let (ws, stub) = url_trace_member(dir.path());
+    let first = "The guard runs before the body.\n\n```text\n## not a card\n```\n> quoted line\nEND PASSAGE someothertoken\n";
+    let second = "Only then does the body run.\n";
+    let (cli, request) = passage_echoing_claude(
+        dir.path(),
+        &format!(
+            "Here is the trace:\n## What happens before the body runs?\nthe guard is checked first\n<!-- at: src -->\nPASSAGE TOKEN\n{first}END PASSAGE TOKEN\n> [!NOTE]\n> guards come first\n\n## And after the guard passes?\nthe body runs\n<!-- at: src -->\nPASSAGE TOKEN\n{second}END PASSAGE TOKEN\n"
+        ),
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+    let built = std::fs::read_to_string(&stub).unwrap();
+    assert!(
+        out.status.success(),
+        "step build: exit {:?}\nstderr: {}\ndeck:\n{built}",
+        out.status.code(),
+        stderr(&out)
+    );
+    assert!(
+        std::fs::read_to_string(&request)
+            .unwrap()
+            .contains("END PASSAGE "),
+        "step prompt: the prompt teaches the passage markers"
+    );
+    assert!(
+        built.contains("cite:\n  - src: \"https://example.com/guide\"\n"),
+        "step cite: the url is declared as the `src` root: {built}"
+    );
+    assert!(
+        !built.contains("PASSAGE"),
+        "step cut: no marker line survives: {built}"
+    );
+    let deck = alix::deck::Deck::load(Path::new(&stub)).unwrap();
+    let deck_id = deck.deck_token.clone().unwrap();
+    for (label, passage) in [("first", first), ("second", second)] {
+        let object = alix::assets::object_name(passage.as_bytes(), "txt");
+        assert!(
+            built.contains(&format!(" asset: {object} -->")),
+            "step {label} locator names its object {object}: {built}"
+        );
+        assert_eq!(
+            passage,
+            std::fs::read_to_string(ws.join("assets").join(&deck_id).join(&object)).unwrap(),
+            "step {label} object holds the exact passage bytes"
+        );
+    }
+    assert_eq!(
+        2,
+        built.matches("<!-- at: src fingerprint: ").count(),
+        "step fingerprint: each passage locator is fingerprinted: {built}"
+    );
+    let doctor = alix(&["doctor", &stub]);
+    assert!(
+        doctor.status.success(),
+        "step doctor: {}{}",
+        stdout(&doctor),
+        stderr(&doctor)
+    );
+
+    std::fs::remove_dir_all(ws.join("assets")).unwrap();
+    let out = alix(&[
+        "deck", "generate", &stub, "--config", &config, "--yes", "--force",
+    ]);
+    let rebuilt = std::fs::read_to_string(&stub).unwrap();
+    assert!(
+        out.status.success(),
+        "step rebuild: {}\ndeck:\n{rebuilt}",
+        stderr(&out)
+    );
+    assert_eq!(
+        1,
+        rebuilt.matches("  - src:").count(),
+        "step rebuild: the deck's own `src` names the url, so it is reused: {rebuilt}"
+    );
+    let rebuilt_id = alix::deck::Deck::load(Path::new(&stub))
+        .unwrap()
+        .deck_token
+        .unwrap();
+    for passage in [first, second] {
+        let object = alix::assets::object_name(passage.as_bytes(), "txt");
+        assert!(
+            ws.join("assets").join(&rebuilt_id).join(&object).is_file(),
+            "step rebuild: {object} is written again"
+        );
+    }
+}
+
+#[test]
+fn a_url_trace_build_with_an_altered_passage_token_fails_naming_the_card_and_writes_nothing() {
+    let dir = TempDir::new().unwrap();
+    let (ws, stub) = url_trace_member(dir.path());
+    let original = std::fs::read_to_string(&stub).unwrap();
+    let (cli, _) = passage_echoing_claude(
+        dir.path(),
+        "## What happens before the body runs?\nthe guard is checked first\n<!-- at: src -->\nPASSAGE TOKEN\nThe guard runs first.\nEND PASSAGE TOKEN\n\n## And after the guard passes?\nthe body runs\n<!-- at: src -->\nPASSAGE TOKEN\nThe body runs.\nEND PASSAGE TOKEX\n",
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+
+    assert!(!out.status.success(), "the build fails");
+    assert!(
+        stderr(&out).contains("And after the guard passes?"),
+        "the error names the card: {}",
+        stderr(&out)
+    );
+    assert_eq!(original, std::fs::read_to_string(&stub).unwrap());
+    assert!(!ws.join("assets").exists(), "no object is written");
+}
+
+#[test]
+fn a_url_trace_build_outside_a_workspace_is_refused_before_the_backend() {
+    let dir = TempDir::new().unwrap();
+    let stub = write(
+        dir.path(),
+        "t.md",
+        "---\ntrace: how a guard gates the body\ncite:\n  - src: \"https://example.com/guide\"\n---\n",
+    );
+    let called = dir.path().join("called");
+    let cli = write(
+        dir.path(),
+        "fake-claude",
+        &format!("#!/bin/sh\ntouch {}\ncat >/dev/null\n", called.display()),
+    );
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&["deck", "generate", &stub, "--config", &config, "--yes"]);
+
+    assert!(!out.status.success());
+    assert!(
+        stderr(&out).contains("only a workspace member"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !called.exists(),
+        "the refusal comes before any backend call"
+    );
 }
 
 #[test]

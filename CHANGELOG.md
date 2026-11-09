@@ -261,9 +261,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
-- Breaking: the deck frontmatter key `exam` and the workspace `alix.toml` key
-  `exam` are gone, and with them URL exam material. A deck that still
-  declares `exam:` gets the ordinary unknown-key lint; an `alix.toml` that
+- Breaking: the deck frontmatter key `source` and the workspace `alix.toml`
+  key `source` are gone, and with them URL exam material. A deck that still
+  declares `source:` gets the ordinary unknown-key lint; an `alix.toml` that
   still declares it fails to parse. The exam reads only a deck's frozen
   sources (`alix deck source add`); a reference URL belongs in `link:`.
 
@@ -279,10 +279,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every other reader (review, the tutor, AI calls, transfer, freezing) fails
   naming the file.
 
-- Breaking: a trace build (`alix deck generate <trace deck>`) and `alix
-  workspace update` take their scope from the deck's first local `cite:` root
-  (the workspace `[cite]` table first, then the deck's own), and refuse a deck
-  without one. The trace session no longer carries `source`
+- Breaking: a trace build (`alix deck generate <trace deck>`) takes its scope
+  from the deck's first `cite:` root, local or URL (the workspace `[cite]`
+  table first, then the deck's own), and refuses a deck without one; a URL
+  root still freezes each passage verbatim, in a workspace member only. `alix
+  workspace update` reconciles against the first local `cite:` root. The trace
+  session no longer carries `source`
   (`TraceSessionDto.source` is gone from the web API).
 
 - Breaking: `--source-url <URL>` is renamed `--link <URL>` and is repeatable;
@@ -670,9 +672,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first local `exam:` entry: the root of the card's first locator whose key
   names a local root, else the deck's only local root when it sees exactly
   one, else none. A URL root is never browsed.
-
-- The deck frontmatter key and the workspace manifest key `source` are renamed
-  `exam`. A deck or manifest that still uses `source` fails as an unknown key.
 
 - The web apps and the mobile app draw every unrevealed cloze blank as an empty
   outlined pill of one fixed width, asked or hidden, so the gap never hints at

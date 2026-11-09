@@ -565,6 +565,14 @@ impl CitationRoots {
         self.asset_dir.as_deref()
     }
 
+    pub fn first(&self) -> Result<Option<&VisibleRoot>, ResolveError> {
+        let roots = self
+            .roots
+            .as_ref()
+            .map_err(|found| ResolveError::InvalidRoots(found.clone()))?;
+        Ok(roots.first())
+    }
+
     pub fn first_local(&self) -> Result<Option<(&str, &Path)>, ResolveError> {
         let roots = self
             .roots
