@@ -99,18 +99,21 @@ fn is_base32_with_top_digit_at_most(text: &str, len: usize, top_max: usize) -> b
         && digits.all(|d| d.is_some())
 }
 
-/// 52 digits most-significant-first; the top digit holds the 4 spare bits.
 pub fn base32_256(digest: &[u8; 32]) -> String {
-    let bit = |k: usize| (digest[31 - k / 8] >> (k % 8)) & 1;
-    render_base32(BASE32_256_LEN, |i| {
-        (0..5)
-            .filter(|b| 5 * i + b < 256)
-            .map(|b| usize::from(bit(5 * i + b)) << b)
-            .sum()
-    })
+    let mut digits = String::with_capacity(BASE32_256_LEN);
+    let (mut buffer, mut buffered_bits) = (0u32, 4);
+    for byte in digest {
+        buffer = (buffer << 8) | u32::from(*byte);
+        buffered_bits += 8;
+        while buffered_bits >= 5 {
+            buffered_bits -= 5;
+            digits.push(TOKEN_ALPHABET[((buffer >> buffered_bits) & 31) as usize] as char);
+        }
+        buffer &= (1 << buffered_bits) - 1;
+    }
+    digits
 }
 
-/// 13 digits most-significant-first; the top digit holds 1 spare bit.
 pub fn base32_64(value: u64) -> String {
     render_base32(GROUP_HASH_LEN, |i| ((value >> (5 * i)) & 31) as usize)
 }
@@ -123,13 +126,8 @@ pub fn is_base32_64(text: &str) -> bool {
     is_base32_with_top_digit_at_most(text, GROUP_HASH_LEN, 15)
 }
 
-fn is_valid_group_hash(hash: &str) -> bool {
-    is_base32_64(hash)
-}
-
 /// The frozen ADR 0034 group derivation: member stamps sorted ascending by
-/// their ASCII bytes, joined with one `-`, hashed with XxHash64 seed 0, and
-/// rendered by `base32_64`.
+/// their ASCII bytes, joined with one `-`, hashed with XxHash64 seed 0.
 pub fn derive_group_hash(stamps: &[&str]) -> String {
     use std::hash::Hasher;
     let mut sorted: Vec<&str> = stamps.to_vec();
@@ -205,7 +203,7 @@ pub fn parse_prefixed_card_id(id: &str) -> Option<ParsedCardSuffix<'_>> {
             Some(b'b') if is_valid_region_stamp(&suffix[1..]) => {
                 (token, None, false, Some(RegionRef::Single(&suffix[1..])))
             }
-            Some(b'g') if is_valid_group_hash(&suffix[1..]) => {
+            Some(b'g') if is_base32_64(&suffix[1..]) => {
                 (token, None, false, Some(RegionRef::Group(&suffix[1..])))
             }
             _ => return None,
@@ -350,13 +348,22 @@ mod tests {
         let abc = sha2::Sha256::digest(b"abc");
         assert_eq!(
             "1ekr2tzry0efx90m2g6ybpq248xg0dgt75gqfaeb847zc7s005dd",
-            base32_256(abc.as_slice().try_into().unwrap())
+            base32_256(abc.as_slice().try_into().unwrap()),
+            "sha256 of abc"
         );
-        assert_eq!("0".repeat(52), base32_256(&[0u8; 32]));
-        assert_eq!(format!("1{}", "z".repeat(51)), base32_256(&[0xffu8; 32]));
-        assert_eq!("000000000007z", base32_64(0xff));
-        assert_eq!("028t5cy4tqkff", base32_64(0x0123_4567_89ab_cdef));
-        assert_eq!("fzzzzzzzzzzzz", base32_64(u64::MAX));
+        assert_eq!("0".repeat(52), base32_256(&[0u8; 32]), "all-zero digest");
+        assert_eq!(
+            format!("1{}", "z".repeat(51)),
+            base32_256(&[0xffu8; 32]),
+            "all-ones digest"
+        );
+        assert_eq!("000000000007z", base32_64(0xff), "0xff");
+        assert_eq!(
+            "028t5cy4tqkff",
+            base32_64(0x0123_4567_89ab_cdef),
+            "0x0123456789abcdef"
+        );
+        assert_eq!("fzzzzzzzzzzzz", base32_64(u64::MAX), "u64::MAX");
         assert!(is_base32_256(
             "1ekr2tzry0efx90m2g6ybpq248xg0dgt75gqfaeb847zc7s005dd"
         ));
@@ -364,6 +371,7 @@ mod tests {
             !is_base32_256(&format!("2{}", "0".repeat(51))),
             "first char above 1 is invalid"
         );
+        assert!(is_base32_256(&"0".repeat(52)), "first char 0 is valid");
         assert!(!is_base32_256(&"0".repeat(51)));
         assert!(is_base32_64("028t5cy4tqkff"));
         assert!(is_base32_64("fzzzzzzzzzzzz"));
