@@ -315,7 +315,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Breaking: content names carry no algorithm prefix. Frozen asset objects are
   `asset-<52 base32>.<ext>` (the SHA-256 digest in the token alphabet) and
   locator and diagram `fingerprint:` values are 13 base32 characters (a
-  64-bit digest). Existing decks and asset folders need converting.
+  64-bit digest). Decks and asset folders in the old form fail as ordinary
+  invalid input.
 
 - A deck's frozen exam sources travel with it: `alix deck copy|move|remove|
   restore`, `alix workspace remove`, paired sync, a workspace update, and
@@ -328,7 +329,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `move` carries it with the folder. `alix deck copy` and `move` refuse a
   destination whose member already carries one of the deck's topic ids.
 
-- The tutor reads a deck's frozen sources instead of its `exam:` list. On
+- The tutor reads a deck's frozen sources. On
   Claude and Copilot it browses the deck's sources folder read-only, with a
   map from each display path to its copy and the card's topic named as the
   place to start; on Codex and Gemini each question carries the card's
@@ -373,7 +374,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at a time: each topic's calls carry only its own copies, whole (a ranged
   binding only its lines), so nothing is fetched or truncated. A topic with
   no source is not examined; a deck without sources, and every loose deck,
-  has no exam, and an `exam:` entry no longer gives one. Two headings with
+  has no exam. Two headings with
   the same text are two topics, and a duplicated topic id refuses the exam.
   The exam ideas document is keyed by topic id
   (`{"version", "topics": {"<topic-id>": {"fingerprint", "ideas": [{"text",
@@ -681,10 +682,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no longer also as a warning, and checks a frozen locator's key and shape even
   when the deck's frozen assets are invalid.
 
-- With `source_access` on, the tutor browses a `cite:` root instead of the
-  first local `exam:` entry: the root of the card's first locator whose key
-  names a local root, else the deck's only local root when it sees exactly
-  one, else none. A URL root is never browsed.
+- With `source_access` on, the tutor can browse the `cite:` root of the
+  card's first locator whose key names a local root; a card with no such
+  locator browses no `cite:` root. A URL root is never browsed.
 
 - The web apps and the mobile app draw every unrevealed cloze blank as an empty
   outlined pill of one fixed width, asked or hidden, so the gap never hints at
@@ -817,8 +817,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The tutor writes a personal note as a deck-grammar note: the `>` block
   under the `<!-- note: card-id -->` marker opens with `> [!NOTE]`, and a
   block with no badge line is no longer read (`alix doctor` names it by line
-  and card). A personal file written before this change is not recognised; it
-  is rewritten by hand or by disposable tooling outside the repository. The
+  and card). A personal file written before this change fails as ordinary
+  invalid
+  input. The
   `format` augmentation's fingerprint now covers the badge of every note, so
   a reshape cached for a card with a machine note is recomputed on the next
   `alix deck augment --target format`.
@@ -987,8 +988,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The phone's sync status no longer counts one conflicted deck twice when
   its push and the pull right after it both find the conflict.
 
-- The phone's exam error screen now shows the desktop's reason (such as an
-  unreadable `exam:` source) under "The exam backend failed.", as the web does.
+- The phone's exam error screen now shows the desktop's reason under "The exam
+  backend failed.", as the web does.
 
 - The web's checked **only what needs work** filter now reaches the exam request
   when every section needs work, not only after part of the deck has passed.
@@ -1003,12 +1004,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   work" no longer drops a section made only of such cards.
 
 - The web exam no longer shows "Preparing your exam…" and a working
-  indicator forever when its questions could not be generated (for
-  example, an unreadable `exam:` entry); it shows the error and Close.
-
-- `alix doctor` warns about an `exam:` file the exam cannot read (missing,
-  or a directory); it used to stay silent, and the exam then refused to
-  start. The book no longer lists directories as exam material.
+  indicator forever when its questions could not be generated; it shows the
+  error and Close.
 
 - `POST /api/tutorial` answers every failure to open with one 500 body,
   `the tutorial could not be opened`; a rejected walk or a failed progress
@@ -1134,11 +1131,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Locator errors no longer start with an ADR rule number (`rule 3: key ...`);
   the message itself names what is wrong.
 
-- `alix doctor <deck>` labeled the deck's `exam:` entries `sources:` and did not
-  show its `cite:` roots. It now prints an `exam:` line and a `cite:` line
-  listing each root by key, and its `settings:`, `exam:` and `cite:` lines
-  include what a member deck inherits from its workspace, tagged
-  `(workspace)`.
+- `alix doctor <deck>` did not show its `cite:` roots. It now prints a `cite:`
+  line listing each root by key, and its `settings:` and `cite:` lines include
+  what a member deck inherits from its workspace, tagged `(workspace)`.
 
 - A URL trace build wrote each cited sentence into its `at:` locator, which
   does not parse. Inside a workspace the build now asks the model to copy each
@@ -1162,8 +1157,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the same name.
 
 - `alix doctor` warns about each unknown key and each invalid value in
-  `alix.toml`'s `[defaults]`, which alix ignores silently, and reports `cite`,
-  `exam` or `source` inside `[defaults]` as an error.
+  `alix.toml`'s `[defaults]`, which alix ignores silently, and reports `cite`
+  inside `[defaults]` as an error.
 
 - `alix doctor` now reports a live `at:` citation it cannot resolve (a missing
   file, or a key no `cite:` root declares) as an error in every mode; plain
@@ -1306,8 +1301,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Opening a workspace on the phone, and listing one anywhere, parses each
   member deck once instead of two or three times, classifies the folder once,
   and no longer re-parses a prerequisite chain for every member that depends
-  on it; `has_exam` reads the workspace manifest at most once per loaded deck
-  instead of on every call. The picker's drill-in is one bridge call.
+  on it. The picker's drill-in is one bridge call.
 
 - `alix doctor` no longer reports alix's own `.bak` backups under a
   workspace's private state (the progress document an accepted paired-phone

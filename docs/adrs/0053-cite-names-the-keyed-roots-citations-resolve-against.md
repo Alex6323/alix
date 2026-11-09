@@ -13,12 +13,15 @@
 - Evidence: fn a_transfer_is_refused_for_every_used_key_whose_root_differs_in_the_destination in src/cite.rs
 - Recorded: 2026-10-17
 - Retrospective: No
-- Amended by: 0064 (rule 15's sole-root clause: a card without a local
-  locator browses the deck's only local root; 0064 rule 13 replaces it, and
-  such a card browses no `cite:` root, while the rest of rule 15 still
-  binds; rule 16's trace-build clauses: declaring the input as `src`,
-  reusing a containing manifest key, refusing an input outside every root;
-  and rule 17's `exam:` condition on transfer)
+- Amended by: 0064 (rule 1's `exam:` key and the tutor listing `exam:`
+  entries; rule 14, the exam reading `exam:`; rule 15's sole-root clause: a
+  card without a local locator browses the deck's only local root, which
+  0064 rule 13 replaces so that such a card browses no `cite:` root, while
+  the rest of rule 15 still binds; rule 16's facts-deck `exam:` input and
+  its trace-build clauses: declaring the input as `src`, reusing a
+  containing manifest key, refusing an input outside every root, replaced
+  by a trace build reading the deck's first `cite:` root; rule 17's `exam:`
+  condition on transfer; and the Security clause on local `exam:` entries)
 - Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
 
 ## Context

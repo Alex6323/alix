@@ -5,6 +5,11 @@
 - Amended by: 0053 (in "Locator fields": the single-space tokenizing, the
   rule that no field value may contain a space, and the unkeyed lines-only
   and whole-file `at:` forms; field order, `fingerprint:` and `asset:` stand)
+- Amended by: 0064 (in "Id grammar", the kind set gains `topic`; in "Locator
+  fields", the `fingerprint: xxh64-<hex>` and `asset: sha256-<hex>.<ext>`
+  value forms; in "What a frozen asset IS", the examiner grounding on live
+  sources and the tutor's, except the `cite:` browse; the whole "One source
+  concept" section)
 - Details evolved by
   [ADR 0039](0039-span-blanks-are-the-only-cloze.md): the decimal cloze sub-id
   (`card-<token>-<n>`) retires with the inline `\blank` marker; the id grammar

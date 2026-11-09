@@ -726,6 +726,8 @@ The most relevant deterministic checks currently live beside their controls:
   recursive deck discovery used by bulk exam reset;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
+- `src/ask.rs`: the tutor's file grant is the deck's sources folder alone
+  (`the_tutor_run_configuration_grants_file_reads_only_under_the_sources_folder`);
 - `src/sources/manifest.rs` and `src/sources/mod.rs`: fail-closed source
   integrity over every fault from a version bump to a same-bytes symlink
   (`load_verified_fails_closed_on_every_integrity_fault`), and the display

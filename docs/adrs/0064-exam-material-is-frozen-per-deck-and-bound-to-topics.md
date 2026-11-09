@@ -1,10 +1,17 @@
 # 0064: Exam material is frozen per deck and bound to topics
 
-- Status: Proposed
-- Evidence: fn the_exam_reads_only_frozen_sources_never_exam_entries_cite_roots_or_cited_text in src/exam.rs
+- Status: Accepted
+- Evidence: fn the_exam_reads_only_frozen_sources_never_cite_roots_or_cited_text in src/exam.rs
+- Evidence: source- in src/sources/mod.rs
+- Evidence: bound-to in src/sources/manifest.rs
+- Evidence: manifest.local.toml in src/sources/mod.rs
+- Evidence: topic- in src/token.rs
+- Evidence: exam_stamp in src/store.rs
+- Evidence: asset- in src/assets.rs
 - Recorded: 2026-11-08
 - Retrospective: No
-- Amends: [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md),
+- Amends: [ADR 0020](0020-source-excerpt-integrity.md),
+  [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md),
   [ADR 0053](0053-cite-names-the-keyed-roots-citations-resolve-against.md)
   and [ADR 0063](0063-an-exam-result-lives-on-its-cards.md)
   (clauses listed under Compatibility)
@@ -412,6 +419,8 @@ This record replaces, once accepted:
   and the tutor's, except the `cite:` browse rule 13 keeps; the whole
   "One source concept" section (deck and workspace material keys,
   examination and `has_exam`);
+- in ADR 0020: the `fingerprint: xxh64-<hex>` value form named in its
+  details-evolved note (the fail-closed fingerprint model is unchanged);
 - in ADR 0053: rule 1's `exam:` key and the tutor listing `exam:` entries;
   rule 14 (the exam reads `exam:`); rule 15's sole-root clause (a card
   without a local locator browses the deck's only local root; rule 13 here
@@ -427,7 +436,7 @@ This record replaces, once accepted:
   source fingerprint, rules 9 and 12, replace them) and the `--exam` reset
   clause's "card records" (now the topic results and the evidence stamp).
 
-ADR 0026 and ADR 0053 gain an `Amended by: 0064` line naming these clauses
+ADR 0020, ADR 0026 and ADR 0053 gain an `Amended by: 0064` line naming these clauses
 when this record is accepted, and ADR 0053's Evidence markers for replaced
 behavior (the exam reading only `exam:` entries, the tutor browsing the
 deck's only local root, transfer refusing on `exam:` entries) are replaced

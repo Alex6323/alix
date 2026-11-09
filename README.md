@@ -135,7 +135,8 @@ Each links to its chapter in the manual:
   → [The tutor](docs/book/src/10-tutor.md)
 - **Deck generation and augmentation** from a URL or a local source (distractors,
   notes, key points). → [Generating decks](docs/book/src/11-generating-decks.md)
-- **An AI exam** that grades open questions against the source and gates unlocks.
+- **An AI exam** that grades open questions against the frozen sources bound to each
+  topic, and gates unlocks.
   → [The AI exam](docs/book/src/12-the-ai-exam.md)
 - **Traces**: predict-and-verify traces along one path through real source.
   → [Trace decks](docs/book/src/13-trace-decks.md)

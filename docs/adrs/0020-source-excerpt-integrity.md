@@ -6,6 +6,8 @@
   [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md): the citation
   locator uses named fields (`at:` then `fingerprint:` then `asset:`) and the
   fingerprint value is `xxh64-<hex>`; the fail-closed fingerprint model is unchanged.
+- Amended by: 0064 (the `xxh64-<hex>` fingerprint value form; the fail-closed
+  model stands)
 - Recorded: 2026-07-26
 - Retrospective: No
 - Refines: [ADR 0015](0015-frozen-source-snapshots.md),
