@@ -100,6 +100,7 @@ pub struct Deck {
     pub deck_token: Option<String>,
     pub cards: Vec<Card>,
     pub ignored: Vec<Card>,
+    pub topics: Vec<crate::topic::Topic>,
     /// Deck-wide link-definition labels (`[label]: destination` lines),
     /// distinct from `links`, the frontmatter reference URLs.
     pub definitions: Vec<String>,
@@ -190,6 +191,7 @@ impl Deck {
             }
         })?;
         let definitions = parsed.definitions.clone();
+        let topics = parsed.topics.clone();
         let links = parsed.frontmatter.link.clone();
         let requires = parsed.frontmatter.requires.clone();
         let exam = parsed.frontmatter.exam.clone();
@@ -260,6 +262,7 @@ impl Deck {
             deck_token,
             cards,
             ignored,
+            topics,
             definitions,
             links,
             requires,
@@ -272,6 +275,11 @@ impl Deck {
             workspace_has_exam,
             load_warnings,
         })
+    }
+
+    pub fn topic_ids(&self) -> Vec<Option<String>> {
+        let deck_id = self.deck_token.as_deref().unwrap_or_default();
+        self.topics.iter().map(|topic| topic.id(deck_id)).collect()
     }
 
     pub fn is_trace(&self) -> bool {

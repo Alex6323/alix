@@ -162,6 +162,8 @@ pub struct Card {
     /// only on demand and never part of identity, so re-filing a card
     /// changes what it explains, never what it is.
     pub topic_context: Vec<String>,
+    /// Index into its deck's `topics`; 0 is the leading topic.
+    pub topic: usize,
     /// A titled card table's title, already composed into `front`; kept to
     /// compose the reversed half.
     pub table_title: Option<String>,
@@ -317,6 +319,7 @@ impl Card {
             rect_step: None,
             hole_steps: Vec::new(),
             topic_context: Vec::new(),
+            topic: 0,
             table_title: None,
             back,
             notes,
@@ -389,6 +392,7 @@ impl Card {
         // Built after the parser has finished, so the builder's stamp never
         // reaches it: the reverse half must carry the topic itself.
         card.topic_context = self.topic_context.clone();
+        card.topic = self.topic;
         card.block_line = self.block_line;
         card.parent_block = self.parent_block;
         card.reveal = self.reveal;

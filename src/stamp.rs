@@ -23,6 +23,7 @@ pub struct StampOutcome {
     pub minted_rows: Vec<String>,
     pub minted_regions: Vec<String>,
     pub minted_deck: Option<String>,
+    pub minted_topics: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -249,6 +250,26 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         position_mints.sort_by_key(|(line, _)| *line);
     }
 
+    let mut topic_mints: Vec<(usize, String)> = Vec::new();
+    for (index, topic) in deck.topics.iter().enumerate() {
+        let (Some(heading), None) = (topic.line, &topic.token) else {
+            continue;
+        };
+        let next_heading = deck.topics.get(index + 1).and_then(|next| next.line);
+        let first_block = deck
+            .cards
+            .iter()
+            .filter(|card| card.topic == index)
+            .map(|card| card.block_line)
+            .chain(deck.tables.iter().map(|table| table.line))
+            .filter(|line| *line > heading && next_heading.is_none_or(|next| *line < next))
+            .min();
+        topic_mints.push((
+            topic_block_end(body, heading, first_block.or(next_heading)),
+            token::format_topic_id(&token::mint().map_err(StampError::Mint)?),
+        ));
+    }
+
     let deck_action = if deck.deck_token.is_some() {
         DeckAction::None
     } else if !initialize {
@@ -270,6 +291,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
         && region_mints.is_empty()
         && region_remints.is_empty()
         && position_mints.is_empty()
+        && topic_mints.is_empty()
         && matches!(deck_action, DeckAction::None)
     {
         return Ok(StampOutcome::default());
@@ -358,6 +380,16 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             format!("{lead}<!-- id: {tok} -->\n"),
         ));
     }
+    for (end_line, id) in &topic_mints {
+        let offset =
+            line_start_of_next(body, *end_line).ok_or(StampError::MissingLine(*end_line))?;
+        let lead = if offset == body.len() && !body.ends_with('\n') {
+            "\n"
+        } else {
+            ""
+        };
+        inserts.push((offset, AFTER_BLOCK, 0, format!("{lead}<!-- id: {id} -->\n")));
+    }
     minted_cards.extend(container_mints.iter().map(|(_, tok)| tok.clone()));
     let mut prepend = String::new();
     match (&deck_action, &deck_token) {
@@ -400,6 +432,7 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
             .chain(region_remints.into_iter().map(|(_, _, new)| new))
             .collect(),
         minted_deck: deck_token,
+        minted_topics: topic_mints.into_iter().map(|(_, id)| id).collect(),
     })
 }
 
@@ -674,7 +707,7 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
         if let Some(body) = trimmed
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
-            && matches!(parser::directive(body), Some((key, _)) if key == "id")
+            && matches!(parser::directive(body), Some((key, value)) if key == "id" && !value.starts_with("topic-"))
             && block_end != Some(line)
         {
             found.push(line);
@@ -704,6 +737,20 @@ fn table_block_end(lines: &[&str], header: usize) -> usize {
         }
     }
     last
+}
+
+/// 1-based last non-blank line from `heading` up to the line before `stop`
+/// (or the end of the text): where a topic's id marker closes its heading block.
+fn topic_block_end(text: &str, heading: usize, stop: Option<usize>) -> usize {
+    text.lines()
+        .enumerate()
+        .map(|(index, line)| (index + 1, line))
+        .skip(heading - 1)
+        .take_while(|(line, _)| stop.is_none_or(|stop| *line < stop))
+        .filter(|(_, raw)| !raw.trim_matches(&WS[..]).is_empty())
+        .map(|(line, _)| line)
+        .last()
+        .unwrap_or(heading)
 }
 
 fn heading_id_marker(rest: &str) -> bool {
@@ -837,6 +884,56 @@ mod tests {
         path
     }
 
+    #[test]
+    fn stamping_mints_one_canonical_topic_id_after_the_prose_and_never_reminted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            "---\nid: deck-x\n---\n# A\nprose\n## q\na\n# B\n## r\nb\n",
+        );
+        stamp_initialized_deck(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!("prose", lines[4]);
+        assert!(lines[5].starts_with("<!-- id: topic-"), "{text}");
+        assert!(
+            lines[lines.len() - 4].starts_with("<!-- id: topic-"),
+            "B gets its marker directly after the heading: {text}"
+        );
+        let deck = parser::parse("d.md", &text).unwrap();
+        for topic in &deck.topics[1..] {
+            let token = topic.token.as_deref().unwrap_or_default();
+            assert!(token::is_canonical(token), "{token:?} in {text}");
+        }
+        let first = text.clone();
+        stamp_initialized_deck(&path).unwrap();
+        assert_eq!(
+            first,
+            std::fs::read_to_string(&path).unwrap(),
+            "a second pass changes nothing"
+        );
+    }
+
+    #[test]
+    fn a_cardless_topic_takes_its_minted_id_before_the_next_heading_and_at_eof() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            "---\nid: deck-x\n---\n## lead\na\n# A\nprose\n\n# B\n## r\nb\n# C\ntail",
+        );
+        stamp_initialized_deck(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let deck = parser::parse("d.md", &text).unwrap();
+        let markers: Vec<Option<usize>> = deck.topics.iter().map(|t| t.marker_line).collect();
+        assert_eq!(
+            vec![None, Some(9), Some(12), Some(18)],
+            markers,
+            "the leading topic takes none; A after its prose, B after its heading, C at eof: {text}"
+        );
+    }
+
     /// Spec law 2, the stamper's half: a deck holding every structural
     /// heading gets exactly one id INSIDE each card block, and never one
     /// stranded after a heading, where the parser would refuse it as an
@@ -871,6 +968,12 @@ mod tests {
             );
             assert!(end >= front, "block ends before its own front: {front}");
         }
+    }
+
+    #[test]
+    fn a_topic_marker_is_never_a_misplaced_card_marker() {
+        let text = "# A\nprose\n<!-- id: topic-a -->\n## q\na\n<!-- id: card-x -->\n# B\n<!-- id: topic-b -->\n";
+        assert_eq!(Vec::<usize>::new(), misplaced_id_markers(text));
     }
 
     /// The same grammar on the other side: an id marker sitting on or after
@@ -951,8 +1054,10 @@ mod tests {
         assert_eq!(2, outcome.minted_cards.len());
         assert!(outcome.minted_deck.is_some());
 
+        assert_eq!(1, outcome.minted_topics.len(), "one `# ` topic");
+
         let mut reconstructed = stamped;
-        for tok in &outcome.minted_cards {
+        for tok in outcome.minted_cards.iter().chain(&outcome.minted_topics) {
             let span = format!("<!-- id: {tok} -->\n");
             assert_eq!(1, reconstructed.matches(&span).count(), "span {span:?}");
             reconstructed = reconstructed.replacen(&span, "", 1);

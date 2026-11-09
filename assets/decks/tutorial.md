@@ -16,6 +16,7 @@ scheduled yet; a walk is how you meet a deck before you study it. The nine
 cards below each teach one thing about Alix by having you do it, and the walk
 picks up where you left off. This text is the deck's topic, the background
 its cards share; you can bring it back on any card.
+<!-- id: topic-0y57ab87atj4kzbm9m80prstb7 -->
 
 ## Reveal this answer, then end the card with one of the three buttons under it. What do they mean?
 Missed it, Partly, Got it: how recalling went, in your own honest judgement.

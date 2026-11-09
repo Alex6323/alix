@@ -9,6 +9,7 @@ id: "deck-4ty97vhb35yfjwgnw63e8v3hhf"
 Every card in this topic shares this explanation. It is intentionally long
 enough to demonstrate why optional orientation must not displace the question
 or crowd the answer choices during an ordinary review.
+<!-- id: topic-1hz9z4q96ra0z5m6vtkpec6k6d -->
 
 ## Which German verb means "to advocate"?
 - [x] befürworten

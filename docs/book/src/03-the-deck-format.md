@@ -455,8 +455,9 @@ row opens it until the answer shows, as do the `c` key and the review menu's
 and opens the sheet by itself under the same rule (see [The mobile app](18-the-mobile-app.md#reviewing)). The kids
 client does not expose topic context.
 
-A topic heading is a heading, nothing more. It takes no directives and no card
-ID, because a topic owns no card to bind either to.
+A topic heading line takes no directives and no card ID, because a topic owns
+no card to bind either to. A topic carries its own identity on a line of its
+own instead (see [Topic IDs](#topic-ids) below).
 
 A topic runs to the next `#` heading, and nothing else ends it: every card
 carries the context of the nearest titled `#` above it, and a sub-card chain
@@ -469,6 +470,42 @@ It also warns when two topics share a heading, since the exam merges them
 into one topic, and, on a deck with an exam, when a topic holds more than
 15 cards: the exam asks 3 questions per topic and a pass credits every card
 in it, so a long topic is passed on a small share of what it teaches.
+
+### Topic IDs
+
+An initialized deck gives every topic a permanent ID, written as one
+`<!-- id: topic-<token> -->` line that closes the topic's heading block: after
+the heading and its prose, before the topic's first card, or, in a topic with
+no cards, before the next `#` heading or the end of the file. `alix deck init`
+writes the line, and opening the deck (review, walk, augmentation, exam) adds
+it to a topic you added later. Like a card ID, the line is what keeps the
+topic's identity when you rename the heading or rewrite its prose; you do not
+type or manage it.
+
+```
+# Ocean depths
+
+Pressure rises by about one atmosphere per ten metres.
+<!-- id: topic-1z1ahzncxqmypwz52f9kkde0y6 -->
+
+## What is the pressure at 30 m?
+About 4 atmospheres.
+<!-- id: card-05rf70k3a9dpx7m3kxp7favjj0 -->
+```
+
+The cards above the first `#` form the deck's **leading topic**, which always
+exists, even when it holds no card, and is identified by the deck ID, so it
+takes no marker line. A deck without any `#` is that one topic. Two topics with
+the same heading text are two topics, each with its own ID.
+
+These placements are errors that stop the deck from loading: a second marker in
+one topic, a marker anywhere else (after one of the topic's cards, or with
+prose below it), a marker with no `#` heading above it, and a token outside
+lowercase letters and digits. A topic ID held by two topics, in one deck or in
+two decks of a folder, is an error in `alix doctor` naming the copy (in one
+deck, the later topic); review keeps working. alix never replaces a duplicated
+topic ID by itself: delete the copy's id line and run `alix deck init`, which
+mints a fresh one.
 
 ### `###` to `######` — sub-cards
 
@@ -683,9 +720,10 @@ content too.
 ## Why editing a deck is safe
 
 Every initialized deck and card carries a stable identity. `alix deck init`
-writes the deck ID as `id: deck-<token>` in frontmatter and each card ID as a
-`<!-- id: card-<token> -->` line. If you later add a card to that initialized deck,
-opening review or augmentation assigns the missing card ID. Those tokens, not
+writes the deck ID as `id: deck-<token>` in frontmatter, each card ID as a
+`<!-- id: card-<token> -->` line, and each topic ID as a
+`<!-- id: topic-<token> -->` line. If you later add a card or a topic to that
+initialized deck, opening review or augmentation assigns the missing ID. Those tokens, not
 the text, are what your review history hangs on. You don't type or manage them;
 alix adds and maintains them after you explicitly initialize the file.
 

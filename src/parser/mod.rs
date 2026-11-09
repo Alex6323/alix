@@ -8,6 +8,7 @@ use crate::{
     choice,
     depth::Reveal,
     token,
+    topic::Topic,
 };
 
 mod block;
@@ -47,6 +48,7 @@ pub struct ParsedDeck {
     pub title: Option<String>,
     pub frontmatter: Frontmatter,
     pub cards: Vec<Card>,
+    pub topics: Vec<Topic>,
     /// Deck-wide link-definition labels, in document order, unfolded:
     /// reference-link matching folds at lookup, not at collection.
     pub definitions: Vec<String>,
@@ -141,6 +143,9 @@ pub enum LintKind {
     DuplicateTopicHeading {
         first_line: usize,
     },
+    DuplicateTopicId {
+        first_line: usize,
+    },
     HintContainsAnswer {
         answer: String,
     },
@@ -204,6 +209,16 @@ pub enum ParseError {
     TopicDirective(usize),
     #[error("line {0}: this card id belongs to no card")]
     OrphanCardId(usize),
+    #[error("line {line}: a topic `<!-- id: -->` must hold a `topic-<token>` id, got `{value}`")]
+    InvalidTopicId { line: usize, value: String },
+    #[error("line {0}: this topic id belongs to no `# ` topic heading")]
+    OrphanTopicId(usize),
+    #[error("line {0}: this topic already carries an `id:`; one topic holds one identity")]
+    DuplicateTopicMarker(usize),
+    #[error(
+        "line {0}: a topic id closes its heading block: put it after the heading and its prose, before the topic's first card"
+    )]
+    MisplacedTopicMarker(usize),
     #[error("line {0}: only a `## ` heading can title a card table")]
     SubCardTableTitle(usize),
     #[error(
@@ -369,6 +384,10 @@ impl ParseError {
             Self::EmptyFrontCell(_) => "empty_front_cell",
             Self::TopicDirective(_) => "topic_directive",
             Self::OrphanCardId(_) => "orphan_card_id",
+            Self::InvalidTopicId { .. } => "invalid_topic_id",
+            Self::OrphanTopicId(_) => "orphan_topic_id",
+            Self::DuplicateTopicMarker(_) => "duplicate_topic_marker",
+            Self::MisplacedTopicMarker(_) => "misplaced_topic_marker",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::LeadingInvocation { .. } => "leading_invocation",
             Self::LeadingIgnore(_) => "leading_ignore",
@@ -416,6 +435,9 @@ impl ParseError {
             | Self::EmptyFrontCell(line)
             | Self::TopicDirective(line)
             | Self::OrphanCardId(line)
+            | Self::OrphanTopicId(line)
+            | Self::DuplicateTopicMarker(line)
+            | Self::MisplacedTopicMarker(line)
             | Self::SubCardTableTitle(line)
             | Self::MixedImageLine(line)
             | Self::FootnoteDefinition(line)
@@ -435,6 +457,7 @@ impl ParseError {
             | Self::NonStringId { line, .. }
             | Self::InvalidDeckId { line, .. }
             | Self::InvalidCardId { line, .. }
+            | Self::InvalidTopicId { line, .. }
             | Self::UnsupportedDeckVersion { line, .. }
             | Self::NonIntegerVersion { line, .. }
             | Self::ControlChar { line, .. }
@@ -507,6 +530,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         title: document.frontmatter.title.clone(),
         frontmatter: document.frontmatter,
         cards,
+        topics: document.topics,
         definitions: document.definitions,
         lints,
         frontmatter_span: document.frontmatter_span,
@@ -721,6 +745,7 @@ fn escaped_marker(line: &str, marker: usize) -> bool {
 struct Document {
     frontmatter: Frontmatter,
     blocks: Vec<RawBlock>,
+    topics: Vec<Topic>,
     definitions: Vec<String>,
     lints: Vec<Lint>,
     frontmatter_span: Option<LineSpan>,
@@ -734,6 +759,7 @@ enum RawBlock {
 struct RawCard {
     line: usize,
     topic: Vec<String>,
+    topic_index: usize,
     /// 2 for a `## ` card, 3 or 4 for a sub-card. Gating reads it; identity
     /// never does, so re-heading a card keeps its token.
     depth: usize,
@@ -865,6 +891,7 @@ impl RawCard {
 struct RawTable {
     line: usize,
     topic: Vec<String>,
+    topic_index: usize,
     title: Option<String>,
     columns: usize,
     rows: Vec<RawRow>,
@@ -967,6 +994,7 @@ fn parse_document(text: &str) -> Result<Document, ParseError> {
     Ok(Document {
         frontmatter,
         blocks: body.blocks,
+        topics: body.topics,
         definitions: body.definitions,
         lints,
         frontmatter_span,
@@ -1029,6 +1057,7 @@ pub(crate) fn closes_fence(line: &str, ch: char, open: usize) -> bool {
 
 struct ScannedBody {
     blocks: Vec<RawBlock>,
+    topics: Vec<Topic>,
     definitions: Vec<String>,
 }
 
@@ -1036,6 +1065,7 @@ struct ScannedBody {
 /// topic to join, so a line that would join it is the error instead.
 fn topic_line(
     topic: &mut Vec<String>,
+    marker_line: Option<usize>,
     seen_heading: bool,
     lineno: usize,
     line: String,
@@ -1048,6 +1078,9 @@ fn topic_line(
     }
     if !seen_heading {
         return Err(ParseError::ProseBeforeFirstHeading(lineno));
+    }
+    if let Some(marker) = marker_line {
+        return Err(ParseError::MisplacedTopicMarker(marker));
     }
     if separated && topic.len() > 1 && topic.last().is_some_and(|line| !line.is_empty()) {
         topic.push(String::new());
@@ -1100,6 +1133,63 @@ fn lint_topic_without_cards(
     }
 }
 
+fn open_marker(topics: &[Topic]) -> Option<usize> {
+    topics.last().and_then(|topic| topic.marker_line)
+}
+
+fn close_topic(topics: &mut [Topic], lines: &[String]) {
+    if let Some(open) = topics.last_mut()
+        && open.heading.is_some()
+    {
+        open.prose = lines.get(1..).unwrap_or_default().to_vec();
+    }
+}
+
+fn topic_token(value: &str, line: usize) -> Result<&str, ParseError> {
+    value
+        .strip_prefix("topic-")
+        .filter(|token| token::is_valid(token))
+        .ok_or_else(|| ParseError::InvalidTopicId {
+            line,
+            value: value.to_string(),
+        })
+}
+
+fn attach_topic_marker(
+    topics: &mut [Topic],
+    value: &str,
+    line: usize,
+    topic_has_cards: bool,
+    lints: &mut Vec<Lint>,
+) -> Result<(), ParseError> {
+    let token = topic_token(value, line)?;
+    let Some((open, earlier)) = topics.split_last_mut() else {
+        return Err(ParseError::OrphanTopicId(line));
+    };
+    if open.heading.is_none() {
+        return Err(ParseError::OrphanTopicId(line));
+    }
+    if topic_has_cards {
+        return Err(ParseError::MisplacedTopicMarker(line));
+    }
+    if open.marker_line.is_some() {
+        return Err(ParseError::DuplicateTopicMarker(line));
+    }
+    if let Some(first_line) = earlier
+        .iter()
+        .find(|topic| topic.token.as_deref() == Some(token))
+        .and_then(|topic| topic.marker_line)
+    {
+        lints.push(Lint {
+            line,
+            kind: LintKind::DuplicateTopicId { first_line },
+        });
+    }
+    open.token = Some(token.to_string());
+    open.marker_line = Some(line);
+    Ok(())
+}
+
 fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBody, ParseError> {
     let mut blocks: Vec<RawBlock> = Vec::new();
     let mut definitions: Vec<String> = Vec::new();
@@ -1107,6 +1197,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut table: Option<RawTable> = None;
     let mut open_depths: Vec<(usize, usize)> = Vec::new();
     let mut topic: Vec<String> = Vec::new();
+    let mut topics: Vec<Topic> = vec![Topic::default()];
     let mut topic_heading_line: Option<usize> = None;
     let mut topic_has_cards = false;
     let mut heading_lines: std::collections::HashMap<String, usize> =
@@ -1176,6 +1267,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if current.is_none() {
                 topic_line(
                     &mut topic,
+                    open_marker(&topics),
                     seen_heading,
                     lineno,
                     raw.to_string(),
@@ -1239,6 +1331,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if current.is_none() {
                 topic_line(
                     &mut topic,
+                    open_marker(&topics),
                     seen_heading,
                     lineno,
                     raw.to_string(),
@@ -1321,6 +1414,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             table = Some(RawTable {
                 line: block_line,
                 topic: topic.clone(),
+                topic_index: topics.len() - 1,
                 title,
                 columns: header.len(),
                 rows: Vec::new(),
@@ -1368,6 +1462,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 topic_has_cards = false;
                 open_depths.clear();
                 seen_heading = true;
+                close_topic(&mut topics, &topic);
+                topics.push(Topic {
+                    heading: Some(text.clone()),
+                    line: Some(lineno),
+                    ..Topic::default()
+                });
                 topic = vec![text];
                 prev_blank = false;
                 prev_heading = true;
@@ -1396,6 +1496,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             current = Some(RawCard {
                 line: lineno,
                 topic: topic.clone(),
+                topic_index: topics.len() - 1,
                 depth,
                 parent,
                 front,
@@ -1455,6 +1556,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if current.is_none() {
                 topic_line(
                     &mut topic,
+                    open_marker(&topics),
                     seen_heading,
                     lineno,
                     rest.to_string(),
@@ -1480,7 +1582,14 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 invocation_below(lines, idx + 1).is_some_and(|(_, m)| m == Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
-                    topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?;
+                    topic_line(
+                        &mut topic,
+                        open_marker(&topics),
+                        seen_heading,
+                        lineno,
+                        t.to_string(),
+                        prev_blank,
+                    )?;
                 } else {
                     push_content(&mut current, lineno, t.to_string())?;
                 }
@@ -1575,7 +1684,14 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 }
                 // A topic has no card to own a note, so the line is
                 // ordinary topic prose either way.
-                None => topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?,
+                None => topic_line(
+                    &mut topic,
+                    open_marker(&topics),
+                    seen_heading,
+                    lineno,
+                    t.to_string(),
+                    prev_blank,
+                )?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -1659,7 +1775,16 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                         // swallowed, and the card it names would silently
                         // lose its history on the next stamping pass.
                         None if key == "id" => {
-                            return Err(ParseError::OrphanCardId(lineno));
+                            if !value.starts_with("topic-") {
+                                return Err(ParseError::OrphanCardId(lineno));
+                            }
+                            attach_topic_marker(
+                                &mut topics,
+                                &value,
+                                lineno,
+                                topic_has_cards,
+                                lints,
+                            )?;
                         }
                         None if matches!(key.as_str(), "blank" | "cover" | "crop") => {
                             return Err(ParseError::InvalidRegion {
@@ -1710,7 +1835,14 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // has no topics at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?;
+            topic_line(
+                &mut topic,
+                open_marker(&topics),
+                seen_heading,
+                lineno,
+                t.to_string(),
+                prev_blank,
+            )?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -1742,8 +1874,10 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         blocks.push(RawBlock::Card(Box::new(card)));
     }
     lint_topic_without_cards(&topic, topic_heading_line, topic_has_cards, lints);
+    close_topic(&mut topics, &topic);
     Ok(ScannedBody {
         blocks,
+        topics,
         definitions,
     })
 }
@@ -2767,10 +2901,12 @@ fn build_table_cards(
 ) -> Result<(), ParseError> {
     let start = cards.len();
     let topic = raw.topic.clone();
+    let topic_index = raw.topic_index;
     let block_line = raw.line;
     let out = build_table_cards_inner(subject, deck_id, raw, cards);
     for card in &mut cards[start..] {
         card.topic_context = topic.clone();
+        card.topic = topic_index;
         card.block_line = block_line;
         card.parent_block = None;
     }
@@ -3012,6 +3148,10 @@ fn apply_directive(
     }
     match key {
         "id" => {
+            if value.starts_with("topic-") {
+                topic_token(&value, line)?;
+                return Err(ParseError::MisplacedTopicMarker(line));
+            }
             // Markers hold base ids only; a sub-id suffix (`-N`, `-r`) never appears here.
             if !matches!(
                 token::parse_prefixed_card_id(&value),
@@ -3204,11 +3344,13 @@ fn build_card(
 ) -> Result<Option<BlockProse>, ParseError> {
     let start = cards.len();
     let topic = raw.topic.clone();
+    let topic_index = raw.topic_index;
     let block_line = raw.line;
     let parent = raw.parent;
     let out = build_card_inner(subject, deck_id, raw, choices_default, cards, lints);
     for card in &mut cards[start..] {
         card.topic_context = topic.clone();
+        card.topic = topic_index;
         card.block_line = block_line;
         card.parent_block = parent;
     }
@@ -3227,6 +3369,7 @@ fn build_card_inner(
         line,
         // The wrapper stamps it onto every card this block emits.
         topic: _,
+        topic_index: _,
         depth: _,
         // The wrapper stamps it onto every card this block emits.
         parent: _,
@@ -12105,5 +12248,109 @@ the answer
     fn ignore_ranks_as_directive_machinery() {
         assert_eq!(Some(1), machinery_rank("<!-- ignore -->"));
         assert_eq!(None, machinery_rank("<!-- ignored -->"));
+    }
+
+    #[test]
+    fn topic_markers_follow_the_placement_law() {
+        let ok = "# A\nprose\n<!-- id: topic-aaaaaaaaaaaaaaaaaaaaaaaaaa -->\n## q\na\n<!-- id: card-x -->\n";
+        let deck = super::parse("d", ok).unwrap();
+        assert_eq!(
+            2,
+            deck.topics.len(),
+            "the leading topic is index 0 even when empty"
+        );
+        assert_eq!(None, deck.topics[0].heading);
+        assert_eq!(
+            Some("topic-aaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+            deck.topics[1].id("deck-d")
+        );
+        assert_eq!(vec!["prose"], deck.topics[1].prose);
+        assert_eq!(1, deck.cards[0].topic, "`# A` is topics[1]");
+        type Expect = fn(&ParseError) -> bool;
+        let cases: [(&str, Expect); 5] = [
+            (
+                "# A\n<!-- id: topic-a -->\n<!-- id: topic-b -->\n## q\na\n",
+                |e| matches!(e, ParseError::DuplicateTopicMarker(3)),
+            ),
+            (
+                "# A\n## q\na\n<!-- id: card-x -->\n<!-- id: topic-a -->\n",
+                |e| matches!(e, ParseError::MisplacedTopicMarker(5)),
+            ),
+            ("# A\n<!-- id: topic-a -->\nmore prose\n## q\na\n", |e| {
+                matches!(e, ParseError::MisplacedTopicMarker(2))
+            }),
+            ("<!-- id: topic-a -->\n## q\na\n", |e| {
+                matches!(e, ParseError::OrphanTopicId(1))
+            }),
+            ("# A\n<!-- id: topic-AB -->\n## q\na\n", |e| {
+                matches!(e, ParseError::InvalidTopicId { line: 2, .. })
+            }),
+        ];
+        for (text, is) in cases {
+            let error = super::parse("d", text).unwrap_err();
+            assert!(is(&error), "{text:?} gave {error:?}");
+        }
+    }
+
+    #[test]
+    fn leading_cards_form_a_topic_identified_by_the_deck_id() {
+        let deck = parse("## q\na\n## r\nb\n");
+        assert_eq!(1, deck.topics.len(), "a deck with no `#` is one topic");
+        assert_eq!(
+            Some("deck-d".to_string()),
+            deck.topics[0].id("deck-d"),
+            "the leading topic is named by the deck id"
+        );
+        assert!(
+            deck.cards.iter().all(|card| card.topic == 0),
+            "every card sits in the leading topic: {:?}",
+            deck.cards.iter().map(|card| card.topic).collect::<Vec<_>>()
+        );
+        let headed = parse("# A\n<!-- id: topic-a -->\n## q\na\n");
+        assert_eq!(
+            Some("topic-a".to_string()),
+            headed.topics[1].id("deck-d"),
+            "a cardless leading topic still holds index 0"
+        );
+    }
+
+    #[test]
+    fn same_text_headings_are_two_topics_with_their_own_ids() {
+        let deck =
+            parse("# A\n<!-- id: topic-a -->\n## q\na\n# A\n<!-- id: topic-b -->\n## r\nb\n");
+        assert_eq!(3, deck.topics.len(), "{:?}", deck.topics);
+        assert_eq!(Some("topic-a".to_string()), deck.topics[1].id("deck-d"));
+        assert_eq!(Some("topic-b".to_string()), deck.topics[2].id("deck-d"));
+        assert_eq!(
+            vec![1, 2],
+            deck.cards.iter().map(|card| card.topic).collect::<Vec<_>>(),
+            "each card keeps its own topic"
+        );
+    }
+
+    #[test]
+    fn a_cardless_topic_takes_its_id_before_the_next_heading_or_eof() {
+        let deck = parse("# A\nprose\n<!-- id: topic-a -->\n# B\n<!-- id: topic-b -->\n");
+        assert_eq!(Some("topic-a".to_string()), deck.topics[1].id("deck-d"));
+        assert_eq!(Some(3), deck.topics[1].marker_line);
+        assert_eq!(Some(1), deck.topics[1].line);
+        assert_eq!(Some("topic-b".to_string()), deck.topics[2].id("deck-d"));
+        assert_eq!(Some("B".to_string()), deck.topics[2].heading);
+    }
+
+    #[test]
+    fn a_malformed_topic_id_is_a_parse_error() {
+        for value in ["topic-", "topic-a_b", "topic-é"] {
+            let text = format!("# A\n<!-- id: {value} -->\n## q\na\n");
+            let error = super::parse("d", &text).unwrap_err();
+            assert_eq!(
+                ParseError::InvalidTopicId {
+                    line: 2,
+                    value: value.to_string()
+                },
+                error,
+                "{text:?}"
+            );
+        }
     }
 }

@@ -128,8 +128,8 @@ src/paired.rs:288: replace || with && in check_entry_name
 # `end_line` at 2023, and every trailing machinery comment overwrites it at
 # 2048 before either escape at 1152 or 1746; errors return no table first.
 # Line-pinned because `scan` holds other arithmetic.
-src/parser/mod.rs:1329: replace + with - in scan
-src/parser/mod.rs:1329: replace + with * in scan
+src/parser/mod.rs:1423: replace + with - in scan
+src/parser/mod.rs:1423: replace + with * in scan
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.
@@ -196,9 +196,9 @@ src/parser/cloze.rs:161: replace - with / in unbracketed_src
 # `:` and `skipping` is still false, so the branch pushes the line unchanged;
 # outside the branch it is pushed unchanged too, since no `at:` rewrite can
 # sit on a fence. The output is identical for every input. Line-pinned.
-src/deck.rs:921: replace > with >= in with_exam
-src/deck.rs:987: replace > with >= in with_added_cite
-src/deck.rs:1038: replace > with >= in rewrite_frozen_assets
+src/deck.rs:929: replace > with >= in with_exam
+src/deck.rs:995: replace > with >= in with_added_cite
+src/deck.rs:1046: replace > with >= in rewrite_frozen_assets
 
 # EQUIVALENT. `candidate_count` returns 0 for a card without both a table
 # token and a row, and only card-table rows carry those; the parser rejects a
@@ -228,7 +228,7 @@ src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with 
 # a repair only for a flag that is set. Forcing `any` to true therefore
 # runs `run` with every flag false, which does nothing; the one extra cost
 # is listing the deck files. No output or file differs. Line-pinned.
-src/cli/doctor.rs:1609: replace Repairs::any -> bool with true
+src/cli/doctor.rs:1638: replace Repairs::any -> bool with true
 
 # EQUIVALENT. `locate` returns the piece that contains the probed byte, so
 # `range.start` is never before its piece and `range.end` never after it.

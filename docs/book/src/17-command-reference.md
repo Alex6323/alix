@@ -268,7 +268,9 @@ notes it.
   live card or deck (orphans, clear them with `alix reset --orphans`), a
   non-canonical token, a frontmatter that can't be stamped, an id marker away
   from its card's closing line (the position stamping mints at), and cards
-  still awaiting a token. For `requires:` it separates a dangling filename edge
+  and topics still awaiting a token. A topic ID held by two topics, in one
+  deck or in two, is an error naming the copy and the line to delete before
+  running `alix deck init`. For `requires:` it separates a dangling filename edge
   from a dangling deck-id edge, a `card-…` id pasted where a deck belongs, and
   a file that only shares a required id's name (the id wins, so add the `.md`
   extension to mean the file). It flags a `exam:` pointing into `assets/`

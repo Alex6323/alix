@@ -132,6 +132,9 @@ fn deck_findings(path: &Path, report: &mut Report) {
     span_anchor_findings(path, &deck.cards, report);
 
     for lint in &deck.lints {
+        if matches!(lint.kind, alix::parser::LintKind::DuplicateTopicId { .. }) {
+            continue;
+        }
         let msg = lint_message(path, lint);
         if matches!(lint.kind, alix::parser::LintKind::BadValue { .. }) {
             report.error(msg);
@@ -149,6 +152,13 @@ fn deck_findings(path: &Path, report: &mut Report) {
             && !tokens.iter().any(|x| x == t)
         {
             tokens.push(t.to_string());
+        }
+    }
+    for topic in &deck.topics {
+        if let Some(t) = topic.token.as_deref().map(alix::token::format_topic_id)
+            && !tokens.contains(&t)
+        {
+            tokens.push(t);
         }
     }
     for tok in &tokens {
@@ -195,6 +205,16 @@ fn deck_findings(path: &Path, report: &mut Report) {
             unstamped.len()
         ));
     }
+    for topic in deck.topics.iter().filter(|topic| topic.token.is_none()) {
+        if let Some(heading) = topic.heading.as_deref()
+            && initialized
+        {
+            report.warn(format!(
+                "{}: topic `{heading}` has no id (open the deck or run `alix deck init`)",
+                path.display()
+            ));
+        }
+    }
 
     deck_diagram_findings(
         path,
@@ -205,6 +225,9 @@ fn deck_findings(path: &Path, report: &mut Report) {
         report,
     );
     if let Ok(deck) = Deck::load(path) {
+        for dupe in alix::topic::duplicated_topics(&deck, None) {
+            report.error(dupe.to_string());
+        }
         deck_resource_findings(&deck, report);
     }
 }
@@ -793,6 +816,9 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::TopicWithoutCards => "topic has prose but no card below it; a topic \
              introduces the cards under it"
             .to_string(),
+        LintKind::DuplicateTopicId { first_line } => {
+            format!("topic id repeats the one on line {first_line}")
+        }
         LintKind::DuplicateTopicHeading { first_line } => format!(
             "topic heading repeats the one on line {first_line}; the exam merges both into \
              one topic, so rename one"
@@ -1063,6 +1089,9 @@ fn findings_in(dir: &Path, source_locator_drift: bool) -> Report {
             dupe.keeper.1,
             losers.join(", ")
         ));
+    }
+    for dupe in &map.topic_dupes {
+        report.error(dupe.to_string());
     }
 
     let store_path = alix::workspace::root_store_path(dir);
@@ -1915,6 +1944,120 @@ mod tests {
         )
         .unwrap();
         path
+    }
+
+    const TOPIC_REPEATED: &str =
+        "# A\n<!-- id: topic-a -->\n## q\na\n# B\n<!-- id: topic-a -->\n## r\nb\n";
+
+    fn topic_pair(dir: &Path) -> (PathBuf, PathBuf) {
+        let deck = |name: &str, card: &str| {
+            let path = dir.join(format!("{name}.md"));
+            std::fs::write(
+                &path,
+                format!(
+                    "---\nid: \"deck-{name}\"\n---\n# {name}\n<!-- id: topic-shared -->\n## q\na\n<!-- id: card-{card} -->\n"
+                ),
+            )
+            .unwrap();
+            path
+        };
+        (deck("one", "c1"), deck("two", "c2"))
+    }
+
+    fn topic_errors(report: &Report) -> Vec<&String> {
+        report
+            .errors
+            .iter()
+            .filter(|error| error.starts_with("topic id"))
+            .collect()
+    }
+
+    #[test]
+    fn doctor_warns_on_a_topic_without_an_id_and_on_a_noncanonical_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-d\"\n---\n# A\n## q\na\n<!-- id: card-q -->\n# B\n<!-- id: topic-b -->\n## r\nb\n<!-- id: card-r -->\n",
+        )
+        .unwrap();
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        let warnings = report.warnings.join("\n");
+        for expected in [
+            format!(
+                "{}: topic `A` has no id (open the deck or run `alix deck init`)",
+                path.display()
+            ),
+            format!(
+                "{}: id `topic-b` is valid but its token is not canonical (not 26 base32 chars)",
+                path.display()
+            ),
+        ] {
+            assert!(
+                report.warnings.contains(&expected),
+                "missing {expected:?} in {warnings}"
+            );
+        }
+        assert!(
+            !warnings.contains("topic `B` has no id"),
+            "B has its id: {warnings}"
+        );
+    }
+
+    #[test]
+    fn doctor_names_the_copy_of_a_topic_id_shared_by_two_decks() {
+        let dir = tempfile::tempdir().unwrap();
+        let (one, two) = topic_pair(dir.path());
+        let report = findings_in(dir.path(), false);
+        let errors = topic_errors(&report);
+        assert_eq!(1, errors.len(), "one error per finding: {errors:?}");
+        for site in [
+            format!("{}:5;", one.display()),
+            format!("delete the id line at {}:5", two.display()),
+        ] {
+            assert!(errors[0].contains(&site), "{site} in {}", errors[0]);
+        }
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|w| w.contains("delete the id line")),
+            "an error, not a warning: {:?}",
+            report.warnings
+        );
+    }
+
+    #[test]
+    fn doctor_names_the_later_topic_when_one_deck_repeats_a_topic_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(&path, TOPIC_REPEATED).unwrap();
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        let errors = topic_errors(&report);
+        assert_eq!(1, errors.len(), "{errors:?}");
+        let copy = format!("delete the id line at {}:6", path.display());
+        assert!(errors[0].contains(&copy), "{copy} in {}", errors[0]);
+    }
+
+    #[test]
+    fn doctor_and_refusals_print_one_topic_dupe_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let (one, _) = topic_pair(dir.path());
+        let deck = Deck::load(&one).unwrap();
+        let refusal = alix::topic::duplicated_topics(&deck, Some(dir.path()))[0].to_string();
+        let report = findings_in(dir.path(), false);
+        assert_eq!(vec![&refusal], topic_errors(&report), "cross-deck");
+
+        let single = tempfile::tempdir().unwrap();
+        let path = single.path().join("d.md");
+        std::fs::write(&path, TOPIC_REPEATED).unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let refusal = alix::topic::duplicated_topics(&deck, None)[0].to_string();
+        let mut report = Report::default();
+        deck_findings(&path, &mut report);
+        assert_eq!(vec![&refusal], topic_errors(&report), "same deck");
     }
 
     #[test]

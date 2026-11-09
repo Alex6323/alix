@@ -915,6 +915,32 @@ fn doctor_drift_flag_reports_a_frozen_range_whose_length_no_longer_matches_its_a
 }
 
 #[test]
+fn deck_init_mints_topic_ids_and_doctor_is_then_quiet_about_them() {
+    let dir = TempDir::new().unwrap();
+    let deck = dir.path().join("d.md");
+    std::fs::write(&deck, "# A\nprose\n## q\na\n# B\n## r\nb\n").unwrap();
+    let initialized = alix(&["deck", "init", deck.to_str().unwrap()]);
+    assert!(
+        initialized.status.success(),
+        "init: {}",
+        stderr(&initialized)
+    );
+    let text = std::fs::read_to_string(&deck).unwrap();
+    assert_eq!(
+        2,
+        text.matches("<!-- id: topic-").count(),
+        "init: one marker per topic: {text}"
+    );
+    let out = alix(&["doctor", dir.path().to_str().unwrap()]);
+    let report = stderr(&out);
+    assert!(out.status.success(), "doctor: {report}");
+    assert!(
+        !report.contains("topic"),
+        "doctor: quiet about topics: {report}"
+    );
+}
+
+#[test]
 fn doctor_repair_restores_the_frozen_width_for_an_all_blank_range() {
     for authored_range in ["2", "2-4"] {
         let dir = TempDir::new().unwrap();

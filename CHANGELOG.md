@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Topics carry permanent IDs: `alix deck init` and opening a deck write one
+  `<!-- id: topic-<token> -->` line closing each `#` heading block (after its
+  prose, before its first card). The cards above the first `#` are the
+  deck's leading topic, identified by the deck ID. A misplaced, repeated, or
+  malformed topic marker is a parse error; `alix doctor` warns on a topic
+  without an ID and reports a topic ID shared by two topics, in one deck or
+  across decks, as an error naming the copy to delete. alix never remints a
+  duplicated topic ID.
+
 - `[exam] effort` sets the backend effort for writing and grading exams,
   over `[ask] effort`; a workspace's `alix.local.toml` may set its own.
 

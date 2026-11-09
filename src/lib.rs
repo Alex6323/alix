@@ -109,6 +109,7 @@ pub mod sync;
 pub mod time;
 pub mod title;
 pub mod token;
+pub mod topic;
 pub mod trace;
 #[cfg(feature = "full")]
 pub mod trace_ai;

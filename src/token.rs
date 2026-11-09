@@ -177,10 +177,15 @@ pub fn card_id(
 pub enum Kind {
     Deck,
     Card,
+    Topic,
 }
 
 pub fn format_deck_id(token: &str) -> String {
     format!("deck-{token}")
+}
+
+pub fn format_topic_id(token: &str) -> String {
+    format!("topic-{token}")
 }
 
 pub fn format_card_id(token: &str, row: Option<&str>, reversed: bool) -> String {
@@ -221,6 +226,9 @@ pub type ParsedId<'a> = (Kind, &'a str, Option<&'a str>, bool, Option<RegionRef<
 pub fn parse_id(id: &str) -> Option<ParsedId<'_>> {
     if let Some(token) = id.strip_prefix("deck-") {
         return is_valid(token).then_some((Kind::Deck, token, None, false, None));
+    }
+    if let Some(token) = id.strip_prefix("topic-") {
+        return is_valid(token).then_some((Kind::Topic, token, None, false, None));
     }
     let (base, row, reversed, region) = parse_prefixed_card_id(id)?;
     Some((
@@ -491,6 +499,17 @@ mod tests {
             parse_prefixed_card_id("card-t0-tabcdef-r"),
             Some(("card-t0", Some("abcdef"), true, None))
         );
+    }
+
+    #[test]
+    fn a_topic_id_parses_as_its_own_kind_and_rejects_suffixes_and_bad_tokens() {
+        assert_eq!(
+            Some((Kind::Topic, "t0", None, false, None)),
+            parse_id(&format_topic_id("t0"))
+        );
+        for bad in ["topic-", "topic-T0", "topic-t0-r", "topic-a_b"] {
+            assert_eq!(None, parse_id(bad), "{bad}");
+        }
     }
 
     #[test]

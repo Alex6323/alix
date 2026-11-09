@@ -25,6 +25,34 @@ pub struct CardDupe {
     pub losers: Vec<(PathBuf, usize)>,
 }
 
+/// A topic id held by more than one topic. Never reminted: the author deletes
+/// each copy's id line by hand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopicDupe {
+    pub id: String,
+    /// (deck file, 1-based line of the id marker).
+    pub keeper: (PathBuf, usize),
+    pub copies: Vec<(PathBuf, usize)>,
+}
+
+impl std::fmt::Display for TopicDupe {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let site = |(path, line): &(PathBuf, usize)| format!("{}:{line}", path.display());
+        let copies: Vec<String> = self
+            .copies
+            .iter()
+            .map(|copy| format!("delete the id line at {}", site(copy)))
+            .collect();
+        write!(
+            f,
+            "topic id `{}` is also at {}; {} and run `alix deck init`",
+            self.id,
+            site(&self.keeper),
+            copies.join("; ")
+        )
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DuplicateMap {
     /// (kept deck, excluded deck, shared token) per excluded copy. Never
@@ -34,6 +62,9 @@ pub struct DuplicateMap {
     /// Excludes cards from an already-excluded deck: a whole-file copy is one
     /// deck-level finding, not one per card.
     pub card_dupes: Vec<CardDupe>,
+    /// Across decks only: a deck repeating its own topic id is that deck's
+    /// finding (`topic::duplicated_topics`), so each copy is named once.
+    pub topic_dupes: Vec<TopicDupe>,
     /// What each scanned deck hashed to while these findings were derived, so
     /// a repair this scan authorized refuses a file that moved under it.
     pub digests: HashMap<PathBuf, u64>,
@@ -96,6 +127,7 @@ fn parse_fast(dir: &Path) -> Vec<Parsed> {
             deck_token,
             digest: digest(&text),
             cards,
+            topics: Vec::new(),
         });
     }
     parsed
@@ -206,6 +238,8 @@ struct Parsed {
     /// One entry per composed id, so a card's regions and a table's rows
     /// each contribute their own claim over one shared block line.
     cards: Vec<ScannedCard>,
+    /// (topic id, marker line), the first marker per id in the deck.
+    topics: Vec<(String, usize)>,
 }
 
 /// Skips unreadable/unparseable decks silently; `doctor` reports those
@@ -239,11 +273,21 @@ pub fn scan(deck_paths: &[PathBuf]) -> DuplicateMap {
                 }
             }
         }
+        let mut topics: Vec<(String, usize)> = Vec::new();
+        for topic in &deck.topics {
+            if let (Some(token), Some(line)) = (topic.token.as_deref(), topic.marker_line) {
+                let id = crate::token::format_topic_id(token);
+                if !topics.iter().any(|(seen, _)| *seen == id) {
+                    topics.push((id, line));
+                }
+            }
+        }
         parsed.push(Parsed {
             path: path.clone(),
             deck_token: deck.deck_token.clone(),
             digest: digest(&text),
             cards,
+            topics,
         });
     }
 
@@ -256,6 +300,7 @@ fn build_map(parsed: &[Parsed]) -> DuplicateMap {
     DuplicateMap {
         excluded_decks,
         card_dupes,
+        topic_dupes: topic_dupes(parsed),
         digests: parsed.iter().map(|p| (p.path.clone(), p.digest)).collect(),
     }
 }
@@ -339,6 +384,33 @@ fn card_dupes(parsed: &[Parsed], excluded: &[usize]) -> Vec<CardDupe> {
     }
     // Deterministic report order.
     out.sort_by(|a, b| a.base.cmp(&b.base));
+    out
+}
+
+fn topic_dupes(parsed: &[Parsed]) -> Vec<TopicDupe> {
+    let mut sites: HashMap<&str, Vec<(PathBuf, usize)>> = HashMap::new();
+    for p in parsed {
+        for (id, line) in &p.topics {
+            sites
+                .entry(id.as_str())
+                .or_default()
+                .push((p.path.clone(), *line));
+        }
+    }
+    let mut out: Vec<TopicDupe> = sites
+        .into_iter()
+        .filter(|(_, sites)| sites.len() > 1)
+        .map(|(id, mut sites)| {
+            let keeper = keeper_index(&sites.iter().map(|(p, _)| p.as_path()).collect::<Vec<_>>());
+            let keeper = sites.remove(keeper);
+            TopicDupe {
+                id: id.to_string(),
+                keeper,
+                copies: sites,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     out
 }
 
