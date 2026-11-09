@@ -53,14 +53,14 @@
   /* Elbow: a horizontal from the vertical out to the label, at the row's middle. */
   .deckrow .tree .guide.tee::after, .deckrow .tree .guide.ell::after { content: ""; position: absolute; left: 50%; right: -6px; top: 50%; border-top: 1px dotted var(--line); }
   .lists.filtering .deckrow .tree { display: none; }
-  .deckrow .name { flex: 0 0 auto; max-width: 100%; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deckrow .name { flex: 0 1 auto; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* a workspace row stacks its title over a dim description line */
   .deckrow .rowtext { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .deckrow .rowtext .name { flex: none; font-weight: 600; }
   .deckrow .desc { font-size: 0.74rem; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .deckrow .kind { flex: none; font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--bolt); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
   .deckrow .loc { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
-  .deckrow .meta { flex: 0 100 auto; min-width: 0; margin-left: auto; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .deckrow .meta { flex: 1 1 0; min-width: 0; max-width: max-content; margin-left: auto; text-align: right; padding-left: 10px; font-family: var(--mono); font-size: 0.74rem; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .deckrow .meta.state-finished { color: var(--good); }
   .deckrow .meta.state-examdue { color: var(--warn); }
   .deckrow .meta.state-error { color: var(--again); }

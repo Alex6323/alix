@@ -14,6 +14,7 @@ type PickerState = {
   exam_prepared?: boolean;
   meta?: string | null;
   exam_changed?: boolean;
+  label?: string;
 };
 
 async function mockExamRows(page: Page, states: Record<string, PickerState>) {
@@ -631,6 +632,51 @@ test("a long exam badge truncates inside a narrow row and leaves the deck name s
   if (directory) {
     await adultDeckRow(page, "cats").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${directory}/long-badge-narrow-390.png`, animations: "disabled" });
+  }
+});
+
+test("a long deck name ellipsizes inside a narrow row, with or without an exam badge", async ({ page }) => {
+  const longName = "A deck name that is far wider than a phone screen can show in one row";
+  const longBadge = "mastered (4 Nov) · last (4 Nov) 17.5 / 18 · 12 to drill";
+  await mockExamRows(page, {
+    "fronts.md": { state: "new", examable: true, exam_filter: "none", label: `${longName} one`, meta: null },
+    "source-fact.md": {
+      state: "finished",
+      examable: true,
+      exam_filter: "none",
+      label: `${longName} two`,
+      meta: longBadge,
+      exam_changed: true,
+    },
+  });
+  await page.locator("#navRefresh").click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await adultDeckRow(page, "Animals").click();
+
+  for (const [label, badged] of [
+    [`${longName} one`, false],
+    [`${longName} two`, true],
+  ] as const) {
+    const row = adultDeckRow(page, label);
+    const rowBox = (await row.boundingBox())!;
+    const rowRight = rowBox.x + rowBox.width;
+    const name = row.locator(".name");
+    const nameBox = (await name.boundingBox())!;
+    expect(nameBox.width, `${label}: the name keeps width`).toBeGreaterThan(0);
+    expect(
+      await name.evaluate((n) => n.scrollWidth > n.clientWidth),
+      `${label}: a name wider than the row ends in an ellipsis`,
+    ).toBe(true);
+    const tagBox = (await row.locator(".badge-new").boundingBox())!;
+    expect(tagBox.x + tagBox.width, `${label}: the tag ends inside the row`).toBeLessThanOrEqual(rowRight);
+    if (badged) {
+      const metaBox = (await row.locator(".meta").boundingBox())!;
+      expect(metaBox.x + metaBox.width, `${label}: the badge ends inside the row`).toBeLessThanOrEqual(rowRight);
+    }
+  }
+  const directory = process.env.ALIX_RENDER_DIR;
+  if (directory) {
+    await page.screenshot({ path: `${directory}/long-name-narrow-390.png`, animations: "disabled" });
   }
 });
 
