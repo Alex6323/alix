@@ -1053,7 +1053,12 @@ impl Sitting {
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        if let Some(error) = topic_refusal(deck, cached_manifest(deck)) {
+        let refusal = match deck.sources() {
+            Ok(Some(sources)) => topic_refusal(deck, Some(&sources.manifest)),
+            Ok(None) => Some("the deck declares no sources to examine against".to_string()),
+            Err(error) => Some(format!("{error}")),
+        };
+        if let Some(error) = refusal {
             return Self::refused(deck, error, strictness, cfg, ask_cfg);
         }
         let mut sitting = Self::idle(deck, topics, start, strictness, cfg, ask_cfg);
@@ -2581,10 +2586,10 @@ mod tests {
         sitting.next();
         assert!(!sitting.is_locked(1), "step 3: an empty answer never locks");
 
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
+        let (_workspace, decks) = crate::sources::testkit::workspace_decks();
+        let path = decks.join("d.md");
         std::fs::write(&path, "# A\n\n## q?\na\n").unwrap();
-        let deck = crate::deck::Deck::load(&path).unwrap();
+        let deck = crate::deck::Deck::load(crate::sources::testkit::sourced(path)).unwrap();
         let resumed = Sitting::from_prepared(
             &deck,
             exam_topics(&deck, None),
@@ -4048,6 +4053,46 @@ mod tests {
             "the resume refuses with the shared findings text"
         );
         assert!(sitting.error().is_some(), "setup: the id is duplicated");
+    }
+
+    #[test]
+    fn resuming_a_prepared_exam_refuses_a_missing_frozen_copy_like_a_fresh_sitting() {
+        let ws = two_sourced_topics();
+        let deck = opened(&ws);
+        let copy = ws
+            .snapshot()
+            .names
+            .into_iter()
+            .find(|name| crate::sources::is_copy_name(name))
+            .expect("setup: a frozen source copy");
+        std::fs::remove_file(ws.dir().join(copy)).unwrap();
+        let expected = deck.sources().unwrap_err().to_string();
+
+        let fresh = Sitting::start(
+            &deck,
+            SittingStart::default(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(Some(expected.as_str()), fresh.error(), "fresh sitting");
+
+        let resumed = Sitting::from_prepared(
+            &deck,
+            examined_topics(&deck),
+            vec![ExamQuestion::default()],
+            vec![String::new()],
+            IdeasDocument::default(),
+            SittingStart::default(),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert_eq!(
+            Some(expected.as_str()),
+            resumed.error(),
+            "prepared resume must not bypass the verified source load"
+        );
     }
 
     #[test]
