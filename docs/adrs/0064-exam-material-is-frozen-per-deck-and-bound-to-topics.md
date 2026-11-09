@@ -403,8 +403,8 @@ This record replaces, once accepted:
 - in ADR 0026: in "Id grammar", the kind set (`topic` is added, with the
   same token rule as `deck` and `card`); in "Locator fields", the
   `fingerprint: xxh64-<hex>` and `asset: sha256-<hex>.<ext>` value forms
-  and, in "What a frozen asset IS", the examiner and tutor grounding on
-  live sources; the whole "One source concept" section (deck and
+  and, in "What a frozen asset IS", the examiner grounding on live sources
+  and the tutor's, except the `cite:` browse rule 13 keeps; the whole "One source concept" section (deck and
   workspace material keys, examination and `has_exam`);
 - in ADR 0053: rule 1's `exam:` key and the tutor listing `exam:` entries;
   rule 14 (the exam reads `exam:`); rule 15's sole-root clause (a card
