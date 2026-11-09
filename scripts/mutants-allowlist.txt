@@ -88,6 +88,11 @@ src/listing.rs:885: replace + with * in dependency_forest_by
 # killed by pinning uuid_from_seed's exact output for known seeds.
 src/ask.rs: replace | with ^ in uuid_from_seed
 
+# EQUIVALENT, provably. `buffer << 8` leaves the low eight bits zero for
+# every input, and a byte occupies exactly those bits, so OR and XOR give
+# the same result. The golden vectors pin every other render mutant.
+src/token.rs: replace | with ^ in base32_256
+
 # UNREACHABLE. parse_drafted_card rejects either empty side
 # before this condition, so no single-empty state can reach it and
 # the two operators are indistinguishable from any input.
