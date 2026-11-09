@@ -392,9 +392,17 @@ fn build_workspace(
     let spec = alix::generate::GenerationSpec::from_config(goal, &config.generate);
     let (plan, filled) = alix::explore::explore_and_fill(source, &spec, &config.trace, &config.ask)
         .context("explore/fill failed")?;
-    let report =
-        alix::explore::materialize(&plan, ws, goal, Some(title), source, &[], Some(&filled))
-            .context("failed to materialize the workspace")?;
+    let report = alix::explore::materialize(
+        &plan,
+        ws,
+        goal,
+        Some(title),
+        source,
+        &[],
+        Some(&filled),
+        &config.exam,
+    )
+    .context("failed to materialize the workspace")?;
     let frozen =
         alix::explore::freeze_workspace(&report.dir).context("failed to freeze source assets")?;
     if !frozen.failed.is_empty() {

@@ -9,13 +9,15 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::{
     ask,
     backend::ensure_source_reachable,
-    config::{AskConfig, TraceConfig},
+    config::{AskConfig, ExamConfig, TraceConfig},
     deck::{Deck, is_url},
+    exam_prompt::PreflightError,
     generate::{self, GenerationSpec},
     library,
     parser::yaml_quote,
     share,
     source::resolve_source,
+    sources::commands::{AddReport, add_generated},
     store::Store,
     title,
     trace_ai::{BuiltTrace, Citing, build_run_config, passage_rule, trace_root},
@@ -113,8 +115,8 @@ fn explore_prompt(source: &str, spec: &GenerationSpec, url: bool, cfg: &TraceCon
          detail. Do not resolve line numbers or write cards/checkpoints — later \
          steps do that. Use as many items as the goal needs (stop at saturation), \
          ordered by prerequisite.\n\n\
-         `@source:` FORMAT: a [deck]'s source must be actual FILE path(s) (the \
-         exam reads them) — never a bare directory. For several files, join them \
+         `@source:` FORMAT: a [deck]'s source must be actual FILE path(s), never a \
+         bare directory. For several files, join them \
          with ` + `, writing the FIRST as a full path and the rest RELATIVE to its \
          directory, e.g. `@source: <root>/README.md + src/lib.rs`. A [trace] may \
          use a single directory or file as its locator base."
@@ -228,7 +230,7 @@ pub fn explore_and_fill(
     spec: &GenerationSpec,
     cfg: &TraceConfig,
     ask_cfg: &AskConfig,
-) -> Result<(String, HashMap<usize, String>)> {
+) -> Result<(String, Filled)> {
     let url = is_url(source);
     ensure_source_reachable(ask_cfg, url)?;
     let cwd = if url {
@@ -257,9 +259,37 @@ pub fn explore_and_fill(
     }
 
     let filled = ask::run(&run_cfg, &fill_prompt(&items, spec), &session.args())?;
-    let filled = parse_filled(&filled);
-    validate_filled_card_styles(&items, &filled, spec)?;
+    let filled = split_filled(&items, parse_filled(&filled), Path::new(source))?;
+    validate_filled_card_styles(&items, &filled.bodies, spec)?;
     Ok((plan, filled))
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filled {
+    pub bodies: HashMap<usize, String>,
+    pub sources: HashMap<usize, Vec<(PathBuf, Option<String>)>>,
+}
+
+/// `root` is the folder the model read, which its paths are relative to.
+pub(crate) fn split_filled(
+    items: &[Item],
+    raw: HashMap<usize, String>,
+    root: &Path,
+) -> Result<Filled> {
+    let mut filled = Filled::default();
+    for (num, body) in raw {
+        let (cards, list) = generate::split_sources(&body);
+        let is_deck = items
+            .iter()
+            .any(|item| item.num == num && item.kind == Kind::Deck);
+        if let (Some(list), true) = (list, is_deck) {
+            let sources = generate::parse_source_list(list, root)
+                .with_context(|| format!("generated workspace item {num}"))?;
+            filled.sources.insert(num, sources);
+        }
+        filled.bodies.insert(num, cards.trim().to_string());
+    }
+    Ok(filled)
 }
 
 fn validate_filled_card_styles(
@@ -316,14 +346,24 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          to that root as ONE consistent path per file across ALL items; never drop or \
          add a leading directory (always `src:src/foo.rs`, never sometimes \
          `src:foo.rs`), so the frozen citations all resolve.\n\n\
+         After the last card of each [deck] item, write a line `{marker}` and then \
+         a JSON array naming the files that item's cards draw on: \
+         `[{{\"path\": \"<file relative to the source root>\", \"lines\": \"<ranges>\"}}]`. \
+         For a file longer than {ranged} lines, give `lines`: the line ranges the cards \
+         rest on, ascending and non-overlapping, e.g. `12-40,88,90-120`; for a shorter \
+         file, omit `lines` and the whole file is bound. Name only files you read, never \
+         a directory; the learner is examined on them. A [trace] item has no such list.\n\n\
          Do NOT emit any frontmatter (`trace:`, `cite:`, `requires:` keys) or a \
          `# ` title — those are already written; output only the `## ` cards. \
          Output ONLY the delimited item bodies: no preamble, no code fences, nothing \
-         between the last card of one item and the next `=== item ===` line.\n\n\
+         between an item's last card (or its sources list) and the next \
+         `=== item ===` line.\n\n\
          {requirements}\n\n\
          The plan:\n{list}",
         card_format = generate::card_format(spec.card_style),
         requirements = spec.requirements(),
+        marker = generate::SOURCES_MARKER,
+        ranged = generate::RANGED_FILE_LINES,
     )
 }
 
@@ -387,6 +427,8 @@ pub struct Materialized {
     pub traces: usize,
     pub decks: usize,
     pub filled: usize,
+    pub sources: usize,
+    pub over_limit: Vec<PreflightError>,
 }
 
 pub fn parse_plan(plan: &str) -> Vec<Item> {
@@ -431,6 +473,10 @@ fn parse_item_header(t: &str) -> Option<(usize, Kind, String)> {
 
 /// A populated `dir` is deliberately not refused: callers that write straight
 /// into a real destination decide that.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the workspace header, the fill and the exam settings are independent inputs"
+)]
 pub fn materialize(
     plan: &str,
     dir: &Path,
@@ -438,7 +484,8 @@ pub fn materialize(
     title: Option<&str>,
     source: &str,
     links: &[String],
-    filled: Option<&HashMap<usize, String>>,
+    filled: Option<&Filled>,
+    exam: &ExamConfig,
 ) -> Result<Materialized> {
     let mut items = parse_plan(plan);
     if items.is_empty() {
@@ -524,7 +571,7 @@ pub fn materialize(
         }
         body.push('\n');
         match filled
-            .and_then(|f| f.get(&item.num))
+            .and_then(|f| f.bodies.get(&item.num))
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
         {
@@ -546,12 +593,70 @@ pub fn materialize(
         fs::write(member_dir.join(name), body)?;
     }
 
+    let mut bound = 0;
+    let mut over_limit = Vec::new();
+    if let (Some(root), Some(filled)) = (&root, filled) {
+        for (item, name) in items.iter().zip(&names) {
+            let Some(files) = filled
+                .sources
+                .get(&item.num)
+                .filter(|_| item.kind == Kind::Deck)
+            else {
+                continue;
+            };
+            let report =
+                bind_member(&member_dir.join(name), root, files, exam).with_context(|| {
+                    format!("generated workspace item {} `{}`", item.num, item.title)
+                })?;
+            bound += report.added.len();
+            over_limit.extend(report.over_limit);
+        }
+    }
+
     Ok(Materialized {
         dir: dir.to_path_buf(),
         traces,
         decks,
         filled: filled_count,
+        sources: bound,
+        over_limit,
     })
+}
+
+fn bind_member(
+    member: &Path,
+    root: &Path,
+    files: &[(PathBuf, Option<String>)],
+    exam: &ExamConfig,
+) -> Result<AddReport> {
+    crate::stamp::stamp_deck(member)?;
+    let deck = Deck::load(member)?;
+    let topics: Vec<String> = deck
+        .topics
+        .iter()
+        .zip(deck.topic_ids())
+        .filter(|(topic, _)| topic.heading.is_some())
+        .filter_map(|(_, id)| id)
+        .collect();
+    let bindings = files
+        .iter()
+        .map(|(file, lines)| {
+            let entries = topics
+                .iter()
+                .map(|topic| match lines {
+                    Some(lines) => format!("{lines}|{topic}"),
+                    None => topic.clone(),
+                })
+                .collect();
+            (file.clone(), entries)
+        })
+        .collect();
+    add_generated(
+        member,
+        (crate::cite::GENERATED_KEY.to_string(), root.to_path_buf()),
+        bindings,
+        exam,
+    )
 }
 
 /// A conflict keeps the user's original; the new file stays in `staging`.
@@ -1168,6 +1273,7 @@ Spine   a -> b
             ".",
             &[],
             None,
+            &ExamConfig::default(),
         )
         .unwrap();
         assert_eq!(2, report.traces);
@@ -1198,7 +1304,17 @@ Spine   a -> b
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("keep.txt"), "existing").unwrap();
 
-        materialize(SAMPLE_PLAN, &dir, "g", None, ".", &[], None).unwrap();
+        materialize(
+            SAMPLE_PLAN,
+            &dir,
+            "g",
+            None,
+            ".",
+            &[],
+            None,
+            &ExamConfig::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             "existing",
@@ -1222,6 +1338,7 @@ Spine   a -> b
             ".",
             &[],
             None,
+            &ExamConfig::default(),
         )
         .unwrap();
         let manifest = fs::read_to_string(dir.join("alix.toml")).unwrap();
@@ -1247,6 +1364,7 @@ Spine   a -> b
                 "https://example.org/b".to_string(),
             ],
             None,
+            &ExamConfig::default(),
         )
         .unwrap();
 
@@ -1268,6 +1386,87 @@ Spine   a -> b
         }
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_generated_workspace_saves_the_root_and_binds_sources_per_topic() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().canonicalize().unwrap();
+        let source = base.join("project");
+        fs::create_dir_all(source.join("src")).unwrap();
+        fs::write(source.join("README.md"), "one\ntwo\nthree\n").unwrap();
+        fs::write(source.join("src/parser.rs"), "fn parse() {}\n").unwrap();
+        let marker = generate::SOURCES_MARKER;
+        let raw = format!(
+            "=== item 1 ===\n## What marks a card?\nA heading\n{marker}\n[{{\"path\": \"README.md\", \"lines\": \"2-3\"}}, {{\"path\": \"src/parser.rs\"}}]\n=== item 2 ===\n## How does text become Cards?\nA parser runs\n{marker}\n[{{\"path\": \"src/parser.rs\"}}]\n"
+        );
+
+        let filled = split_filled(&parse_plan(SAMPLE_PLAN), parse_filled(&raw), &source).unwrap();
+        assert!(
+            filled.bodies.values().all(|body| !body.contains(marker)),
+            "split: the sources list never reaches a member body: {:?}",
+            filled.bodies
+        );
+        assert!(
+            !filled.sources.contains_key(&2),
+            "split: a trace item binds no sources"
+        );
+
+        let dir = base.join("ws");
+        let report = materialize(
+            SAMPLE_PLAN,
+            &dir,
+            "g",
+            None,
+            &source.display().to_string(),
+            &[],
+            Some(&filled),
+            &ExamConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(2, report.sources, "materialize: both files are frozen");
+
+        let deck = Deck::load(dir.join("decks/01-the-deck-format.md")).unwrap();
+        let deck_id = deck
+            .deck_token
+            .clone()
+            .expect("materialize: the member is stamped");
+        let topic = deck.topic_ids()[1]
+            .clone()
+            .expect("materialize: the topic is stamped");
+        let sources = crate::sources::load_verified(&dir, &deck_id)
+            .unwrap()
+            .expect("materialize: the member has a sources manifest");
+        let mut rows: Vec<(String, Vec<String>)> = sources
+            .manifest
+            .sources
+            .values()
+            .map(|row| (row.path.clone(), row.bound_to.clone()))
+            .collect();
+        rows.sort();
+        assert_eq!(
+            vec![
+                ("src:README.md".to_string(), vec![format!("2-3|{topic}")]),
+                ("src:src/parser.rs".to_string(), vec![topic.clone()]),
+            ],
+            rows,
+            "materialize: the deck item's topic binds the files returned for it"
+        );
+        let roots = crate::sources::Roots::load(&sources.dir)
+            .unwrap()
+            .expect("materialize: a roots file");
+        assert_eq!(
+            Some(&source),
+            roots.roots.get(crate::cite::GENERATED_KEY),
+            "materialize: the root is saved under the `cite:` key"
+        );
+        assert_eq!(
+            1,
+            fs::read_dir(dir.join(crate::sources::ROOT))
+                .unwrap()
+                .count(),
+            "materialize: only the deck item has sources"
+        );
     }
 
     #[test]
@@ -1294,14 +1493,24 @@ back a
     fn materialize_writes_filled_content_when_given() {
         let dir = std::env::temp_dir().join(format!("alix-explore-fill-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let mut filled = HashMap::new();
-        filled.insert(
+        let mut filled = Filled::default();
+        filled.bodies.insert(
             2usize,
             "## how does text become Cards?\nparse_str runs a state machine\n<!-- at: src:src/parser.rs:1-9 -->"
                 .to_string(),
         );
 
-        let report = materialize(SAMPLE_PLAN, &dir, "g", None, ".", &[], Some(&filled)).unwrap();
+        let report = materialize(
+            SAMPLE_PLAN,
+            &dir,
+            "g",
+            None,
+            ".",
+            &[],
+            Some(&filled),
+            &ExamConfig::default(),
+        )
+        .unwrap();
         assert_eq!(1, report.filled);
 
         let trace = fs::read_to_string(dir.join("decks/02-how-text-becomes-cards.md")).unwrap();

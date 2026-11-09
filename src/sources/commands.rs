@@ -556,7 +556,7 @@ fn parse_root_key(key: &str) -> Result<String> {
 }
 
 pub fn add(req: AddRequest, exam: &ExamConfig) -> Result<AddReport> {
-    let mut opened = open(req.deck)?;
+    let opened = open(req.deck)?;
     let bindings = if req.topics.is_empty() {
         if opened
             .deck
@@ -580,44 +580,137 @@ pub fn add(req: AddRequest, exam: &ExamConfig) -> Result<AddReport> {
     let mut key = req.key.clone();
     if let Some((root_key, dir)) = &req.root {
         let root_key = parse_root_key(root_key)?;
-        let canonical = canonical_folder(dir)?;
-        match roots.roots.get(&root_key) {
-            Some(saved) if *saved != canonical => bail!(
-                "root `{root_key}` is already `{}`; change it with `alix deck source root set` first",
-                saved.display()
-            ),
-            Some(_) => {}
-            None => {
-                roots.roots.insert(root_key.clone(), canonical);
-                roots_changed = true;
-            }
-        }
+        roots_changed = save_root(&mut roots, &root_key, dir)?;
         key = key.or(Some(root_key));
     }
+    let files = req
+        .files
+        .into_iter()
+        .map(|file| (file, bindings.clone()))
+        .collect();
+    add_files(
+        opened,
+        roots,
+        roots_changed,
+        key.as_deref(),
+        files,
+        exam,
+        None,
+    )
+}
+
+fn save_root(roots: &mut Roots, key: &str, dir: &Path) -> Result<bool> {
+    let canonical = canonical_folder(dir)?;
+    match roots.roots.get(key) {
+        Some(saved) if *saved != canonical => bail!(
+            "root `{key}` is already `{}`; change it with `alix deck source root set` first",
+            saved.display()
+        ),
+        Some(_) => Ok(false),
+        None => {
+            roots.roots.insert(key.to_string(), canonical);
+            Ok(true)
+        }
+    }
+}
+
+/// `entries` are binding entries, `[<ranges>|]<topic-id>`, one per topic the
+/// file grounds.
+pub fn add_generated(
+    deck: &Path,
+    root: (String, PathBuf),
+    bindings: Vec<(PathBuf, Vec<String>)>,
+    exam: &ExamConfig,
+) -> Result<AddReport> {
+    let opened = open(deck)?;
+    let (key, dir) = root;
+    let key = parse_root_key(&key)?;
+    let mut roots = opened.roots.clone();
+    let roots_changed = save_root(&mut roots, &key, &dir)?;
+    let labels: BTreeMap<String, String> = opened
+        .deck
+        .topics
+        .iter()
+        .zip(opened.deck.topic_ids())
+        .filter_map(|(topic, id)| {
+            Some((
+                id?,
+                topic
+                    .heading
+                    .clone()
+                    .unwrap_or_else(|| opened.deck.subject.clone()),
+            ))
+        })
+        .collect();
+    let mut files = Vec::with_capacity(bindings.len());
+    for (file, entries) in bindings {
+        let mut parsed: Vec<Binding> = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            let binding = binding_of(entry).map_err(|problem| {
+                anyhow!(
+                    "`{}` for topic `{}`: lines `{entry}` {problem}",
+                    file.display(),
+                    labels
+                        .get(topic_of(entry))
+                        .map_or(topic_of(entry), String::as_str)
+                )
+            })?;
+            if parsed.iter().any(|seen| seen.topic == binding.topic) {
+                bail!(
+                    "`{}` is named twice for topic `{}`",
+                    file.display(),
+                    labels.get(&binding.topic).unwrap_or(&binding.topic)
+                );
+            }
+            parsed.push(binding);
+        }
+        files.push((file, parsed));
+    }
+    add_files(
+        opened,
+        roots,
+        roots_changed,
+        Some(&key),
+        files,
+        exam,
+        Some(&labels),
+    )
+}
+
+fn add_files(
+    mut opened: Opened,
+    roots: Roots,
+    roots_changed: bool,
+    key: Option<&str>,
+    files: Vec<(PathBuf, Vec<Binding>)>,
+    exam: &ExamConfig,
+    labels: Option<&BTreeMap<String, String>>,
+) -> Result<AddReport> {
     let mut manifest = opened.manifest.clone();
     let mut copies = std::mem::take(&mut opened.copies);
-    let mut new_copies = Vec::with_capacity(req.files.len());
-    let mut added = Vec::with_capacity(req.files.len());
-    for file in &req.files {
-        let placed = read_source(file, &roots, key.as_deref())?;
-        let path = placed.display.to_string();
-        if manifest.sources.values().any(|row| row.path == path) {
-            bail!(
-                "`{path}` is already a source; refreeze it with `alix deck source update` or \
-                 `alix doctor --repair-sources`"
-            );
-        }
-        let id = source_id(&placed.bytes);
-        if let Some(twin) = manifest.sources.get(&id) {
-            bail!(
-                "`{path}` has the same bytes as `{}`; a deck keeps one copy of each file",
-                twin.path
-            );
-        }
-        let lines = line_count(&placed.bytes);
-        for binding in &bindings {
-            check_ranges(binding, lines, &format!("`{path}`"))?;
-        }
+    let mut new_copies = Vec::with_capacity(files.len());
+    let mut added = Vec::with_capacity(files.len());
+    for (file, bindings) in &files {
+        let frozen = freeze_file(&manifest, &roots, key, file, bindings);
+        let (id, display, bytes) = match labels {
+            None => frozen?,
+            Some(labels) => frozen.with_context(|| {
+                let topics: Vec<&str> = bindings
+                    .iter()
+                    .map(|binding| {
+                        labels
+                            .get(&binding.topic)
+                            .map_or(binding.topic.as_str(), String::as_str)
+                    })
+                    .collect();
+                format!(
+                    "cannot bind `{}` to topic `{}`",
+                    file.display(),
+                    topics.join("`, `")
+                )
+            })?,
+        };
+        let path = display.to_string();
         manifest.sources.insert(
             id.clone(),
             Row {
@@ -625,8 +718,8 @@ pub fn add(req: AddRequest, exam: &ExamConfig) -> Result<AddReport> {
                 bound_to: bindings.iter().map(Binding::render).collect(),
             },
         );
-        new_copies.push((copy_name(&id, &placed.display), placed.bytes.clone()));
-        copies.insert(id.clone(), placed.bytes);
+        new_copies.push((copy_name(&id, &display), bytes.clone()));
+        copies.insert(id.clone(), bytes);
         added.push((id, path));
     }
     let sources = DeckSources {
@@ -646,6 +739,35 @@ pub fn add(req: AddRequest, exam: &ExamConfig) -> Result<AddReport> {
         collected: report.collected,
         over_limit,
     })
+}
+
+fn freeze_file(
+    manifest: &Manifest,
+    roots: &Roots,
+    key: Option<&str>,
+    file: &Path,
+    bindings: &[Binding],
+) -> Result<(String, DisplayPath, Vec<u8>)> {
+    let placed = read_source(file, roots, key)?;
+    let path = placed.display.to_string();
+    if manifest.sources.values().any(|row| row.path == path) {
+        bail!(
+            "`{path}` is already a source; refreeze it with `alix deck source update` or \
+             `alix doctor --repair-sources`"
+        );
+    }
+    let id = source_id(&placed.bytes);
+    if let Some(twin) = manifest.sources.get(&id) {
+        bail!(
+            "`{path}` has the same bytes as `{}`; a deck keeps one copy of each file",
+            twin.path
+        );
+    }
+    let lines = line_count(&placed.bytes);
+    for binding in bindings {
+        check_ranges(binding, lines, &format!("`{path}`"))?;
+    }
+    Ok((id, placed.display, placed.bytes))
 }
 
 pub fn remove(deck: &Path, sources: &[String]) -> Result<RemoveReport> {

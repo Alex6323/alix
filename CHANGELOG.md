@@ -273,6 +273,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `alix deck generate` from a local folder or file into a workspace, and
+  `alix workspace generate`, freeze the files the model drew on as each
+  deck's exam sources, bound per topic (with line ranges for files longer
+  than 400 lines; a single file binds whole to every topic), and save the
+  source folder as the deck's `src` root. A file that cannot be frozen stops
+  the generation, naming the file and the topic, and writes nothing.
+  `alix workspace update` refuses a proposal that retires a topic its sources
+  are bound to, and an apply whose staged sources manifest was edited after
+  review.
+
 - Breaking: a workspace `alix.toml` that does not parse is an error, never a
   silent fallback to defaults. The picker lists the workspace as an `error`
   row carrying the parse message and no members, `alix doctor` reports it, and

@@ -5274,7 +5274,7 @@ fn a_member_facts_deck_reuses_the_manifest_key_holding_its_input_and_quotes_a_sp
     write(&ws, "alix.toml", "[cite]\ncode = \"repo\"\n");
     let (cli, request) = passage_echoing_claude(
         dir.path(),
-        "---\nchoices: single\n---\n## What does lib.rs define?\none\n<!-- at: code:\"my dir/lib.rs\":1 -->\n",
+        "---\nchoices: single\n---\n# Lib\n\n## What does lib.rs define?\none\n<!-- at: code:\"my dir/lib.rs\":1 -->\n=== sources ===\n[{\"topic\": \"Lib\", \"sources\": [{\"path\": \"lib.rs\"}]}]\n",
     );
     let config = write(
         dir.path(),
@@ -5311,6 +5311,15 @@ fn a_member_facts_deck_reuses_the_manifest_key_holding_its_input_and_quotes_a_sp
             .unwrap()
             .contains("`code:\"my dir/<file>\":start-end`"),
         "the prompt quotes a prefix containing a space"
+    );
+    let deck_id = alix::parser::read_deck_identity(&ws.join("decks/gen.md"))
+        .unwrap()
+        .unwrap();
+    let manifest = std::fs::read_to_string(ws.join("sources").join(&deck_id).join("manifest.toml"))
+        .unwrap_or_default();
+    assert!(
+        manifest.contains("path = \"code:my dir/lib.rs\""),
+        "the returned file is frozen under the reused key: {manifest}"
     );
 }
 

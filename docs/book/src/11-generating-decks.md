@@ -44,9 +44,20 @@ How the source is recorded depends on its kind, and it matters later:
 - A **web page** is read with the `WebFetch` tool, and the deck opens with a
   `link:` line back to it, so the [tutor](10-tutor.md) can
   consult the page on your cards.
-- A **local source** is explored read-only with `Read`/`Glob`/`Grep`. To
-  let the **AI exam** grade your understanding against that source later, add
-  it to the deck as a [source](12-the-ai-exam.md#sources). Each fact that maps to
+- A **local source** is explored read-only with `Read`/`Glob`/`Grep`. When
+  the deck lands in a workspace (`--into <workspace>`), alix freezes the
+  files it was generated from as the deck's
+  [sources](12-the-ai-exam.md#sources), which the **AI exam** reads. For a
+  folder, the model groups the cards under `#` topics and lists, per topic,
+  the files it drew on; for a file longer than 400 lines it also gives the
+  line ranges the cards rest on, and a shorter file is bound whole. A single
+  file is bound whole to every topic. The `cite:` root the source is cited
+  through (normally `src`, see below) is saved for the deck's sources on this
+  machine only. Any file that cannot be frozen (not text, empty, outside that
+  root, a range past its end) stops the generation, naming the
+  file and the topic, and leaves no deck and no sources behind. Sources live
+  in a workspace, so a deck written outside one gets none, and no exam.
+  Each fact that maps to
   specific lines also gets a fingerprinted
   [`<!-- at: -->` citation](06-cloze-direction-images.md#source-citations), so
   you can flip the card to its source on reveal without trusting a shifted

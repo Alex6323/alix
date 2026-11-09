@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     io,
     path::{Path, PathBuf},
 };
@@ -10,8 +10,10 @@ use thiserror::Error;
 use crate::{
     assets,
     augment::AugmentCache,
+    config::ExamConfig,
     deck::Deck,
     parser,
+    sources::commands::{AddReport, add_generated},
     store::Store,
     workspace::{self, WorkspaceFiles},
 };
@@ -54,6 +56,153 @@ pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
             cards: 0,
             parse_error: Some(format!("{e:#}")),
         }),
+    }
+}
+
+/// Indexed like `Deck::topics`: 0 is the block before the first `#`.
+pub type TopicSources = Vec<(usize, Vec<(PathBuf, Option<String>)>)>;
+
+pub fn place_sourced_deck(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    topic_sources: &TopicSources,
+    root: (String, PathBuf),
+    exam: &ExamConfig,
+) -> Result<(Placed, AddReport)> {
+    let Some(workspace_root) = workspace::root_for_member_dir(dir) else {
+        bail!(
+            "{} is not a workspace's `decks/` folder, where a deck keeps its sources",
+            dir.display()
+        );
+    };
+    let created = CreatedFolders::before(&WorkspaceFiles::new(&workspace_root));
+    let placed = place_deck(dir, name, text)?;
+    match bind_placed(&placed, topic_sources, root, exam) {
+        Ok(report) => Ok((placed, report)),
+        Err(error) => {
+            let deck_id = parser::read_deck_identity(&placed.path).ok().flatten();
+            let removed = std::fs::remove_file(&placed.path)
+                .with_context(|| format!("cannot remove {}", placed.path.display()))
+                .and_then(|()| created.remove(deck_id.as_deref()));
+            match removed {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(error.context(format!("{cleanup:#}"))),
+            }
+        }
+    }
+}
+
+pub fn replace_sourced_deck(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    topic_sources: &TopicSources,
+    root: (String, PathBuf),
+    exam: &ExamConfig,
+    store: &mut Store,
+) -> Result<(ReplaceReport, AddReport)> {
+    let stem = Path::new(name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("deck");
+    let (placed, report) = place_sourced_deck(
+        dir,
+        &format!(".{stem}.generated.md"),
+        text,
+        topic_sources,
+        root,
+        exam,
+    )?;
+    let stamped = std::fs::read_to_string(&placed.path)
+        .with_context(|| format!("cannot read {}", placed.path.display()));
+    let replaced = stamped.and_then(|stamped| replace_deck(dir, name, &stamped, store));
+    let deck_id = parser::read_deck_identity(&placed.path).ok().flatten();
+    std::fs::remove_file(&placed.path)
+        .with_context(|| format!("cannot remove {}", placed.path.display()))?;
+    match replaced {
+        Ok(replaced) => Ok((replaced, report)),
+        Err(error) => {
+            let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_default();
+            let files = WorkspaceFiles::new(&workspace_root);
+            if let Some(deck_id) = deck_id {
+                for folder in [files.sources_for(&deck_id), files.assets_for(&deck_id)] {
+                    remove_folder(&folder)?;
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
+fn bind_placed(
+    placed: &Placed,
+    topic_sources: &TopicSources,
+    root: (String, PathBuf),
+    exam: &ExamConfig,
+) -> Result<AddReport> {
+    if let Some(error) = &placed.parse_error {
+        bail!("the generated deck does not parse: {error}");
+    }
+    let ids = Deck::load(&placed.path)?.topic_ids();
+    let mut by_file: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
+    for (index, files) in topic_sources {
+        let Some(Some(id)) = ids.get(*index) else {
+            bail!("the generated deck has no topic {index} to bind sources to");
+        };
+        for (file, lines) in files {
+            by_file.entry(file.clone()).or_default().push(match lines {
+                Some(lines) => format!("{lines}|{id}"),
+                None => id.clone(),
+            });
+        }
+    }
+    if by_file.is_empty() {
+        return Ok(AddReport {
+            added: Vec::new(),
+            collected: Vec::new(),
+            over_limit: Vec::new(),
+        });
+    }
+    add_generated(&placed.path, root, by_file.into_iter().collect(), exam)
+}
+
+struct CreatedFolders {
+    files: WorkspaceFiles,
+    sources_existed: bool,
+    assets_existed: bool,
+}
+
+impl CreatedFolders {
+    fn before(files: &WorkspaceFiles) -> Self {
+        Self {
+            sources_existed: files.sources().exists(),
+            assets_existed: files.assets().exists(),
+            files: files.clone(),
+        }
+    }
+
+    fn remove(&self, deck_id: Option<&str>) -> Result<()> {
+        if let Some(deck_id) = deck_id {
+            remove_folder(&self.files.sources_for(deck_id))?;
+            remove_folder(&self.files.assets_for(deck_id))?;
+        }
+        if !self.sources_existed {
+            remove_folder(&self.files.sources())?;
+        }
+        if !self.assets_existed {
+            remove_folder(&self.files.assets())?;
+        }
+        Ok(())
+    }
+}
+
+fn remove_folder(folder: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(folder) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => {
+            Err(error).with_context(|| format!("cannot remove {}", folder.display()))
+        }
+        _ => Ok(()),
     }
 }
 

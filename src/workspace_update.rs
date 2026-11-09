@@ -567,6 +567,7 @@ fn stage_member(
     }
     validate_staged_identity(deck, &staged_deck, &added_tokens)?;
     validate_staged_topics(deck, &staged_deck, &initialized.stamp.minted_topics)?;
+    validate_proposal_sources(staging, &staged_deck)?;
 
     let retired_ids = retired_card_ids(deck, &identity.retired_tokens);
     let staged_augment = WorkspaceFiles::new(staging).augment_for(deck_id(&staged_deck));
@@ -804,6 +805,18 @@ fn validate_proposal_metadata(current: &Deck, candidate: &Deck) -> Result<()> {
             "{} changed `cite:` instead of preserving the deck's citation roots",
             candidate.path.display()
         );
+    }
+    Ok(())
+}
+
+fn validate_proposal_sources(staging: &Path, staged: &Deck) -> Result<()> {
+    if let Some(sources) = crate::sources::load_verified(staging, deck_id(staged))? {
+        sources.validate_bindings(staged).with_context(|| {
+            format!(
+                "{} retires a topic its sources are bound to",
+                staged.path.display()
+            )
+        })?;
     }
     Ok(())
 }
@@ -1135,6 +1148,13 @@ fn preflight_apply(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Re
             bail!(
                 "{} changed after the proposal was staged",
                 current_sources.display()
+            );
+        }
+        let staged_sources = sources_manifest(&WorkspaceFiles::new(staging), &update.deck_id);
+        if digest_optional(&staged_sources)? != update.sources_baseline {
+            bail!(
+                "staged sources manifest {} was modified after review",
+                staged_sources.display()
             );
         }
     }
@@ -1753,6 +1773,85 @@ mod tests {
         .unwrap();
         let staged = Deck::load(report.staging.join("decks/facts.md")).unwrap();
         assert_eq!(vec!["topic-livetopic".to_string()], topic_ids(&staged));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_update_proposal_keeps_the_members_sources_manifest_byte_for_byte() {
+        let _lock = exec_lock();
+        let gone = "# Gone\n<!-- id: topic-gonetopic -->\n## Obsolete\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-obsolete -->\n";
+        let kept = format!("# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}");
+        let (_dir, workspace, source, deck) =
+            workspace_with("Old answer\n", &format!("{kept}{gone}"));
+        crate::sources::commands::add(
+            crate::sources::commands::AddRequest {
+                deck: &deck,
+                files: vec![source.join("code.rs")],
+                root: Some(("src".to_string(), source.clone())),
+                key: None,
+                topics: vec!["topic-livetopic".to_string(), "topic-gonetopic".to_string()],
+            },
+            &crate::config::ExamConfig::default(),
+        )
+        .unwrap();
+        let manifest_of = |root: &Path| {
+            WorkspaceFiles::new(root)
+                .sources_for("deck-deck1")
+                .join(crate::sources::MANIFEST)
+        };
+        let live = fs::read(manifest_of(&workspace)).unwrap();
+
+        let command = fake_reply(&workspace, &proposal(&source, &format!("{kept}{gone}")));
+        let staged = stage(
+            &workspace,
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap();
+        assert!(staged.failed.is_empty(), "stage: {:?}", staged.failed);
+        assert_eq!(
+            live,
+            fs::read(manifest_of(&staged.staging)).unwrap(),
+            "stage: the proposal's sources manifest"
+        );
+        let mut tampered = live.clone();
+        tampered.extend_from_slice(b"# edited\n");
+        fs::write(manifest_of(&staged.staging), &tampered).unwrap();
+        let message = format!(
+            "{:#}",
+            apply(&workspace).expect_err("tamper: apply refuses")
+        );
+        assert!(
+            message.contains("modified after review"),
+            "tamper: a staged sources manifest edited after review is refused: {message}"
+        );
+        fs::write(manifest_of(&staged.staging), &live).unwrap();
+        apply(&workspace).unwrap();
+        assert_eq!(
+            live,
+            fs::read(manifest_of(&workspace)).unwrap(),
+            "apply: the live sources manifest"
+        );
+
+        let command = fake_reply(&workspace, &proposal(&source, &kept));
+        let message = format!(
+            "{:#}",
+            stage(
+                &workspace,
+                &GenerateDeckConfig::default(),
+                &ask_config(&command),
+            )
+            .expect_err("retire: a proposal retiring a bound topic is refused")
+        );
+        assert!(
+            message.contains("topic-gonetopic") && message.contains("retires a topic"),
+            "retire: the refusal names the bound topic: {message}"
+        );
+        assert_eq!(
+            live,
+            fs::read(manifest_of(&workspace)).unwrap(),
+            "retire: the live sources manifest"
+        );
     }
 
     #[cfg(unix)]

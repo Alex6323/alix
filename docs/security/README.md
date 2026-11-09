@@ -170,6 +170,11 @@ already in place. `list` compares each live file without following a
 symbolic link at the file or out of its root, reporting it as `linked`. A file added as a source
 is read through its canonical path, which must lie inside the chosen saved
 root, so a symbolic link inside a root cannot freeze a file outside it.
+Generation freezes the files the model names through the same add step
+(`add_generated`): each path is joined to the folder the model read and must
+resolve inside the deck's `cite:` root, so a model reply cannot copy a file
+from outside that root into `sources/`; any refusal removes the freshly
+placed deck and the folders it created (`src/library.rs`, `src/explore.rs`).
 `alix doctor` reports every verified-load refusal as an error and is
 otherwise read-only on sources. `alix doctor --repair-sources` refreezes a
 changed live file through the same open, validation and commit, only from a

@@ -210,6 +210,7 @@ fn build_workspace(
         source,
         &args.common.links,
         Some(&filled),
+        &config.exam,
     )?;
     let frozen = alix::explore::freeze_workspace(&staging)?;
     if !frozen.failed.is_empty() {
@@ -247,6 +248,15 @@ fn build_workspace(
             );
         }
         eprintln!("re-run with --force to overwrite, or move them in by hand.");
+    }
+    if materialized.sources > 0 {
+        println!(
+            "{DIM}Froze {} source file(s) for the exam.{RESET}",
+            materialized.sources
+        );
+    }
+    for line in &materialized.over_limit {
+        eprintln!("warning: {line}");
     }
     if frozen.files > 0 {
         println!(
@@ -325,7 +335,8 @@ fn generate_single_deck(
 
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
-    let mut text = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;
+    let reply = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;
+    let mut text = reply.text.clone();
     if !args.common.links.is_empty() {
         text = alix::deck::with_added_links(&text, &args.common.links)?;
     }
@@ -369,9 +380,42 @@ fn generate_single_deck(
     }
 
     let (dir, target) = destination.expect("resolved above unless --print returned early");
+    let sourced = match &root {
+        Some(root) if alix::workspace::root_for_member_dir(&dir).is_some() => {
+            Some(generate::generated_sources(&source, root, &reply, &text)?)
+        }
+        Some(_) => {
+            eprintln!(
+                "note: {} is not in a workspace, so the files it was generated from were not \
+                 frozen as its sources and it has no exam",
+                target.display()
+            );
+            None
+        }
+        None => None,
+    };
+    let exam = config
+        .exam
+        .clone()
+        .for_workspace(&alix::workspace::content_root(&target));
     if target.exists() {
         let mut store = store_for(std::slice::from_ref(&target))?;
-        let report = library::replace_deck(&dir, &name, &text, &mut store)?;
+        let report = match sourced {
+            Some((deck, root)) => {
+                let (report, added) = library::replace_sourced_deck(
+                    &dir,
+                    &name,
+                    &deck.text,
+                    &deck.topic_sources,
+                    root,
+                    &exam,
+                    &mut store,
+                )?;
+                warn_sources(&added);
+                report
+            }
+            None => library::replace_deck(&dir, &name, &text, &mut store)?,
+        };
         if Path::new(&source).exists() {
             alix::source::stamp_citations(&target)?;
         }
@@ -384,7 +428,21 @@ fn generate_single_deck(
         );
         return Ok(());
     }
-    let placed = library::place_deck(&dir, &name, &text)?;
+    let placed = match sourced {
+        Some((deck, root)) => {
+            let (placed, added) = library::place_sourced_deck(
+                &dir,
+                &name,
+                &deck.text,
+                &deck.topic_sources,
+                root,
+                &exam,
+            )?;
+            warn_sources(&added);
+            placed
+        }
+        None => library::place_deck(&dir, &name, &text)?,
+    };
     match placed.parse_error {
         None => {
             if Path::new(&source).exists() {
@@ -421,6 +479,16 @@ fn facts_root(deck_path: &Path, source: &str) -> Result<alix::cite::GeneratedRoo
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
+
+fn warn_sources(added: &alix::sources::commands::AddReport) {
+    println!(
+        "{DIM}Froze {} source file(s) for the exam.{RESET}",
+        added.added.len()
+    );
+    for line in &added.over_limit {
+        eprintln!("warning: {line}");
+    }
+}
 
 /// max_cards is a soft ceiling: an overshoot is kept and reported, never cut.
 fn warn_over_max(cards: usize, max_cards: usize) {

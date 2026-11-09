@@ -55,6 +55,7 @@ fn deck_from(source_text: &str) -> String {
         &spec,
     )
     .expect("the generator returned no deck")
+    .text
 }
 
 const VOCABULARY: &str = "\
@@ -132,7 +133,8 @@ fn an_explicit_style_still_overrules_the_rule() {
         &AskConfig::default(),
         &spec,
     )
-    .expect("the generator returned no deck");
+    .expect("the generator returned no deck")
+    .text;
 
     let cards = alix::parser::parse_str("generated.md", &deck).expect("the generated deck parses");
     assert!(

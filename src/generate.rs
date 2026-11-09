@@ -1,6 +1,11 @@
-use std::{borrow::Cow, path::PathBuf, sync::mpsc::Receiver};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+    sync::mpsc::Receiver,
+};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 
 use crate::{
     ask,
@@ -9,11 +14,14 @@ use crate::{
     cite::GeneratedRoot,
     config::{AskConfig, GenerateCardStyle, GenerateDeckConfig},
     deck::is_url,
+    library::TopicSources,
     parser,
     source::resolve_source,
 };
 
 pub const DEFAULT_GOAL: &str = "understand the whole source";
+pub const RANGED_FILE_LINES: usize = 400;
+pub(crate) const SOURCES_MARKER: &str = "=== sources ===";
 const CARD_SHAPE_FILE: &str = include_str!("../docs/include/card-shapes.md");
 
 // The file opens with a human-facing preamble that must reach neither the
@@ -325,13 +333,19 @@ lines.
 Output ONLY the improved deck — no commentary, no markdown code fences.
 ";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeckReply {
+    pub text: String,
+    pub sources: Option<String>,
+}
+
 pub fn generate_deck(
     source: &str,
     root: Option<&GeneratedRoot>,
     cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
     spec: &GenerationSpec,
-) -> Result<String> {
+) -> Result<DeckReply> {
     let url = is_url(source);
     let root = match (url, root) {
         (true, _) => None,
@@ -345,14 +359,195 @@ pub fn generate_deck(
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let prompt = build_prompt(source, root, cfg, spec);
+    let lists_sources = root.is_some() && !Path::new(source).is_file();
+    let mut prompt = build_prompt(source, root, cfg, spec);
+    if lists_sources {
+        prompt.push_str(&sources_instruction());
+    }
     let raw = ask::run(&run_config(cfg, ask_cfg, url, cwd), &prompt, &[])?;
-    let deck = clean_output(&raw);
+    let (deck_part, sources) = if lists_sources {
+        split_sources(&raw)
+    } else {
+        (raw.as_str(), None)
+    };
+    let deck = clean_output(deck_part);
     if deck.trim().is_empty() {
         bail!("the model returned no deck content");
     }
     validate_card_style(&deck, spec)?;
-    Ok(deck)
+    Ok(DeckReply {
+        text: deck,
+        sources: sources.map(str::to_string),
+    })
+}
+
+fn sources_instruction() -> String {
+    format!(
+        "\n\nTOPICS AND SOURCES:\n\
+         - Group the cards under `# ` topic headings at column 0, one per subject area; \
+         every card sits under a topic, and no two topics share a heading.\n\
+         - After the last card, write a line `{SOURCES_MARKER}` and then a JSON array \
+         naming, for every topic, the files its cards draw on: \
+         `[{{\"topic\": \"<the heading exactly as written, without the # >\", \"sources\": \
+         [{{\"path\": \"<file relative to the source root>\", \"lines\": \"<ranges>\"}}]}}]`.\n\
+         - For a file longer than {RANGED_FILE_LINES} lines, give `lines`: the line ranges \
+         the topic's cards rest on, ascending and non-overlapping, e.g. `12-40,88,90-120`. \
+         For a shorter file, omit `lines`; the whole file is bound.\n\
+         - Name only files you read, never a directory; the learner is examined on them."
+    )
+}
+
+pub(crate) fn split_sources(raw: &str) -> (&str, Option<&str>) {
+    let mut offset = 0;
+    let mut found = None;
+    for line in raw.split_inclusive('\n') {
+        if line.trim() == SOURCES_MARKER {
+            found = Some((offset, offset + line.len()));
+        }
+        offset += line.len();
+    }
+    match found {
+        Some((start, end)) => (&raw[..start], Some(&raw[end..])),
+        None => (raw, None),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct ReturnedTopic {
+    topic: String,
+    sources: Vec<ReturnedSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct ReturnedSource {
+    path: String,
+    lines: Option<String>,
+}
+
+impl ReturnedSource {
+    fn resolve(self, root: &Path) -> (PathBuf, Option<String>) {
+        let lines = self.lines.filter(|lines| !lines.trim().is_empty());
+        (root.join(self.path), lines)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedDeck {
+    pub text: String,
+    pub topic_sources: TopicSources,
+}
+
+fn strip_json_fence(text: &str) -> &str {
+    let trimmed = text.trim();
+    let Some(rest) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    let body = rest.split_once('\n').map_or("", |(_, body)| body);
+    body.trim_end().strip_suffix("```").unwrap_or(body).trim()
+}
+
+pub(crate) fn parse_source_list(json: &str, root: &Path) -> Result<Vec<(PathBuf, Option<String>)>> {
+    let returned: Vec<ReturnedSource> = serde_json::from_str(strip_json_fence(json))
+        .context("the model's list of sources is not the JSON array it was asked for")?;
+    Ok(returned
+        .into_iter()
+        .map(|source| source.resolve(root))
+        .collect())
+}
+
+/// `root` is the folder the model read, which its paths are relative to.
+pub fn parse_generated(text: &str, sources: &str, root: &Path) -> Result<GeneratedDeck> {
+    let returned: Vec<ReturnedTopic> = serde_json::from_str(strip_json_fence(sources))
+        .context("the model's list of sources is not the JSON array it was asked for")?;
+    let parsed = parser::parse("generated.md", text).map_err(|error| {
+        anyhow::anyhow!(
+            "the generated deck does not parse ({error}), so its sources cannot be bound"
+        )
+    })?;
+    let mut topic_sources: TopicSources = Vec::with_capacity(returned.len());
+    for topic in returned {
+        let heading = topic.topic.trim().trim_start_matches('#').trim();
+        let matching: Vec<usize> = parsed
+            .topics
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| candidate.heading.as_deref() == Some(heading))
+            .map(|(index, _)| index)
+            .collect();
+        let index = match matching.as_slice() {
+            [index] => *index,
+            [] => {
+                bail!("the model bound sources to topic `{heading}`, which the deck does not have")
+            }
+            _ => bail!("the deck has more than one topic headed `{heading}`"),
+        };
+        let files = topic
+            .sources
+            .into_iter()
+            .map(|source| source.resolve(root))
+            .collect();
+        topic_sources.push((index, files));
+    }
+    Ok(GeneratedDeck {
+        text: text.to_string(),
+        topic_sources,
+    })
+}
+
+/// The topic sources of a local generation and the root (key and folder) its
+/// files are frozen under.
+pub fn generated_sources(
+    source: &str,
+    root: &GeneratedRoot,
+    reply: &DeckReply,
+    text: &str,
+) -> Result<(GeneratedDeck, (String, PathBuf))> {
+    let input = Path::new(source);
+    let (input_dir, deck) = if input.is_file() {
+        (
+            input.parent().unwrap_or(input),
+            GeneratedDeck::whole_file(text, input)?,
+        )
+    } else {
+        let Some(sources) = &reply.sources else {
+            bail!("the model returned no `{SOURCES_MARKER}` list of the files it drew on");
+        };
+        (input, parse_generated(text, sources, input)?)
+    };
+    let depth = root.path_prefix.matches('/').count();
+    let Some(folder) = input_dir.ancestors().nth(depth) else {
+        bail!(
+            "`{}` lies above its `{}` root",
+            input_dir.display(),
+            root.key
+        );
+    };
+    Ok((deck, (root.key.clone(), folder.to_path_buf())))
+}
+
+impl GeneratedDeck {
+    pub fn whole_file(text: &str, file: &Path) -> Result<Self> {
+        let parsed = parser::parse("generated.md", text).map_err(|error| {
+            anyhow::anyhow!(
+                "the generated deck does not parse ({error}), so its source cannot be bound"
+            )
+        })?;
+        let topic_sources = parsed
+            .topics
+            .iter()
+            .enumerate()
+            .filter(|(index, topic)| {
+                topic.heading.is_some()
+                    || parsed.cards.iter().any(|card| card.topic == *index)
+                    || parsed.topics.len() == 1
+            })
+            .map(|(index, _)| (index, vec![(file.to_path_buf(), None)]))
+            .collect();
+        Ok(Self {
+            text: text.to_string(),
+            topic_sources,
+        })
+    }
 }
 
 pub fn spawn(
@@ -363,8 +558,11 @@ pub fn spawn(
     let spec = GenerationSpec::from_config(DEFAULT_GOAL, &cfg);
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ =
-            tx.send(generate_deck(&source, None, &cfg, &ask, &spec).map_err(|e| format!("{e:#}")));
+        let _ = tx.send(
+            generate_deck(&source, None, &cfg, &ask, &spec)
+                .map(|reply| reply.text)
+                .map_err(|e| format!("{e:#}")),
+        );
     });
     rx
 }
@@ -1710,6 +1908,168 @@ mod tests {
         );
         assert_eq!("example-org", slug_from_url("https://example.org"));
         assert_eq!("page", slug_from_url("https://example.org/page?x=1#frag"));
+    }
+
+    fn generation_workspace() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().canonicalize().unwrap();
+        let decks = base.join("ws").join(crate::workspace::DECKS);
+        std::fs::create_dir_all(&decks).unwrap();
+        std::fs::write(base.join("ws").join(crate::workspace::MANIFEST), "").unwrap();
+        let source = base.join("project");
+        std::fs::create_dir_all(&source).unwrap();
+        (temp, decks, source)
+    }
+
+    fn generate_into(
+        decks: &Path,
+        source: &Path,
+        reply: &str,
+    ) -> (
+        Result<(crate::library::Placed, crate::sources::commands::AddReport)>,
+        String,
+    ) {
+        use crate::testutil::{ask_config, fake_replies};
+
+        let calls = tempfile::tempdir().unwrap();
+        let cli = fake_replies(calls.path(), &[reply]);
+        let source = source.display().to_string();
+        let root = GeneratedRoot {
+            key: "src".into(),
+            path_prefix: String::new(),
+            declare: Some(source.clone()),
+        };
+        let placed = generate_deck(&source, Some(&root), &cfg(10), &ask_config(&cli), &spec())
+            .and_then(|reply| {
+                let text = declare_root(&reply.text, &root)?;
+                let (deck, root) = generated_sources(&source, &root, &reply, &text)?;
+                crate::library::place_sourced_deck(
+                    decks,
+                    "gen.md",
+                    &deck.text,
+                    &deck.topic_sources,
+                    root,
+                    &crate::config::ExamConfig::default(),
+                )
+            });
+        let prompt = std::fs::read_to_string(calls.path().join("prompt-1")).unwrap();
+        (placed, prompt)
+    }
+
+    type Rows = Vec<(String, Vec<String>)>;
+
+    fn bound(decks: &Path, placed: &Path) -> (Vec<Option<String>>, Rows) {
+        let deck = crate::deck::Deck::load(placed).unwrap();
+        let workspace = decks.parent().unwrap();
+        let sources = crate::sources::load_verified(workspace, deck.deck_token.as_deref().unwrap())
+            .unwrap()
+            .expect("a sources manifest");
+        let rows = sources
+            .manifest
+            .sources
+            .values()
+            .map(|row| (row.path.clone(), row.bound_to.clone()))
+            .collect();
+        (deck.topic_ids(), rows)
+    }
+
+    #[test]
+    fn a_generated_deck_binds_each_topics_returned_files_and_a_refused_file_writes_nothing() {
+        let _guard = crate::testutil::exec_lock();
+        let deck = "---\nchoices: single\n---\n# Alpha\n\n## What is a?\nThe first letter\n<!-- at: src:a.md:1 -->\n\n# Beta\n\n## What is b?\nThe second letter\n";
+        let reply = |beta: &str| {
+            format!(
+                "{deck}{SOURCES_MARKER}\n[{{\"topic\": \"Alpha\", \"sources\": [{{\"path\": \"a.md\", \"lines\": \"1-2\"}}]}}, {{\"topic\": \"Beta\", \"sources\": [{{\"path\": \"{beta}\"}}]}}]\n"
+            )
+        };
+
+        let (_temp, decks, source) = generation_workspace();
+        std::fs::write(source.join("a.md"), "one\ntwo\nthree\n").unwrap();
+        std::fs::write(source.join("b.md"), "bee\n").unwrap();
+        let (placed, prompt) = generate_into(&decks, &source, &reply("b.md"));
+        assert!(
+            prompt.contains(SOURCES_MARKER)
+                && prompt.contains(&format!("longer than {RANGED_FILE_LINES} lines")),
+            "prompt: a folder generation asks for the sources list and its ranges rule"
+        );
+        let (placed, report) = placed.expect("binding: the returned files bind");
+        assert_eq!(2, report.added.len(), "binding: {:?}", report.added);
+        let (ids, rows) = bound(&decks, &placed.path);
+        let (alpha, beta) = (ids[1].clone().unwrap(), ids[2].clone().unwrap());
+        assert_eq!(
+            vec![
+                ("src:a.md".to_string(), vec![format!("1-2|{alpha}")]),
+                ("src:b.md".to_string(), vec![beta]),
+            ],
+            {
+                let mut rows = rows;
+                rows.sort();
+                rows
+            },
+            "binding: each topic binds the files the model returned for it"
+        );
+        let deck_id = ids[0].clone().unwrap();
+        let roots = crate::sources::Roots::load(
+            &crate::workspace::WorkspaceFiles::new(decks.parent().unwrap()).sources_for(&deck_id),
+        )
+        .unwrap()
+        .expect("binding: a roots file");
+        assert_eq!(
+            Some(&source),
+            roots.roots.get("src"),
+            "binding: the root is saved under the `cite:` key"
+        );
+
+        let (_temp, decks, source) = generation_workspace();
+        std::fs::write(source.join("a.md"), "one\ntwo\nthree\n").unwrap();
+        std::fs::write(source.join("bad.bin"), [0xff, 0xfe, 0x00]).unwrap();
+        let (placed, _) = generate_into(&decks, &source, &reply("bad.bin"));
+        let message = format!(
+            "{:#}",
+            placed.expect_err("refusal: a non-UTF-8 file refuses")
+        );
+        assert!(
+            message.contains("bad.bin") && message.contains("Beta"),
+            "refusal: the error names the file and the topic heading: {message}"
+        );
+        assert_eq!(
+            0,
+            std::fs::read_dir(&decks).unwrap().count(),
+            "refusal: no deck file is left"
+        );
+        let workspace = decks.parent().unwrap();
+        for folder in ["sources", "assets"] {
+            assert!(
+                !workspace.join(folder).exists(),
+                "refusal: no `{folder}/` folder is left"
+            );
+        }
+    }
+
+    #[test]
+    fn single_file_generation_binds_the_file_to_every_topic() {
+        let _guard = crate::testutil::exec_lock();
+        let (_temp, decks, folder) = generation_workspace();
+        let file = folder.join("notes.md");
+        std::fs::write(&file, "line one\nline two\n").unwrap();
+        let reply = "---\nchoices: single\n---\n# One\n\n## Q1\nA1\n\n# Two\n\n## Q2\nA2\n";
+
+        let (placed, prompt) = generate_into(&decks, &file, reply);
+
+        assert!(
+            !prompt.contains(SOURCES_MARKER),
+            "prompt: a single file asks for no sources list"
+        );
+        let (placed, _) = placed.expect("the file binds");
+        let (ids, rows) = bound(&decks, &placed.path);
+        assert_eq!(
+            vec![(
+                "src:notes.md".to_string(),
+                vec![ids[1].clone().unwrap(), ids[2].clone().unwrap()]
+            )],
+            rows,
+            "the one file binds whole to every topic"
+        );
     }
 
     #[test]

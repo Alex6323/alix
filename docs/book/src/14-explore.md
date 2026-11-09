@@ -46,8 +46,13 @@ items **coherent** (each builds on its prerequisites instead of repeating them).
 Before the hidden staging workspace becomes visible, Alix initializes every
 complete member and [freezes its evidence](13-trace-decks.md). Cited excerpts
 (from files and directories alike) and local card images land below each
-member's `assets/deck-<token>/` directory. A missing or changed required source
-aborts publication instead of leaving a live or partially frozen workspace.
+member's `assets/deck-<token>/` directory. The fill also lists, per facts
+deck, the files its cards draw on (with line ranges for a file longer than 400
+lines); alix freezes them as that deck's [sources](12-the-ai-exam.md#sources),
+bound to its topic, and saves the source folder as its `src` root on this
+machine only. Trace decks get no sources. A missing or changed required source,
+or a listed file that cannot be frozen, aborts publication instead of leaving a
+live or partially frozen workspace.
 `--link <URL>` (repeatable) records each URL in the workspace `alix.toml`
 as its `link` key, a tutor reference every member reads after its own
 `link:` entries; the exam never reads it. Review continues to use the frozen
