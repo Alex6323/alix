@@ -64,9 +64,9 @@ practice, before drilling too:
   while no desktop is reachable.
 
 **Generate exam** offers **only what needs work**, on by default: the exam
-then asks only about the sections that have not passed (those that need
+then asks only about the topics that have not passed (those that need
 work, have new cards, or were never examined). The control is always shown
-and disabled when every section has passed, since the exam then covers the
+and disabled when every topic has passed, since the exam then covers the
 whole deck either way.
 
 A prepared exam is kept until it is graded. In the browser it lives in the
@@ -77,7 +77,7 @@ phone saves each answer as you move on from it; a restarted desktop loses
 the phone's prepared exam, and **End exam** discards it. Either way, an
 answer locks once you move on from it, and leaving returns you to the first
 unanswered question next time. Grading uses the exam up. In the browser,
-editing cards or section prose leaves a prepared exam valid, a section whose
+editing cards or topic prose leaves a prepared exam valid, a topic whose
 heading was renamed or removed since is dropped from it, and changing the
 exam material discards it, so the next Generate exam writes a new one.
 
@@ -86,25 +86,25 @@ the way opening a review does, so their results can be recorded.
 
 `alix` asks the model to read the source (URLs via `WebFetch`, local files
 embedded) and write **fresh understanding questions** for each of the deck's
-`#` sections (cards before the first heading form one section, named after
-the deck). Each section keeps a list of its **ideas**, the distinct mental
+`#` topics (cards before the first heading form one topic, named after
+the deck). Each topic keeps a list of its **ideas**, the distinct mental
 models its topic holds in the source, whether or not a card states them. A
-first call writes that list for every section that has none yet, or for all
+first call writes that list for every topic that has none yet, or for all
 of them when the exam material changed. Each exam then picks **three ideas
-per section**: ideas never asked first, then ideas last failed, then ideas
+per topic**: ideas never asked first, then ideas last failed, then ideas
 asked longest ago, so repeated exams work through the whole list. A second
 call writes exactly one question per picked idea and asks the student to
 apply an idea a card states rather than recite the card. A reply that skips
-a picked idea, asks one twice, or names an idea or section that was not
+a picked idea, asks one twice, or names an idea or topic that was not
 listed is rejected and generated once more. Grading records each asked idea
 as passed or failed, which steers the next pick. The browser keeps the idea
 lists in `.alix/exam/<deck-id>.json`; the phone keeps its own and sends them
 with each exam.
 
-Within a section the questions cycle through three shapes: a concrete
+Within a topic the questions cycle through three shapes: a concrete
 **instance** no card shows, a **boundary** (when does the idea stop
 holding), and a **fix** (a statement with one seeded mistake to find and
-correct). The section's heading, prose and cards go into the prompt only as
+correct). The topic's heading, prose and cards go into the prompt only as
 scope, so the model knows what the deck already asks and avoids it. A
 question stands alone: it shows any program or claim it asks about instead
 of pointing at the source, and a program comes as a code block with
@@ -116,26 +116,26 @@ against the source's rubric, never against your cards** (grading the cards
 would be circular). The model calls run on a background thread, so the UI
 stays responsive while it thinks.
 
-## Results: a count, per section
+## Results: a count, per topic
 
 A sitting reports points, not a verdict: each Pass is worth 1, each Partial
 0.5, each Fail 0, shown as `17 / 18` or `17.5 / 18`, with the same count for
-each examined section and the shape of each question. Every examined card
-records its section's latest result:
+each examined topic and the shape of each question. Every examined card
+records its topic's latest result:
 
-- A **section passes** when its share of Pass answers reaches `pass_threshold`
+- A **topic passes** when its share of Pass answers reaches `pass_threshold`
   (a fraction; 1.0, every answer, by default; a Partial counts as no Pass
-  here). Each examined card then stores its section's verdict, so a section
+  here). Each examined card then stores its topic's verdict, so a topic
   reads as *needs work* when any of its cards carries a failed verdict, *has
   new cards* when some cards were added since its last sitting, *passed* when
   every card carries a passing one, and *never examined* when none carries
   one.
-- The deck is **passed** the first time every section has passed, whether in
+- The deck is **passed** the first time every topic has passed, whether in
   one sitting or across several filtered ones. Passing, not mere drilling, is
   what unlocks decks that `requires:` this one, and a deck that has sat its
   exam once is never locked again by its own prerequisites. Source-less decks
   are unaffected: finishing them just means drilled (`done ✓`).
-- The deck is **mastered** the first time a full sitting (every section)
+- The deck is **mastered** the first time a full sitting (every topic)
   scores every answer Pass; a filtered sitting never sets it.
 
 Neither passed nor mastered is taken back by a later, weaker sitting. The
@@ -182,7 +182,7 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
   gaps.
 
 This dial (how hard each answer is judged) is independent of `pass_threshold` (the
-share of a section's answers that must pass). Both, plus `model`, `effort`,
+share of a topic's answers that must pass). Both, plus `model`, `effort`,
 `timeout_secs` (default 3600) and an `extra` guidance field, live in the
 `[exam]` config section. `effort` sets how hard the backend thinks while
 writing and grading the exam, over `[ask] effort`; a workspace may set its

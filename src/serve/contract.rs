@@ -41,7 +41,7 @@ fn statedto_select_phase_wire_shape() {
         keypoints: None,
         keypoint_runs: None,
         introducing: false,
-        section_first: false,
+        topic_first: false,
         mode: "flip",
         depth: "recall",
         input: "type",
@@ -77,7 +77,7 @@ fn statedto_select_phase_wire_shape() {
             "keypoints": null,
             "keypoint_runs": null,
             "introducing": false,
-            "section_first": false,
+            "topic_first": false,
             "mode": "flip",
             "depth": "recall",
             "input": "type",
@@ -114,9 +114,9 @@ fn statedto_review_phase_wire_shape() {
             front_units: None,
             front_steps: Vec::new(),
             hole_steps: Vec::new(),
-            section_context: Vec::new(),
-            section_context_runs: Vec::new(),
-            section_context_units: Vec::new(),
+            topic_context: Vec::new(),
+            topic_context_runs: Vec::new(),
+            topic_context_units: Vec::new(),
             back: vec!["every value has one owner".to_string()],
             back_runs: vec![crate::inline::parse_inline("every value has one owner")],
             back_units: vec![ContentUnit::Sentence {
@@ -238,7 +238,7 @@ fn statedto_review_phase_wire_shape() {
         keypoints: Some(vec!["one owner per value".to_string()]),
         keypoint_runs: Some(vec![crate::inline::parse_inline("one owner per value")]),
         introducing: false,
-        section_first: false,
+        topic_first: false,
         mode: "flip",
         depth: "recall",
         input: "type",
@@ -353,7 +353,7 @@ fn statedto_review_phase_wire_shape() {
             "keypoints": ["one owner per value"],
             "keypoint_runs": [[{"text": "one owner per value"}]],
             "introducing": false,
-            "section_first": false,
+            "topic_first": false,
             "mode": "flip",
             "depth": "recall",
             "input": "type",
@@ -395,7 +395,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
         keypoints: None,
         keypoint_runs: None,
         introducing: false,
-        section_first: false,
+        topic_first: false,
         mode: "flip",
         depth: "recall",
         input: "type",
@@ -431,7 +431,7 @@ fn statedto_done_phase_carries_the_next_due_instant() {
             "keypoints": null,
             "keypoint_runs": null,
             "introducing": false,
-            "section_first": false,
+            "topic_first": false,
             "mode": "flip",
             "depth": "recall",
             "input": "type",
@@ -471,7 +471,7 @@ fn statedto_done_phase_carries_the_recognize_gap() {
         keypoints: None,
         keypoint_runs: None,
         introducing: false,
-        section_first: false,
+        topic_first: false,
         mode: "flip",
         depth: "recognize",
         input: "type",
@@ -510,7 +510,7 @@ fn statedto_done_phase_carries_the_recognize_gap() {
             "keypoints": null,
             "keypoint_runs": null,
             "introducing": false,
-            "section_first": false,
+            "topic_first": false,
             "mode": "flip",
             "depth": "recognize",
             "input": "type",
@@ -695,7 +695,7 @@ fn walkdto_front_phase_wire_shape() {
             crate::inline::parse_inline("Rome"),
             crate::inline::parse_inline("Paris"),
         ]),
-        section_first: true,
+        topic_first: true,
         mode: "choice",
         input: "type",
         position: 0,
@@ -732,7 +732,7 @@ fn walkdto_front_phase_wire_shape() {
             "choices": ["Rome", "Paris"],
             "choices_multiple": null,
             "choice_runs": [[{"text": "Rome"}], [{"text": "Paris"}]],
-            "section_first": true,
+            "topic_first": true,
             "mode": "choice",
             "input": "type",
             "position": 0,
@@ -753,7 +753,7 @@ fn walkdto_answer_after_pick_wire_shape() {
         choices: Some(vec!["Rome".to_string(), "Paris".to_string()]),
         choices_multiple: None,
         choice_runs: None,
-        section_first: false,
+        topic_first: false,
         mode: "choice",
         input: "type",
         position: 1,
@@ -774,7 +774,7 @@ fn walkdto_answer_after_pick_wire_shape() {
             "choices": ["Rome", "Paris"],
             "choices_multiple": null,
             "choice_runs": null,
-            "section_first": false,
+            "topic_first": false,
             "mode": "choice",
             "input": "type",
             "position": 1,
@@ -795,7 +795,7 @@ fn walkdto_done_phase_wire_shape() {
         choices: None,
         choices_multiple: None,
         choice_runs: None,
-        section_first: false,
+        topic_first: false,
         mode: "flip",
         input: "type",
         position: 3,
@@ -816,7 +816,7 @@ fn walkdto_done_phase_wire_shape() {
             "choices": null,
             "choices_multiple": null,
             "choice_runs": null,
-            "section_first": false,
+            "topic_first": false,
             "mode": "flip",
             "input": "type",
             "position": 3,
@@ -846,7 +846,7 @@ fn examdto_results_phase_wire_shape() {
                 prompt: "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```"
                     .to_string(),
                 points: vec!["memory safety without a GC".to_string()],
-                section: 0,
+                topic: 0,
                 shape: exam::Shape::Instance,
                 mental_model: "scope ends drop values".to_string(),
                 idea: 0,
@@ -858,7 +858,7 @@ fn examdto_results_phase_wire_shape() {
                 missed: Vec::new(),
             },
         )],
-        sections: vec![ExamSectionDto {
+        topics: vec![ExamTopicDto {
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
             pass: true,
@@ -899,7 +899,7 @@ fn examdto_results_phase_wire_shape() {
             "answer_locked": false,
             "on_last": true,
             "grades": [{
-                "section": 0,
+                "topic": 0,
                 "shape": "instance",
                 "mental_model": "scope ends drop values",
                 "question": "Why does `drop` run here?\n\n```rust\nlet s = String::new();\n```",
@@ -920,7 +920,7 @@ fn examdto_results_phase_wire_shape() {
                 "missed": [],
                 "missed_units": []
             }],
-            "sections": [{
+            "topics": [{
                 "label": "Ownership",
                 "cards": ["card-0123456789abcdefghjkmnpqrs"],
                 "pass": true,
@@ -941,17 +941,17 @@ fn examdto_results_phase_wire_shape() {
     );
 }
 
-/// Spec law 14, the wire half: a card under a section carries the
-/// `section_context` triple. The fence collapses into ONE code unit, and the
+/// Spec law 14, the wire half: a card under a topic carries the
+/// `topic_context` triple. The fence collapses into ONE code unit, and the
 /// fence's own lines keep their per-line run projection, so a client skips
 /// them in prose and renders the unit instead. Math
 /// is asserted in the lib's projection law, never pinned here: a rendered SVG
 /// is the renderer's business, not the wire's.
-/// Spec law 7: showing a section costs nothing and asks nobody. It rides the
+/// Spec law 7: showing a topic costs nothing and asks nobody. It rides the
 /// card it belongs to, so no route serves it and no client can be tempted to
 /// fetch it, which is what keeps the `c` press free of a round trip.
 #[test]
-fn no_route_serves_section_context() {
+fn no_route_serves_topic_context() {
     let source = include_str!("mod.rs");
     let routes: Vec<&str> = source
         .match_indices("\"/api/")
@@ -967,16 +967,16 @@ fn no_route_serves_section_context() {
     );
     let offenders: Vec<&&str> = routes
         .iter()
-        .filter(|route| route.contains("context") || route.contains("section"))
+        .filter(|route| route.contains("context") || route.contains("topic"))
         .collect();
     assert!(
         offenders.is_empty(),
-        "a section is delivered on its card, never fetched: {offenders:?}"
+        "a topic is delivered on its card, never fetched: {offenders:?}"
     );
 }
 
 #[test]
-fn carddto_sectioned_wire_shape() {
+fn carddto_with_topic_wire_shape() {
     let text =
         "# *Ownership* rules\n\nBorrowing has rules.\n\n```rust\nlet x = 1;\n```\n\n## q\na\n";
     let cards = crate::parser::parse_str("t", text).expect("the fixture parses");
@@ -985,7 +985,7 @@ fn carddto_sectioned_wire_shape() {
         Some("card-9w2c7xkq4m".to_string()),
     );
     pin(
-        "CardDto.sectioned",
+        "CardDto.with_topic",
         &dto,
         json!({
             "back": [
@@ -1027,7 +1027,7 @@ fn carddto_sectioned_wire_shape() {
                 {"kind": "line", "back_from": 0, "back_to": 1}
             ],
             "reshaped": false,
-            "section_context": [
+            "topic_context": [
                 "*Ownership* rules",
                 "Borrowing has rules.",
                 "",
@@ -1035,7 +1035,7 @@ fn carddto_sectioned_wire_shape() {
                 "let x = 1;",
                 "```"
             ],
-            "section_context_runs": [
+            "topic_context_runs": [
                 [
                     {
                         "italic": true,
@@ -1067,7 +1067,7 @@ fn carddto_sectioned_wire_shape() {
                     }
                 ]
             ],
-            "section_context_units": [
+            "topic_context_units": [
                 {
                     "kind": "code",
                     "lines": [
@@ -1080,17 +1080,16 @@ fn carddto_sectioned_wire_shape() {
 }
 
 #[test]
-fn carddto_section_bare_math_is_one_display_sentence() {
+fn carddto_topic_bare_math_is_one_display_sentence() {
     let text = "# Formula\n\n$$\nx^2 + y^2\n$$\n\n## q\na\n";
     let cards = crate::parser::parse_str("t", text).expect("the fixture parses");
     let dto = card_dto(crate::review::CardView::from(&cards[0]), None);
 
-    let [crate::render::ContentUnit::Sentence { text, runs }] =
-        dto.section_context_units.as_slice()
+    let [crate::render::ContentUnit::Sentence { text, runs }] = dto.topic_context_units.as_slice()
     else {
         panic!(
-            "the closed section block must be one display sentence: {:?}",
-            dto.section_context_units
+            "the closed topic block must be one display sentence: {:?}",
+            dto.topic_context_units
         );
     };
     assert_eq!("x^2 + y^2", text);
@@ -1106,9 +1105,9 @@ fn carddto_wire_shape() {
             front_units: crate::render::front_units("Pick a city:\n- [x] **Paris**\n- [ ] Rome"),
             front_steps: Vec::new(),
             hole_steps: Vec::new(),
-            section_context: Vec::new(),
-            section_context_runs: Vec::new(),
-            section_context_units: Vec::new(),
+            topic_context: Vec::new(),
+            topic_context_runs: Vec::new(),
+            topic_context_units: Vec::new(),
             back: vec!["Use **x**".to_string(), "France".to_string()],
             back_runs: vec![
                 crate::inline::parse_inline("Use `**x**`"),
@@ -1270,9 +1269,9 @@ fn carddto_math_wire_shape() {
         front_units: None,
         front_steps: Vec::new(),
         hole_steps: Vec::new(),
-        section_context: Vec::new(),
-        section_context_runs: Vec::new(),
-        section_context_units: Vec::new(),
+        topic_context: Vec::new(),
+        topic_context_runs: Vec::new(),
+        topic_context_units: Vec::new(),
         back: vec![r"\frac{1".to_string(), "$$y^2$$".to_string()],
         back_runs: vec![vec![error], vec![display]],
         back_units: vec![ContentUnit::Sentence {
@@ -1361,9 +1360,9 @@ fn carddto_quote_wire_shape() {
         front_units: None,
         front_steps: Vec::new(),
         hole_steps: Vec::new(),
-        section_context: Vec::new(),
-        section_context_runs: Vec::new(),
-        section_context_units: Vec::new(),
+        topic_context: Vec::new(),
+        topic_context_runs: Vec::new(),
+        topic_context_units: Vec::new(),
         back: vec![
             "That it shows the presence of bugs.".to_string(),
             "> Program testing can be used to show the presence of bugs,".to_string(),
@@ -1494,9 +1493,9 @@ fn carddto_table_wire_shape() {
         front_units: None,
         front_steps: Vec::new(),
         hole_steps: Vec::new(),
-        section_context: Vec::new(),
-        section_context_runs: Vec::new(),
-        section_context_units: Vec::new(),
+        topic_context: Vec::new(),
+        topic_context_runs: Vec::new(),
+        topic_context_units: Vec::new(),
         back: vec![
             "| a | b | c | d |".to_string(),
             "| --- | :-- | :-: | --: |".to_string(),
@@ -1633,7 +1632,7 @@ fn decklistdto_wire_shape() {
                         partial: 1,
                         total: 6,
                     }),
-                    tally: crate::exam_status::SectionTally {
+                    tally: crate::exam_status::TopicTally {
                         passed: 2,
                         needs_work: 1,
                         new_cards: 0,
@@ -1730,7 +1729,7 @@ fn decklistdto_wire_shape() {
                 "mastered": false,
                 "passed_at_ms": null,
                 "full_exam_result": null,
-                "sections": {"passed": 0, "needs_work": 0, "new_cards": 0, "unexamined": 0},
+                "topics": {"passed": 0, "needs_work": 0, "new_cards": 0, "unexamined": 0},
                 "exam_filter": "none",
                 "is_trace": false,
                 "examable": false,
@@ -1754,7 +1753,7 @@ fn decklistdto_wire_shape() {
                     "mastered": false,
                     "passed_at_ms": 1_700_000_000_000_u64,
                     "full_exam_result": {"pass": 5, "partial": 1, "total": 6},
-                    "sections": {"passed": 2, "needs_work": 1, "new_cards": 0, "unexamined": 0},
+                    "topics": {"passed": 2, "needs_work": 1, "new_cards": 0, "unexamined": 0},
                     "exam_filter": "partial",
                     "is_trace": false,
                     "examable": true,
@@ -1801,7 +1800,7 @@ fn decklistdto_wire_shape() {
                 "mastered": false,
                 "passed_at_ms": null,
                 "full_exam_result": null,
-                "sections": {"passed": 0, "needs_work": 0, "new_cards": 0, "unexamined": 0},
+                "topics": {"passed": 0, "needs_work": 0, "new_cards": 0, "unexamined": 0},
                 "exam_filter": "none",
                 "is_trace": false,
                 "examable": false,
@@ -1925,9 +1924,9 @@ fn browsedto_wire_shape() {
             front_units: None,
             front_steps: Vec::new(),
             hole_steps: Vec::new(),
-            section_context: Vec::new(),
-            section_context_runs: Vec::new(),
-            section_context_units: Vec::new(),
+            topic_context: Vec::new(),
+            topic_context_runs: Vec::new(),
+            topic_context_units: Vec::new(),
             back: vec!["a".to_string()],
             back_runs: vec![crate::inline::parse_inline("a")],
             back_units: vec![ContentUnit::Sentence {
@@ -1981,7 +1980,7 @@ fn browsedto_wire_shape() {
 }
 
 // Delegates to the core `review::choose`/`check_typed` types directly; the
-// anchor names are kept so docs/API.md sections and corpus filenames stay stable.
+// anchor names are kept so docs/API.md anchors and corpus filenames stay stable.
 #[test]
 fn multichoosefeedbackdto_wire_shape() {
     let feedback = crate::review::MultiChoiceFeedback {
@@ -2738,7 +2737,7 @@ fn remoteexamdto_idle_wire_shape() {
         strictness: "balanced",
         questions: Vec::new(),
         questions_units: dto_questions_units(&[]),
-        sections: Vec::new(),
+        topics: Vec::new(),
         verdicts: None,
         full: false,
         mastered: false,
@@ -2762,7 +2761,7 @@ fn remoteexamdto_idle_wire_shape() {
             "strictness": "balanced",
             "questions": [],
             "questions_units": [],
-            "sections": [],
+            "topics": [],
             "verdicts": null,
             "full": false,
             "mastered": false,
@@ -2794,7 +2793,7 @@ fn remoteexamdto_answering_wire_shape() {
             "Why does Rust use ownership?".to_string(),
             "What is borrowing?".to_string(),
         ]),
-        sections: Vec::new(),
+        topics: Vec::new(),
         verdicts: None,
         full: true,
         mastered: false,
@@ -2818,7 +2817,7 @@ fn remoteexamdto_answering_wire_shape() {
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?", "What is borrowing?"],
             "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}], [{"kind": "sentence", "text": "What is borrowing?", "runs": [{"text": "What is borrowing?"}]}]],
-            "sections": [],
+            "topics": [],
             "verdicts": null,
             "full": true,
             "mastered": false,
@@ -2844,7 +2843,7 @@ fn remoteexamdto_results_wire_shape() {
         strictness: "balanced",
         questions: vec!["Why does Rust use ownership?".to_string()],
         questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
-        sections: vec![ExamSectionDto {
+        topics: vec![ExamTopicDto {
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
             pass: false,
@@ -2885,7 +2884,7 @@ fn remoteexamdto_results_wire_shape() {
         ideas: Some(crate::exam_ideas::IdeasDocument {
             version: 1,
             material: "xxh64-00000000000000ab".to_string(),
-            sections: vec![crate::exam_ideas::IdeaSection {
+            topics: vec![crate::exam_ideas::IdeaTopic {
                 heading: "Ownership".to_string(),
                 ideas: vec![crate::exam_ideas::Idea {
                     text: "moves transfer ownership".to_string(),
@@ -2904,7 +2903,7 @@ fn remoteexamdto_results_wire_shape() {
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?"],
             "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
-            "sections": [{
+            "topics": [{
                 "label": "Ownership",
                 "cards": ["card-0123456789abcdefghjkmnpqrs"],
                 "pass": false,
@@ -2915,7 +2914,7 @@ fn remoteexamdto_results_wire_shape() {
             "mastered": false,
             "unknown_cards": [],
             "grades": [{
-                "section": 0,
+                "topic": 0,
                 "shape": "instance",
                 "mental_model": "",
                 "question": "Why does Rust use ownership?",
@@ -2936,7 +2935,7 @@ fn remoteexamdto_results_wire_shape() {
             "elapsed": null,
             "error": null,
             "estimate": null,
-            "ideas": {"version": 1, "material": "xxh64-00000000000000ab", "sections": [{"heading": "Ownership", "ideas": [{"text": "moves transfer ownership", "last_asked_ms": 1_762_300_800_000_u64, "last_passed": false}]}]}
+            "ideas": {"version": 1, "material": "xxh64-00000000000000ab", "topics": [{"heading": "Ownership", "ideas": [{"text": "moves transfer ownership", "last_asked_ms": 1_762_300_800_000_u64, "last_passed": false}]}]}
         }),
     );
 }
@@ -2949,7 +2948,7 @@ fn remoteexamdto_remediated_wire_shape() {
         strictness: "balanced",
         questions: vec!["Why does Rust use ownership?".to_string()],
         questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
-        sections: vec![ExamSectionDto {
+        topics: vec![ExamTopicDto {
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
             pass: false,
@@ -3000,7 +2999,7 @@ fn remoteexamdto_remediated_wire_shape() {
             "strictness": "balanced",
             "questions": ["Why does Rust use ownership?"],
             "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
-            "sections": [{
+            "topics": [{
                 "label": "Ownership",
                 "cards": ["card-0123456789abcdefghjkmnpqrs"],
                 "pass": false,
@@ -3011,7 +3010,7 @@ fn remoteexamdto_remediated_wire_shape() {
             "mastered": false,
             "unknown_cards": [],
             "grades": [{
-                "section": 0,
+                "topic": 0,
                 "shape": "instance",
                 "mental_model": "",
                 "question": "Why does Rust use ownership?",

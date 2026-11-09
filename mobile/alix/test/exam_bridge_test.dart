@@ -22,7 +22,7 @@ void main() {
       isNull,
     );
 
-    const first = '{"version":1,"material":"xxh64-first","sections":[]}';
+    const first = '{"version":1,"material":"xxh64-first","topics":[]}';
     exam_bridge.examIdeasSave(
       deckPath: deck.path,
       rootDir: root.path,
@@ -33,7 +33,7 @@ void main() {
       jsonDecode(first),
     );
 
-    const second = '{"version":1,"material":"xxh64-second","sections":[]}';
+    const second = '{"version":1,"material":"xxh64-second","topics":[]}';
     exam_bridge.examIdeasSave(
       deckPath: deck.path,
       rootDir: root.path,

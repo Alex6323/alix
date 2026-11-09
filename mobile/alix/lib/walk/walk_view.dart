@@ -36,7 +36,7 @@ class WalkView extends StatelessWidget {
     required this.onOpenHint,
     required this.onNextWalk,
     required this.onOpenTutor,
-    required this.onOpenSection,
+    required this.onOpenTopic,
   });
 
   final WalkStateModel state;
@@ -64,7 +64,7 @@ class WalkView extends StatelessWidget {
   final ValueChanged<ReviewCardModel> onOpenHint;
   final VoidCallback onNextWalk;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
-  final ValueChanged<ReviewCardModel> onOpenSection;
+  final ValueChanged<ReviewCardModel> onOpenTopic;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +137,7 @@ class WalkView extends StatelessWidget {
             onIntroduce: () {},
             onGrade: onGrade,
             onOpenTutor: onOpenTutor,
-            onOpenSection: onOpenSection,
+            onOpenTopic: onOpenTopic,
             onOpenHint: onOpenHint,
           );
   }

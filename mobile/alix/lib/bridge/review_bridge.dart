@@ -166,7 +166,7 @@ ReviewStateModel _stateFromBridge(bridge.ReviewState state, String label) {
     depth: _depthFromBridge(state.depth),
     input: reviewInputFromBridge(state.input),
     introducing: state.introducing,
-    sectionFirst: state.sectionFirst,
+    topicFirst: state.topicFirst,
     choices: state.choices,
     choiceRuns: state.choiceRuns == null
         ? null
@@ -250,12 +250,12 @@ ReviewCardModel reviewCardFromBridge(bridge.CardView card) {
           error: citation.error,
         ),
     ],
-    section: card.sectionContext,
-    sectionRuns: [
-      for (final runs in card.sectionContextRuns) inlineRunsFromBridge(runs),
+    topic: card.topicContext,
+    topicRuns: [
+      for (final runs in card.topicContextRuns) inlineRunsFromBridge(runs),
     ],
-    sectionUnits: [
-      for (final unit in card.sectionContextUnits) _noteFromBridge(unit),
+    topicUnits: [
+      for (final unit in card.topicContextUnits) _noteFromBridge(unit),
     ],
   );
 }

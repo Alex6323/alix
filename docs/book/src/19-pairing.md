@@ -110,8 +110,8 @@ Once paired, review gains things it doesn't have offline:
   never come.
 - An **Exam** row on a deck's launch sheet, for a fact deck that declares
   exam material, with an "Only what needs work" switch (on by default,
-  disabled once every section has passed). It opens a full-screen exam: one question at a
-  time, then the points count, each section's count, a Pass/Partial/Fail
+  disabled once every topic has passed). It opens a full-screen exam: one question at a
+  time, then the points count, each topic's count, a Pass/Partial/Fail
   breakdown per question and, when an answer missed key points, a **Turn the
   gaps into cards** button. Every sitting's results and any remediation cards
   land in the phone's own progress store, exactly like an offline grade,

@@ -181,9 +181,9 @@ pub struct _CardView {
     pub front_units: Option<Vec<ContentUnit>>,
     pub front_steps: Vec<FrontStep>,
     pub hole_steps: Vec<usize>,
-    pub section_context: Vec<String>,
-    pub section_context_runs: Vec<Vec<InlineRun>>,
-    pub section_context_units: Vec<ContentUnit>,
+    pub topic_context: Vec<String>,
+    pub topic_context_runs: Vec<Vec<InlineRun>>,
+    pub topic_context_units: Vec<ContentUnit>,
     pub back: Vec<String>,
     pub back_runs: Vec<Vec<InlineRun>>,
     pub back_units: Vec<ContentUnit>,
@@ -222,7 +222,7 @@ pub struct _ReviewState {
     pub mode: Mode,
     pub depth: Depth,
     pub introducing: bool,
-    pub section_first: bool,
+    pub topic_first: bool,
     pub choices: Option<Vec<String>>,
     pub choices_multiple: Option<bool>,
     pub choice_runs: Option<Vec<Vec<InlineRun>>>,
@@ -901,7 +901,7 @@ pub struct WalkState {
     pub choices: Option<Vec<String>>,
     pub choices_multiple: Option<bool>,
     pub choice_runs: Option<Vec<Vec<InlineRun>>>,
-    pub section_first: bool,
+    pub topic_first: bool,
     pub position: u32,
     pub total: u32,
     pub label: String,
@@ -1013,7 +1013,7 @@ impl WalkSession {
                 .then_some(true),
             choices: question.map(|q| q.options),
             choice_runs,
-            section_first: self.session.section_first(),
+            topic_first: self.session.topic_first(),
             position: self.session.position() as u32,
             total: self.session.total() as u32,
             label: self.label.clone(),
@@ -2764,8 +2764,8 @@ mod tests {
         let first = walk.state();
         assert_eq!(
             (WalkPhase::Front, 0, 3, true),
-            (first.phase, first.position, first.total, first.section_first),
-            "open: the first item of the section is on its front"
+            (first.phase, first.position, first.total, first.topic_first),
+            "open: the first item of the topic is on its front"
         );
         assert_eq!("walk", first.label, "open: the label names the deck");
         let mut served = Vec::new();
@@ -2777,8 +2777,8 @@ mod tests {
             assert_eq!(step as u32, state.position, "{label}: position");
             assert_eq!(
                 (step == 0),
-                state.section_first,
-                "{label}: only the section's first item opens its sheet"
+                state.topic_first,
+                "{label}: only the topic's first item opens its sheet"
             );
             let at = LATER + step;
             assert!(
@@ -2860,8 +2860,8 @@ mod tests {
         let again = walk.restart(Some(LATER + 10));
         assert_eq!(
             (WalkPhase::Front, 0, true),
-            (again.phase, again.position, again.section_first),
-            "restart: the next walk starts on its first item and meets the section again"
+            (again.phase, again.position, again.topic_first),
+            "restart: the next walk starts on its first item and meets the topic again"
         );
         assert_eq!(
             Some(served[0].clone()),

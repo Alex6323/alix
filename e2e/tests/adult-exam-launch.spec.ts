@@ -510,7 +510,7 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
         points: ["At the end of the owning scope."],
         points_units: [[sentence("At the end of the owning scope.")]],
         answer: "At the scope boundary.",
-        section: 0,
+        topic: 0,
         shape: "boundary",
         model: "scope owns destruction",
         verdict: mastered ? "PASS" : "PARTIAL",
@@ -525,7 +525,7 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
         points: ["Borrow instead of moving."],
         points_units: [[sentence("Borrow instead of moving.")]],
         answer: "Borrow it.",
-        section: 1,
+        topic: 1,
         shape: "fix",
         model: "borrows preserve ownership",
         verdict: "PASS",
@@ -535,7 +535,7 @@ function resultsDto({ mastered, pass, partial }: { mastered: boolean; pass: numb
         missed_units: [],
       },
     ],
-    sections: [
+    topics: [
       {
         label: "Ownership",
         cards: ["card-0123456789abcdefghjkmnpqrs"],
@@ -576,14 +576,14 @@ async function openResults(page: Page, dto: object) {
   await page.getByRole("button", { name: /^Take exam/ }).click();
 }
 
-test("a full perfect sitting shows its count, section counts, shapes, and mastered", async ({ page }) => {
+test("a full perfect sitting shows its count, topic counts, shapes, and mastered", async ({ page }) => {
   await openResults(page, resultsDto({ mastered: true, pass: 18, partial: 0 }));
 
   await expect(page.locator(".exam-score")).toHaveText("18 / 18");
   await expect(page.locator(".exam-standing")).toHaveText("mastered (4 Nov)");
-  await expect(page.locator(".exam-section")).toHaveCount(2);
-  await expect(page.locator(".exam-section").first()).toContainText("Ownership");
-  await expect(page.locator(".exam-section").first()).toContainText("9 / 9");
+  await expect(page.locator(".exam-topic")).toHaveCount(2);
+  await expect(page.locator(".exam-topic").first()).toContainText("Ownership");
+  await expect(page.locator(".exam-topic").first()).toContainText("9 / 9");
   await expect(page.locator(".exam-shape")).toHaveText(["boundary", "fix"]);
   await expect(page.getByText(/PASSED|FAILED/)).toHaveCount(0);
   await capture(page, "results-mastered");
@@ -594,8 +594,8 @@ test("a partial-point sitting shows 17.5 out of 18 and the deck's standing", asy
 
   await expect(page.locator(".exam-score")).toHaveText("17.5 / 18");
   await expect(page.locator(".exam-standing")).toHaveText("passed (2 Nov)");
-  await expect(page.locator(".exam-section").first()).toContainText("8.5 / 9");
-  await expect(page.locator(".exam-section").first()).toContainText("needs work");
+  await expect(page.locator(".exam-topic").first()).toContainText("8.5 / 9");
+  await expect(page.locator(".exam-topic").first()).toContainText("needs work");
   await expect(page.getByText(/PASSED|FAILED/)).toHaveCount(0);
   const questionText = page.locator(".exam-rq-text");
   const first = await questionText.nth(0).boundingBox();

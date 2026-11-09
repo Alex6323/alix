@@ -77,8 +77,8 @@ authored choice or **Reveal** (one line at a time on a `reveal: line` card),
 then grade it as in a session: **Missed it**, **Partly** or **Got it** after a
 reveal, **Next** or **I guessed** after a correct pick, **Continue** after a
 wrong one. **Hint** opens a card's authored hint on its front. Missed and
-partly cards come back first in the next walk. The section sheet opens by itself the first time each walk
-reaches a section, **Ask** reaches the tutor once an answer shows (when paired
+partly cards come back first in the next walk. The topic sheet opens by itself the first time each walk
+reaches a topic, **Ask** reaches the tutor once an answer shows (when paired
 with a desktop that can run it), and the done screen's **Next walk** starts
 the next pass.
 
@@ -106,15 +106,15 @@ its space, with a "more" marker at the edge that hides something. Question and a
 rule: left-aligned inside a block that shrinks to its content and is centred
 in the card, so a short question or answer sits in the middle and a wrapped
 paragraph reads as a left-aligned block; a note is always left-aligned at the
-full width. A card that sits under a `#` section in its deck (see
-[Sections and sub-cards](03-the-deck-format.md#sections-and-sub-cards)) shows
+full width. A card that sits under a `#` topic in its deck (see
+[Topics and sub-cards](03-the-deck-format.md#topics-and-sub-cards)) shows
 a quiet **Context** chip left of Reveal until you reveal the answer; it opens
-the whole section, heading and prose, in a sheet. The section helps you answer,
-so the chip is gone once the answer shows. The card face names the section
+the whole topic, heading and prose, in a sheet. The topic helps you answer,
+so the chip is gone once the answer shows. The card face names the topic
 nowhere else, and the card never moves to make room. The first card you ever
-meet from a section opens that sheet by itself, once; swipe it away or tap the
+meet from a topic opens that sheet by itself, once; swipe it away or tap the
 `×` in its top-right corner, and the chip brings it back. Every later card from
-the section, in this sitting or any later one, waits for the chip. A tap on the
+the topic, in this sitting or any later one, waits for the chip. A tap on the
 question does nothing.
 
 A card with [hints](03-the-deck-format.md#hints) shows a quiet **Hint** chip

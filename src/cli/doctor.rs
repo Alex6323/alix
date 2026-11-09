@@ -477,13 +477,13 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
         }
     }
     if deck.has_exam() && !deck.is_trace() {
-        for (label, count) in alix::exam::oversized_sections(deck) {
+        for (label, count) in alix::exam::oversized_topics(deck) {
             report.warn(format!(
-                "{}: {count} cards in section `{label}`; the exam asks {} questions per \
-                 section and a pass credits every card in it, so splitting it examines more \
+                "{}: {count} cards in topic `{label}`; the exam asks {} questions per \
+                 topic and a pass credits every card in it, so splitting it examines more \
                  of them",
                 deck.path.display(),
-                alix::exam_ideas::QUESTIONS_PER_SECTION
+                alix::exam_ideas::QUESTIONS_PER_TOPIC
             ));
         }
     }
@@ -753,7 +753,7 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         ),
         LintKind::QuestionShowsBlankAnswer { answer, at } => {
             let place = match at {
-                alix::parser::AnswerShownAt::Section => "the card's section prose".to_string(),
+                alix::parser::AnswerShownAt::Topic => "the card's topic prose".to_string(),
                 alix::parser::AnswerShownAt::QuestionLine(line) => {
                     format!("line {line}, outside its blank")
                 }
@@ -790,12 +790,12 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::HintContainsAnswer { answer } => {
             format!("hint shows the answer line `{answer}` before the reveal")
         }
-        LintKind::SectionWithoutCards => "section has prose but no card below it; a section \
+        LintKind::TopicWithoutCards => "topic has prose but no card below it; a topic \
              introduces the cards under it"
             .to_string(),
-        LintKind::DuplicateSectionHeading { first_line } => format!(
-            "section heading repeats the one on line {first_line}; the exam merges both into \
-             one section, so rename one"
+        LintKind::DuplicateTopicHeading { first_line } => format!(
+            "topic heading repeats the one on line {first_line}; the exam merges both into \
+             one topic, so rename one"
         ),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"
@@ -2490,7 +2490,7 @@ mod tests {
     }
 
     #[test]
-    fn a_section_above_the_nudge_size_is_a_warning_on_an_examined_deck_only() {
+    fn a_topic_above_the_nudge_size_is_a_warning_on_an_examined_deck_only() {
         let cards =
             |n: usize| -> String { (1..=n).map(|i| format!("## q{i}?\na{i}\n\n")).collect() };
         let dir = tempfile::tempdir().unwrap();
@@ -2507,7 +2507,7 @@ mod tests {
                 true,
             ),
             (
-                "unsectioned, one above it",
+                "the leading topic, one above it",
                 format!("---\nexam: notes.md\n---\n{}", cards(16)),
                 true,
             ),
@@ -2528,11 +2528,11 @@ mod tests {
             let hit = report
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("cards in section"));
+                .any(|warning| warning.contains("cards in topic"));
             assert_eq!(warned, hit, "{label}: {:#?}", report.warnings);
             let reason = format!(
-                "the exam asks {} questions per section",
-                alix::exam_ideas::QUESTIONS_PER_SECTION
+                "the exam asks {} questions per topic",
+                alix::exam_ideas::QUESTIONS_PER_TOPIC
             );
             assert_eq!(
                 warned,
@@ -2540,7 +2540,7 @@ mod tests {
                     .warnings
                     .iter()
                     .any(|warning| warning.contains(&reason)),
-                "{label}: the warning names the per-section question count: {:#?}",
+                "{label}: the warning names the per-topic question count: {:#?}",
                 report.warnings
             );
         }

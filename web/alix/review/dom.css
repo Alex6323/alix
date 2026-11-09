@@ -15,11 +15,11 @@
   .front-text.topic { font-size: clamp(0.95rem, 2vw, 1.1rem); font-weight: 500; color: var(--dim); letter-spacing: 0.01em; }
   .context { color: var(--bolt); font-family: var(--mono); white-space: pre-wrap;
     font-size: clamp(1.15rem, 3vw, 1.45rem); line-height: 1.5; margin-top: 10px; }
-  .section-heading { color: var(--ink); font-family: var(--sans); font-size: clamp(1.05rem, 2.6vw, 1.3rem);
+  .topic-heading { color: var(--ink); font-family: var(--sans); font-size: clamp(1.05rem, 2.6vw, 1.3rem);
     font-weight: 600; line-height: 1.35; margin: 0 0 10px; overflow-wrap: anywhere; }
-  .section-prose { color: var(--dim); font-family: var(--sans); font-size: clamp(0.95rem, 2.2vw, 1.08rem);
+  .topic-prose { color: var(--dim); font-family: var(--sans); font-size: clamp(0.95rem, 2.2vw, 1.08rem);
     line-height: 1.55; margin: 0 0 10px; white-space: pre-wrap; }
-  .section-prose:last-child { margin-bottom: 0; }
+  .topic-prose:last-child { margin-bottom: 0; }
   /* bound the image by its region (flex shrink + min-height:0), so it scales
      down to fit instead of scrolling; flex-grow 0 keeps small images at their
      natural size rather than ballooning. */

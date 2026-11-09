@@ -173,9 +173,9 @@ class CardView {
   final List<ContentUnit>? frontUnits;
   final List<FrontStep> frontSteps;
   final Uint64List holeSteps;
-  final List<String> sectionContext;
-  final List<List<InlineRun>> sectionContextRuns;
-  final List<ContentUnit> sectionContextUnits;
+  final List<String> topicContext;
+  final List<List<InlineRun>> topicContextRuns;
+  final List<ContentUnit> topicContextUnits;
   final List<String> back;
   final List<List<InlineRun>> backRuns;
   final List<ContentUnit> backUnits;
@@ -193,9 +193,9 @@ class CardView {
     this.frontUnits,
     required this.frontSteps,
     required this.holeSteps,
-    required this.sectionContext,
-    required this.sectionContextRuns,
-    required this.sectionContextUnits,
+    required this.topicContext,
+    required this.topicContextRuns,
+    required this.topicContextUnits,
     required this.back,
     required this.backRuns,
     required this.backUnits,
@@ -215,9 +215,9 @@ class CardView {
       frontUnits.hashCode ^
       frontSteps.hashCode ^
       holeSteps.hashCode ^
-      sectionContext.hashCode ^
-      sectionContextRuns.hashCode ^
-      sectionContextUnits.hashCode ^
+      topicContext.hashCode ^
+      topicContextRuns.hashCode ^
+      topicContextUnits.hashCode ^
       back.hashCode ^
       backRuns.hashCode ^
       backUnits.hashCode ^
@@ -239,9 +239,9 @@ class CardView {
           frontUnits == other.frontUnits &&
           frontSteps == other.frontSteps &&
           holeSteps == other.holeSteps &&
-          sectionContext == other.sectionContext &&
-          sectionContextRuns == other.sectionContextRuns &&
-          sectionContextUnits == other.sectionContextUnits &&
+          topicContext == other.topicContext &&
+          topicContextRuns == other.topicContextRuns &&
+          topicContextUnits == other.topicContextUnits &&
           back == other.back &&
           backRuns == other.backRuns &&
           backUnits == other.backUnits &&
@@ -728,7 +728,7 @@ class ReviewState {
   final Mode mode;
   final Depth depth;
   final bool introducing;
-  final bool sectionFirst;
+  final bool topicFirst;
   final List<String>? choices;
   final bool? choicesMultiple;
   final List<List<InlineRun>>? choiceRuns;
@@ -758,7 +758,7 @@ class ReviewState {
     required this.mode,
     required this.depth,
     required this.introducing,
-    required this.sectionFirst,
+    required this.topicFirst,
     this.choices,
     this.choicesMultiple,
     this.choiceRuns,
@@ -790,7 +790,7 @@ class ReviewState {
       mode.hashCode ^
       depth.hashCode ^
       introducing.hashCode ^
-      sectionFirst.hashCode ^
+      topicFirst.hashCode ^
       choices.hashCode ^
       choicesMultiple.hashCode ^
       choiceRuns.hashCode ^
@@ -824,7 +824,7 @@ class ReviewState {
           mode == other.mode &&
           depth == other.depth &&
           introducing == other.introducing &&
-          sectionFirst == other.sectionFirst &&
+          topicFirst == other.topicFirst &&
           choices == other.choices &&
           choicesMultiple == other.choicesMultiple &&
           choiceRuns == other.choiceRuns &&
@@ -1105,7 +1105,7 @@ class WalkState {
   final List<String>? choices;
   final bool? choicesMultiple;
   final List<List<InlineRun>>? choiceRuns;
-  final bool sectionFirst;
+  final bool topicFirst;
   final int position;
   final int total;
   final String label;
@@ -1120,7 +1120,7 @@ class WalkState {
     this.choices,
     this.choicesMultiple,
     this.choiceRuns,
-    required this.sectionFirst,
+    required this.topicFirst,
     required this.position,
     required this.total,
     required this.label,
@@ -1137,7 +1137,7 @@ class WalkState {
       choices.hashCode ^
       choicesMultiple.hashCode ^
       choiceRuns.hashCode ^
-      sectionFirst.hashCode ^
+      topicFirst.hashCode ^
       position.hashCode ^
       total.hashCode ^
       label.hashCode ^
@@ -1156,7 +1156,7 @@ class WalkState {
           choices == other.choices &&
           choicesMultiple == other.choicesMultiple &&
           choiceRuns == other.choiceRuns &&
-          sectionFirst == other.sectionFirst &&
+          topicFirst == other.topicFirst &&
           position == other.position &&
           total == other.total &&
           label == other.label &&

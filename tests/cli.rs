@@ -1985,17 +1985,16 @@ fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
         let mut store = deck_store(&deck);
         if full_marks {
             let loaded = alix::deck::Deck::load(&deck).unwrap();
-            let sections: Vec<alix::store::SectionRecord> =
-                alix::exam_status::exam_sections(&loaded)
-                    .into_iter()
-                    .map(|section| alix::store::SectionRecord {
-                        card_ids: section.card_ids,
-                        pass: true,
-                    })
-                    .collect();
-            let total = sections.len() as u32;
+            let topics: Vec<alix::store::TopicRecord> = alix::exam_status::exam_topics(&loaded)
+                .into_iter()
+                .map(|topic| alix::store::TopicRecord {
+                    card_ids: topic.card_ids,
+                    pass: true,
+                })
+                .collect();
+            let total = topics.len() as u32;
             let record = alix::store::SittingRecord {
-                sections,
+                topics,
                 full: true,
                 pass: total,
                 partial: 0,

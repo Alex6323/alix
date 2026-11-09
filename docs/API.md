@@ -211,8 +211,8 @@ were sent, so a client applies a reply only when its `sequence` is higher
 than the last one it applied. The finished exam is kept in the deck's store, so it survives
 leaving the page and restarting the server; the deck row's `exam_prepared`
 says it is there. With `needs_work_only: true` the exam covers only the
-sections that have not passed (needs work, new cards, unexamined), read from
-the server's own store; when every section has passed, or none has, it covers
+topics that have not passed (needs work, new cards, unexamined), read from
+the server's own store; when every topic has passed, or none has, it covers
 all of them.
 
 `POST /api/exam/start {deck}` → `ExamDto` opens the prepared exam in
@@ -472,7 +472,7 @@ server generates them but never keeps them. Generation takes minutes, so the
 sitting stays in the server's slot while the phone is away; the phone polls
 `GET /api/remote/exam` when it returns and closes the slot explicitly
 (closing cancels a running generation). Each exam asks three questions per
-section, aimed at ideas the phone's `ideas` document picks (never asked, then
+topic, aimed at ideas the phone's `ideas` document picks (never asked, then
 last failed, then oldest); without one, or when the exam material changed,
 the server lists the ideas first. The updated document comes back on
 `RemoteExamDto.ideas` after grading for the phone to keep; the server keeps
@@ -582,7 +582,7 @@ review history is written. `POST /api/walk {deck}` opens it and returns a
 serve, every direction and every cloze blank its own item, locked and personal
 cards included. An item is waiting unless its last walk grade is a pass. While
 any item waits, a walk holds only the waiting items, in deck order with a
-card's sibling items spread apart within their section, so `total` is what is
+card's sibling items spread apart within their topic, so `total` is what is
 left of the pass and a walk left early continues where it stopped. Once none
 waits, a walk holds them all, least recently walked first, ties in deck
 order.
@@ -611,8 +611,8 @@ item. A flip or line item takes any grade; after a correct pick only
 grade off the answer, is a 400 and records nothing. After the last
 item the phase is `"done"`; `POST /api/walk/restart` starts the next walk
 from the store, and `POST /api/walk/leave` returns the picker `StateDto`.
-`section_first` is true on the first item of each section in every walk, so
-a client presents that section by itself as it does in review.
+`topic_first` is true on the first item of each topic in every walk, so
+a client presents that topic by itself as it does in review.
 
 A walk is a session like a review or a trace: opening one ends any of those,
 and opening any other session (select, browse, exam, augment, reset,
@@ -883,7 +883,7 @@ The review-session payload; returned by every review action.
 | `keypoints` | [string]? | Explain-check rubric lines. |
 | `keypoint_runs` | [[InlineRun]]? | Display projection for `keypoints`, in exact index lockstep. Null when `keypoints` is null. |
 | `introducing` | bool | New card (no attempt or acknowledgment recorded, even if presented before): show, then `/api/introduce`, no grading. |
-| `section_first` | bool | True only for the first card ever introduced from a nonempty section: no card of that section has progress when the sitting opens, and none was introduced earlier in it. A client presents that card's section by itself; every other card offers it on demand. Chained restarts remain in the same sitting. |
+| `topic_first` | bool | True only for the first card ever introduced from a nonempty topic: no card of that topic has progress when the sitting opens, and none was introduced earlier in it. A client presents that card's topic by itself; every other card offers it on demand. Chained restarts remain in the same sitting. |
 | `mode` | string | The check being rendered: `flip` \| `typing` \| `typeline` \| `choice` \| `line` \| `explain` (open set). |
 | `depth` | string | `recognize` \| `recall` \| `reconstruct` *(closed)*. |
 | `input` | string | `type` \| `draw`. |
@@ -914,16 +914,16 @@ Select-phase baseline: `phase:"select"`, `card:null`, `mode:"flip"`,
 | `front_units` | [ContentUnitDto]? | Present when the front contains a task list, fenced code, a pipe table, or a display-math line. When present, clients render the front from these units instead of `front` / `front_runs`. A cloze card's masked mermaid fence yields its `diagram` here. |
 | `front_steps` | [FrontStepDto] | A cloze card's question with its own blanks filled in, one step per own blank in directive order and cumulative (step *n* fills blanks 1..*n*); a region group contributes one step at its first `blank: rect`. The last step is the revealed question. Empty on every other card. |
 | `hole_steps` | [int] | For each asked `⍰` in `front_runs` (or `front_units`), in reading order, the index into `answer_steps` of the step it asks, which is also its position in a `/api/check` `lines` array. Lets a client type each blank in place even when the author wrote the directives out of reading order. Present only when every blank the card asks is a text span outside math and outside a fence; omitted otherwise, and then the client asks for the answer in fields of its own. |
-| `section_context` | [string] | The card's section: its `# ` heading and that section's prose, in file order. A blank line between paragraphs rides as an empty string; leading and trailing blanks are omitted and a run collapses to one. Present only when the card sits under a section; omitted when empty. It explains the card and is NEVER the question. A client presents it by itself on the first introduction from a section (`section_first`); every other card offers it on demand. Image syntax inside it is prose, not a media element. |
-| `section_context_runs` | [[InlineRun]] | Display projection per section line. Omitted when empty, like `section_context`. |
-| `section_context_units` | [ContentUnitDto] | The section's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a section's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. Omitted when empty, like `section_context`. |
+| `topic_context` | [string] | The card's topic: its `# ` heading and that topic's prose, in file order. A blank line between paragraphs rides as an empty string; leading and trailing blanks are omitted and a run collapses to one. Present only when the card sits under a topic; omitted when empty. It explains the card and is NEVER the question. A client presents it by itself on the first introduction from a topic (`topic_first`); every other card offers it on demand. Image syntax inside it is prose, not a media element. |
+| `topic_context_runs` | [[InlineRun]] | Display projection per topic line. Omitted when empty, like `topic_context`. |
+| `topic_context_units` | [ContentUnitDto] | The topic's structural blocks in source order: one unit per raw fence and per closed, nonempty bare-`$$` block. A math fence or bare-`$$` block yields a display-math `sentence`; other fences yield `code`. Nothing freezes a topic's fence, so it never yields a `diagram`. An unmatched `$$` stays in the line projection and consumes no unit. Omitted when empty, like `topic_context`. |
 | `back` | [string] | Answer-line content with inline Markdown markers stripped (may be a reshaped view). |
 | `back_runs` | [[InlineRun]] | Display projection per answer line. |
 | `back_units` | [ContentUnitDto] | Ordinary-answer projection. Markdown soft wraps are joined before inline rendering; fenced code, display math, checklists, and pipe tables remain structural units. Full reveal renders these. |
 | `answer_steps` | [AnswerStepDto] | The steps a client walks the answer in: reveal counts every step, typing asks only the gradeable ones. Always present. |
 | `reshaped` | bool | `back` is the `format` augment's display shape. True only on a reveal mode: a typed mode is served the deck's AUTHORED answer, so `reshaped` is false there and `back` is what the check grades. |
 | `note` | [NoteDto] | Post-answer notes, in authored order. Empty when the card has none. |
-| `hints` | [[ContentUnitDto]] | The card's hints (`> [!TIP]` blocks above the divider), one unit list per hint, in authored order. Always present; empty when the card has none. A client offers them one at a time while the answer is still being produced, the same window as the section, and shows the first only after `POST /api/hint` succeeds. The reversed half of a card carries none. |
+| `hints` | [[ContentUnitDto]] | The card's hints (`> [!TIP]` blocks above the divider), one unit list per hint, in authored order. Always present; empty when the card has none. A client offers them one at a time while the answer is still being produced, the same window as the topic, and shows the first only after `POST /api/hint` succeeds. The reversed half of a card carries none. |
 | `images` / `images_back` | [ImageDto] | Front / back images, rendered as ordered blocks on that side. Empty when none. |
 | `citations` | [CitationDto] | Ordered `<!-- at: -->` citations. Empty when none. |
 | `crumb` | CrumbDto? | Topology breadcrumb (region heatmap). |
@@ -1073,7 +1073,7 @@ from the delimiter row's colons; `header` is one run list per header cell and
 `rows` are the body cells, each padded or truncated to the header width for
 display (only the mapped-card table enforces widths). Table units appear in
 `back_units`, `front_units`, and each `NoteDto.units`;
-`section_context_units` carries only raw fences and closed bare-math blocks.
+`topic_context_units` carries only raw fences and closed bare-math blocks.
 A table in an answer is ONE block, like a quote: it is excluded from the typed
 target, since typing pipe syntax tests transcription rather than
 understanding, and it reveals whole rather than a row at a time (see
@@ -1139,17 +1139,17 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `name` | string | The stable resolution key for this row (also used by `/api/reset`, `/api/browse`, and import's/generate's `dest`). **Only deck rows are selectable:** a group row (`is_workspace`, or a folder) is a container — `/api/select` rejects it with 400. Drill into `members` and select one of those. |
 | `selectable` | bool | **structural**: this row's `name` is the kind of thing `/api/select` accepts (a deck; false for workspace/folder rows). `reviewable*` is state, not structure. |
 | `label` | string | Display title. |
-| `meta` | string? | Badge text: for an examined deck the highest exam state with the last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 · 3d · 17 / 18`), plus how many sections need work or have new cards since the exam; otherwise a completion state (`done ✓`, `exam due`); a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
+| `meta` | string? | Badge text: for an examined deck the highest exam state with the last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 · 3d · 17 / 18`), plus how many topics need work or have new cards since the exam; otherwise a completion state (`done ✓`, `exam due`); a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` \| `error` for decks; `workspace` \| `folder` for groups (open set). An `error` deck's own progress document cannot be read: render it red, and treat it as unstartable: every `reviewable*` flag is false and `/api/select` and `/api/browse` both reject it with 400. |
 | `locked` | bool | A `requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
 | `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both due at Recognize **and** recognizable (see `can_recognize`). |
 | `can_recognize` | bool | The deck has at least one recognizable card: authored task-list options, or cached choice distractors (`alix deck augment --target choices`), that build a pick. Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |
 | `mastered` | bool | A full sitting scored every answer PASS (`mastered_at_ms`). |
-| `passed_at_ms` | number? | When every section of the deck first passed at `pass_threshold`; unlocks dependents' exams. Null when never. |
+| `passed_at_ms` | number? | When every topic of the deck first passed at `pass_threshold`; unlocks dependents' exams. Null when never. |
 | `full_exam_result` | {pass, partial, total}? | Raw verdict counts of the last full sitting (points are pass + partial / 2). Null when none. |
-| `sections` | {passed, needs_work, new_cards, unexamined} | Section counts by status, read from the cards' exam records. All zero for a deck without an exam. |
-| `exam_filter` | string | What "only sections needing work" would select: `none` (every section passed) \| `partial` \| `all` (no section passed) *(closed)*. `none` for a deck without an exam. |
+| `topics` | {passed, needs_work, new_cards, unexamined} | Topic counts by status, read from the cards' exam records. All zero for a deck without an exam. |
+| `exam_filter` | string | What "only topics needing work" would select: `none` (every topic passed) \| `partial` \| `all` (no topic passed) *(closed)*. `none` for a deck without an exam. |
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |
 | `has_exam` | bool | Has an exam at all (even if locked). |
@@ -1529,9 +1529,9 @@ Example (from the pinned test):
 | `answer_locked` | bool | The current answer was given and moved on from; it cannot change. |
 | `on_last` | bool | |
 | `grades` | [ExamGradeDto] | Populated in results. |
-| `sections` | [ExamSectionDto] | The examined sections in deck order, populated in results. |
+| `topics` | [ExamTopicDto] | The examined topics in deck order, populated in results. |
 | `verdicts` | {pass, partial, total}? | The sitting's raw verdict counts; null until graded. A client shows points as pass + partial / 2 over total. |
-| `full` | bool | The sitting examines every section of the deck. |
+| `full` | bool | The sitting examines every topic of the deck. |
 | `mastered` | bool | A full sitting where every answer was PASS. |
 | `standing` | string? | The deck's standing after the sitting, worded by the lib: `"mastered (4 Nov)"` or `"passed (2 Nov)"` (local date; the year only outside the current one); null before results or while the deck has neither. |
 | `gaps` | [string] | Named understanding gaps. |
@@ -1542,16 +1542,16 @@ Example (from the pinned test):
 | `error` | string? | |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 
-### ExamSectionDto
+### ExamTopicDto
 
-`label: string` (the section's heading, or the deck title for cards without
-one), `cards: [card-id]` (the section's member cards, which the result is
+`label: string` (the topic's heading, or the deck title for cards without
+one), `cards: [card-id]` (the topic's member cards, which the result is
 recorded on), `pass: bool` (the share of PASS reached `pass_threshold`),
 `verdicts: {pass, partial, total}`.
 
 ### ExamGradeDto
 
-`section: number` (index into `sections`), `shape` (`instance` \| `boundary`
+`topic: number` (index into `topics`), `shape` (`instance` \| `boundary`
 \| `fix`, closed), `mental_model: string` (the idea the question tests),
 `question`, `points: [string]`, `answer`, `verdict`, `feedback`,
 `missed: [string]`, and the model-written ones parsed as `ExamDto.question_units`
@@ -1605,7 +1605,7 @@ attempted and failed; one target's error doesn't stop the rest from running).
 | `choices` | [string]? | The authored options of a choice item, in a stable order for the whole walk; null on a flip item and at `done`. The correct index is sent only in the choose reply. |
 | `choices_multiple` | bool? | `true` on a select-all item: submit `indices`. Null otherwise. |
 | `choice_runs` | [[InlineRun]]? | Display projection of `choices`, in index lockstep; null with it. |
-| `section_first` | bool | True on the first item of each nonempty section in this walk: present the section by itself. |
+| `topic_first` | bool | True on the first item of each nonempty topic in this walk: present the topic by itself. |
 | `mode` | string | `choice` \| `flip`. |
 | `input` | string | `type` \| `draw`, as on `StateDto`. |
 | `position` | number | How many items this walk has passed: the 0-based index of the current item, equal to `total` at `done`. |
@@ -1734,7 +1734,7 @@ phone applies it to its own state).
 | `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
 | `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
-| `sections` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each section's `pass` on its `cards` in its own store; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
+| `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` on its `cards` in its own store; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `gaps` | [string] | Named understanding gaps. |
 | `can_remediate` | bool | An answer missed key points. |
@@ -1743,7 +1743,7 @@ phone applies it to its own state).
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |
 | `estimate` | string? | A rough wait for the generation, set only while `generating` (for example `usually 10 to 20 minutes`); `null` when the backend has no measured range. Never a commitment. |
-| `ideas` | object? | The exam ideas document after grading, set in `results`/`remediated`: the phone stores it whole as its `.alix/exam/<deck-id>.json` and sends it back in the next `start`. Shape: `{"version": 1, "material": "xxh64-…", "sections": [{"heading", "ideas": [{"text", "last_asked_ms", "last_passed"}]}]}`, unknown fields rejected. |
+| `ideas` | object? | The exam ideas document after grading, set in `results`/`remediated`: the phone stores it whole as its `.alix/exam/<deck-id>.json` and sends it back in the next `start`. Shape: `{"version": 1, "material": "xxh64-…", "topics": [{"heading", "ideas": [{"text", "last_asked_ms", "last_passed"}]}]}`, unknown fields rejected. |
 
 Example, remediated: `tests/contracts/RemoteExamDto.remediated.json` (written by the pinned test).
 

@@ -822,10 +822,10 @@ fn structural_units_with(
     units
 }
 
-/// Section prose is never a diagram: nothing freezes a section's fence, so
+/// Topic prose is never a diagram: nothing freezes a topic's fence, so
 /// there is no record to resolve a mermaid body against and it stays code.
 /// Math fences and closed nonempty bare-math blocks need no record.
-pub(crate) fn section_units(lines: &[String]) -> Vec<ContentUnit> {
+pub(crate) fn topic_units(lines: &[String]) -> Vec<ContentUnit> {
     let mut projector = DisplayProjector::default();
     structural_units_with(lines, &mut projector, |info, lines, projector| {
         fence_unit(info, lines, &[], projector)
@@ -2027,7 +2027,7 @@ mod tests {
     }
 
     #[test]
-    fn a_section_fence_closes_only_on_its_own_marker() {
+    fn a_topic_fence_closes_only_on_its_own_marker() {
         let lines: Vec<String> = ["```", "~~~", "text", "```"]
             .iter()
             .map(|s| s.to_string())
@@ -2036,13 +2036,13 @@ mod tests {
             vec![ContentUnit::Code {
                 lines: vec!["~~~".into(), "text".into()]
             }],
-            section_units(&lines),
+            topic_units(&lines),
             "a tilde run never closes a backtick fence"
         );
     }
 
     #[test]
-    fn a_section_fence_shaped_line_with_info_stays_inside() {
+    fn a_topic_fence_shaped_line_with_info_stays_inside() {
         let lines: Vec<String> = ["````", "````rust", "x", "````"]
             .iter()
             .map(|s| s.to_string())
@@ -2051,7 +2051,7 @@ mod tests {
             vec![ContentUnit::Code {
                 lines: vec!["````rust".into(), "x".into()]
             }],
-            section_units(&lines),
+            topic_units(&lines),
             "an info-carrying line is content, not a closer"
         );
     }
@@ -2094,7 +2094,7 @@ mod tests {
     }
 
     #[test]
-    fn tutor_answer_prose_splits_like_other_section_prose() {
+    fn tutor_answer_prose_splits_like_other_topic_prose() {
         assert_eq!(
             vec![sentence("First idea."), sentence("Second idea.")],
             tutor_answer_units("First idea. Second idea.")
@@ -2141,14 +2141,14 @@ mod tests {
     }
 
     #[test]
-    fn a_math_fence_renders_in_section_and_blank_front_walks() {
+    fn a_math_fence_renders_in_topic_and_blank_front_walks() {
         let lines: Vec<String> = ["```math", "x^2", "```"]
             .iter()
             .map(|line| line.to_string())
             .collect();
-        let section = section_units(&lines);
+        let topic = topic_units(&lines);
         let front = blank_front_units(&lines, Vec::new(), Vec::new());
-        for (surface, units) in [("section", section), ("front", front)] {
+        for (surface, units) in [("topic", topic), ("front", front)] {
             let [ContentUnit::Sentence { text, runs }] = units.as_slice() else {
                 panic!("a math fence in {surface} must be display math: {units:?}");
             };
@@ -2161,7 +2161,7 @@ mod tests {
     }
 
     #[test]
-    fn section_and_blank_front_walks_share_the_bare_display_math_boundary() {
+    fn topic_and_blank_front_walks_share_the_bare_display_math_boundary() {
         let cases = [
             (
                 "closed bare block",
@@ -2178,7 +2178,7 @@ mod tests {
         for (case, source, expected) in cases {
             let lines: Vec<String> = source.into_iter().map(str::to_string).collect();
             let surfaces = [
-                ("section", section_units(&lines)),
+                ("topic", topic_units(&lines)),
                 ("front", blank_front_units(&lines, Vec::new(), Vec::new())),
             ];
             for (surface, units) in surfaces {
@@ -2197,8 +2197,8 @@ mod tests {
             .map(str::to_string)
             .collect();
         assert!(
-            section_units(&unclosed).is_empty(),
-            "an unclosed bare opener stays in the section's raw prose walk"
+            topic_units(&unclosed).is_empty(),
+            "an unclosed bare opener stays in the topic's raw prose walk"
         );
     }
 

@@ -586,7 +586,7 @@ fn block_end_line(text: &str, front_line: usize, card_tables: Option<&HashSet<us
             last = line;
             continue;
         }
-        // ANY structural heading ends the block: a section or a sub-card
+        // ANY structural heading ends the block: a topic or a sub-card
         // front starts new territory, and an id placed past it binds to
         // nothing the parser will accept.
         if parser::heading_depth(raw).is_some() {
@@ -664,7 +664,7 @@ pub fn misplaced_id_markers(text: &str) -> Vec<usize> {
                     found.push(line);
                 }
             } else {
-                // A section owns no card, so any marker after it is stranded
+                // A topic owns no card, so any marker after it is stranded
                 // until the next front opens a block.
                 block_end = None;
             }
@@ -889,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn a_marker_stranded_after_a_section_heading_is_misplaced() {
+    fn a_marker_stranded_after_a_topic_heading_is_misplaced() {
         let text = "## a\n1\n# Two\n<!-- id: card-a1 -->\n";
         assert_eq!(vec![4], misplaced_id_markers(text));
     }
@@ -898,11 +898,11 @@ mod tests {
     fn a_marker_trailing_the_front_line_is_misplaced() {
         let text = "## q <!-- id: card-q1 -->\na\n";
         assert_eq!(vec![1], misplaced_id_markers(text));
-        let after_section_dollars = "# S\n$$\n## q <!-- id: card-q1 -->\na\n";
+        let after_topic_dollars = "# S\n$$\n## q <!-- id: card-q1 -->\na\n";
         assert_eq!(
             vec![3],
-            misplaced_id_markers(after_section_dollars),
-            "a section's literal dollars open no math"
+            misplaced_id_markers(after_topic_dollars),
+            "a topic's literal dollars open no math"
         );
     }
 

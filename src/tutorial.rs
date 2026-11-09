@@ -213,20 +213,20 @@ mod tests {
                 }
                 2 => assert_eq!(
                     (
-                        "This deck has a section: the text that framed it before the first card. Open it again with the Context chip, then reveal.",
+                        "This deck has a topic: the text that framed it before the first card. Open it again with the Context chip, then reveal.",
                         Some("Your first walk"),
                         true,
                         false,
                     ),
                     (
                         card.front.as_str(),
-                        card.section_context.first().map(String::as_str),
-                        card.section_context
+                        card.topic_context.first().map(String::as_str),
+                        card.topic_context
                             .iter()
                             .any(|line| line.starts_with("Welcome to Alix.")),
-                        walk.section_first(),
+                        walk.topic_first(),
                     ),
-                    "card 2: the instruction, section title, prose, or manual Context state changed"
+                    "card 2: the instruction, topic title, prose, or manual Context state changed"
                 ),
                 3 => {
                     assert!(!card.hints.is_empty(), "card 3: no hint to open");

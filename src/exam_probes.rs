@@ -4,7 +4,7 @@ use crate::{
     ask::{parse_json, run},
     config::{AskConfig, Config, ExamConfig, Strictness},
     deck::Deck,
-    exam::{self, ExamQuestion, ExamSection},
+    exam::{self, ExamQuestion, ExamTopic},
 };
 
 const DECKS_VAR: &str = "ALIX_EXAM_PROBE_DECKS";
@@ -41,8 +41,8 @@ fn judge(ask: &AskConfig, prompt: &str) -> String {
     run(&judge, prompt, &[]).unwrap()
 }
 
-fn card_list(section: &ExamSection) -> String {
-    section
+fn card_list(topic: &ExamTopic) -> String {
+    topic
         .cards
         .iter()
         .map(|card| format!("- {}\n", card.replace('\n', "\n  ")))
@@ -81,12 +81,12 @@ struct Answerable {
 
 #[test]
 #[ignore = "costed: real examiner and judge calls over the decks in ALIX_EXAM_PROBE_DECKS"]
-fn per_section_questions_are_not_answerable_from_an_existing_card() {
+fn per_topic_questions_are_not_answerable_from_an_existing_card() {
     let (exam_cfg, ask) = configs();
     let mut yes = 0;
     let mut total = 0;
     for deck in probe_decks() {
-        let sections = exam::exam_sections(&deck);
+        let topics = exam::exam_topics(&deck);
         let started = std::time::Instant::now();
         let questions = probe_questions(&deck, &exam_cfg, &ask);
         println!(
@@ -95,8 +95,8 @@ fn per_section_questions_are_not_answerable_from_an_existing_card() {
             started.elapsed().as_secs(),
             questions.len()
         );
-        for (at, section) in sections.iter().enumerate() {
-            let asked: Vec<&ExamQuestion> = questions.iter().filter(|q| q.section == at).collect();
+        for (at, topic) in topics.iter().enumerate() {
+            let asked: Vec<&ExamQuestion> = questions.iter().filter(|q| q.topic == at).collect();
             if asked.is_empty() {
                 continue;
             }
@@ -108,12 +108,12 @@ fn per_section_questions_are_not_answerable_from_an_existing_card() {
             let reply = judge(
                 &ask,
                 &format!(
-                    "Below are flashcards and exam questions about the same section. For each \
+                    "Below are flashcards and exam questions about the same topic. For each \
                      question, say whether a student could answer it by reciting one flashcard's \
                      answer (true) or whether it needs reasoning beyond any single card (false).\n\n\
                      Flashcards:\n{}\nQuestions:\n{listing}Output ONLY JSON: \
                      {{\"answerable\": [true|false, ...]}} with one entry per question, in order.",
-                    card_list(section)
+                    card_list(topic)
                 ),
             );
             let verdicts: Answerable = parse_json(&reply).unwrap();
@@ -130,14 +130,14 @@ fn per_section_questions_are_not_answerable_from_an_existing_card() {
                     question.prompt.replace('\n', " ")
                 );
             }
-            let section_yes = verdicts.answerable.iter().filter(|v| **v).count();
+            let topic_yes = verdicts.answerable.iter().filter(|v| **v).count();
             println!(
-                "probe: deck={} section={:?} questions={} answerable_from_a_card={section_yes}",
+                "probe: deck={} topic={:?} questions={} answerable_from_a_card={topic_yes}",
                 deck.display_name(),
-                section.label,
+                topic.label,
                 asked.len()
             );
-            yes += section_yes;
+            yes += topic_yes;
             total += asked.len();
         }
     }
@@ -151,11 +151,11 @@ fn per_section_questions_are_not_answerable_from_an_existing_card() {
 
 #[derive(Deserialize)]
 struct IndependentModels {
-    sections: Vec<SectionModels>,
+    topics: Vec<TopicModels>,
 }
 
 #[derive(Deserialize)]
-struct SectionModels {
+struct TopicModels {
     models: Vec<String>,
 }
 
@@ -168,10 +168,10 @@ struct Uncovered {
 #[ignore = "costed: real examiner, independent listing and judge calls over ALIX_EXAM_PROBE_DECKS"]
 fn an_independent_model_list_finds_few_models_no_question_covers() {
     let (exam_cfg, ask) = configs();
-    let mut sections_with_gaps = 0;
-    let mut sections_seen = 0;
+    let mut topics_with_gaps = 0;
+    let mut topics_seen = 0;
     for deck in probe_decks() {
-        let sections = exam::exam_sections(&deck);
+        let topics = exam::exam_topics(&deck);
         let started = std::time::Instant::now();
         let questions = probe_questions(&deck, &exam_cfg, &ask);
         println!(
@@ -181,30 +181,30 @@ fn an_independent_model_list_finds_few_models_no_question_covers() {
             questions.len()
         );
         let source = independent_source(&deck);
-        let headings: String = sections
+        let headings: String = topics
             .iter()
             .enumerate()
-            .map(|(i, s)| format!("Section {}: {}\n{}", i + 1, s.label, card_list(s)))
+            .map(|(i, s)| format!("Topic {}: {}\n{}", i + 1, s.label, card_list(s)))
             .collect();
         let listed: IndependentModels = parse_json(&judge(
             &ask,
             &format!(
-                "{source}\nFrom the source above alone, list for each section below the \
+                "{source}\nFrom the source above alone, list for each topic below the \
                  distinct ideas a student must understand to master it.\n\n{headings}\nOutput \
-                 ONLY JSON: {{\"sections\": [{{\"models\": [\"...\"]}}]}} with one entry per \
-                 section, in order."
+                 ONLY JSON: {{\"topics\": [{{\"models\": [\"...\"]}}]}} with one entry per \
+                 topic, in order."
             ),
         ))
         .unwrap();
         assert_eq!(
-            sections.len(),
-            listed.sections.len(),
-            "one model list per section"
+            topics.len(),
+            listed.topics.len(),
+            "one model list per topic"
         );
-        for (at, (section, independent)) in sections.iter().zip(&listed.sections).enumerate() {
+        for (at, (topic, independent)) in topics.iter().zip(&listed.topics).enumerate() {
             let asked: String = questions
                 .iter()
-                .filter(|q| q.section == at)
+                .filter(|q| q.topic == at)
                 .map(|q| format!("- {}\n", q.prompt.replace('\n', "\n  ")))
                 .collect();
             let models: String = independent
@@ -222,23 +222,23 @@ fn an_independent_model_list_finds_few_models_no_question_covers() {
             ))
             .unwrap();
             println!(
-                "probe: deck={} section={:?} independent_models={} uncovered={:?}",
+                "probe: deck={} topic={:?} independent_models={} uncovered={:?}",
                 deck.display_name(),
-                section.label,
+                topic.label,
                 independent.models.len(),
                 gaps.uncovered
             );
-            sections_seen += 1;
+            topics_seen += 1;
             if !gaps.uncovered.is_empty() {
-                sections_with_gaps += 1;
+                topics_with_gaps += 1;
             }
         }
     }
-    println!("probe: sections with an uncovered model {sections_with_gaps} of {sections_seen}");
-    assert!(sections_seen > 0, "no sections were probed");
+    println!("probe: topics with an uncovered model {topics_with_gaps} of {topics_seen}");
+    assert!(topics_seen > 0, "no topics were probed");
     assert!(
-        sections_with_gaps * 5 <= sections_seen,
-        "{sections_with_gaps} of {sections_seen} sections have an idea no question tests (the \
+        topics_with_gaps * 5 <= topics_seen,
+        "{topics_with_gaps} of {topics_seen} topics have an idea no question tests (the \
          bar is at most one in five; above it the independent check moves into the runtime)"
     );
 }

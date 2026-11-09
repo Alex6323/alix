@@ -415,7 +415,7 @@ mod tests {
         let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
         let base_deck = alix::deck::Deck::load(root.join("base.md")).unwrap();
         let full_marks = alix::store::SittingRecord {
-            sections: vec![alix::store::SectionRecord {
+            topics: vec![alix::store::TopicRecord {
                 card_ids: vec![base_id.clone()],
                 pass: true,
             }],

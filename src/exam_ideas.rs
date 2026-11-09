@@ -4,19 +4,19 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 pub const VERSION: u32 = 1;
-pub const QUESTIONS_PER_SECTION: usize = 3;
+pub const QUESTIONS_PER_TOPIC: usize = 3;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IdeasDocument {
     pub version: u32,
     pub material: String,
-    pub sections: Vec<IdeaSection>,
+    pub topics: Vec<IdeaTopic>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct IdeaSection {
+pub struct IdeaTopic {
     pub heading: String,
     pub ideas: Vec<Idea>,
 }
@@ -41,7 +41,7 @@ impl IdeasDocument {
         Self {
             version: VERSION,
             material,
-            sections: Vec::new(),
+            topics: Vec::new(),
         }
     }
 
@@ -71,10 +71,8 @@ impl IdeasDocument {
         write_atomic(path, self.to_json()?.as_bytes())
     }
 
-    pub fn section(&self, heading: &str) -> Option<&IdeaSection> {
-        self.sections
-            .iter()
-            .find(|section| section.heading == heading)
+    pub fn topic(&self, heading: &str) -> Option<&IdeaTopic> {
+        self.topics.iter().find(|topic| topic.heading == heading)
     }
 
     /// The document to examine with: this one when it was listed from the same
@@ -88,11 +86,11 @@ impl IdeasDocument {
         headings
             .iter()
             .copied()
-            .filter(|heading| self.section(heading).is_none_or(|s| s.ideas.is_empty()))
+            .filter(|heading| self.topic(heading).is_none_or(|s| s.ideas.is_empty()))
             .collect()
     }
 
-    pub fn set_section(&mut self, heading: &str, ideas: Vec<String>) {
+    pub fn set_topic(&mut self, heading: &str, ideas: Vec<String>) {
         let ideas = ideas
             .into_iter()
             .map(|text| Idea {
@@ -100,24 +98,24 @@ impl IdeasDocument {
                 ..Idea::default()
             })
             .collect();
-        match self.sections.iter_mut().find(|s| s.heading == heading) {
-            Some(section) => section.ideas = ideas,
-            None => self.sections.push(IdeaSection {
+        match self.topics.iter_mut().find(|s| s.heading == heading) {
+            Some(topic) => topic.ideas = ideas,
+            None => self.topics.push(IdeaTopic {
                 heading: heading.to_string(),
                 ideas,
             }),
         }
     }
 
-    /// Up to `QUESTIONS_PER_SECTION` ideas of a section, in the order an exam
+    /// Up to `QUESTIONS_PER_TOPIC` ideas of a topic, in the order an exam
     /// should ask them: never asked, then last failed, then asked longest ago.
     pub fn select(&self, heading: &str) -> Vec<usize> {
-        let Some(section) = self.section(heading) else {
+        let Some(topic) = self.topic(heading) else {
             return Vec::new();
         };
-        let mut order: Vec<usize> = (0..section.ideas.len()).collect();
+        let mut order: Vec<usize> = (0..topic.ideas.len()).collect();
         order.sort_by_key(|&at| {
-            let idea = &section.ideas[at];
+            let idea = &topic.ideas[at];
             let rank = match (idea.last_asked_ms, idea.last_passed) {
                 (None, _) => 0,
                 (Some(_), Some(false)) => 1,
@@ -125,14 +123,14 @@ impl IdeasDocument {
             };
             (rank, idea.last_asked_ms.unwrap_or(0), at)
         });
-        order.truncate(QUESTIONS_PER_SECTION);
+        order.truncate(QUESTIONS_PER_TOPIC);
         order
     }
 
     pub fn record(&mut self, asked: &[AskedIdea], now_ms: u64) {
         for entry in asked {
             if let Some(idea) = self
-                .sections
+                .topics
                 .iter_mut()
                 .find(|s| s.heading == entry.heading)
                 .and_then(|s| s.ideas.get_mut(entry.idea))
@@ -170,7 +168,7 @@ mod tests {
         IdeasDocument {
             version: VERSION,
             material: "xxh64-0".to_string(),
-            sections: vec![IdeaSection {
+            topics: vec![IdeaTopic {
                 heading: "H".to_string(),
                 ideas: ideas
                     .iter()
@@ -239,7 +237,7 @@ mod tests {
             ],
             42,
         );
-        let marked: Vec<_> = d.sections[0]
+        let marked: Vec<_> = d.topics[0]
             .ideas
             .iter()
             .map(|i| (i.last_asked_ms, i.last_passed))
@@ -259,14 +257,14 @@ mod tests {
             "same material keeps history"
         );
         let fresh = IdeasDocument::for_material(Some(kept), "xxh64-1");
-        assert!(fresh.sections.is_empty(), "changed material drops history");
+        assert!(fresh.topics.is_empty(), "changed material drops history");
         assert_eq!("xxh64-1", fresh.material);
     }
 
     #[test]
     fn missing_headings_are_those_without_ideas() {
         let mut d = doc(&[(None, None)]);
-        d.set_section("Empty", Vec::new());
+        d.set_topic("Empty", Vec::new());
         assert_eq!(
             vec!["New", "Empty"],
             d.missing_headings(&["H", "New", "Empty"])
@@ -282,9 +280,9 @@ mod tests {
         d.save(&path).unwrap();
         assert_eq!(Some(d), IdeasDocument::load(&path).unwrap());
         let rejected = [
-            r#"{"version":1,"material":"m","sections":[],"extra":1}"#,
-            r#"{"version":2,"material":"m","sections":[]}"#,
-            r#"{"version":1,"material":"m","sections":[{"heading":"H","ideas":[{"text":"t","last_asked_ms":null,"last_passed":null,"model":"x"}]}]}"#,
+            r#"{"version":1,"material":"m","topics":[],"extra":1}"#,
+            r#"{"version":2,"material":"m","topics":[]}"#,
+            r#"{"version":1,"material":"m","topics":[{"heading":"H","ideas":[{"text":"t","last_asked_ms":null,"last_passed":null,"model":"x"}]}]}"#,
         ];
         for text in rejected {
             assert!(IdeasDocument::parse(text).is_err(), "{text}");

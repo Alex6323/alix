@@ -2,7 +2,7 @@
 // (the tutor and AI exam borrowed from the desktop's own AI backend), the
 // `alix --lan` pairing-URL parser, the min-version gate, and the small
 // typed DTOs mirroring the wire shapes pinned by tests/contracts/Remote*.json
-// and documented in docs/API.md section 4.10 / section 6. dart:io only, no
+// and documented in docs/API.md 4.10 / 6. dart:io only, no
 // package:http: one small `HttpClient`, called rarely, does not earn a dep.
 import 'dart:convert';
 import 'dart:io';
@@ -422,7 +422,7 @@ class RemoteExamGrade {
     required this.verdict,
     required this.feedback,
     required this.missed,
-    this.section = 0,
+    this.topic = 0,
     this.shape = '',
     this.mentalModel = '',
   });
@@ -433,7 +433,7 @@ class RemoteExamGrade {
   final String verdict;
   final String feedback;
   final List<String> missed;
-  final int section;
+  final int topic;
   final String shape;
   final String mentalModel;
 
@@ -453,14 +453,14 @@ class RemoteExamGrade {
       verdict: verdict,
       feedback: feedback,
       missed: _asStringList(json['missed']),
-      section: _asInt(json['section']) ?? 0,
+      topic: _asInt(json['topic']) ?? 0,
       shape: _asString(json['shape']) ?? '',
       mentalModel: _asString(json['mental_model']) ?? '',
     );
   }
 }
 
-/// Pass, partial and total counts of one section or one whole sitting.
+/// Pass, partial and total counts of one topic or one whole sitting.
 class ExamVerdicts {
   const ExamVerdicts({required this.pass, required this.partial, required this.total});
 
@@ -481,9 +481,9 @@ class ExamVerdicts {
   }
 }
 
-/// One examined section of a sitting. Mirrors `RemoteExamSectionDto`.
-class RemoteExamSection {
-  const RemoteExamSection({
+/// One examined topic of a sitting. Mirrors `RemoteExamTopicDto`.
+class RemoteExamTopic {
+  const RemoteExamTopic({
     required this.label,
     required this.cards,
     required this.pass,
@@ -495,12 +495,12 @@ class RemoteExamSection {
   final bool pass;
   final ExamVerdicts verdicts;
 
-  static RemoteExamSection? fromJson(dynamic json) {
+  static RemoteExamTopic? fromJson(dynamic json) {
     if (json is! Map) return null;
     final label = _asString(json['label']);
     final verdicts = ExamVerdicts.fromJson(json['verdicts']);
     if (label == null || verdicts == null) return null;
-    return RemoteExamSection(
+    return RemoteExamTopic(
       label: label,
       cards: _asStringList(json['cards']),
       pass: _asBool(json['pass']),
@@ -528,7 +528,7 @@ class RemoteExam {
     this.error,
     this.estimate,
     this.ideas,
-    this.sections = const [],
+    this.topics = const [],
     this.verdicts,
     this.full = false,
     this.mastered = false,
@@ -539,7 +539,7 @@ class RemoteExam {
   final String deck;
   final String strictness;
   final List<String> questions;
-  final List<RemoteExamSection> sections;
+  final List<RemoteExamTopic> topics;
   final ExamVerdicts? verdicts;
   final bool full;
   final bool mastered;
@@ -563,8 +563,8 @@ class RemoteExam {
         deck: _asString(json['deck']) ?? '',
         strictness: _asString(json['strictness']) ?? 'balanced',
         questions: _asStringList(json['questions']),
-        sections: json['sections'] is List
-            ? (json['sections'] as List).map(RemoteExamSection.fromJson).whereType<RemoteExamSection>().toList()
+        topics: json['topics'] is List
+            ? (json['topics'] as List).map(RemoteExamTopic.fromJson).whereType<RemoteExamTopic>().toList()
             : const [],
         verdicts: ExamVerdicts.fromJson(json['verdicts']),
         full: _asBool(json['full']),

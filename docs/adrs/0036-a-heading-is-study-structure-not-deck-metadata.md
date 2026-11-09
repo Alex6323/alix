@@ -1,7 +1,8 @@
 # 0036: A heading is study structure, not deck metadata
 
 - Status: Accepted (terminator clause superseded by 0037)
-- Evidence: section_context_units in src/serve/dto.rs
+- Evidence: topic_context_units in src/serve/dto.rs
+- Amended by: 0064 (rule 8: the vocabulary, a section is a topic, and the wire field names)
 - Details evolved 2026-09-02: sub-cards stack to `######` (the ATX
   ceiling); seven or more hashes are ordinary prose, not an error.
   Evidence in `src/parser/mod.rs::heading_depth` and the law row

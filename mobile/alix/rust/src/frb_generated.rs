@@ -2888,9 +2888,9 @@ const _: fn() = || {
         let _: Option<Vec<crate::api::review::ContentUnit>> = CardView.front_units;
         let _: Vec<crate::api::review::FrontStep> = CardView.front_steps;
         let _: Vec<usize> = CardView.hole_steps;
-        let _: Vec<String> = CardView.section_context;
-        let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.section_context_runs;
-        let _: Vec<crate::api::review::ContentUnit> = CardView.section_context_units;
+        let _: Vec<String> = CardView.topic_context;
+        let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.topic_context_runs;
+        let _: Vec<crate::api::review::ContentUnit> = CardView.topic_context_units;
         let _: Vec<String> = CardView.back;
         let _: Vec<Vec<crate::api::review::InlineRun>> = CardView.back_runs;
         let _: Vec<crate::api::review::ContentUnit> = CardView.back_units;
@@ -3049,7 +3049,7 @@ const _: fn() = || {
         let _: crate::api::review::Mode = ReviewState.mode;
         let _: crate::api::review::Depth = ReviewState.depth;
         let _: bool = ReviewState.introducing;
-        let _: bool = ReviewState.section_first;
+        let _: bool = ReviewState.topic_first;
         let _: Option<Vec<String>> = ReviewState.choices;
         let _: Option<bool> = ReviewState.choices_multiple;
         let _: Option<Vec<Vec<crate::api::review::InlineRun>>> = ReviewState.choice_runs;
@@ -3245,10 +3245,10 @@ impl SseDecode for crate::api::review::CardView {
             <Option<Vec<crate::api::review::ContentUnit>>>::sse_decode(deserializer);
         let mut var_frontSteps = <Vec<crate::api::review::FrontStep>>::sse_decode(deserializer);
         let mut var_holeSteps = <Vec<usize>>::sse_decode(deserializer);
-        let mut var_sectionContext = <Vec<String>>::sse_decode(deserializer);
-        let mut var_sectionContextRuns =
+        let mut var_topicContext = <Vec<String>>::sse_decode(deserializer);
+        let mut var_topicContextRuns =
             <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
-        let mut var_sectionContextUnits =
+        let mut var_topicContextUnits =
             <Vec<crate::api::review::ContentUnit>>::sse_decode(deserializer);
         let mut var_back = <Vec<String>>::sse_decode(deserializer);
         let mut var_backRuns = <Vec<Vec<crate::api::review::InlineRun>>>::sse_decode(deserializer);
@@ -3266,9 +3266,9 @@ impl SseDecode for crate::api::review::CardView {
             front_units: var_frontUnits,
             front_steps: var_frontSteps,
             hole_steps: var_holeSteps,
-            section_context: var_sectionContext,
-            section_context_runs: var_sectionContextRuns,
-            section_context_units: var_sectionContextUnits,
+            topic_context: var_topicContext,
+            topic_context_runs: var_topicContextRuns,
+            topic_context_units: var_topicContextUnits,
             back: var_back,
             back_runs: var_backRuns,
             back_units: var_backUnits,
@@ -3548,14 +3548,13 @@ impl SseDecode for crate::api::exam::ExamApplied {
 impl SseDecode for crate::api::exam::ExamOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_sections =
-            <Vec<crate::api::exam::ExamSectionOutcome>>::sse_decode(deserializer);
+        let mut var_topics = <Vec<crate::api::exam::ExamTopicOutcome>>::sse_decode(deserializer);
         let mut var_full = <bool>::sse_decode(deserializer);
         let mut var_pass = <u32>::sse_decode(deserializer);
         let mut var_partial = <u32>::sse_decode(deserializer);
         let mut var_total = <u32>::sse_decode(deserializer);
         return crate::api::exam::ExamOutcome {
-            sections: var_sections,
+            topics: var_topics,
             full: var_full,
             pass: var_pass,
             partial: var_partial,
@@ -3564,12 +3563,12 @@ impl SseDecode for crate::api::exam::ExamOutcome {
     }
 }
 
-impl SseDecode for crate::api::exam::ExamSectionOutcome {
+impl SseDecode for crate::api::exam::ExamTopicOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_cards = <Vec<String>>::sse_decode(deserializer);
         let mut var_pass = <bool>::sse_decode(deserializer);
-        return crate::api::exam::ExamSectionOutcome {
+        return crate::api::exam::ExamTopicOutcome {
             cards: var_cards,
             pass: var_pass,
         };
@@ -3809,13 +3808,13 @@ impl SseDecode for Vec<crate::api::listing::DeckStrip> {
     }
 }
 
-impl SseDecode for Vec<crate::api::exam::ExamSectionOutcome> {
+impl SseDecode for Vec<crate::api::exam::ExamTopicOutcome> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut len_ = <i32>::sse_decode(deserializer);
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
-            ans_.push(<crate::api::exam::ExamSectionOutcome>::sse_decode(
+            ans_.push(<crate::api::exam::ExamTopicOutcome>::sse_decode(
                 deserializer,
             ));
         }
@@ -4709,7 +4708,7 @@ impl SseDecode for crate::api::review::ReviewState {
         let mut var_mode = <crate::api::review::Mode>::sse_decode(deserializer);
         let mut var_depth = <crate::api::review::Depth>::sse_decode(deserializer);
         let mut var_introducing = <bool>::sse_decode(deserializer);
-        let mut var_sectionFirst = <bool>::sse_decode(deserializer);
+        let mut var_topicFirst = <bool>::sse_decode(deserializer);
         let mut var_choices = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_choicesMultiple = <Option<bool>>::sse_decode(deserializer);
         let mut var_choiceRuns =
@@ -4741,7 +4740,7 @@ impl SseDecode for crate::api::review::ReviewState {
             mode: var_mode,
             depth: var_depth,
             introducing: var_introducing,
-            section_first: var_sectionFirst,
+            topic_first: var_topicFirst,
             choices: var_choices,
             choices_multiple: var_choicesMultiple,
             choice_runs: var_choiceRuns,
@@ -5021,7 +5020,7 @@ impl SseDecode for crate::api::review::WalkState {
         let mut var_choicesMultiple = <Option<bool>>::sse_decode(deserializer);
         let mut var_choiceRuns =
             <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_decode(deserializer);
-        let mut var_sectionFirst = <bool>::sse_decode(deserializer);
+        let mut var_topicFirst = <bool>::sse_decode(deserializer);
         let mut var_position = <u32>::sse_decode(deserializer);
         let mut var_total = <u32>::sse_decode(deserializer);
         let mut var_label = <String>::sse_decode(deserializer);
@@ -5035,7 +5034,7 @@ impl SseDecode for crate::api::review::WalkState {
             choices: var_choices,
             choices_multiple: var_choicesMultiple,
             choice_runs: var_choiceRuns,
-            section_first: var_sectionFirst,
+            topic_first: var_topicFirst,
             position: var_position,
             total: var_total,
             label: var_label,
@@ -5287,9 +5286,9 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::CardView> 
             self.0.front_units.into_into_dart().into_dart(),
             self.0.front_steps.into_into_dart().into_dart(),
             self.0.hole_steps.into_into_dart().into_dart(),
-            self.0.section_context.into_into_dart().into_dart(),
-            self.0.section_context_runs.into_into_dart().into_dart(),
-            self.0.section_context_units.into_into_dart().into_dart(),
+            self.0.topic_context.into_into_dart().into_dart(),
+            self.0.topic_context_runs.into_into_dart().into_dart(),
+            self.0.topic_context_units.into_into_dart().into_dart(),
             self.0.back.into_into_dart().into_dart(),
             self.0.back_runs.into_into_dart().into_dart(),
             self.0.back_units.into_into_dart().into_dart(),
@@ -5658,7 +5657,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamApplied>
 impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamOutcome {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
-            self.sections.into_into_dart().into_dart(),
+            self.topics.into_into_dart().into_dart(),
             self.full.into_into_dart().into_dart(),
             self.pass.into_into_dart().into_dart(),
             self.partial.into_into_dart().into_dart(),
@@ -5676,7 +5675,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamOutcome>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamSectionOutcome {
+impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamTopicOutcome {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.cards.into_into_dart().into_dart(),
@@ -5686,13 +5685,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamSectionOutcome {
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::api::exam::ExamSectionOutcome
+    for crate::api::exam::ExamTopicOutcome
 {
 }
-impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamSectionOutcome>
-    for crate::api::exam::ExamSectionOutcome
+impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamTopicOutcome>
+    for crate::api::exam::ExamTopicOutcome
 {
-    fn into_into_dart(self) -> crate::api::exam::ExamSectionOutcome {
+    fn into_into_dart(self) -> crate::api::exam::ExamTopicOutcome {
         self
     }
 }
@@ -6317,7 +6316,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::review::ReviewStat
             self.0.mode.into_into_dart().into_dart(),
             self.0.depth.into_into_dart().into_dart(),
             self.0.introducing.into_into_dart().into_dart(),
-            self.0.section_first.into_into_dart().into_dart(),
+            self.0.topic_first.into_into_dart().into_dart(),
             self.0.choices.into_into_dart().into_dart(),
             self.0.choices_multiple.into_into_dart().into_dart(),
             self.0.choice_runs.into_into_dart().into_dart(),
@@ -6644,7 +6643,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::review::WalkState {
             self.choices.into_into_dart().into_dart(),
             self.choices_multiple.into_into_dart().into_dart(),
             self.choice_runs.into_into_dart().into_dart(),
-            self.section_first.into_into_dart().into_dart(),
+            self.topic_first.into_into_dart().into_dart(),
             self.position.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
             self.label.into_into_dart().into_dart(),
@@ -6801,12 +6800,9 @@ impl SseEncode for crate::api::review::CardView {
         <Option<Vec<crate::api::review::ContentUnit>>>::sse_encode(self.front_units, serializer);
         <Vec<crate::api::review::FrontStep>>::sse_encode(self.front_steps, serializer);
         <Vec<usize>>::sse_encode(self.hole_steps, serializer);
-        <Vec<String>>::sse_encode(self.section_context, serializer);
-        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(
-            self.section_context_runs,
-            serializer,
-        );
-        <Vec<crate::api::review::ContentUnit>>::sse_encode(self.section_context_units, serializer);
+        <Vec<String>>::sse_encode(self.topic_context, serializer);
+        <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.topic_context_runs, serializer);
+        <Vec<crate::api::review::ContentUnit>>::sse_encode(self.topic_context_units, serializer);
         <Vec<String>>::sse_encode(self.back, serializer);
         <Vec<Vec<crate::api::review::InlineRun>>>::sse_encode(self.back_runs, serializer);
         <Vec<crate::api::review::ContentUnit>>::sse_encode(self.back_units, serializer);
@@ -7018,7 +7014,7 @@ impl SseEncode for crate::api::exam::ExamApplied {
 impl SseEncode for crate::api::exam::ExamOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<crate::api::exam::ExamSectionOutcome>>::sse_encode(self.sections, serializer);
+        <Vec<crate::api::exam::ExamTopicOutcome>>::sse_encode(self.topics, serializer);
         <bool>::sse_encode(self.full, serializer);
         <u32>::sse_encode(self.pass, serializer);
         <u32>::sse_encode(self.partial, serializer);
@@ -7026,7 +7022,7 @@ impl SseEncode for crate::api::exam::ExamOutcome {
     }
 }
 
-impl SseEncode for crate::api::exam::ExamSectionOutcome {
+impl SseEncode for crate::api::exam::ExamTopicOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<String>>::sse_encode(self.cards, serializer);
@@ -7222,12 +7218,12 @@ impl SseEncode for Vec<crate::api::listing::DeckStrip> {
     }
 }
 
-impl SseEncode for Vec<crate::api::exam::ExamSectionOutcome> {
+impl SseEncode for Vec<crate::api::exam::ExamTopicOutcome> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
-            <crate::api::exam::ExamSectionOutcome>::sse_encode(item, serializer);
+            <crate::api::exam::ExamTopicOutcome>::sse_encode(item, serializer);
         }
     }
 }
@@ -7940,7 +7936,7 @@ impl SseEncode for crate::api::review::ReviewState {
         <crate::api::review::Mode>::sse_encode(self.mode, serializer);
         <crate::api::review::Depth>::sse_encode(self.depth, serializer);
         <bool>::sse_encode(self.introducing, serializer);
-        <bool>::sse_encode(self.section_first, serializer);
+        <bool>::sse_encode(self.topic_first, serializer);
         <Option<Vec<String>>>::sse_encode(self.choices, serializer);
         <Option<bool>>::sse_encode(self.choices_multiple, serializer);
         <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(self.choice_runs, serializer);
@@ -8175,7 +8171,7 @@ impl SseEncode for crate::api::review::WalkState {
         <Option<Vec<String>>>::sse_encode(self.choices, serializer);
         <Option<bool>>::sse_encode(self.choices_multiple, serializer);
         <Option<Vec<Vec<crate::api::review::InlineRun>>>>::sse_encode(self.choice_runs, serializer);
-        <bool>::sse_encode(self.section_first, serializer);
+        <bool>::sse_encode(self.topic_first, serializer);
         <u32>::sse_encode(self.position, serializer);
         <u32>::sse_encode(self.total, serializer);
         <String>::sse_encode(self.label, serializer);

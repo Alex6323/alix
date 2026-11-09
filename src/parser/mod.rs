@@ -137,8 +137,8 @@ pub enum LintKind {
     NoteNamesNoBlank {
         name: String,
     },
-    SectionWithoutCards,
-    DuplicateSectionHeading {
+    TopicWithoutCards,
+    DuplicateTopicHeading {
         first_line: usize,
     },
     HintContainsAnswer {
@@ -148,7 +148,7 @@ pub enum LintKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnswerShownAt {
-    Section,
+    Topic,
     QuestionLine(usize),
 }
 
@@ -193,15 +193,15 @@ pub enum ParseError {
     )]
     OrphanSubCard(usize),
     #[error(
-        "line {0}: a deck body starts with a heading; open a `# ` section or `## ` card above this line"
+        "line {0}: a deck body starts with a heading; open a `# ` topic or `## ` card above this line"
     )]
     ProseBeforeFirstHeading(usize),
-    #[error("line {0}: section heading is empty; write its title")]
-    EmptySectionHeading(usize),
+    #[error("line {0}: topic heading is empty; write its title")]
+    EmptyTopicHeading(usize),
     #[error("line {0}: table row has an empty front cell")]
     EmptyFrontCell(usize),
-    #[error("line {0}: a section heading takes no directives and no card id")]
-    SectionDirective(usize),
+    #[error("line {0}: a topic heading takes no directives and no card id")]
+    TopicDirective(usize),
     #[error("line {0}: this card id belongs to no card")]
     OrphanCardId(usize),
     #[error("line {0}: only a `## ` heading can title a card table")]
@@ -365,9 +365,9 @@ impl ParseError {
             Self::BlankCardDirection(_) => "blank_card_direction",
             Self::OrphanSubCard(_) => "orphan_sub_card",
             Self::ProseBeforeFirstHeading(_) => "prose_before_first_heading",
-            Self::EmptySectionHeading(_) => "empty_section_heading",
+            Self::EmptyTopicHeading(_) => "empty_topic_heading",
             Self::EmptyFrontCell(_) => "empty_front_cell",
-            Self::SectionDirective(_) => "section_directive",
+            Self::TopicDirective(_) => "topic_directive",
             Self::OrphanCardId(_) => "orphan_card_id",
             Self::SubCardTableTitle(_) => "sub_card_table_title",
             Self::LeadingInvocation { .. } => "leading_invocation",
@@ -412,9 +412,9 @@ impl ParseError {
             | Self::BlankCardDirection(line)
             | Self::OrphanSubCard(line)
             | Self::ProseBeforeFirstHeading(line)
-            | Self::EmptySectionHeading(line)
+            | Self::EmptyTopicHeading(line)
             | Self::EmptyFrontCell(line)
-            | Self::SectionDirective(line)
+            | Self::TopicDirective(line)
             | Self::OrphanCardId(line)
             | Self::SubCardTableTitle(line)
             | Self::MixedImageLine(line)
@@ -646,13 +646,13 @@ fn image_references_in_line(line: &str, offset: usize, out: &mut Vec<ImageRefere
     }
 }
 
-/// Does a section heading's tail carry a RECOGNIZED card directive? Asks
+/// Does a topic heading's tail carry a RECOGNIZED card directive? Asks
 /// `apply_directive` itself rather than keeping a second list that can drift
 /// (that list already omitted `diagram` once): a key is recognized when
 /// applying it raises no unknown-key lint. It applies a throwaway probe
 /// value so the answer is about the KEY: an invalid value only lints, and a
 /// lint would let the comment be stripped and the setting silently lost.
-fn section_carries_directive(rest: &str, line: usize) -> bool {
+fn topic_carries_directive(rest: &str, line: usize) -> bool {
     let mut tail = rest;
     while let Some(open) = tail.find("<!--") {
         let after = &tail[open + 4..];
@@ -687,7 +687,7 @@ fn section_carries_directive(rest: &str, line: usize) -> bool {
     false
 }
 
-/// Depth 1 is a section; 2 through 6 are card depths (a card and four
+/// Depth 1 is a topic; 2 through 6 are card depths (a card and four
 /// sub-card levels). Every consumer asks this instead of spelling the
 /// range: two depth widenings each left range literals behind.
 pub(crate) fn is_card_depth(depth: usize) -> bool {
@@ -733,7 +733,7 @@ enum RawBlock {
 
 struct RawCard {
     line: usize,
-    section: Vec<String>,
+    topic: Vec<String>,
     /// 2 for a `## ` card, 3 or 4 for a sub-card. Gating reads it; identity
     /// never does, so re-heading a card keeps its token.
     depth: usize,
@@ -864,7 +864,7 @@ impl RawCard {
 
 struct RawTable {
     line: usize,
-    section: Vec<String>,
+    topic: Vec<String>,
     title: Option<String>,
     columns: usize,
     rows: Vec<RawRow>,
@@ -1033,15 +1033,15 @@ struct ScannedBody {
 }
 
 /// A deck body opens with a heading. Before the first one there is no
-/// section to join, so a line that would join it is the error instead.
-fn section_line(
-    section: &mut Vec<String>,
+/// topic to join, so a line that would join it is the error instead.
+fn topic_line(
+    topic: &mut Vec<String>,
     seen_heading: bool,
     lineno: usize,
     line: String,
     separated: bool,
 ) -> Result<(), ParseError> {
-    // A sidecar has no sections at all (D16), so it has no body-opens-with-a-
+    // A sidecar has no topics at all (D16), so it has no body-opens-with-a-
     // heading rule either: its lines are notes and personal cards.
     if sidecar_mode() {
         return Ok(());
@@ -1049,10 +1049,10 @@ fn section_line(
     if !seen_heading {
         return Err(ParseError::ProseBeforeFirstHeading(lineno));
     }
-    if separated && section.len() > 1 && section.last().is_some_and(|line| !line.is_empty()) {
-        section.push(String::new());
+    if separated && topic.len() > 1 && topic.last().is_some_and(|line| !line.is_empty()) {
+        topic.push(String::new());
     }
-    section.push(line);
+    topic.push(line);
     Ok(())
 }
 
@@ -1083,19 +1083,19 @@ fn thematic_break(t: &str) -> bool {
     })
 }
 
-fn lint_section_without_cards(
-    section: &[String],
+fn lint_topic_without_cards(
+    topic: &[String],
     line: Option<usize>,
     has_cards: bool,
     lints: &mut Vec<Lint>,
 ) {
     if let Some(line) = line
-        && section.len() > 1
+        && topic.len() > 1
         && !has_cards
     {
         lints.push(Lint {
             line,
-            kind: LintKind::SectionWithoutCards,
+            kind: LintKind::TopicWithoutCards,
         });
     }
 }
@@ -1106,9 +1106,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
     let mut current: Option<RawCard> = None;
     let mut table: Option<RawTable> = None;
     let mut open_depths: Vec<(usize, usize)> = Vec::new();
-    let mut section: Vec<String> = Vec::new();
-    let mut section_heading_line: Option<usize> = None;
-    let mut section_has_cards = false;
+    let mut topic: Vec<String> = Vec::new();
+    let mut topic_heading_line: Option<usize> = None;
+    let mut topic_has_cards = false;
     let mut heading_lines: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     let mut seen_heading = false;
@@ -1164,7 +1164,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 if !parents {
                     open_depths.clear();
                 }
-                section_has_cards |= !tbl.rows.is_empty();
+                topic_has_cards |= !tbl.rows.is_empty();
                 blocks.push(RawBlock::Table(Box::new(tbl)));
             }
         }
@@ -1174,8 +1174,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 fence = None;
             }
             if current.is_none() {
-                section_line(
-                    &mut section,
+                topic_line(
+                    &mut topic,
                     seen_heading,
                     lineno,
                     raw.to_string(),
@@ -1237,8 +1237,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         if let Some((ch, open)) = fence_opener(raw) {
             fence = Some((ch, open, lineno));
             if current.is_none() {
-                section_line(
-                    &mut section,
+                topic_line(
+                    &mut topic,
                     seen_heading,
                     lineno,
                     raw.to_string(),
@@ -1320,7 +1320,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             }
             table = Some(RawTable {
                 line: block_line,
-                section: section.clone(),
+                topic: topic.clone(),
                 title,
                 columns: header.len(),
                 rows: Vec::new(),
@@ -1345,35 +1345,30 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 // Scanned like any other heading, so an editorial comment
                 // is stripped exactly as it is on a card front; only a
                 // RECOGNIZED directive or an id is an error, because a
-                // section owns no card to bind one to and a swallowed id
+                // topic owns no card to bind one to and a swallowed id
                 // would sever its card's history.
-                if section_carries_directive(rest, lineno) {
-                    return Err(ParseError::SectionDirective(lineno));
+                if topic_carries_directive(rest, lineno) {
+                    return Err(ParseError::TopicDirective(lineno));
                 }
                 let (text, _) = heading(rest, lineno, lints)?;
                 if trim_ws(&text).is_empty() {
-                    return Err(ParseError::EmptySectionHeading(lineno));
+                    return Err(ParseError::EmptyTopicHeading(lineno));
                 }
-                lint_section_without_cards(
-                    &section,
-                    section_heading_line,
-                    section_has_cards,
-                    lints,
-                );
+                lint_topic_without_cards(&topic, topic_heading_line, topic_has_cards, lints);
                 match heading_lines.get(&text) {
                     Some(&first_line) => lints.push(Lint {
                         line: lineno,
-                        kind: LintKind::DuplicateSectionHeading { first_line },
+                        kind: LintKind::DuplicateTopicHeading { first_line },
                     }),
                     None => {
                         heading_lines.insert(text.clone(), lineno);
                     }
                 }
-                section_heading_line = Some(lineno);
-                section_has_cards = false;
+                topic_heading_line = Some(lineno);
+                topic_has_cards = false;
                 open_depths.clear();
                 seen_heading = true;
-                section = vec![text];
+                topic = vec![text];
                 prev_blank = false;
                 prev_heading = true;
                 continue;
@@ -1396,11 +1391,11 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 return Err(ParseError::EmptyFront(lineno));
             }
             seen_heading = true;
-            section_has_cards = true;
+            topic_has_cards = true;
             open_depths.push((depth, lineno));
             current = Some(RawCard {
                 line: lineno,
-                section: section.clone(),
+                topic: topic.clone(),
                 depth,
                 parent,
                 front,
@@ -1458,8 +1453,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             && (thematic_break(rest) || ESCAPABLE.iter().any(|marker| rest.starts_with(marker)))
         {
             if current.is_none() {
-                section_line(
-                    &mut section,
+                topic_line(
+                    &mut topic,
                     seen_heading,
                     lineno,
                     rest.to_string(),
@@ -1485,13 +1480,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 invocation_below(lines, idx + 1).is_some_and(|(_, m)| m == Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
-                    section_line(
-                        &mut section,
-                        seen_heading,
-                        lineno,
-                        t.to_string(),
-                        prev_blank,
-                    )?;
+                    topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?;
                 } else {
                     push_content(&mut current, lineno, t.to_string())?;
                 }
@@ -1584,15 +1573,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                         QuoteRun::Quote => push_content(&mut current, lineno, t.to_string())?,
                     }
                 }
-                // A section has no card to own a note, so the line is
-                // ordinary section prose either way.
-                None => section_line(
-                    &mut section,
-                    seen_heading,
-                    lineno,
-                    t.to_string(),
-                    prev_blank,
-                )?,
+                // A topic has no card to own a note, so the line is
+                // ordinary topic prose either way.
+                None => topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -1722,18 +1705,12 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             });
         }
 
-        // Prose outside any card belongs to the section it sits in, which
+        // Prose outside any card belongs to the topic it sits in, which
         // before the first heading is the unnamed one (ruled D3). A sidecar
-        // has no sections at all (D16), so nothing accumulates there and a
+        // has no topics at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            section_line(
-                &mut section,
-                seen_heading,
-                lineno,
-                t.to_string(),
-                prev_blank,
-            )?;
+            topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -1758,13 +1735,13 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         });
     }
     if let Some(tbl) = table.take() {
-        section_has_cards |= !tbl.rows.is_empty();
+        topic_has_cards |= !tbl.rows.is_empty();
         blocks.push(RawBlock::Table(Box::new(tbl)));
     }
     if let Some(card) = take_card(&mut current)? {
         blocks.push(RawBlock::Card(Box::new(card)));
     }
-    lint_section_without_cards(&section, section_heading_line, section_has_cards, lints);
+    lint_topic_without_cards(&topic, topic_heading_line, topic_has_cards, lints);
     Ok(ScannedBody {
         blocks,
         definitions,
@@ -2394,22 +2371,20 @@ fn shown_blank_answers(
 ) -> Vec<Lint> {
     use crate::answer::normalize_answer;
     let shown = |line: &str| crate::inline::strip_inline_with(line, &template.definitions);
-    let section: Vec<String> = template
-        .section_context
+    let topic: Vec<String> = template
+        .topic_context
         .iter()
         .map(|line| shown(line))
         .collect();
-    let places: Vec<(AnswerShownAt, String)> = std::iter::once((
-        AnswerShownAt::Section,
-        normalize_answer(&section.join("\n")),
-    ))
-    .chain(masked.iter().map(|(number, line)| {
-        (
-            AnswerShownAt::QuestionLine(*number),
-            normalize_answer(&shown(line)),
-        )
-    }))
-    .collect();
+    let places: Vec<(AnswerShownAt, String)> =
+        std::iter::once((AnswerShownAt::Topic, normalize_answer(&topic.join("\n"))))
+            .chain(masked.iter().map(|(number, line)| {
+                (
+                    AnswerShownAt::QuestionLine(*number),
+                    normalize_answer(&shown(line)),
+                )
+            }))
+            .collect();
     let mut found: Vec<Lint> = Vec::new();
     for blank in blanks {
         let Some(answer) = &blank.hidden else {
@@ -2791,11 +2766,11 @@ fn build_table_cards(
     cards: &mut Vec<Card>,
 ) -> Result<(), ParseError> {
     let start = cards.len();
-    let section = raw.section.clone();
+    let topic = raw.topic.clone();
     let block_line = raw.line;
     let out = build_table_cards_inner(subject, deck_id, raw, cards);
     for card in &mut cards[start..] {
-        card.section_context = section.clone();
+        card.topic_context = topic.clone();
         card.block_line = block_line;
         card.parent_block = None;
     }
@@ -3228,12 +3203,12 @@ fn build_card(
     lints: &mut Vec<Lint>,
 ) -> Result<Option<BlockProse>, ParseError> {
     let start = cards.len();
-    let section = raw.section.clone();
+    let topic = raw.topic.clone();
     let block_line = raw.line;
     let parent = raw.parent;
     let out = build_card_inner(subject, deck_id, raw, choices_default, cards, lints);
     for card in &mut cards[start..] {
-        card.section_context = section.clone();
+        card.topic_context = topic.clone();
         card.block_line = block_line;
         card.parent_block = parent;
     }
@@ -3251,7 +3226,7 @@ fn build_card_inner(
     let RawCard {
         line,
         // The wrapper stamps it onto every card this block emits.
-        section: _,
+        topic: _,
         depth: _,
         // The wrapper stamps it onto every card this block emits.
         parent: _,
@@ -3844,11 +3819,11 @@ mod tests {
     }
 
     #[test]
-    fn a_section_probe_advances_past_short_editorial_comments() {
+    fn a_topic_probe_advances_past_short_editorial_comments() {
         for body in ["", "x", "xy"] {
             let tail = format!("Topic <!--{body}--><!-- reveal: line -->");
             assert!(
-                section_carries_directive(&tail, 1),
+                topic_carries_directive(&tail, 1),
                 "the probe must reach the recognized directive after {body:?}"
             );
         }
@@ -4064,11 +4039,11 @@ mod tests {
 
     #[test]
     fn link_definition_grammar_consumes_definitions_outside_card_answers() {
-        let deck = parse("# Section\n[r]: /url\n## Q\n[use][r]\n");
+        let deck = parse("# Topic\n[r]: /url\n## Q\n[use][r]\n");
         assert_eq!(
             deck.definitions,
             vec!["r"],
-            "the ruled definition table is deck-wide, including section prose"
+            "the ruled definition table is deck-wide, including topic prose"
         );
         assert!(
             question_lines(&deck.cards[0])
@@ -4091,15 +4066,15 @@ mod tests {
 
     #[test]
     fn link_definition_grammar_accepts_a_destination_on_the_following_line() {
-        let deck = parse("# Section\n[r]:\n  /target\n## Q\n[reference][r]\n");
+        let deck = parse("# Topic\n[r]:\n  /target\n## Q\n[reference][r]\n");
 
         assert_eq!(deck.definitions, vec!["r"]);
         assert!(
             deck.cards[0]
-                .section_context
+                .topic_context
                 .iter()
                 .all(|line| line != "[r]:" && line.trim() != "/target"),
-            "the complete definition block is metadata, never section prose"
+            "the complete definition block is metadata, never topic prose"
         );
     }
 
@@ -4109,7 +4084,7 @@ mod tests {
             assert_eq!(
                 ParseError::StrayDivider(3),
                 err(&format!(
-                    "# Section\n[r]:\n  {spelling}\n## Q\n[reference][r]\n"
+                    "# Topic\n[r]:\n  {spelling}\n## Q\n[reference][r]\n"
                 )),
                 "a bare destination made only of break markers: {spelling}"
             );
@@ -4299,15 +4274,15 @@ mod tests {
 
     #[test]
     fn link_definition_grammar_accepts_a_label_split_across_lines() {
-        let deck = parse("# Section\n[\nr\n]: /target\n## Q\n[reference][r]\n");
+        let deck = parse("# Topic\n[\nr\n]: /target\n## Q\n[reference][r]\n");
 
         assert_eq!(deck.definitions, vec!["r"]);
         assert!(
             deck.cards[0]
-                .section_context
+                .topic_context
                 .iter()
                 .all(|line| !matches!(line.as_str(), "[" | "r" | "]: /target")),
-            "the complete definition block is metadata, never section prose"
+            "the complete definition block is metadata, never topic prose"
         );
     }
 
@@ -4317,7 +4292,7 @@ mod tests {
     #[test]
     fn link_definition_labels_collapse_only_the_grammar_whitespace_class() {
         for gap in ['\t', '\x0B', '\x0C', ' '] {
-            let deck = parse(&format!("# Section\n[a{gap}b]: /target\n## Q\nx\n"));
+            let deck = parse(&format!("# Topic\n[a{gap}b]: /target\n## Q\nx\n"));
             assert_eq!(
                 deck.definitions,
                 vec!["a b"],
@@ -4325,29 +4300,27 @@ mod tests {
                 gap as u32
             );
         }
-        let deck = parse("# Section\n[a\u{a0}b]: /target\n## Q\nx\n");
+        let deck = parse("# Topic\n[a\u{a0}b]: /target\n## Q\nx\n");
         assert_eq!(
             deck.definitions,
             vec!["a\u{a0}b"],
             "a no-break space is label content, so it survives normalization"
         );
-        let deck = parse("# Section\n[r]: /a\u{a0}b\n## Q\nx\n");
+        let deck = parse("# Topic\n[r]: /a\u{a0}b\n## Q\nx\n");
         assert_eq!(
             deck.definitions,
             vec!["r"],
             "a no-break space is not ASCII space, so the destination keeps it"
         );
-        let deck = parse("# Section\n[r]: /target \"t\"\u{a0}\n## Q\nx\n");
+        let deck = parse("# Topic\n[r]: /target \"t\"\u{a0}\n## Q\nx\n");
         assert!(
             deck.definitions.is_empty(),
             "a no-break space is a further non-whitespace character on the \
              line, which the definition grammar forbids"
         );
-        let deck = parse("# Section\n[r]:\u{a0}\n/target\n## Q\nx\n");
+        let deck = parse("# Topic\n[r]:\u{a0}\n/target\n## Q\nx\n");
         assert!(
-            deck.cards[0]
-                .section_context
-                .contains(&"/target".to_owned()),
+            deck.cards[0].topic_context.contains(&"/target".to_owned()),
             "a no-break space never separates a definition's parts, so the \
              next line stays prose instead of being eaten as the destination"
         );
@@ -4384,16 +4357,16 @@ mod tests {
                 "a split label collapses to one space",
             ),
         ] {
-            let deck = parse(&format!("# Section\n{block}\n## Q\nanswer\n"));
+            let deck = parse(&format!("# Topic\n{block}\n## Q\nanswer\n"));
             assert_eq!(deck.definitions, vec![label], "{why}");
             let leaked: Vec<&String> = deck.cards[0]
-                .section_context
+                .topic_context
                 .iter()
                 .filter(|line| block.lines().any(|part| part.trim() == line.trim()))
                 .collect();
             assert!(
                 leaked.is_empty(),
-                "{why}: every consumed line is metadata, never section prose: {leaked:?}"
+                "{why}: every consumed line is metadata, never topic prose: {leaked:?}"
             );
         }
     }
@@ -4401,7 +4374,7 @@ mod tests {
     #[test]
     fn link_definition_grammar_accepts_the_exact_indented_commonmark_example_193() {
         let deck =
-            parse("# Section\n   [foo]: \n      /url  \n           'the title'  \n## Q\n[foo]\n");
+            parse("# Topic\n   [foo]: \n      /url  \n           'the title'  \n## Q\n[foo]\n");
 
         assert_eq!(
             deck.definitions,
@@ -4410,10 +4383,10 @@ mod tests {
         );
         assert!(
             deck.cards[0]
-                .section_context
+                .topic_context
                 .iter()
                 .all(|line| !line.contains("/url") && !line.contains("the title")),
-            "the destination and title continuation lines never leak into section context"
+            "the destination and title continuation lines never leak into topic context"
         );
     }
 
@@ -4496,7 +4469,7 @@ mod tests {
         super::parse("deck.md", text).unwrap_err()
     }
 
-    /// Spec law 1 (section-context arc): the heading grammar over depth
+    /// Spec law 1 (topic-context arc): the heading grammar over depth
     /// times spacing times position. Each row states the OUTCOME, so it
     /// survives whatever the error variants end up being named; the
     /// per-variant assertions live with the code that raises them.
@@ -4520,7 +4493,7 @@ mod tests {
     /// nested quotes, and card thematic breaks are hard errors; each
     /// error row is flanked by the nearest legal neighbor that must stay
     /// legal (fence interiors, paragraph continuations, standalone
-    /// shapes, section breaks).
+    /// shapes, topic breaks).
     #[test]
     fn reserved_shapes_error_as_ruled_and_their_neighbors_stay_legal() {
         for (name, deck, expected) in [
@@ -4540,7 +4513,7 @@ mod tests {
                 Outcome::Cards(1),
             ),
             (
-                "setext under section prose",
+                "setext under topic prose",
                 "# s\nprose\n===\n## q\na\n",
                 Outcome::Err(3),
             ),
@@ -4585,7 +4558,7 @@ mod tests {
                 Outcome::Cards(1),
             ),
             (
-                "indented in a section after blank",
+                "indented in a topic after blank",
                 "# s\nprose\n\n    code\n## q\na\n",
                 Outcome::Err(4),
             ),
@@ -4610,7 +4583,7 @@ mod tests {
                 Outcome::Cards(1),
             ),
             (
-                "nested quote in a section",
+                "nested quote in a topic",
                 "# s\n> > deep\n## q\na\n",
                 Outcome::Err(2),
             ),
@@ -4636,12 +4609,12 @@ mod tests {
                 Outcome::Cards(1),
             ),
             (
-                "an attached section break is stray, as `---` already was",
+                "an attached topic break is stray, as `---` already was",
                 "# s\n***\n## q\na\n",
                 Outcome::Err(2),
             ),
             (
-                "a blank-surrounded section break is reserved",
+                "a blank-surrounded topic break is reserved",
                 "# s\n\n***\n\n## q\na\n",
                 Outcome::Err(3),
             ),
@@ -4675,17 +4648,17 @@ mod tests {
         );
     }
 
-    /// Spec law 10: the section a card was authored under reaches the
+    /// Spec law 10: the topic a card was authored under reaches the
     /// card, heading first, then its prose, including the line classes
     /// that take card-only branches elsewhere in the scanner.
     #[test]
-    fn section_context_reaches_every_card_in_its_section() {
+    fn topic_context_reaches_every_card_in_its_topic() {
         let deck = parse(
             "# Vehicle safety\nApplies on public roads.\n## stopping distance\nanswer\n### wet roads\nlonger\n# Other\n## unrelated\nx\n",
         );
         assert_eq!(
             vec!["Vehicle safety", "Applies on public roads."],
-            deck.cards[0].section_context
+            deck.cards[0].topic_context
         );
         let fronts: Vec<&str> = deck.cards.iter().map(|c| c.front.as_str()).collect();
         assert_eq!(
@@ -4695,14 +4668,14 @@ mod tests {
         );
         assert_eq!(
             vec!["Vehicle safety", "Applies on public roads."],
-            deck.cards[1].section_context,
-            "a sub-card sits in its section too"
+            deck.cards[1].topic_context,
+            "a sub-card sits in its topic too"
         );
-        assert_eq!(vec!["Other"], deck.cards[2].section_context);
+        assert_eq!(vec!["Other"], deck.cards[2].topic_context);
     }
 
     /// A body opens with a heading or it does not open. Every line class
-    /// that can reach the section must refuse to before the first heading,
+    /// that can reach the topic must refuse to before the first heading,
     /// or one of them becomes a quiet way back in.
     #[test]
     fn every_line_class_refuses_to_open_a_deck_before_the_first_heading() {
@@ -4721,34 +4694,34 @@ mod tests {
         }
     }
 
-    /// The bar is a HEADING, not a section: a deck of plain cards has no
-    /// section at all and must still parse.
+    /// The bar is a HEADING, not a topic: a deck of plain cards has no
+    /// topic at all and must still parse.
     #[test]
-    fn a_body_that_opens_with_a_card_parses_with_no_section() {
+    fn a_body_that_opens_with_a_card_parses_with_no_topic() {
         let deck = parse("## q\na\n");
         assert!(
-            deck.cards[0].section_context.is_empty(),
-            "a sectionless deck carries no context, got {:?}",
-            deck.cards[0].section_context
+            deck.cards[0].topic_context.is_empty(),
+            "a deck with no topic heading carries no context, got {:?}",
+            deck.cards[0].topic_context
         );
     }
 
-    /// Prose still joins the section it sits under; only the region before
+    /// Prose still joins the topic it sits under; only the region before
     /// the first heading is closed.
     #[test]
-    fn prose_under_a_heading_is_still_that_sections_context() {
+    fn prose_under_a_heading_is_still_that_topics_context() {
         let deck = parse("# S\nApplies throughout.\n## q\na\n# Later\n## r\nb\n");
         assert_eq!(
             vec!["S", "Applies throughout."],
-            deck.cards[0].section_context
+            deck.cards[0].topic_context
         );
-        assert_eq!(vec!["Later"], deck.cards[1].section_context);
+        assert_eq!(vec!["Later"], deck.cards[1].topic_context);
     }
 
     /// Every line class that has a card-only branch must still land in the
-    /// section when no card is open, or it is silently dropped.
+    /// topic when no card is open, or it is silently dropped.
     #[test]
-    fn section_prose_keeps_fences_quotes_dividers_and_escapes() {
+    fn topic_prose_keeps_fences_quotes_dividers_and_escapes() {
         let deck = parse("# S\nplain\n> quoted\n\\---\n\\## escaped\n```\ncode\n```\n## q\na\n");
         assert_eq!(
             vec![
@@ -4761,40 +4734,40 @@ mod tests {
                 "code",
                 "```"
             ],
-            deck.cards[0].section_context
+            deck.cards[0].topic_context
         );
     }
 
     #[test]
-    fn section_context_preserves_normalized_paragraph_breaks() {
+    fn topic_context_preserves_normalized_paragraph_breaks() {
         let deck = parse("# S\nLine one\nline two.\n\nLine three.\n\n## q\na\n");
         assert_eq!(
             vec!["S", "Line one", "line two.", "", "Line three."],
-            deck.cards[0].section_context,
+            deck.cards[0].topic_context,
             "paragraph scan: one interior blank rides as an empty line and the trailing blank is dropped; context={:?}",
-            deck.cards[0].section_context
+            deck.cards[0].topic_context
         );
 
         let deck = parse("# S\n\n\nLine one\nline two.\n\n\nLine three.\n\n\n## q\na\n");
         assert_eq!(
             vec!["S", "Line one", "line two.", "", "Line three."],
-            deck.cards[0].section_context,
+            deck.cards[0].topic_context,
             "paragraph normalization: leading and trailing blanks drop while an interior run collapses; context={:?}",
-            deck.cards[0].section_context
+            deck.cards[0].topic_context
         );
     }
 
-    /// A table's rows are cards, and they sit in the section too.
+    /// A table's rows are cards, and they sit in the topic too.
     #[test]
-    fn table_row_cards_carry_their_section() {
+    fn table_row_cards_carry_their_topic() {
         let deck = parse("# Capitals\n## Pairs\n| c | a |\n| --- | --- |\n| DE | Berlin |\n");
-        assert_eq!(vec!["Capitals"], deck.cards[0].section_context);
+        assert_eq!(vec!["Capitals"], deck.cards[0].topic_context);
     }
 
-    /// D16: a sidecar has no sections, so a reader's hand-written label
+    /// D16: a sidecar has no topics, so a reader's hand-written label
     /// must not become context a personal card then carries and exposes.
     #[test]
-    fn a_sidecar_never_turns_leading_headings_into_section_context() {
+    fn a_sidecar_never_turns_leading_headings_into_topic_context() {
         let cards = parse_sidecar(
             "deck.local.md",
             "#### reader label\n## personal\nanswer\n<!-- id: card-personal -->\n",
@@ -4802,17 +4775,17 @@ mod tests {
         .unwrap();
         assert_eq!(1, cards.len());
         assert!(
-            cards[0].section_context.is_empty(),
+            cards[0].topic_context.is_empty(),
             "got {:?}",
-            cards[0].section_context
+            cards[0].topic_context
         );
     }
 
-    /// D19 judges a section directive by its KEY: an invalid value only
+    /// D19 judges a topic directive by its KEY: an invalid value only
     /// lints, and a lint would let the comment be stripped and the author's
     /// intended setting vanish.
     #[test]
-    fn a_recognized_directive_on_a_section_errors_whatever_its_value() {
+    fn a_recognized_directive_on_a_topic_errors_whatever_its_value() {
         // Codex's finding: a hand-maintained key list had already drifted
         // past `diagram`, so this sweeps every recognized key and the
         // predicate asks apply_directive rather than keeping a copy.
@@ -4833,7 +4806,7 @@ mod tests {
             let text = format!("# Topic <!-- {tail} -->\n## question\nanswer\n");
             let e = err(&text);
             assert!(
-                matches!(e, ParseError::SectionDirective(1)),
+                matches!(e, ParseError::TopicDirective(1)),
                 "tail {tail:?} gave {e:?}"
             );
         }
@@ -4849,7 +4822,7 @@ mod tests {
     fn every_unit_of_a_block_shares_its_block_line_and_sub_cards_point_at_the_parent() {
         let chain = parse_str(
             "t",
-            "## A\na\n\n### B\nb\n\n#### C\nc\n\n# Section\n\n## D\nd\n\n### E\ne\n",
+            "## A\na\n\n### B\nb\n\n#### C\nc\n\n# Topic\n\n## D\nd\n\n### E\ne\n",
         )
         .expect("the chain parses");
         let seen: Vec<(String, usize, Option<usize>)> = chain
@@ -4865,7 +4838,7 @@ mod tests {
                 ("E".to_string(), 15, Some(12)),
             ],
             seen,
-            "a section clears the chain; depth 4 hangs off depth 3"
+            "a topic clears the chain; depth 4 hangs off depth 3"
         );
 
         let cloze = parse_str(
@@ -4916,13 +4889,13 @@ mod tests {
         assert_eq!(a.block_fingerprint, b.block_fingerprint);
     }
 
-    /// Done-list law: moving a card between sections leaves every stamp
+    /// Done-list law: moving a card between topics leaves every stamp
     /// untouched, which is what keeps cached AI artifacts valid (D18).
     #[test]
-    fn moving_a_card_between_sections_changes_no_fingerprint() {
+    fn moving_a_card_between_topics_changes_no_fingerprint() {
         let one = parse("# One\nprose one\n## q\na\n");
         let two = parse("# Two\nprose two\n## q\na\n");
-        assert_ne!(one.cards[0].section_context, two.cards[0].section_context);
+        assert_ne!(one.cards[0].topic_context, two.cards[0].topic_context);
         assert_eq!(
             one.cards[0].content_fingerprint,
             two.cards[0].content_fingerprint
@@ -4940,7 +4913,7 @@ mod tests {
         let rows: Vec<(&str, String, Outcome)> = vec![
             // ── depth, in the ordinary position ──
             (
-                "h1 opens a section",
+                "h1 opens a topic",
                 "# S
 ## q
 a
@@ -5073,7 +5046,7 @@ b
                 Err(7),
             ),
             (
-                "a section closes the chain",
+                "a topic closes the chain",
                 "## a
 1
 ### b
@@ -5115,7 +5088,7 @@ a
             ),
             // ── empty heading text ──
             (
-                "an empty section heading errors",
+                "an empty topic heading errors",
                 "#\u{20}\n## q\na\n".into(),
                 Err(1),
             ),
@@ -5129,7 +5102,7 @@ a
                 "an escaped h1 is content",
                 "## q
 a
-\\# not a section
+\\# not a topic
 "
                 .into(),
                 Cards(1),
@@ -5168,7 +5141,7 @@ a
             ),
             // ── inside a divided front ──
             (
-                "a section closes a front, so its answerless card errors at ITS line",
+                "a topic closes a front, so its answerless card errors at ITS line",
                 "## line one
 ---
 # S
@@ -5179,7 +5152,7 @@ a
             ),
             // ── tables ──
             (
-                "a section closes an open table",
+                "a topic closes an open table",
                 "## Capitals
 | c | a |
 | --- | --- |
@@ -5217,9 +5190,9 @@ answer
                 .into(),
                 Err(5),
             ),
-            // ── directives and ids on a section line ──
+            // ── directives and ids on a topic line ──
             (
-                "a card directive on a section errors",
+                "a card directive on a topic errors",
                 "# S <!-- reveal: line -->
 ## q
 a
@@ -5228,7 +5201,7 @@ a
                 Err(1),
             ),
             (
-                "an id comment on a section errors",
+                "an id comment on a topic errors",
                 "# S <!-- id: card-abc -->
 ## q
 a
@@ -5237,7 +5210,7 @@ a
                 Err(1),
             ),
             (
-                "a stray id in section prose errors",
+                "a stray id in topic prose errors",
                 "# S
 <!-- id: card-abc -->
 ## q
@@ -5248,7 +5221,7 @@ a
             ),
             // ── normalization ──
             (
-                "a section strips its trailing hashes",
+                "a topic strips its trailing hashes",
                 "# S ###
 ## q
 a
@@ -5670,7 +5643,7 @@ a
 
     #[test]
     fn a_file_with_no_h2_fronts_is_a_zero_card_deck() {
-        let deck = parse("---\ntitle: Title\n---\n# A section\njust prose\n");
+        let deck = parse("---\ntitle: Title\n---\n# A topic\njust prose\n");
         assert!(deck.cards.is_empty());
         assert_eq!(Some("Title"), deck.title.as_deref());
     }
@@ -5725,9 +5698,8 @@ a
     }
 
     #[test]
-    fn the_title_comes_from_frontmatter_and_an_h1_is_ordinary_section_context() {
-        let deck =
-            parse("---\ntitle: My Deck\n---\n# A section\nsome intro prose\n\n## q\n---\na\n");
+    fn the_title_comes_from_frontmatter_and_an_h1_is_ordinary_topic_context() {
+        let deck = parse("---\ntitle: My Deck\n---\n# A topic\nsome intro prose\n\n## q\n---\na\n");
         assert_eq!(Some("My Deck"), deck.title.as_deref());
         assert_eq!(1, deck.cards.len());
         assert_eq!("q", deck.cards[0].front);
@@ -5735,7 +5707,7 @@ a
     }
 
     /// Prose outside a card no longer becomes a deck description: the
-    /// description is a frontmatter key, and body prose is section context.
+    /// description is a frontmatter key, and body prose is topic context.
     /// These three shapes must all still parse to their cards.
     #[test]
     fn body_prose_never_becomes_deck_metadata() {
@@ -5982,7 +5954,7 @@ a
     }
 
     #[test]
-    fn a_break_in_neither_divider_nor_section_position_errors() {
+    fn a_break_in_neither_divider_nor_topic_position_errors() {
         for (name, text, line) in [
             (
                 "divider then blank then prose (probe p15)",
@@ -6000,11 +5972,7 @@ a
                 "## q\n\n---\na\n---\nb\n",
                 5,
             ),
-            (
-                "attached in section prose",
-                "# S\n---\ntext\n\n## q\na\n",
-                2,
-            ),
+            ("attached in topic prose", "# S\n---\ntext\n\n## q\na\n", 2),
             (
                 "leading the body directly after frontmatter",
                 "---\ntitle: T\n---\n---\n\n## q\na\n",
@@ -6036,8 +6004,8 @@ a
                 deck.cards
                     .last()
                     .expect("the deck holds cards")
-                    .section_context,
-                "a plain-marked break after a table is literal section content: {spelling}"
+                    .topic_context,
+                "a plain-marked break after a table is literal topic content: {spelling}"
             );
         }
 
@@ -6066,7 +6034,7 @@ a
             assert_eq!(
                 ParseError::StrayDivider(4),
                 err(&format!("# S\nctx\n\n{spelling}\n\n## q\na\n")),
-                "blank-surrounded in a section errors: {spelling}"
+                "blank-surrounded in a topic errors: {spelling}"
             );
 
             assert_eq!(
@@ -6113,7 +6081,7 @@ a
     }
 
     #[test]
-    fn every_empty_section_heading_is_an_error_wherever_it_sits() {
+    fn every_empty_topic_heading_is_an_error_wherever_it_sits() {
         let spellings = [
             "#",
             "# ",
@@ -6140,12 +6108,12 @@ a
             for (position, text, line) in positions {
                 let error = err(&text);
                 assert_eq!(
-                    ParseError::EmptySectionHeading(line),
+                    ParseError::EmptyTopicHeading(line),
                     error,
                     "{spelling:?} {position}"
                 );
                 assert_eq!(
-                    format!("line {line}: section heading is empty; write its title"),
+                    format!("line {line}: topic heading is empty; write its title"),
                     error.to_string(),
                     "{spelling:?} {position}"
                 );
@@ -6154,15 +6122,13 @@ a
     }
 
     #[test]
-    fn a_repeated_section_heading_draws_a_lint_at_each_repeat_naming_the_first() {
+    fn a_repeated_topic_heading_draws_a_lint_at_each_repeat_naming_the_first() {
         let repeats = |text: &str| -> Vec<(usize, usize)> {
             parse(text)
                 .lints
                 .iter()
                 .filter_map(|lint| match lint.kind {
-                    LintKind::DuplicateSectionHeading { first_line } => {
-                        Some((lint.line, first_line))
-                    }
+                    LintKind::DuplicateTopicHeading { first_line } => Some((lint.line, first_line)),
                     _ => None,
                 })
                 .collect()
@@ -6199,18 +6165,18 @@ a
     }
 
     #[test]
-    fn a_section_with_prose_and_no_card_draws_a_lint_at_its_heading() {
+    fn a_topic_with_prose_and_no_card_draws_a_lint_at_its_heading() {
         let without_cards = |text: &str| -> Vec<usize> {
             parse(text)
                 .lints
                 .iter()
-                .filter(|lint| matches!(lint.kind, LintKind::SectionWithoutCards))
+                .filter(|lint| matches!(lint.kind, LintKind::TopicWithoutCards))
                 .map(|lint| lint.line)
                 .collect()
         };
         let rows: [(&str, &str, Vec<usize>); 9] = [
             (
-                "prose, then the next section",
+                "prose, then the next topic",
                 "# A\nprose\n\n# B\nmore\n\n## q\na\n",
                 vec![1],
             ),
@@ -6219,14 +6185,14 @@ a
                 "# A\n\n## q\na\n\n# B\nprose\n",
                 vec![6],
             ),
-            ("a title-only section", "# A\n\n# B\n\n## q\na\n", vec![]),
+            ("a title-only topic", "# A\n\n# B\n\n## q\na\n", vec![]),
             (
                 "a card table is a card",
                 "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n| u | v |\n<!-- cards -->\n",
                 vec![],
             ),
             (
-                "a card table before the next section is a card",
+                "a card table before the next topic is a card",
                 "# A\nprose\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n\n# B\n\n## q\na\n",
                 vec![],
             ),
@@ -6246,7 +6212,7 @@ a
                 vec![],
             ),
             (
-                "a section with prose and a card",
+                "a topic with prose and a card",
                 "# A\nprose\n\n## q\na\n",
                 vec![],
             ),
@@ -6568,11 +6534,11 @@ a
             "under a card a `#` + TAB line is answer content"
         );
         let deck = parse("# \\#\n\n## q\na\n");
-        assert_eq!(vec!["#".to_string()], deck.cards[0].section_context);
+        assert_eq!(vec!["#".to_string()], deck.cards[0].topic_context);
     }
 
     #[test]
-    fn an_empty_card_heading_and_an_empty_table_front_cell_name_no_section() {
+    fn an_empty_card_heading_and_an_empty_table_front_cell_name_no_topic() {
         let heading = err("# S\n##\n");
         assert_eq!(ParseError::EmptyFront(2), heading);
         let cell = err("| a | b |\n|---|---|\n| | y |\n<!-- cards -->\n");
@@ -6582,7 +6548,7 @@ a
             cell.to_string()
         );
         for error in [heading, cell] {
-            assert!(!error.to_string().contains("section"), "{error}");
+            assert!(!error.to_string().contains("topic"), "{error}");
         }
     }
 
@@ -6607,8 +6573,8 @@ a
             let deck = parse(&format!("# S\n\\{spelling}\n\n## q\na\n"));
             assert_eq!(
                 vec!["S".to_string(), spelling.to_string()],
-                deck.cards[0].section_context,
-                "the same escape works in a section: {spelling}"
+                deck.cards[0].topic_context,
+                "the same escape works in a topic: {spelling}"
             );
         }
     }
@@ -6628,15 +6594,15 @@ a
             let deck = parse(&format!("# S\n\n{spelling}\n<!-- plain -->\n\n## q\na\n"));
             assert_eq!(
                 vec!["S".to_string(), spelling.to_string()],
-                deck.cards[0].section_context,
-                "trailing plain keeps a break literal in a section: {spelling}"
+                deck.cards[0].topic_context,
+                "trailing plain keeps a break literal in a topic: {spelling}"
             );
         }
     }
 
     #[test]
     fn an_eol_terminated_hash_run_is_a_heading_and_a_run_without_space_is_prose() {
-        assert_eq!(ParseError::EmptySectionHeading(1), err("#\n\n## q\na\n"));
+        assert_eq!(ParseError::EmptyTopicHeading(1), err("#\n\n## q\na\n"));
         assert_eq!(ParseError::EmptyFront(2), err("# S\n##\n"));
         assert_eq!(
             ParseError::ProseBeforeFirstHeading(1),
@@ -6646,7 +6612,7 @@ a
     }
 
     #[test]
-    fn a_sub_card_chain_does_not_cross_a_section() {
+    fn a_sub_card_chain_does_not_cross_a_topic() {
         assert_eq!(
             ParseError::OrphanSubCard(8),
             err("# S\n\n## p\na\n\n# T\n\n### s\nb\n")
@@ -6815,10 +6781,10 @@ a
         assert_eq!(1, deck.cards.len(), "no row cards from a bare table");
         assert!(
             deck.cards[0]
-                .section_context
+                .topic_context
                 .contains(&"| x | y |".to_string()),
-            "the table rides the section literally, got {:?}",
-            deck.cards[0].section_context
+            "the table rides the topic literally, got {:?}",
+            deck.cards[0].topic_context
         );
     }
 
@@ -7497,7 +7463,7 @@ a
         let deck = parse("# S\n\nprose\n\n---\n<!-- plain -->\n\n## q\na\n");
         assert!(
             deck.cards.len() == 1 && deck.lints.is_empty(),
-            "a section divider does supply a block, so plain below one stays \
+            "a topic divider does supply a block, so plain below one stays \
              legal: {:?}",
             deck.lints
         );
@@ -7513,11 +7479,11 @@ a
         );
         assert!(
             deck.cards[0]
-                .section_context
+                .topic_context
                 .contains(&"| one | eins |".to_string()),
-            "and the escaped table stays literal in the section it sits in, \
+            "and the escaped table stays literal in the topic it sits in, \
              never silently dropped: {:?}",
-            deck.cards[0].section_context
+            deck.cards[0].topic_context
         );
 
         let deck = parse(
@@ -7588,7 +7554,7 @@ a
     fn tag_shapes_error_on_every_deck_surface_and_the_outs_stay_legal() {
         let error_rows = [
             ("## Q\na <div> b\n", 2, "card content"),
-            ("# S\n\nprose with <span>\n", 3, "section content"),
+            ("# S\n\nprose with <span>\n", 3, "topic content"),
             ("## What does <div> do?\nanswer\n", 1, "a heading front"),
             ("## Q\nanswer\n> note with <b>bold</b>\n", 3, "a note line"),
             (
@@ -7740,7 +7706,7 @@ a
             ("## Q\n```\n$$\n```\n", "a fence interior never toggles"),
             (
                 "# S\n\n$$\nx\n\n## Q\na\n",
-                "section content keeps literal dollars",
+                "topic content keeps literal dollars",
             ),
             ("## Q\n$$x^2$$\n", "the single-line spelling is untouched"),
             (
@@ -8604,7 +8570,7 @@ a
             vec!["\\d is a digit class", "# x"],
             deck.cards[0].back,
             "`\\d` is not a marker so it stays literal, while `\\#` now escapes \
-             the section marker and gives up its backslash (ruled D5)"
+             the topic marker and gives up its backslash (ruled D5)"
         );
     }
 
@@ -8790,7 +8756,7 @@ a
 
     #[test]
     fn a_question_showing_a_blanks_hidden_text_outside_its_blank_warns() {
-        use AnswerShownAt::{QuestionLine, Section};
+        use AnswerShownAt::{QuestionLine, Topic};
         type Row = (&'static str, String, Vec<(&'static str, AnswerShownAt)>);
         let alpha = "<!-- blank: span hidden=\"alpha\" -->\n";
         let rows: [Row; 16] = [
@@ -8820,14 +8786,14 @@ a
                 vec![("alpha", QuestionLine(3))],
             ),
             (
-                "the section prose shows the hidden word",
+                "the topic prose shows the hidden word",
                 format!("# Greek\nThe alpha comes first.\n\n## q\nthe alpha twin\n{alpha}"),
-                vec![("alpha", Section)],
+                vec![("alpha", Topic)],
             ),
             (
-                "the section heading shows the hidden word, in another case",
+                "the topic heading shows the hidden word, in another case",
                 format!("# Alpha letters\n\n## q\nthe alpha twin\n{alpha}"),
-                vec![("alpha", Section)],
+                vec![("alpha", Topic)],
             ),
             (
                 "the hidden word shows only at its blanked spot",
@@ -12119,7 +12085,7 @@ the answer
         ));
         assert!(matches!(
             err("# s <!-- ignore -->\n## q\na\n"),
-            ParseError::SectionDirective(1)
+            ParseError::TopicDirective(1)
         ));
     }
 

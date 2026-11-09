@@ -110,14 +110,14 @@ class ExamApplied {
 }
 
 class ExamOutcome {
-  final List<ExamSectionOutcome> sections;
+  final List<ExamTopicOutcome> topics;
   final bool full;
   final int pass;
   final int partial;
   final int total;
 
   const ExamOutcome({
-    required this.sections,
+    required this.topics,
     required this.full,
     required this.pass,
     required this.partial,
@@ -126,7 +126,7 @@ class ExamOutcome {
 
   @override
   int get hashCode =>
-      sections.hashCode ^
+      topics.hashCode ^
       full.hashCode ^
       pass.hashCode ^
       partial.hashCode ^
@@ -137,18 +137,18 @@ class ExamOutcome {
       identical(this, other) ||
       other is ExamOutcome &&
           runtimeType == other.runtimeType &&
-          sections == other.sections &&
+          topics == other.topics &&
           full == other.full &&
           pass == other.pass &&
           partial == other.partial &&
           total == other.total;
 }
 
-class ExamSectionOutcome {
+class ExamTopicOutcome {
   final List<String> cards;
   final bool pass;
 
-  const ExamSectionOutcome({required this.cards, required this.pass});
+  const ExamTopicOutcome({required this.cards, required this.pass});
 
   @override
   int get hashCode => cards.hashCode ^ pass.hashCode;
@@ -156,7 +156,7 @@ class ExamSectionOutcome {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is ExamSectionOutcome &&
+      other is ExamTopicOutcome &&
           runtimeType == other.runtimeType &&
           cards == other.cards &&
           pass == other.pass;

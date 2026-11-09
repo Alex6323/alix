@@ -59,7 +59,7 @@ mistake or a file that merely shares a required id's name; see
 [the doctor reference](17-command-reference.md).) A **trace** deck has no exam,
 so a required trace never gates.
 
-A prerequisite counts as passed once every one of its sections has passed at
+A prerequisite counts as passed once every one of its topics has passed at
 `[exam] pass_threshold`, across one sitting or several. That moment is kept: a
 later weaker sitting never locks a dependent again. A deck that has sat its own
 exam at least once, pass or fail, stays unlocked from then on, even if a

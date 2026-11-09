@@ -49,13 +49,13 @@ async function openWalkMenu(page: Page) {
   return page.locator(".legend .chip.walk");
 }
 
-async function closeSectionSheet(page: Page, step: string) {
-  await expect(page.locator(".section-drawer"), `${step}: the section sheet opens on first contact`).toBeVisible();
+async function closeTopicSheet(page: Page, step: string) {
+  await expect(page.locator(".topic-drawer"), `${step}: the topic sheet opens on first contact`).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer"), `${step}: Escape closes the sheet`).toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), `${step}: Escape closes the sheet`).toHaveCount(0);
 }
 
-test("a walk serves the unwalked rest, then a full pass, with the section sheet each walk", async ({ page }) => {
+test("a walk serves the unwalked rest, then a full pass, with the topic sheet each walk", async ({ page }) => {
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Walk Tour").click();
 
@@ -66,7 +66,7 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
     page.waitForResponse((r) => r.url().endsWith("/api/walk") && r.request().method() === "POST" && r.ok()),
     walk.click(),
   ]);
-  await closeSectionSheet(page, "walk 1");
+  await closeTopicSheet(page, "walk 1");
   await expect(page.locator(".front-text")).toHaveText(CHOICE_FRONT);
   await expect(page.locator("#hist")).toHaveText("2 left");
   const octopus = page.locator(".option").filter({ has: page.locator(".opt", { hasText: "Octopus", exact: true }) });
@@ -94,18 +94,18 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
 
   // Walk 2 holds only the never-walked flip item and shows the sheet again.
   await again.click();
-  await closeSectionSheet(page, "walk 2");
-  await expect(page.locator(".section-title"), "walk 2: no heading on the card face").toHaveCount(0);
+  await closeTopicSheet(page, "walk 2");
+  await expect(page.locator(".topic-title"), "walk 2: no heading on the card face").toHaveCount(0);
   await page.getByRole("button", { name: /^Context/ }).click();
-  await closeSectionSheet(page, "walk 2 Context chip");
+  await closeTopicSheet(page, "walk 2 Context chip");
   await expect(page.locator(".front-text")).toHaveText(FLIP_FRONT);
   await expect(page.locator("#hist"), "walk 2 counts only the unwalked item").toHaveText("1 left");
 
   // A reload mid-walk resumes from GET /api/walk.
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".front-text"), "reload resumes the walk").toHaveText(FLIP_FRONT);
-  if (await page.locator(".section-drawer").count()) await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer")).toHaveCount(0);
+  if (await page.locator(".topic-drawer").count()) await page.keyboard.press("Escape");
+  await expect(page.locator(".topic-drawer")).toHaveCount(0);
   await expect(page.locator("#ansRegion .reveal"), "flip front hides the answer").toHaveCount(0);
   await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/walk/reveal") && r.ok()),
@@ -125,7 +125,7 @@ test("a walk serves the unwalked rest, then a full pass, with the section sheet 
     page.waitForResponse((r) => r.url().endsWith("/api/walk/restart") && r.ok()),
     page.getByRole("button", { name: /^Next walk/ }).click(),
   ]);
-  await closeSectionSheet(page, "walk 3");
+  await closeTopicSheet(page, "walk 3");
   await expect(page.locator(".front-text"), "walk 3 starts at the least recently walked item").toHaveText(CHOICE_FRONT);
   await expect(page.locator("#hist"), "walk 3 is a full pass").toHaveText("2 left");
   await page.keyboard.press("1");
@@ -145,7 +145,7 @@ test("the tutor on an ordinary walk offers Make a note and Make a card", async (
     page.waitForResponse((r) => r.url().endsWith("/api/walk") && r.request().method() === "POST" && r.ok()),
     walk.click(),
   ]);
-  await closeSectionSheet(page, "ordinary walk");
+  await closeTopicSheet(page, "ordinary walk");
   const octopus = page.locator(".option").filter({ has: page.locator(".opt", { hasText: "Octopus", exact: true }) });
   await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/walk/choose") && r.ok()),
@@ -162,14 +162,14 @@ test("a wrong pick survives a reload with only Continue, and the missed item lea
   await adultDeckRow(page, "Walk Tour").click();
   const walk = await openWalkMenu(page);
   await walk.click();
-  await closeSectionSheet(page, "wrong pick");
+  await closeTopicSheet(page, "wrong pick");
   const starfish = page.locator(".option").filter({ has: page.locator(".opt", { hasText: "Starfish", exact: true }) });
   await Promise.all([
     page.waitForResponse((r) => r.url().endsWith("/api/walk/choose") && r.ok()),
     starfish.click(),
   ]);
   await page.reload({ waitUntil: "domcontentloaded" });
-  if (await page.locator(".section-drawer").count()) await page.keyboard.press("Escape");
+  if (await page.locator(".topic-drawer").count()) await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: /^Continue/ }), "reload after a wrong pick: Continue").toBeVisible();
   await expect(page.getByRole("button", { name: /^(Next|I guessed|Got it)/ }), "reload after a wrong pick: no pass").toHaveCount(0);
   await Promise.all([
@@ -180,7 +180,7 @@ test("a wrong pick survives a reload with only Continue, and the missed item lea
   await adultDeckRow(page, "Walk Tour").click();
   const again = await openWalkMenu(page);
   await again.click();
-  await closeSectionSheet(page, "after the miss");
+  await closeTopicSheet(page, "after the miss");
   await expect(page.locator(".front-text"), "the missed choice item leads").toHaveText(CHOICE_FRONT);
 });
 
@@ -214,7 +214,7 @@ test("a walk opens a hint on the question, and a hinted Got it leaves the card w
   await adultDeckRow(page, "Walk Tour").click();
   const walk = await openWalkMenu(page);
   await walk.click();
-  await closeSectionSheet(page, "hint walk");
+  await closeTopicSheet(page, "hint walk");
   const hint = page.locator("#legend .chip", { hasText: /^Hint/ });
   await expect(page.locator(".front-text")).toHaveText(FLIP_FRONT);
   await expect(hint, "a card without hints offers no Hint chip").toHaveCount(0);
@@ -230,7 +230,7 @@ test("a walk opens a hint on the question, and a hinted Got it leaves the card w
     page.waitForResponse((r) => r.url().endsWith("/api/walk/hint") && r.status() === 204),
     page.keyboard.press("i"),
   ]);
-  await expect(page.locator(".section-drawer .hint-stack .note"), "the hint opens").toContainText("Something hard under the water.");
+  await expect(page.locator(".topic-drawer .hint-stack .note"), "the hint opens").toContainText("Something hard under the water.");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /^Reveal/ }).click();
   await expect(hint, "the answer offers no hint").toHaveCount(0);
@@ -243,7 +243,7 @@ test("a walk opens a hint on the question, and a hinted Got it leaves the card w
     page.waitForResponse((r) => r.url().endsWith("/api/walk/restart") && r.ok()),
     page.getByRole("button", { name: /^Next walk/ }).click(),
   ]);
-  await closeSectionSheet(page, "after the hinted Got it");
+  await closeTopicSheet(page, "after the hinted Got it");
   await expect(page.locator(".front-text"), "the hinted card waits").toHaveText(HINTED_FRONT);
   await expect(page.locator("#hist"), "only the hinted card waits").toHaveText("1 left");
 });
@@ -271,7 +271,7 @@ test("a walk reveals a reveal: line card one line at a time", async ({ page }) =
   await adultDeckRow(page, "Walk Tour").click();
   const walk = await openWalkMenu(page);
   await walk.click();
-  await closeSectionSheet(page, "line walk");
+  await closeTopicSheet(page, "line walk");
   const shown = page.locator("#ansRegion .reveal.line .answer:not(.pending):not(.line-reserve)");
   const reveals: string[] = [];
   page.on("request", (r) => { if (r.url().endsWith("/api/walk/reveal")) reveals.push(r.url()); });
@@ -291,11 +291,11 @@ test("a walk reveals a reveal: line card one line at a time", async ({ page }) =
   await expect(page.getByRole("button", { name: /^Got it/ }), "last line opens the answer and its grades").toBeVisible();
 });
 
-test("the section sheet fits its content and closes from its own button", async ({ page }) => {
+test("the topic sheet fits its content and closes from its own button", async ({ page }) => {
   await page.locator("#navRefresh").click();
   await adultDeckRow(page, "Walk Tour").click();
   await (await openWalkMenu(page)).click();
-  const panel = page.locator(".section-drawer-panel");
+  const panel = page.locator(".topic-drawer-panel");
   await expect(panel, "open: the sheet shows on first contact").toBeVisible();
   await panel.evaluate((node) => Promise.all(node.getAnimations().map((motion) => motion.finished)));
   const box = (await panel.boundingBox())!;
@@ -304,14 +304,14 @@ test("the section sheet fits its content and closes from its own button", async 
     Math.abs(box.y + box.height - viewport.height),
     `open: the sheet rests on the window bottom (${viewport.height}px)`,
   ).toBeLessThanOrEqual(1);
-  expect(box.y, `open: a one-sentence section takes only the room it needs (${viewport.height}px)`).toBeGreaterThan(
+  expect(box.y, `open: a one-sentence topic takes only the room it needs (${viewport.height}px)`).toBeGreaterThan(
     viewport.height / 2,
   );
-  const closer = (await page.getByRole("button", { name: "Close section context" }).boundingBox())!;
+  const closer = (await page.getByRole("button", { name: "Close topic context" }).boundingBox())!;
   expect(box.x + box.width - (closer.x + closer.width), "open: the close mark sits at the sheet's right edge").toBeLessThanOrEqual(24);
   expect(closer.y - box.y, "open: the close mark sits at the sheet's top edge").toBeLessThanOrEqual(24);
-  await page.getByRole("button", { name: "Close section context" }).click();
-  await expect(page.locator(".section-drawer"), "close: the mark removes the sheet").toHaveCount(0);
+  await page.getByRole("button", { name: "Close topic context" }).click();
+  await expect(page.locator(".topic-drawer"), "close: the mark removes the sheet").toHaveCount(0);
 
   const long = DECK.replace(
     "Rock pools hold water when the tide goes out.",
@@ -327,12 +327,12 @@ test("the section sheet fits its content and closes from its own button", async 
   await panel.evaluate((node) => Promise.all(node.getAnimations().map((motion) => motion.finished)));
   expect(
     await panel.evaluate((node) => node.scrollHeight > node.clientHeight),
-    "long: the section overflows, so the sheet scrolls",
+    "long: the topic overflows, so the sheet scrolls",
   ).toBe(true);
   const tall = (await panel.boundingBox())!;
   expect(tall.y + tall.height, "long: the sheet stops at the window bottom").toBeLessThanOrEqual(viewport.height + 1);
   await expect(
-    page.getByRole("button", { name: "Close section context" }),
+    page.getByRole("button", { name: "Close topic context" }),
     "long: Close stays reachable",
   ).toBeInViewport();
 });

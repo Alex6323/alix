@@ -70,7 +70,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   final TextEditingController _attempt = TextEditingController();
 
   ServerClient? _client;
-  String? _autoOpenedSection;
+  String? _autoOpenedTopic;
   bool _helpSheetOpen = false;
   bool _summaryPushed = false;
 
@@ -275,8 +275,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _helpSheetOpen = false;
   }
 
-  void _openSection(ReviewCardModel card) {
-    _showHelp(card, ReviewHelpMode.section);
+  void _openTopic(ReviewCardModel card) {
+    _showHelp(card, ReviewHelpMode.topic);
   }
 
   void _openHint(ReviewCardModel card) {
@@ -290,13 +290,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
     Navigator.of(context).pop();
   }
 
-  void _autoOpenSection(ReviewStateModel state, ReviewCardModel? card) {
-    if (card == null || !state.sectionFirst || !card.hasSection) return;
-    final key = card.section.join('\n');
-    if (_autoOpenedSection == key) return;
-    _autoOpenedSection = key;
+  void _autoOpenTopic(ReviewStateModel state, ReviewCardModel? card) {
+    if (card == null || !state.topicFirst || !card.hasTopic) return;
+    final key = card.topic.join('\n');
+    if (_autoOpenedTopic == key) return;
+    _autoOpenedTopic = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openSection(card);
+      if (mounted) _openTopic(card);
     });
   }
 
@@ -396,7 +396,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         }
         final state = _controller.state;
         final card = state.card;
-        _autoOpenSection(state, card);
+        _autoOpenTopic(state, card);
         final nowMs = DateTime.now().millisecondsSinceEpoch;
         final explain =
             state.mode == ReviewMode.explain &&
@@ -440,7 +440,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
           onIntroduce: _introduce,
           onGrade: _grade,
           onOpenTutor: _openTutor,
-          onOpenSection: _openSection,
+          onOpenTopic: _openTopic,
           onOpenHint: _openHint,
           onRestart: _restart,
           onSkip: _skip,

@@ -28,7 +28,7 @@ a per-card **tier heatmap**: neutral for an untouched card, grey for one merely
 **seen** (met: acknowledged, or answered and got wrong), white once **learning**
 (at least one full or partly pass, not yet graduated), green/yellow/red for a **learned** card by how well you'd recall it right
 now, purple once retired, and an unfilled **outline** for a
-[sub-card](03-the-deck-format.md#sections-and-sub-cards) still gated on its
+[sub-card](03-the-deck-format.md#topics-and-sub-cards) still gated on its
 parent's graduation. When the deck has a [review order](05-scheduling.md) that
 heatmap splits into named regions you can pick to drill (click one or step
 through with **← / →**); otherwise it is a single whole-deck bar. On a workspace row instead,
@@ -46,9 +46,9 @@ is due and unlocked. A locked exam stays unfilled and disabled with a lock
 glyph. The Depth menu does not repeat the exam action, and a session summary
 does not offer an exam. An **only what needs work** tick always follows
 **Take exam**, ticked by default; untick it to take a full sitting. It is
-disabled while the exam is locked or every section has passed, since the
-sitting then covers every section either way. Results show the point
-total, each section's count and status, and the shape of every question.
+disabled while the exam is locked or every topic has passed, since the
+sitting then covers every topic either way. Results show the point
+total, each topic's count and status, and the shape of every question.
 **mastered** appears only after a perfect full sitting.
 
 A workspace row that has a personal [deadline](08-workspaces.md) set shows a
@@ -83,8 +83,8 @@ or **Got it** (`1`/`2`/`3`). A correct pick ends with **Next** (`space`) or
 the quiet **I guessed** (`1`); a wrong pick ends with **Continue** (`space`).
 A card with an authored hint offers **Hint** (`i`) on its front; opening it
 turns a Got it on that card into Partly, as in a session. Each direction of
-a two-way card and each blank of a cloze is its own item. The section's
-context sheet opens by itself the first time a walk reaches that section, and
+a two-way card and each blank of a cloze is its own item. The topic's
+context sheet opens by itself the first time a walk reaches that topic, and
 the tutor is available once an answer shows.
 
 A walk keeps only the time each item was walked and its last walk grade; it
@@ -103,7 +103,7 @@ instead of introducing it.
 **Tutorial** in the deck picker's ☰ menu, or the **Tutorial** button the
 picker shows when it finds no decks, opens a short tutorial deck as a walk.
 Its nine cards each teach one thing by having you do it: grade an answer,
-open the section's text and a hint, pick a choice, reveal line by line, fill
+open the topic's text and a hint, pick a choice, reveal line by line, fill
 a blank, hide an answer, and show a cited source. Opening it again continues
 where you stopped, as any walk does.
 
@@ -229,18 +229,18 @@ its region, a "more below" or "more above" marker appears at that edge;
 clicking it scrolls that region by most of its height, so you can walk a long
 answer without reaching for the wheel. Controls are big tap targets and
 follow *your* configured key bindings (the page reads them from the server).
-A card under a section names the section on its face only through a quiet
+A card under a topic names the topic on its face only through a quiet
 **Context** chip in the bottom row, offered until the answer shows. On the first
-card you ever meet from that section, the section sheet opens by itself
+card you ever meet from that topic, the topic sheet opens by itself
 once: the page dims at once and the sheet slides up from the bottom of the
-page, as on the phone, taking only the room its prose needs; a long section
+page, as on the phone, taking only the room its prose needs; a long topic
 scrolls inside it. Dismiss it and it stays closed through reveal or answer
-input; later cards from the same section, in this sitting or any later one,
-do not open it automatically. The full section never appears inline. Click
+input; later cards from the same topic, in this sitting or any later one,
+do not open it automatically. The full topic never appears inline. Click
 the **Context** chip, press `c`, or use **Context** beside **Ask** in the
 review menu to open the sheet on demand; a click on the question opens
 nothing, and once the answer shows none of these is offered, since the
-section is there to help you answer.
+topic is there to help you answer.
 While the sheet is open, the card and its review keys are inert; a click on
 the dimmed page, the `×` in the sheet's top-right corner, `c`, or Escape
 closes it.
@@ -250,7 +250,7 @@ as you are still answering (on a
 `reveal: line` card, until the last line shows). The chip, `i`, or **Hint** in
 the review menu opens the same sheet with the first hint; **Next hint** (or
 Enter) adds the next one under it until none are left, and reopening shows the
-ones you already opened. `c` and `i` swap the sheet between the section and
+ones you already opened. `c` and `i` swap the sheet between the topic and
 the hints. Opening a hint turns a pass on that card into Partial.
 ### Confidence tracking
 

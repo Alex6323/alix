@@ -5937,7 +5937,7 @@ fn exam_grade_on_a_fact_deck_walks_from_answering_to_a_passing_result_via_the_fa
     let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
 
     assert_eq!("results", body["phase"], "body: {body}");
-    assert_eq!(true, body["sections"][0]["pass"], "body: {body}");
+    assert_eq!(true, body["topics"][0]["pass"], "body: {body}");
     let grades = body["grades"].as_array().unwrap();
     assert_eq!(1, grades.len(), "body: {body}");
     assert_eq!("PASS", grades[0]["verdict"], "body: {body}");
@@ -6295,7 +6295,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     )
     .unwrap();
     assert_eq!(
-        false, ideas["sections"][0]["ideas"][0]["last_passed"],
+        false, ideas["topics"][0]["ideas"][0]["last_passed"],
         "step 5: the asked idea is recorded as failed: {ideas}"
     );
     post_json(&base, "/api/exam/close", "{}");
@@ -7619,7 +7619,7 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
 
     post_json(&base, "/api/exam/grade", r#"{"text":"a1"}"#);
     let body = poll_until(&base, "/api/exam", |b| b["phase"] != "grading");
-    assert_eq!(true, body["sections"][0]["pass"], "body: {body}");
+    assert_eq!(true, body["topics"][0]["pass"], "body: {body}");
 
     let resp = http(&base, "GET", "/api/state", &[], &[]);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -7831,11 +7831,11 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             dto["phase"].as_str().unwrap_or_default(),
             dto["card"]["id"].as_str().unwrap_or_default(),
             dto["mode"].as_str().unwrap_or_default(),
-            dto["section_first"] == true,
+            dto["topic_first"] == true,
             dto["position"].as_u64().unwrap_or(9),
             dto["total"].as_u64().unwrap_or(9),
         ),
-        "open: the pick leads and opens its section: {dto}"
+        "open: the pick leads and opens its topic: {dto}"
     );
     assert_eq!(
         3,
@@ -7916,10 +7916,10 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
             dto["phase"].as_str().unwrap_or_default(),
             dto["card"]["id"].as_str().unwrap_or_default(),
             dto["mode"].as_str().unwrap_or_default(),
-            dto["section_first"] == true,
+            dto["topic_first"] == true,
             dto["position"].as_u64().unwrap_or(9),
         ),
-        "grade: the flip follows within the same section: {dto}"
+        "grade: the flip follows within the same topic: {dto}"
     );
     assert!(
         w1.as_ref().is_some_and(|state| state.walked_ms.is_some()
@@ -7937,11 +7937,11 @@ fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_ot
         (
             dto["phase"].as_str().unwrap_or_default(),
             dto["card"]["id"].as_str().unwrap_or_default(),
-            dto["section_first"] == true,
+            dto["topic_first"] == true,
             dto["position"].as_u64().unwrap_or(9),
             dto["total"].as_u64().unwrap_or(9),
         ),
-        "restart: only the waiting item is served and the section opens again: {dto}"
+        "restart: only the waiting item is served and the topic opens again: {dto}"
     );
 
     // a flip item takes no pick, opens its hint on the front only, reveals, then a hinted pass is
@@ -8252,11 +8252,11 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
             dto["kind"].as_str().unwrap_or_default(),
             dto["tutorial"] == true,
             tutorial_number(&dto, &ids),
-            dto["section_first"] == true,
+            dto["topic_first"] == true,
             dto["total"].as_u64().unwrap_or_default(),
             tutorial_base.join(alix::tutorial::TUTORIAL_FILE).is_file(),
         ),
-        "open: (kind, tutorial, first card, section_first, total, deck in the base): {dto}"
+        "open: (kind, tutorial, first card, topic_first, total, deck in the base): {dto}"
     );
 
     for expected in 1..=5 {
@@ -8278,10 +8278,10 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         (3, true, true),
         (
             tutorial_number(&dto, &ids),
-            dto["section_first"] == true,
+            dto["topic_first"] == true,
             dto["tutorial"] == true
         ),
-        "resume: (first card, section_first, tutorial): {dto}"
+        "resume: (first card, topic_first, tutorial): {dto}"
     );
     let mut served = Vec::new();
     while dto["phase"] != "done" {
@@ -8329,9 +8329,9 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         (9, true),
         (
             dto["total"].as_u64().unwrap_or_default(),
-            dto["section_first"] == true
+            dto["topic_first"] == true
         ),
-        "full pass: (total, section_first): {dto}"
+        "full pass: (total, topic_first): {dto}"
     );
     let mut served = Vec::new();
     while dto["phase"] != "done" {
@@ -9171,7 +9171,7 @@ fn write_exam_deck_fixture(dir: &Path) {
     std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();
 }
 
-fn write_two_section_exam_deck_with_a_passed(dir: &Path) {
+fn write_two_topic_exam_deck_with_a_passed(dir: &Path) {
     let deck = dir.join("twosect.md");
     std::fs::write(
         &deck,
@@ -9189,7 +9189,7 @@ fn write_two_section_exam_deck_with_a_passed(dir: &Path) {
 }
 
 #[test]
-fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
+fn exam_start_honours_the_needs_work_filter_and_reports_per_topic_results() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let grades_path = scripts.path().join("grades");
@@ -9199,11 +9199,8 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
     )
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, guard) = spawn_full_server_fixture(
-        Some(&fake),
-        write_two_section_exam_deck_with_a_passed,
-        |_| {},
-    );
+    let (base, guard) =
+        spawn_full_server_fixture(Some(&fake), write_two_topic_exam_deck_with_a_passed, |_| {});
 
     prepare_exam(&base, r#"{"deck":"twosect.md","needs_work_only":true}"#);
     let resp = post_json(&base, "/api/exam/start", r#"{"deck":"twosect.md"}"#);
@@ -9212,15 +9209,15 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
     post_json(&base, "/api/exam/grade", r#"{"text":"b"}"#);
     let body = poll_until(&base, "/api/exam", |b| b["phase"] == "results");
 
-    let sections = body["sections"].as_array().expect("sections");
-    assert_eq!(1, sections.len(), "only the section needing work: {body}");
-    assert_eq!("B", sections[0]["label"], "{body}");
+    let topics = body["topics"].as_array().expect("topics");
+    assert_eq!(1, topics.len(), "only the topic needing work: {body}");
+    assert_eq!("B", topics[0]["label"], "{body}");
     assert_eq!(
         serde_json::json!(["card-sb1"]),
-        sections[0]["cards"],
+        topics[0]["cards"],
         "{body}"
     );
-    assert_eq!(true, sections[0]["pass"], "{body}");
+    assert_eq!(true, topics[0]["pass"], "{body}");
     assert_eq!(
         false, body["full"],
         "a filtered sitting is not full: {body}"
@@ -9234,7 +9231,7 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
         body["verdicts"],
         "{body}"
     );
-    assert_eq!(0, body["grades"][0]["section"], "{body}");
+    assert_eq!(0, body["grades"][0]["topic"], "{body}");
 
     post_json(&base, "/api/exam/close", "{}");
     let store =
@@ -9245,7 +9242,7 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
             .get("card-sb1")
             .and_then(|c| c.exam_result)
             .map(|r| r.pass),
-        "the examined section's card is recorded"
+        "the examined topic's card is recorded"
     );
     assert!(
         store.deck_passed("deck-twosect"),
@@ -9258,8 +9255,7 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_section_results() {
 }
 
 #[test]
-fn remote_exam_start_examines_sections_of_the_named_cards_reports_unknown_ids_and_writes_no_store()
-{
+fn remote_exam_start_examines_topics_of_the_named_cards_reports_unknown_ids_and_writes_no_store() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();
     let grades_path = scripts.path().join("grades");
@@ -9269,11 +9265,8 @@ fn remote_exam_start_examines_sections_of_the_named_cards_reports_unknown_ids_an
     )
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, guard) = spawn_full_server_fixture(
-        Some(&fake),
-        write_two_section_exam_deck_with_a_passed,
-        |_| {},
-    );
+    let (base, guard) =
+        spawn_full_server_fixture(Some(&fake), write_two_topic_exam_deck_with_a_passed, |_| {});
 
     let resp = post_json(
         &base,
@@ -9291,11 +9284,11 @@ fn remote_exam_start_examines_sections_of_the_named_cards_reports_unknown_ids_an
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["b"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
 
-    let sections = body["sections"].as_array().expect("sections");
-    assert_eq!(1, sections.len(), "only the named card's section: {body}");
+    let topics = body["topics"].as_array().expect("topics");
+    assert_eq!(1, topics.len(), "only the named card's topic: {body}");
     assert_eq!(
         serde_json::json!(["card-sb1"]),
-        sections[0]["cards"],
+        topics[0]["cards"],
         "{body}"
     );
     assert_eq!(false, body["full"], "{body}");
@@ -9326,8 +9319,8 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
         format!(
             "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\ncase \"$input\" in\n\
              *'\"grades\"'*) cat {grades} ;;\n\
-             *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
+             *'\"models\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
              *) printf '## term?\\ndefinition\\n' ;;\n\
              esac\n",
             grades = grades_path.display(),
@@ -9813,7 +9806,7 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     assert_eq!(200, resp.status);
 
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(false, body["sections"][0]["pass"], "body: {body}");
+    assert_eq!(false, body["topics"][0]["pass"], "body: {body}");
     assert!(!body["gaps"].as_array().unwrap().is_empty(), "body: {body}");
     assert_eq!(true, body["can_remediate"], "body: {body}");
 
@@ -10013,7 +10006,7 @@ fn remote_endpoints_never_write_the_server_store() {
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(true, body["sections"][0]["pass"], "body: {body}");
+    assert_eq!(true, body["topics"][0]["pass"], "body: {body}");
     post_json(&base, "/api/remote/exam/close", "{}");
 
     // (b) a full remote exam that FAILS and remediates through to cards.
@@ -10026,7 +10019,7 @@ fn remote_endpoints_never_write_the_server_store() {
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(false, body["sections"][0]["pass"], "body: {body}");
+    assert_eq!(false, body["topics"][0]["pass"], "body: {body}");
     post_json(&base, "/api/remote/exam/remediate", "{}");
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
     assert!(

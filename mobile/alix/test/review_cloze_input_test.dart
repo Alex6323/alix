@@ -142,7 +142,7 @@ Future<_Harness> _pump(
           onIntroduce: () {},
           onGrade: (_) {},
           onOpenTutor: (_) {},
-          onOpenSection: (_) {},
+          onOpenTopic: (_) {},
         ),
       ),
     ),

@@ -62,9 +62,9 @@ String? applyExamResult({
     deckPath: deckPath,
     rootDir: rootDir,
     outcome: bridge.ExamOutcome(
-      sections: [
-        for (final section in exam.sections)
-          bridge.ExamSectionOutcome(cards: section.cards, pass: section.pass),
+      topics: [
+        for (final topic in exam.topics)
+          bridge.ExamTopicOutcome(cards: topic.cards, pass: topic.pass),
       ],
       full: exam.full,
       pass: verdicts?.pass ?? 0,

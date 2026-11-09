@@ -33,14 +33,14 @@
       "reviewable_recall": true,
       "reviewable_recognize": true,
       "reviewable_reconstruct": false,
-      "sections": {
+      "selectable": true,
+      "state": "new",
+      "topics": {
         "needs_work": 0,
         "new_cards": 0,
         "passed": 0,
         "unexamined": 0
-      },
-      "selectable": true,
-      "state": "new"
+      }
     }
   ],
   "workspaces": [
@@ -100,14 +100,14 @@
           "reviewable_recall": true,
           "reviewable_recognize": true,
           "reviewable_reconstruct": false,
-          "sections": {
+          "selectable": true,
+          "state": "started",
+          "topics": {
             "needs_work": 1,
             "new_cards": 0,
             "passed": 2,
             "unexamined": 0
           },
-          "selectable": true,
-          "state": "started",
           "track_confidence": true,
           "tree": "└─ "
         }
@@ -122,14 +122,14 @@
       "reviewable_recall": true,
       "reviewable_recognize": false,
       "reviewable_reconstruct": true,
-      "sections": {
+      "selectable": false,
+      "state": "workspace",
+      "topics": {
         "needs_work": 0,
         "new_cards": 0,
         "passed": 0,
         "unexamined": 0
-      },
-      "selectable": false,
-      "state": "workspace"
+      }
     }
   ]
 }

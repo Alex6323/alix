@@ -80,7 +80,7 @@ void main() {
   }
 
   Future<void> closeHelp(WidgetTester tester) async {
-    await tester.tap(find.byKey(const ValueKey('section-sheet-close')));
+    await tester.tap(find.byKey(const ValueKey('topic-sheet-close')));
     await tester.pumpAndSettle();
   }
 
@@ -199,7 +199,7 @@ void main() {
     await pumpReview(tester, root);
     await tapChip(tester, 'Context');
 
-    expect(find.byKey(const ValueKey('section-sheet-title')), findsOneWidget);
+    expect(find.byKey(const ValueKey('topic-sheet-title')), findsOneWidget);
     expect(find.text('Use the river and country together.'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('review-help-mode-selector')),

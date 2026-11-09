@@ -136,7 +136,7 @@ function hintRequests(page: Page): string[] {
 }
 
 const hintChip = (page: Page) => page.locator("#legend .chip", { hasText: /^Hint/ });
-const stacked = (page: Page) => page.locator(".section-drawer .hint-stack .note");
+const stacked = (page: Page) => page.locator(".topic-drawer .hint-stack .note");
 const nextHint = (page: Page) => page.getByRole("button", { name: "Next hint" });
 
 test("the primary sits between Context and Hint, and Skip lives in the menu", async ({ page }) => {
@@ -146,7 +146,7 @@ test("the primary sits between Context and Hint, and Skip lives in the menu", as
   expect(labels, "the bottom row before the reveal").toEqual(["Context", "Reveal", "Hint"]);
 
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer"), "the auto-opened context is closed").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "the auto-opened context is closed").toHaveCount(0);
   await page.locator("#kebab").click();
   await expect(page.locator("#mSkip"), "Skip card is offered in the menu").toBeVisible();
   await page.locator("#kebab").click();
@@ -177,7 +177,7 @@ test("hints open one at a time, only after the server records the opening", asyn
   expect(hintRequest.method()).toBe("POST");
   expect(hintRequest.postDataJSON()).toEqual({ card: cardId });
   expect(hintRequest.headers()["x-alix-study-revision"], "the hint echoes the study revision").toMatch(/^\d+$/);
-  await expect(page.locator(".section-drawer"), "held request: no panel yet").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "held request: no panel yet").toHaveCount(0);
   await expect(page.getByText("A river city."), "held request: no hint text yet").toHaveCount(0);
 
   const [hintResponse] = await Promise.all([
@@ -196,11 +196,11 @@ test("hints open one at a time, only after the server records the opening", asyn
   await expect(nextHint(page), "no Next hint after the last").toHaveCount(0);
 
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer"), "Escape closes the panel").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "Escape closes the panel").toHaveCount(0);
   await page.keyboard.press("i");
   await expect(stacked(page), "reopening shows both opened hints").toHaveCount(2);
   await page.keyboard.press("i");
-  await expect(page.locator(".section-drawer"), "the open kind's key closes").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "the open kind's key closes").toHaveCount(0);
   expect(requests, "one request per card").toHaveLength(1);
 
   await page.locator("#kebab").click();
@@ -209,7 +209,7 @@ test("hints open one at a time, only after the server records the opening", asyn
   await page.locator("#mHint").click();
   await expect(stacked(page), "the menu entry opens the panel").toHaveCount(2);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer")).toHaveCount(0);
+  await expect(page.locator(".topic-drawer")).toHaveCount(0);
 
   await page.keyboard.press("Space");
   await expect(page.locator("#ansRegion")).toContainText("Paris");
@@ -218,22 +218,22 @@ test("hints open one at a time, only after the server records the opening", asyn
   await expect(page.locator("#mHint"), "after the reveal the menu entry leaves").toBeHidden();
   await page.locator("#kebab").click();
   await page.keyboard.press("i");
-  await expect(page.locator(".section-drawer"), "after the reveal `i` opens nothing").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "after the reveal `i` opens nothing").toHaveCount(0);
   expect(requests).toHaveLength(1);
 });
 
-test("section and hints share one panel and swap without losing opened hints", async ({ page }) => {
+test("topic and hints share one panel and swap without losing opened hints", async ({ page }) => {
   const requests = hintRequests(page);
   await start(page, "Europe", "Recall");
-  const drawer = page.locator(".section-drawer");
+  const drawer = page.locator(".topic-drawer");
   const heading = drawer.getByRole("heading", { name: "Southern capitals" });
-  await expect(heading, "the first section card opens its section by itself").toBeVisible();
+  await expect(heading, "the first topic card opens its topic by itself").toBeVisible();
 
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/hint")),
     page.keyboard.press("i"),
   ]);
-  await expect(stacked(page), "`i` swaps the auto-opened section for the hint").toHaveCount(1);
+  await expect(stacked(page), "`i` swaps the auto-opened topic for the hint").toHaveCount(1);
   await expect(heading).toHaveCount(0);
   await expect(drawer).toHaveCount(1);
 
@@ -241,7 +241,7 @@ test("section and hints share one panel and swap without losing opened hints", a
   await expect(stacked(page)).toHaveCount(2);
 
   await page.keyboard.press("c");
-  await expect(heading, "`c` swaps to the section").toBeVisible();
+  await expect(heading, "`c` swaps to the topic").toBeVisible();
   await expect(stacked(page)).toHaveCount(0);
   await page.keyboard.press("i");
   await expect(stacked(page), "`i` swaps back with both hints still opened").toHaveCount(2);
@@ -267,7 +267,7 @@ test("typing `i` into an answer field types it and opens nothing", async ({ page
   await field.focus();
   await page.keyboard.type("ipi");
   await expect(field).toHaveValue("ipi");
-  await expect(page.locator(".section-drawer")).toHaveCount(0);
+  await expect(page.locator(".topic-drawer")).toHaveCount(0);
   expect(requests).toHaveLength(0);
 });
 
@@ -283,7 +283,7 @@ test("Enter activates a focused Close hints button instead of opening another hi
   await close.focus();
   await page.keyboard.press("Enter");
 
-  await expect(page.locator(".section-drawer"), "Enter activates the focused dialog control").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "Enter activates the focused dialog control").toHaveCount(0);
 });
 
 test("typed feedback closes a hint panel that won the request race", async ({ page }) => {
@@ -321,15 +321,15 @@ test("typed feedback closes a hint panel that won the request race", async ({ pa
     Promise.resolve().then(releaseCheck),
   ]);
   await expect(page.getByRole("button", { name: "Got it" }), "the check has reached feedback").toBeVisible();
-  await expect(page.locator(".section-drawer"), "an answer boundary closes the modal panel").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "an answer boundary closes the modal panel").toHaveCount(0);
 });
 
 test("late feedback from the previous card cannot close the fresh card's context", async ({ page }) => {
-  const card = ({ id, front, section, sectionFirst, studyRevision, choices = null }: {
+  const card = ({ id, front, topic, topicFirst, studyRevision, choices = null }: {
     id: string;
     front: string;
-    section: string[];
-    sectionFirst: boolean;
+    topic: string[];
+    topicFirst: boolean;
     studyRevision: number;
     choices?: string[] | null;
   }) => ({
@@ -341,9 +341,9 @@ test("late feedback from the previous card cannot close the fresh card's context
       front,
       front_runs: [{ text: front }],
       front_units: null,
-      section_context: section,
-      section_context_runs: section.map((text) => [{ text }]),
-      section_context_units: section.map((text) => ({ kind: "sentence", text })),
+      topic_context: topic,
+      topic_context_runs: topic.map((text) => [{ text }]),
+      topic_context_units: topic.map((text) => ({ kind: "sentence", text })),
       back: ["Answer"],
       back_runs: [[{ text: "Answer" }]],
       back_units: [{ kind: "sentence", text: "Answer" }],
@@ -358,7 +358,7 @@ test("late feedback from the previous card cannot close the fresh card's context
     },
     choices,
     choice_runs: choices?.map((text) => [{ text }]) ?? null,
-    section_first: sectionFirst,
+    topic_first: topicFirst,
     keypoints: null,
     keypoint_runs: null,
     introducing: true,
@@ -383,16 +383,16 @@ test("late feedback from the previous card cannot close the fresh card's context
   const first = card({
     id: "card-old",
     front: "Which answer belongs to the old card?",
-    section: [],
-    sectionFirst: false,
+    topic: [],
+    topicFirst: false,
     studyRevision: 71,
     choices: ["Old answer", "Old distractor"],
   });
   const fresh = card({
     id: "card-fresh",
     front: "This fresh card owns the open context.",
-    section: ["Fresh section", "This panel belongs to the fresh card."],
-    sectionFirst: true,
+    topic: ["Fresh topic", "This panel belongs to the fresh card."],
+    topicFirst: true,
     studyRevision: 72,
   });
   let current = first;
@@ -418,15 +418,15 @@ test("late feedback from the previous card cannot close the fresh card's context
     skipCard(page),
   ]);
   await expect(page.locator(".front-text")).toHaveText("This fresh card owns the open context.");
-  await expect(page.locator(".section-drawer")).toBeVisible();
-  await expect(page.locator(".section-drawer")).toContainText("This panel belongs to the fresh card.");
+  await expect(page.locator(".topic-drawer")).toBeVisible();
+  await expect(page.locator(".topic-drawer")).toContainText("This panel belongs to the fresh card.");
 
   const oldResponse = page.waitForResponse((response) => response.url().includes("/api/choose"));
   releaseChoice();
   await oldResponse;
 
   await expect(
-    page.locator(".section-drawer"),
+    page.locator(".topic-drawer"),
     "the previous card's response must not tear down the fresh card's panel",
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Reveal" }), "the fresh card stays unanswered").toBeVisible();
@@ -440,7 +440,7 @@ test("a pass graded right after opening a hint records Partial", async ({ page }
   ]);
   await expect(stacked(page)).toHaveCount(1);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer")).toHaveCount(0);
+  await expect(page.locator(".topic-drawer")).toHaveCount(0);
 
   await page.keyboard.press("Space");
   const [gradeResponse] = await Promise.all([
@@ -458,7 +458,7 @@ test("a hint-free card shows no chip, and a line reveal keeps it until the last 
   await expect(page.getByRole("button", { name: "Reveal" })).toBeVisible();
   await expect(hintChip(page), "no hints, no chip").toHaveCount(0);
   await page.keyboard.press("i");
-  await expect(page.locator(".section-drawer")).toHaveCount(0);
+  await expect(page.locator(".topic-drawer")).toHaveCount(0);
 
   await page.request.post("/api/deselect", { data: {} });
   await openApp(page);
@@ -488,7 +488,7 @@ test("the hint panel with two hints fits phone and desktop widths", async ({ pag
   for (const width of [390, 1200]) {
     await page.setViewportSize({ width, height: 800 });
     await page.keyboard.press("Escape");
-    await expect(page.locator(".section-drawer")).toHaveCount(0);
+    await expect(page.locator(".topic-drawer")).toHaveCount(0);
     const closed = await overflow();
     await page.keyboard.press("i");
     await expect(stacked(page)).toHaveCount(2);

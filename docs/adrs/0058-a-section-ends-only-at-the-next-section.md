@@ -3,10 +3,11 @@
 - Status: Accepted
 - Recorded: 2026-10-30
 - Retrospective: No
-- Evidence: fn every_empty_section_heading_is_an_error_wherever_it_sits in src/parser/mod.rs
-- Evidence: fn an_empty_card_heading_and_an_empty_table_front_cell_name_no_section in src/parser/mod.rs
-- Evidence: fn a_sub_card_chain_does_not_cross_a_section in src/parser/mod.rs
+- Evidence: fn every_empty_topic_heading_is_an_error_wherever_it_sits in src/parser/mod.rs
+- Evidence: fn an_empty_card_heading_and_an_empty_table_front_cell_name_no_topic in src/parser/mod.rs
+- Evidence: fn a_sub_card_chain_does_not_cross_a_topic in src/parser/mod.rs
 - Amends: 0037 (rules 2 and 3)
+- Amended by: 0064 (rule 8: the vocabulary, a section is a topic)
 
 ## Context
 

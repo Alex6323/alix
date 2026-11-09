@@ -22,10 +22,10 @@ test.afterEach(async ({ request }) => {
   await request.post("/api/deselect", { data: {} });
 });
 
-async function closeSectionSheet(page: Page, step: string) {
-  await expect(page.locator(".section-drawer"), `${step}: the section sheet is open`).toBeVisible();
+async function closeTopicSheet(page: Page, step: string) {
+  await expect(page.locator(".topic-drawer"), `${step}: the topic sheet is open`).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer"), `${step}: Escape closes the sheet`).toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), `${step}: Escape closes the sheet`).toHaveCount(0);
 }
 
 async function grade(page: Page, key: string, step: string) {
@@ -49,7 +49,7 @@ async function openTutorialFromMenu(page: Page) {
     page.waitForResponse((r) => r.url().endsWith("/api/tutorial") && r.request().method() === "POST" && r.ok()),
     page.getByRole("menuitem", { name: "Tutorial" }).click(),
   ]);
-  await closeSectionSheet(page, "tutorial open");
+  await closeTopicSheet(page, "tutorial open");
 }
 
 test("the header menu opens the tutorial walk and its cards teach by doing", async ({ page }) => {
@@ -59,10 +59,10 @@ test("the header menu opens the tutorial walk and its cards teach by doing", asy
     page.waitForResponse((r) => r.url().endsWith("/api/tutorial") && r.request().method() === "POST" && r.ok()),
     page.getByRole("menuitem", { name: "Tutorial" }).click(),
   ]);
-  await expect(page.locator(".section-drawer"), "first contact shows the section text").toContainText(
+  await expect(page.locator(".topic-drawer"), "first contact shows the topic text").toContainText(
     "Welcome to Alix. This is a walk",
   );
-  await closeSectionSheet(page, "tutorial open");
+  await closeTopicSheet(page, "tutorial open");
   await expect(page.locator("#hist")).toHaveText("9 left");
 
   await expect(page.locator(".front-text"), "card 1").toContainText("Reveal this answer, then end the card");
@@ -72,7 +72,7 @@ test("the header menu opens the tutorial walk and its cards teach by doing", asy
 
   await expect(page.locator(".front-text"), "card 2").toContainText("Open it again with the Context chip");
   await page.getByRole("button", { name: /^Context/ }).click();
-  await closeSectionSheet(page, "card 2 Context chip");
+  await closeTopicSheet(page, "card 2 Context chip");
   await reveal(page);
   await grade(page, "3", "card 2");
 
@@ -169,8 +169,8 @@ test.describe("an empty decks folder", () => {
       page.waitForResponse((r) => r.url().endsWith("/api/tutorial") && r.request().method() === "POST" && r.ok()),
       page.getByRole("button", { name: "Tutorial" }).click(),
     ]);
-    await expect(page.locator(".section-drawer")).toContainText("Welcome to Alix. This is a walk");
-    await closeSectionSheet(page, "empty-picker tutorial");
+    await expect(page.locator(".topic-drawer")).toContainText("Welcome to Alix. This is a walk");
+    await closeTopicSheet(page, "empty-picker tutorial");
     await expect(page.locator(".front-text")).toContainText("Reveal this answer, then end the card");
     await Promise.all([
       page.waitForResponse((r) => r.url().endsWith("/api/walk/leave") && r.ok()),

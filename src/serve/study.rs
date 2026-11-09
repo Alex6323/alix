@@ -2247,7 +2247,7 @@ impl StudyState {
                     let _ = std::fs::remove_file(&prepared_path);
                     return Transition::Rejected;
                 }
-                let (sections, questions, answers) = prepared.against(&deck);
+                let (topics, questions, answers) = prepared.against(&deck);
                 if questions.is_empty() {
                     let _ = std::fs::remove_file(&prepared_path);
                     return Transition::Rejected;
@@ -2258,10 +2258,10 @@ impl StudyState {
                         .flatten(),
                     &prepared.material,
                 );
-                let prepared = prepared.narrowed(&sections, &questions, &answers);
+                let prepared = prepared.narrowed(&topics, &questions, &answers);
                 let sitting = exam::Sitting::from_prepared(
                     &deck,
-                    sections,
+                    topics,
                     questions,
                     answers,
                     ideas,

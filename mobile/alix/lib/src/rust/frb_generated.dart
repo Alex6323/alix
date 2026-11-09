@@ -2867,9 +2867,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       frontUnits: dco_decode_opt_list_content_unit(arr[2]),
       frontSteps: dco_decode_list_front_step(arr[3]),
       holeSteps: dco_decode_list_prim_usize_strict(arr[4]),
-      sectionContext: dco_decode_list_String(arr[5]),
-      sectionContextRuns: dco_decode_list_list_inline_run(arr[6]),
-      sectionContextUnits: dco_decode_list_content_unit(arr[7]),
+      topicContext: dco_decode_list_String(arr[5]),
+      topicContextRuns: dco_decode_list_list_inline_run(arr[6]),
+      topicContextUnits: dco_decode_list_content_unit(arr[7]),
       back: dco_decode_list_String(arr[8]),
       backRuns: dco_decode_list_list_inline_run(arr[9]),
       backUnits: dco_decode_list_content_unit(arr[10]),
@@ -3085,7 +3085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (arr.length != 5)
       throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return ExamOutcome(
-      sections: dco_decode_list_exam_section_outcome(arr[0]),
+      topics: dco_decode_list_exam_topic_outcome(arr[0]),
       full: dco_decode_bool(arr[1]),
       pass: dco_decode_u_32(arr[2]),
       partial: dco_decode_u_32(arr[3]),
@@ -3094,12 +3094,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ExamSectionOutcome dco_decode_exam_section_outcome(dynamic raw) {
+  ExamTopicOutcome dco_decode_exam_topic_outcome(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
     if (arr.length != 2)
       throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return ExamSectionOutcome(
+    return ExamTopicOutcome(
       cards: dco_decode_list_String(arr[0]),
       pass: dco_decode_bool(arr[1]),
     );
@@ -3258,9 +3258,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ExamSectionOutcome> dco_decode_list_exam_section_outcome(dynamic raw) {
+  List<ExamTopicOutcome> dco_decode_list_exam_topic_outcome(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_exam_section_outcome).toList();
+    return (raw as List<dynamic>).map(dco_decode_exam_topic_outcome).toList();
   }
 
   @protected
@@ -3820,7 +3820,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       mode: dco_decode_mode(arr[1]),
       depth: dco_decode_depth(arr[2]),
       introducing: dco_decode_bool(arr[3]),
-      sectionFirst: dco_decode_bool(arr[4]),
+      topicFirst: dco_decode_bool(arr[4]),
       choices: dco_decode_opt_list_String(arr[5]),
       choicesMultiple: dco_decode_opt_box_autoadd_bool(arr[6]),
       choiceRuns: dco_decode_opt_list_list_inline_run(arr[7]),
@@ -4039,7 +4039,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       choices: dco_decode_opt_list_String(arr[4]),
       choicesMultiple: dco_decode_opt_box_autoadd_bool(arr[5]),
       choiceRuns: dco_decode_opt_list_list_inline_run(arr[6]),
-      sectionFirst: dco_decode_bool(arr[7]),
+      topicFirst: dco_decode_bool(arr[7]),
       position: dco_decode_u_32(arr[8]),
       total: dco_decode_u_32(arr[9]),
       label: dco_decode_String(arr[10]),
@@ -4424,9 +4424,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_frontUnits = sse_decode_opt_list_content_unit(deserializer);
     var var_frontSteps = sse_decode_list_front_step(deserializer);
     var var_holeSteps = sse_decode_list_prim_usize_strict(deserializer);
-    var var_sectionContext = sse_decode_list_String(deserializer);
-    var var_sectionContextRuns = sse_decode_list_list_inline_run(deserializer);
-    var var_sectionContextUnits = sse_decode_list_content_unit(deserializer);
+    var var_topicContext = sse_decode_list_String(deserializer);
+    var var_topicContextRuns = sse_decode_list_list_inline_run(deserializer);
+    var var_topicContextUnits = sse_decode_list_content_unit(deserializer);
     var var_back = sse_decode_list_String(deserializer);
     var var_backRuns = sse_decode_list_list_inline_run(deserializer);
     var var_backUnits = sse_decode_list_content_unit(deserializer);
@@ -4443,9 +4443,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       frontUnits: var_frontUnits,
       frontSteps: var_frontSteps,
       holeSteps: var_holeSteps,
-      sectionContext: var_sectionContext,
-      sectionContextRuns: var_sectionContextRuns,
-      sectionContextUnits: var_sectionContextUnits,
+      topicContext: var_topicContext,
+      topicContextRuns: var_topicContextRuns,
+      topicContextUnits: var_topicContextUnits,
       back: var_back,
       backRuns: var_backRuns,
       backUnits: var_backUnits,
@@ -4676,13 +4676,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_sections = sse_decode_list_exam_section_outcome(deserializer);
+    var var_topics = sse_decode_list_exam_topic_outcome(deserializer);
     var var_full = sse_decode_bool(deserializer);
     var var_pass = sse_decode_u_32(deserializer);
     var var_partial = sse_decode_u_32(deserializer);
     var var_total = sse_decode_u_32(deserializer);
     return ExamOutcome(
-      sections: var_sections,
+      topics: var_topics,
       full: var_full,
       pass: var_pass,
       partial: var_partial,
@@ -4691,13 +4691,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ExamSectionOutcome sse_decode_exam_section_outcome(
-    SseDeserializer deserializer,
-  ) {
+  ExamTopicOutcome sse_decode_exam_topic_outcome(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_cards = sse_decode_list_String(deserializer);
     var var_pass = sse_decode_bool(deserializer);
-    return ExamSectionOutcome(cards: var_cards, pass: var_pass);
+    return ExamTopicOutcome(cards: var_cards, pass: var_pass);
   }
 
   @protected
@@ -4913,15 +4911,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  List<ExamSectionOutcome> sse_decode_list_exam_section_outcome(
+  List<ExamTopicOutcome> sse_decode_list_exam_topic_outcome(
     SseDeserializer deserializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <ExamSectionOutcome>[];
+    var ans_ = <ExamTopicOutcome>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_exam_section_outcome(deserializer));
+      ans_.add(sse_decode_exam_topic_outcome(deserializer));
     }
     return ans_;
   }
@@ -5770,7 +5768,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_mode = sse_decode_mode(deserializer);
     var var_depth = sse_decode_depth(deserializer);
     var var_introducing = sse_decode_bool(deserializer);
-    var var_sectionFirst = sse_decode_bool(deserializer);
+    var var_topicFirst = sse_decode_bool(deserializer);
     var var_choices = sse_decode_opt_list_String(deserializer);
     var var_choicesMultiple = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_choiceRuns = sse_decode_opt_list_list_inline_run(deserializer);
@@ -5801,7 +5799,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       mode: var_mode,
       depth: var_depth,
       introducing: var_introducing,
-      sectionFirst: var_sectionFirst,
+      topicFirst: var_topicFirst,
       choices: var_choices,
       choicesMultiple: var_choicesMultiple,
       choiceRuns: var_choiceRuns,
@@ -6044,7 +6042,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_choices = sse_decode_opt_list_String(deserializer);
     var var_choicesMultiple = sse_decode_opt_box_autoadd_bool(deserializer);
     var var_choiceRuns = sse_decode_opt_list_list_inline_run(deserializer);
-    var var_sectionFirst = sse_decode_bool(deserializer);
+    var var_topicFirst = sse_decode_bool(deserializer);
     var var_position = sse_decode_u_32(deserializer);
     var var_total = sse_decode_u_32(deserializer);
     var var_label = sse_decode_String(deserializer);
@@ -6058,7 +6056,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       choices: var_choices,
       choicesMultiple: var_choicesMultiple,
       choiceRuns: var_choiceRuns,
-      sectionFirst: var_sectionFirst,
+      topicFirst: var_topicFirst,
       position: var_position,
       total: var_total,
       label: var_label,
@@ -6485,9 +6483,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_list_content_unit(self.frontUnits, serializer);
     sse_encode_list_front_step(self.frontSteps, serializer);
     sse_encode_list_prim_usize_strict(self.holeSteps, serializer);
-    sse_encode_list_String(self.sectionContext, serializer);
-    sse_encode_list_list_inline_run(self.sectionContextRuns, serializer);
-    sse_encode_list_content_unit(self.sectionContextUnits, serializer);
+    sse_encode_list_String(self.topicContext, serializer);
+    sse_encode_list_list_inline_run(self.topicContextRuns, serializer);
+    sse_encode_list_content_unit(self.topicContextUnits, serializer);
     sse_encode_list_String(self.back, serializer);
     sse_encode_list_list_inline_run(self.backRuns, serializer);
     sse_encode_list_content_unit(self.backUnits, serializer);
@@ -6658,7 +6656,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @protected
   void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_exam_section_outcome(self.sections, serializer);
+    sse_encode_list_exam_topic_outcome(self.topics, serializer);
     sse_encode_bool(self.full, serializer);
     sse_encode_u_32(self.pass, serializer);
     sse_encode_u_32(self.partial, serializer);
@@ -6666,8 +6664,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_exam_section_outcome(
-    ExamSectionOutcome self,
+  void sse_encode_exam_topic_outcome(
+    ExamTopicOutcome self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
@@ -6848,14 +6846,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_list_exam_section_outcome(
-    List<ExamSectionOutcome> self,
+  void sse_encode_list_exam_topic_outcome(
+    List<ExamTopicOutcome> self,
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
-      sse_encode_exam_section_outcome(item, serializer);
+      sse_encode_exam_topic_outcome(item, serializer);
     }
   }
 
@@ -7636,7 +7634,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_mode(self.mode, serializer);
     sse_encode_depth(self.depth, serializer);
     sse_encode_bool(self.introducing, serializer);
-    sse_encode_bool(self.sectionFirst, serializer);
+    sse_encode_bool(self.topicFirst, serializer);
     sse_encode_opt_list_String(self.choices, serializer);
     sse_encode_opt_box_autoadd_bool(self.choicesMultiple, serializer);
     sse_encode_opt_list_list_inline_run(self.choiceRuns, serializer);
@@ -7827,7 +7825,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_list_String(self.choices, serializer);
     sse_encode_opt_box_autoadd_bool(self.choicesMultiple, serializer);
     sse_encode_opt_list_list_inline_run(self.choiceRuns, serializer);
-    sse_encode_bool(self.sectionFirst, serializer);
+    sse_encode_bool(self.topicFirst, serializer);
     sse_encode_u_32(self.position, serializer);
     sse_encode_u_32(self.total, serializer);
     sse_encode_String(self.label, serializer);

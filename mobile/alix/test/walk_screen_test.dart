@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/review/review_card.dart' show SectionSheet;
+import 'package:alix_mobile/review/review_card.dart' show TopicSheet;
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/walk_screen.dart';
@@ -12,12 +12,12 @@ import 'package:alix_mobile/walk_screen.dart';
 import 'support/count_rule.dart';
 import 'support/deck_fixture.dart';
 
-const _oneSection =
+const _oneTopic =
     '# Capitals\nWhere the government sits.\n\n'
     '## capital of italy?\nRome\n\n'
     '## capital of spain?\nMadrid\n';
 
-const _twoSections =
+const _twoTopics =
     '# Capitals\nWhere the government sits.\n\n'
     '## capital of italy?\nRome\n\n'
     '## capital of spain?\nMadrid\n\n'
@@ -47,7 +47,7 @@ const _hinted =
 void main() {
   setUpAll(() async => RustLib.init());
 
-  final sheetTitle = find.byKey(const ValueKey('section-sheet-title'));
+  final sheetTitle = find.byKey(const ValueKey('topic-sheet-title'));
 
   Future<void> pumpWalk(WidgetTester tester, String deck) async {
     final root = Directory.systemTemp.createTempSync('alix-walk-screen-');
@@ -106,9 +106,9 @@ void main() {
     return opened;
   }
 
-  testWidgets('law: a section sheet opens on first contact in every walk, '
-      'including the next walk of a one-section deck', (tester) async {
-    await pumpWalk(tester, _oneSection);
+  testWidgets('law: a topic sheet opens on first contact in every walk, '
+      'including the next walk of a one-topic deck', (tester) async {
+    await pumpWalk(tester, _oneTopic);
     expect(find.text('2 left'), findsOneWidget, reason: 'open: two items left');
     expect(await walkOnce(tester), [true, false], reason: 'walk 1');
     expect(find.text('walked'), findsOneWidget, reason: 'done: tally row');
@@ -116,18 +116,18 @@ void main() {
     await tap(tester, 'Next walk');
     expect(await walkOnce(tester), [true, false], reason: 'walk 2');
 
-    await pumpWalk(tester, _twoSections);
+    await pumpWalk(tester, _twoTopics);
     expect(await walkOnce(tester), [
       true,
       false,
       true,
-    ], reason: 'two sections: each opens on its first item');
+    ], reason: 'two topics: each opens on its first item');
   });
 
-  testWidgets('the Context chip reopens the section sheet in a walk', (
+  testWidgets('the Context chip reopens the topic sheet in a walk', (
     tester,
   ) async {
-    await pumpWalk(tester, _oneSection);
+    await pumpWalk(tester, _oneTopic);
     expect(await dismissSheetIfOpen(tester), isTrue, reason: 'first contact');
     expect(
       find.byKey(const ValueKey('question-tap')),
@@ -153,19 +153,19 @@ void main() {
     expect(chip('Hint'), findsNothing, reason: 'the answer phase has no hint');
   });
 
-  testWidgets('the section sheet of a walk closes from its close mark', (
+  testWidgets('the topic sheet of a walk closes from its close mark', (
     tester,
   ) async {
-    await pumpWalk(tester, _oneSection);
+    await pumpWalk(tester, _oneTopic);
     expect(sheetTitle, findsOneWidget, reason: 'first contact opens the sheet');
-    final closeMark = find.byKey(const ValueKey('section-sheet-close'));
+    final closeMark = find.byKey(const ValueKey('topic-sheet-close'));
     expect(closeMark, findsOneWidget, reason: 'the sheet shows a close mark');
     await tester.tap(closeMark);
     await tester.pumpAndSettle();
     expect(sheetTitle, findsNothing, reason: 'the close mark dismissed the sheet');
   });
 
-  testWidgets('a section too long for the screen keeps the walk sheet and its close mark below the status bar', (
+  testWidgets('a topic too long for the screen keeps the walk sheet and its close mark below the status bar', (
     tester,
   ) async {
     addTearDown(tester.view.reset);
@@ -177,8 +177,8 @@ void main() {
     expect(sheetTitle, findsOneWidget, reason: 'first contact opens the sheet');
 
     final toolbarTop = tester.getRect(find.byType(AppBar)).bottom - kToolbarHeight;
-    final sheet = tester.getRect(find.byType(SectionSheet));
-    final mark = tester.getRect(find.byKey(const ValueKey('section-sheet-close')));
+    final sheet = tester.getRect(find.byType(TopicSheet));
+    final mark = tester.getRect(find.byKey(const ValueKey('topic-sheet-close')));
     expect(
       sheet.top,
       greaterThanOrEqualTo(toolbarTop),
@@ -194,7 +194,7 @@ void main() {
   testWidgets('a tap on the revealed answer covers it with the hide sheet in a walk, and its close mark shows it', (
     tester,
   ) async {
-    await pumpWalk(tester, _oneSection);
+    await pumpWalk(tester, _oneTopic);
     await dismissSheetIfOpen(tester);
     final answerTap = find.byKey(const ValueKey('answer-tap'));
     final hideSheet = find.byKey(const ValueKey('hide-sheet'));

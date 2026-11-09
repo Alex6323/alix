@@ -99,7 +99,7 @@ void main() {
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
-          'review_screen.dart and picker_screen.dart, the section sheet '
+          'review_screen.dart and picker_screen.dart, the topic sheet '
           'opener became one shared Context/Hint panel in review_screen.dart, '
           'and the skip-introduction switch added a field to both, moving '
           'their single ListenableBuilder site; the tutor conversation '
@@ -107,7 +107,7 @@ void main() {
           'review_screen.dart; the walk launch added an import and a method '
           'to picker_screen.dart; the session-end conflict check added '
           'imports, a field, and methods to trace_screen.dart; the shared '
-          'showSectionSheet shortened the opener in review_screen.dart and '
+          'showTopicSheet shortened the opener in review_screen.dart and '
           'walk_screen.dart by four lines; the review menu'"'"'s skip added a '
           'method to review_screen.dart; retirement moved into '
           'TutorConversation.retire, shortening both screens; the walk hint '

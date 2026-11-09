@@ -44,7 +44,7 @@ struct CardMeasurement {
     front_plain: String,
     back_plain: Vec<String>,
     notes: Vec<NoteMeasurement>,
-    section_context: Vec<String>,
+    topic_context: Vec<String>,
     table_title: Option<String>,
     authored_distractors: Vec<String>,
     images: Vec<ImageMeasurement>,
@@ -182,7 +182,7 @@ fn card_measurement(card: &Card) -> CardMeasurement {
                 body: note.body.clone(),
             })
             .collect(),
-        section_context: card.section_context.clone(),
+        topic_context: card.topic_context.clone(),
         table_title: card.table_title.clone(),
         authored_distractors: card.authored_distractors.clone(),
         images: image_measurements(&card.images),
@@ -287,7 +287,7 @@ fn measure(corpus: &str, example: SpecExample) -> Measurement {
             }
             if cards
                 .iter()
-                .any(|card| !card.section_context.is_empty() || card.parent_block.is_some())
+                .any(|card| !card.topic_context.is_empty() || card.parent_block.is_some())
             {
                 reasons.push("heading content changed Alix hierarchy".to_owned());
             }

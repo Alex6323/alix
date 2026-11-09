@@ -262,16 +262,16 @@ class ReviewCardModel {
     required Iterable<ReviewImageModel> images,
     required Iterable<ReviewImageModel> imagesBack,
     Iterable<ReviewCitationModel> citations = const [],
-    Iterable<String> section = const [],
-    Iterable<Iterable<InlineRunModel>> sectionRuns = const [],
-    Iterable<ReviewContentUnitModel> sectionUnits = const [],
+    Iterable<String> topic = const [],
+    Iterable<Iterable<InlineRunModel>> topicRuns = const [],
+    Iterable<ReviewContentUnitModel> topicUnits = const [],
   }) : frontRuns = List.unmodifiable(frontRuns),
        frontUnits = frontUnits == null ? null : List.unmodifiable(frontUnits),
        frontSteps = List.unmodifiable(frontSteps),
        holeSteps = List.unmodifiable(holeSteps),
-       section = List.unmodifiable(section),
-       sectionRuns = _freezeRunLines(sectionRuns),
-       sectionUnits = List.unmodifiable(sectionUnits),
+       topic = List.unmodifiable(topic),
+       topicRuns = _freezeRunLines(topicRuns),
+       topicUnits = List.unmodifiable(topicUnits),
        back = List.unmodifiable(back),
        backRuns = _freezeRunLines(backRuns),
        backUnits = List.unmodifiable(backUnits),
@@ -309,13 +309,13 @@ class ReviewCardModel {
   final List<ReviewImageModel> imagesBack;
   final List<ReviewCitationModel> citations;
 
-  /// The card's section as served: the heading text first, then its prose.
-  /// Empty when the card has no section.
-  final List<String> section;
-  final List<List<InlineRunModel>> sectionRuns;
-  final List<ReviewContentUnitModel> sectionUnits;
-  bool get hasSection => section.isNotEmpty;
-  String get sectionTitle => section.isEmpty ? '' : section.first;
+  /// The card's topic as served: the heading text first, then its prose.
+  /// Empty when the card has no topic.
+  final List<String> topic;
+  final List<List<InlineRunModel>> topicRuns;
+  final List<ReviewContentUnitModel> topicUnits;
+  bool get hasTopic => topic.isNotEmpty;
+  String get topicTitle => topic.isEmpty ? '' : topic.first;
 }
 
 int revealStepCount(ReviewCardModel card) => card.frontSteps.isNotEmpty
@@ -441,7 +441,7 @@ class ReviewStateModel {
     required this.depth,
     this.input = ReviewInput.type,
     required this.introducing,
-    this.sectionFirst = false,
+    this.topicFirst = false,
     Iterable<String>? choices,
     Iterable<Iterable<InlineRunModel>>? choiceRuns,
     this.choicesMultiple,
@@ -475,9 +475,9 @@ class ReviewStateModel {
   final ReviewInput input;
   final bool introducing;
 
-  /// The current card is the sitting's first introduction from its section;
+  /// The current card is the sitting's first introduction from its topic;
   /// the lib decides that, never the client.
-  final bool sectionFirst;
+  final bool topicFirst;
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;
   final bool? choicesMultiple;

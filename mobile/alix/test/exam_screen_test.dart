@@ -113,8 +113,8 @@ void main() {
     deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?', 'What is borrowing?'],
-    sections: [
-      RemoteExamSection(
+    topics: [
+      RemoteExamTopic(
         label: 'Ownership',
         cards: ['card-a'],
         pass: true,
@@ -145,8 +145,8 @@ void main() {
     deck: 'rust.md',
     strictness: 'balanced',
     questions: ['Why ownership?'],
-    sections: [
-      RemoteExamSection(
+    topics: [
+      RemoteExamTopic(
         label: 'Ownership',
         cards: ['card-a'],
         pass: false,
@@ -305,7 +305,7 @@ void main() {
     );
   });
 
-  testWidgets('results show a per-section count and mark', (tester) async {
+  testWidgets('results show a per-topic count and mark', (tester) async {
     final client = FakeServerClient(examGetReplies: const [resultsFailed]);
     await pumpExam(tester, client: client);
     await tester.pump();
@@ -640,7 +640,7 @@ void main() {
           ideas: {
             'version': 1,
             'material': 'xxh64-current',
-            'sections': <Object>[],
+            'topics': <Object>[],
           },
         ),
       ],
@@ -665,7 +665,7 @@ void main() {
     const ideas = {
       'version': 1,
       'material': 'xxh64-current',
-      'sections': <Object>[],
+      'topics': <Object>[],
     };
     final client = FakeServerClient(examGetReplies: const [generating]);
     await pumpExam(tester, client: client, ideas: ideas);

@@ -110,7 +110,7 @@ Widget _card(TextEditingController attempt) {
         onIntroduce: () {},
         onGrade: (_) {},
         onOpenTutor: (_) {},
-        onOpenSection: (_) {},
+        onOpenTopic: (_) {},
       ),
     ),
   );

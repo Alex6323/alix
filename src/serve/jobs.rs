@@ -1082,7 +1082,7 @@ impl RemoteExamining {
                 .map(|q| crate::render::exam_text_units(&q.prompt))
                 .collect(),
             grades,
-            sections: parts.sections,
+            topics: parts.topics,
             verdicts: parts.verdicts,
             full: s.full(),
             mastered: parts.mastered,
@@ -1109,7 +1109,7 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
         questions: Vec::new(),
         questions_units: Vec::new(),
         grades: Vec::new(),
-        sections: Vec::new(),
+        topics: Vec::new(),
         verdicts: None,
         full: false,
         mastered: false,

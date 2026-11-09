@@ -228,19 +228,19 @@ export function createExam({
       summary.appendChild(el("div", "exam-score", countText(current.verdicts)));
       if (current.standing) summary.appendChild(el("div", "exam-standing", current.standing));
       wrap.appendChild(summary);
-      const sections = el("div", "exam-sections");
-      current.sections.forEach((section) => {
-        const sectionEl = el("div", "exam-section");
-        sectionEl.appendChild(el("span", "exam-section-label", section.label));
-        sectionEl.appendChild(el("span", "exam-section-count", countText(section.verdicts)));
-        sectionEl.appendChild(el(
+      const topics = el("div", "exam-topics");
+      current.topics.forEach((topic) => {
+        const topicEl = el("div", "exam-topic");
+        topicEl.appendChild(el("span", "exam-topic-label", topic.label));
+        topicEl.appendChild(el("span", "exam-topic-count", countText(topic.verdicts)));
+        topicEl.appendChild(el(
           "span",
-          "exam-section-state " + (section.pass ? "pass" : "needs-work"),
-          section.pass ? "✓ pass" : "needs work",
+          "exam-topic-state " + (topic.pass ? "pass" : "needs-work"),
+          topic.pass ? "✓ pass" : "needs work",
         ));
-        sections.appendChild(sectionEl);
+        topics.appendChild(topicEl);
       });
-      wrap.appendChild(sections);
+      wrap.appendChild(topics);
       if (current.unlocks && current.unlocks.length) {
         wrap.appendChild(el("div", "exam-unlocks", `Unlocks: ${current.unlocks.join(", ")}`));
       }

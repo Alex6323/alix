@@ -7,7 +7,7 @@ import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/walk_bridge.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/review/review_card.dart'
-    show ReviewHelpMode, showReviewHelpSheet, showSectionSheet;
+    show ReviewHelpMode, showReviewHelpSheet, showTopicSheet;
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/review_view.dart' show ReviewCantOpenView;
 import 'package:alix_mobile/server_client.dart';
@@ -56,7 +56,7 @@ class _WalkScreenState extends State<WalkScreen> {
   final TextEditingController _attempt = TextEditingController();
 
   ServerClient? _client;
-  String? _autoOpenedSection;
+  String? _autoOpenedTopic;
 
   TutorConversation? _tutor;
   final List<TutorConversation> _retiredTutors = [];
@@ -182,8 +182,8 @@ class _WalkScreenState extends State<WalkScreen> {
     conversation.retire(onDisposed: () => _retiredTutors.remove(conversation));
   }
 
-  void _openSection(ReviewCardModel card) {
-    showSectionSheet(context, card);
+  void _openTopic(ReviewCardModel card) {
+    showTopicSheet(context, card);
   }
 
   void _openHint(ReviewCardModel card) {
@@ -199,18 +199,18 @@ class _WalkScreenState extends State<WalkScreen> {
     );
   }
 
-  void _autoOpenSection(bool sectionFirst, ReviewCardModel? card) {
-    if (card == null || !sectionFirst || !card.hasSection) return;
-    final key = card.section.join('\n');
-    if (_autoOpenedSection == key) return;
-    _autoOpenedSection = key;
+  void _autoOpenTopic(bool topicFirst, ReviewCardModel? card) {
+    if (card == null || !topicFirst || !card.hasTopic) return;
+    final key = card.topic.join('\n');
+    if (_autoOpenedTopic == key) return;
+    _autoOpenedTopic = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openSection(card);
+      if (mounted) _openTopic(card);
     });
   }
 
   void _nextWalk() {
-    _autoOpenedSection = null;
+    _autoOpenedTopic = null;
     _controller.nextWalk();
   }
 
@@ -223,7 +223,7 @@ class _WalkScreenState extends State<WalkScreen> {
       listenable: _controller,
       builder: (context, _) {
         final state = _controller.state;
-        _autoOpenSection(state.sectionFirst, state.card);
+        _autoOpenTopic(state.topicFirst, state.card);
         return WalkView(
           state: state,
           choice: _controller.choice,
@@ -250,7 +250,7 @@ class _WalkScreenState extends State<WalkScreen> {
           onOpenHint: _openHint,
           onNextWalk: _nextWalk,
           onOpenTutor: _openTutor,
-          onOpenSection: _openSection,
+          onOpenTopic: _openTopic,
         );
       },
     );

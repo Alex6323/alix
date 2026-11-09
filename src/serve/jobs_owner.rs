@@ -862,12 +862,12 @@ impl JobsState {
         } else {
             exam::ExamScope::Full
         };
-        let sections = crate::exam_status::select_sections(&deck, scope).sections;
-        if sections.is_empty() {
+        let topics = crate::exam_status::select_topics(&deck, scope).topics;
+        if topics.is_empty() {
             return Started::Conflict;
         }
         let estimate = exam::wait_estimate(&ask_cfg);
-        let (rx, job) = exam::spawn_prepare(&deck, sections, exam_cfg, ask_cfg);
+        let (rx, job) = exam::spawn_prepare(&deck, topics, exam_cfg, ask_cfg);
         let preparing = Preparing {
             name,
             path,
@@ -915,14 +915,14 @@ impl JobsState {
             Some(ids) => exam::ExamScope::Cards(ids),
             None => exam::ExamScope::Full,
         };
-        let selection = crate::exam_status::select_sections(&deck, scope);
-        if selection.sections.is_empty() {
+        let selection = crate::exam_status::select_topics(&deck, scope);
+        if selection.topics.is_empty() {
             return Started::Conflict;
         }
         let estimate = exam::wait_estimate(&ask_cfg);
         let sitting = exam::Sitting::start_with(
             &deck,
-            selection.sections,
+            selection.topics,
             ideas,
             strictness,
             exam_cfg,

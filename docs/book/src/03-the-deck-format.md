@@ -129,7 +129,7 @@ $$
 ```
 
 A card that opens a `$$` block without closing it fails to load, with an
-error naming the opener's line. A closed pair in section or context prose
+error naming the opener's line. A closed pair in topic or context prose
 renders as the same display formula. An unmatched opener on those surfaces
 stays ordinary text and does not consume the lines after it.
 
@@ -421,20 +421,20 @@ with a `blank:`, `cover:` or `crop:` region takes no hint. A hint that spells
 out one of the answer's lines (four characters or more, any case) draws a
 warning from `alix doctor`, since it would give the answer away.
 
-## Sections and sub-cards
+## Topics and sub-cards
 
-Heading depth decides a line's role. `##` is a card front, `#` opens a section,
+Heading depth decides a line's role. `##` is a card front, `#` opens a topic,
 and `###` through `######` are sub-cards.
 
-### `#` — section context
+### `#`: topic context
 
-A single-`#` heading opens a **section**. Its text, plus any prose that follows
+A single-`#` heading opens a **topic**. Its text, plus any prose that follows
 it outside a card, is the shared context for every card below it until the next
 `#`.
 
-A deck body starts with a heading. Before the first one there is no section to
+A deck body starts with a heading. Before the first one there is no topic to
 belong to and no card to be part of, so a line there is an error rather than
-text that lands nowhere. A deck of plain cards needs no section at all: opening
+text that lands nowhere. A deck of plain cards needs no topic at all: opening
 with `##` is fine, and those cards simply have no context. Whatever a deck is
 about goes in `title:` and `description:`.
 
@@ -447,28 +447,28 @@ Pressure rises by about one atmosphere per ten metres.
 About 4 atmospheres.
 ```
 
-A card's section is never on the card face. The first card you ever meet from
-a section opens the whole section in a sheet that slides up from the bottom, once; after
+A card's topic is never on the card face. The first card you ever meet from
+a topic opens the whole topic in a sheet that slides up from the bottom, once; after
 that, in this sitting and every later one, a **Context** chip in the bottom
 row opens it until the answer shows, as do the `c` key and the review menu's
 **Context** entry; the Android app does the same with its **Context** chip,
 and opens the sheet by itself under the same rule (see [The mobile app](18-the-mobile-app.md#reviewing)). The kids
-client does not expose section context.
+client does not expose topic context.
 
-A section heading is a heading, nothing more. It takes no directives and no card
-ID, because a section owns no card to bind either to.
+A topic heading is a heading, nothing more. It takes no directives and no card
+ID, because a topic owns no card to bind either to.
 
-A section runs to the next `#` heading, and nothing else ends it: every card
+A topic runs to the next `#` heading, and nothing else ends it: every card
 carries the context of the nearest titled `#` above it, and a sub-card chain
 does not cross a `#`. Cards above the first `#` carry no context. A `#` with no
 title is an error.
-`alix doctor` warns about a section that has prose but no card before the next
-`#`, since a section introduces the cards under it; a `#` typed where `##` was
+`alix doctor` warns about a topic that has prose but no card before the next
+`#`, since a topic introduces the cards under it; a `#` typed where `##` was
 meant often looks like that.
-It also warns when two sections share a heading, since the exam merges them
-into one section, and, on a deck with an exam, when a section holds more than
-15 cards: the exam asks 3 questions per section and a pass credits every card
-in it, so a long section is passed on a small share of what it teaches.
+It also warns when two topics share a heading, since the exam merges them
+into one topic, and, on a deck with an exam, when a topic holds more than
+15 cards: the exam asks 3 questions per topic and a pass credits every card
+in it, so a long topic is passed on a small share of what it teaches.
 
 ### `###` to `######` — sub-cards
 
@@ -621,7 +621,7 @@ or tabs allowed after it and no indentation before it.
 
 The name comes from `title:`. A deck without one falls back to a condensed form
 of its `trace:` sentence, and a deck with neither is named by its filename stem.
-A `#` heading is never the name: it is [section context](#sections-and-sub-cards)
+A `#` heading is never the name: it is [topic context](#topics-and-sub-cards)
 for the cards below it.
 
 ```

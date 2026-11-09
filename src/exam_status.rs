@@ -1,7 +1,7 @@
 use crate::{deck::Deck, store::Store};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ExamSection {
+pub struct ExamTopic {
     pub label: String,
     pub context: Vec<String>,
     pub card_ids: Vec<String>,
@@ -9,10 +9,10 @@ pub struct ExamSection {
     pub size: usize,
 }
 
-pub const SECTION_NUDGE_CARDS: usize = 15;
+pub const TOPIC_NUDGE_CARDS: usize = 15;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SectionStatus {
+pub enum TopicStatus {
     Unexamined,
     NeedsWork,
     NewCards,
@@ -20,7 +20,7 @@ pub enum SectionStatus {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SectionTally {
+pub struct TopicTally {
     pub passed: usize,
     pub needs_work: usize,
     pub new_cards: usize,
@@ -37,22 +37,22 @@ pub enum ExamFilter {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExamStatus {
-    pub sections: Vec<SectionStatus>,
+    pub topics: Vec<TopicStatus>,
 }
 
 impl ExamStatus {
     pub fn all_passed(&self) -> bool {
-        self.sections.iter().all(|s| *s == SectionStatus::Passed)
+        self.topics.iter().all(|s| *s == TopicStatus::Passed)
     }
 
-    pub fn tally(&self) -> SectionTally {
-        let mut tally = SectionTally::default();
-        for status in &self.sections {
+    pub fn tally(&self) -> TopicTally {
+        let mut tally = TopicTally::default();
+        for status in &self.topics {
             match status {
-                SectionStatus::Passed => tally.passed += 1,
-                SectionStatus::NeedsWork => tally.needs_work += 1,
-                SectionStatus::NewCards => tally.new_cards += 1,
-                SectionStatus::Unexamined => tally.unexamined += 1,
+                TopicStatus::Passed => tally.passed += 1,
+                TopicStatus::NeedsWork => tally.needs_work += 1,
+                TopicStatus::NewCards => tally.new_cards += 1,
+                TopicStatus::Unexamined => tally.unexamined += 1,
             }
         }
         tally
@@ -60,13 +60,13 @@ impl ExamStatus {
 
     pub fn filter(&self) -> ExamFilter {
         let selected = self
-            .sections
+            .topics
             .iter()
-            .filter(|s| **s != SectionStatus::Passed)
+            .filter(|s| **s != TopicStatus::Passed)
             .count();
         if selected == 0 {
             ExamFilter::None
-        } else if selected == self.sections.len() {
+        } else if selected == self.topics.len() {
             ExamFilter::All
         } else {
             ExamFilter::Partial
@@ -89,7 +89,7 @@ pub struct ExamRow {
     pub passed_at_ms: Option<u64>,
     pub mastered_at_ms: Option<u64>,
     pub full_exam_result: Option<crate::store::FullExamResult>,
-    pub tally: SectionTally,
+    pub tally: TopicTally,
     pub filter: ExamFilter,
 }
 
@@ -165,19 +165,19 @@ pub fn exam_row(deck: &Deck, store: &Store) -> ExamRow {
 }
 
 pub fn exam_status(deck: &Deck, store: &Store) -> ExamStatus {
-    status_of(&exam_sections(deck), store)
+    status_of(&exam_topics(deck), store)
 }
 
-pub fn status_of(sections: &[ExamSection], store: &Store) -> ExamStatus {
-    let sections = sections
+pub fn status_of(topics: &[ExamTopic], store: &Store) -> ExamStatus {
+    let topics = topics
         .iter()
-        .map(|section| section_status(section, store))
+        .map(|topic| topic_status(topic, store))
         .collect();
-    ExamStatus { sections }
+    ExamStatus { topics }
 }
 
-fn section_status(section: &ExamSection, store: &Store) -> SectionStatus {
-    let records: Vec<Option<bool>> = section
+fn topic_status(topic: &ExamTopic, store: &Store) -> TopicStatus {
+    let records: Vec<Option<bool>> = topic
         .card_ids
         .iter()
         .map(|id| {
@@ -188,53 +188,53 @@ fn section_status(section: &ExamSection, store: &Store) -> SectionStatus {
         })
         .collect();
     if records.iter().all(Option::is_none) {
-        SectionStatus::Unexamined
+        TopicStatus::Unexamined
     } else if records.contains(&Some(false)) {
-        SectionStatus::NeedsWork
+        TopicStatus::NeedsWork
     } else if records.contains(&None) {
-        SectionStatus::NewCards
+        TopicStatus::NewCards
     } else {
-        SectionStatus::Passed
+        TopicStatus::Passed
     }
 }
 
-pub fn oversized_sections(deck: &Deck) -> Vec<(String, usize)> {
-    exam_sections(deck)
+pub fn oversized_topics(deck: &Deck) -> Vec<(String, usize)> {
+    exam_topics(deck)
         .into_iter()
-        .filter(|section| section.size > SECTION_NUDGE_CARDS)
-        .map(|section| (section.label, section.size))
+        .filter(|topic| topic.size > TOPIC_NUDGE_CARDS)
+        .map(|topic| (topic.label, topic.size))
         .collect()
 }
 
-pub fn exam_sections(deck: &Deck) -> Vec<ExamSection> {
-    let mut sections: Vec<ExamSection> = Vec::new();
+pub fn exam_topics(deck: &Deck) -> Vec<ExamTopic> {
+    let mut topics: Vec<ExamTopic> = Vec::new();
     for card in &deck.cards {
-        let heading = card.section_context.first();
-        let at = match sections.iter().position(|s| s.context.first() == heading) {
+        let heading = card.topic_context.first();
+        let at = match topics.iter().position(|s| s.context.first() == heading) {
             Some(at) => at,
             None => {
-                sections.push(ExamSection {
+                topics.push(ExamTopic {
                     label: heading.cloned().unwrap_or_else(|| deck.display_name()),
-                    context: card.section_context.clone(),
+                    context: card.topic_context.clone(),
                     ..Default::default()
                 });
-                sections.len() - 1
+                topics.len() - 1
             }
         };
-        sections[at].size += 1;
+        topics[at].size += 1;
         if let Some(id) = card.id() {
-            sections[at].card_ids.push(id);
+            topics[at].card_ids.push(id);
         }
         let scope = format!(
             "Q: {}\nA: {}",
             card.front.trim(),
             card.back.join("\n").trim()
         );
-        if !sections[at].cards.contains(&scope) {
-            sections[at].cards.push(scope);
+        if !topics[at].cards.contains(&scope) {
+            topics[at].cards.push(scope);
         }
     }
-    sections
+    topics
 }
 
 pub enum ExamScope<'a> {
@@ -245,28 +245,28 @@ pub enum ExamScope<'a> {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExamSelection {
-    pub sections: Vec<ExamSection>,
+    pub topics: Vec<ExamTopic>,
     pub unknown_cards: Vec<String>,
 }
 
-pub fn select_sections(deck: &Deck, scope: ExamScope) -> ExamSelection {
-    let sections = exam_sections(deck);
+pub fn select_topics(deck: &Deck, scope: ExamScope) -> ExamSelection {
+    let topics = exam_topics(deck);
     match scope {
         ExamScope::Full => ExamSelection {
-            sections,
+            topics,
             unknown_cards: Vec::new(),
         },
         ExamScope::NeedsWork(store) => {
-            let status = status_of(&sections, store);
-            let selected: Vec<ExamSection> = sections
+            let status = status_of(&topics, store);
+            let selected: Vec<ExamTopic> = topics
                 .iter()
-                .zip(&status.sections)
-                .filter(|(_, status)| **status != SectionStatus::Passed)
-                .map(|(section, _)| section.clone())
+                .zip(&status.topics)
+                .filter(|(_, status)| **status != TopicStatus::Passed)
+                .map(|(topic, _)| topic.clone())
                 .collect();
             ExamSelection {
-                sections: if selected.is_empty() {
-                    sections
+                topics: if selected.is_empty() {
+                    topics
                 } else {
                     selected
                 },
@@ -276,15 +276,15 @@ pub fn select_sections(deck: &Deck, scope: ExamScope) -> ExamSelection {
         ExamScope::Cards(ids) => {
             let unknown_cards = ids
                 .iter()
-                .filter(|id| !sections.iter().any(|s| s.card_ids.contains(id)))
+                .filter(|id| !topics.iter().any(|s| s.card_ids.contains(id)))
                 .cloned()
                 .collect();
-            let selected = sections
+            let selected = topics
                 .into_iter()
-                .filter(|section| section.card_ids.iter().any(|id| ids.contains(id)))
+                .filter(|topic| topic.card_ids.iter().any(|id| ids.contains(id)))
                 .collect();
             ExamSelection {
-                sections: selected,
+                topics: selected,
                 unknown_cards,
             }
         }
@@ -292,13 +292,13 @@ pub fn select_sections(deck: &Deck, scope: ExamScope) -> ExamSelection {
 }
 
 pub fn needs_work_card_ids(deck: &Deck, store: &Store) -> Vec<String> {
-    let sections = exam_sections(deck);
-    let status = status_of(&sections, store);
-    sections
+    let topics = exam_topics(deck);
+    let status = status_of(&topics, store);
+    topics
         .into_iter()
-        .zip(status.sections)
-        .filter(|(_, status)| *status != SectionStatus::Passed)
-        .flat_map(|(section, _)| section.card_ids)
+        .zip(status.topics)
+        .filter(|(_, status)| *status != TopicStatus::Passed)
+        .flat_map(|(topic, _)| topic.card_ids)
         .collect()
 }
 
@@ -345,9 +345,9 @@ mod tests {
                 ExamRow {
                     passed_at_ms: Some(passed_at),
                     full_exam_result: full(12, 0, 18),
-                    tally: SectionTally {
+                    tally: TopicTally {
                         needs_work: 2,
-                        ..SectionTally::default()
+                        ..TopicTally::default()
                     },
                     ..ExamRow::default()
                 },
@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn a_scope_selects_the_sections_it_names_and_reports_unknown_cards() {
+    fn a_scope_selects_the_topics_it_names_and_reports_unknown_cards() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.md");
         std::fs::write(
@@ -433,7 +433,7 @@ mod tests {
                 vec![],
             ),
             (
-                "needs work when every section passed examines all",
+                "needs work when every topic passed examines all",
                 ExamScope::NeedsWork(&all_passed),
                 vec!["A", "B"],
                 vec![],
@@ -446,19 +446,15 @@ mod tests {
             ),
         ];
         for (label, scope, expected, unknown) in rows {
-            let selection = select_sections(&deck, scope);
-            let labels: Vec<&str> = selection
-                .sections
-                .iter()
-                .map(|s| s.label.as_str())
-                .collect();
-            assert_eq!(expected, labels, "{label}: sections");
+            let selection = select_topics(&deck, scope);
+            let labels: Vec<&str> = selection.topics.iter().map(|s| s.label.as_str()).collect();
+            assert_eq!(expected, labels, "{label}: topics");
             assert_eq!(unknown, selection.unknown_cards, "{label}: unknown cards");
         }
         assert_eq!(
             vec!["card-b1".to_string()],
             needs_work_card_ids(&deck, &a_passed),
-            "the phone sends the cards of the sections that need work"
+            "the phone sends the cards of the topics that need work"
         );
     }
 }

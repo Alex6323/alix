@@ -519,7 +519,7 @@ pub fn select(
         .collect();
     // Read while the vector is still complete: both filters below drop cards
     // a parent block's graduation is folded from, and cards whose progress
-    // says a section was already met.
+    // says a topic was already met.
     let whole = crate::session::WholeDecks::of(&cards[..authored_len], store);
 
     let topology = resolve_topology(topology_sel, &augment, &deck_tokens)?;
@@ -1272,16 +1272,16 @@ mod tests {
     }
 
     /// Codex's finding, at the public boundary: a deck reorganized so that
-    /// a former card front became a `# ` section leaves its old id below
-    /// that section, belonging to no card. That malformed file must not
+    /// a former card front became a `# ` topic leaves its old id below
+    /// that topic, belonging to no card. That malformed file must not
     /// drag a HEALTHY copy elsewhere into a remint: the healthy card would
     /// get a fresh token and lose its progress row.
     #[test]
-    fn a_section_orphan_id_never_remints_a_valid_card_in_another_deck() {
+    fn a_topic_orphan_id_never_remints_a_valid_card_in_another_deck() {
         let dir = tempfile::tempdir().unwrap();
         let broken = dir.path().join("a-broken.md");
         // The reorganization shape: a real card, then a former front turned
-        // into a section, with that card's old id stranded below it.
+        // into a topic, with that card's old id stranded below it.
         std::fs::write(
             &broken,
             "## still a card\nanswer\n<!-- id: card-7ty2cy2c42qp8vqq5xrfwcqega -->\n# was a card\nprose\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
@@ -1294,7 +1294,7 @@ mod tests {
         let dupes = crate::dedup::scan_dir_fast(dir.path()).card_dupes;
         assert!(
             dupes.is_empty(),
-            "precondition: the orphan id below a section claims no card, so \
+            "precondition: the orphan id below a topic claims no card, so \
              there is no duplicate at all: {dupes:?}"
         );
 
@@ -1660,9 +1660,9 @@ it reads line two\n\
     }
 
     #[test]
-    fn recognize_selection_keeps_a_section_met_outside_the_partition_quiet() {
+    fn recognize_selection_keeps_a_topic_met_outside_the_partition_quiet() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("sectioned.md");
+        let deck_path = dir.path().join("with_topic.md");
         write_initialized(
             &deck_path,
             "# Ownership\n\nEach value has one owner.\n\n## First\nfirst answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n## Second\nsecond answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
@@ -1671,8 +1671,8 @@ it reads line two\n\
         let first_id = loaded.cards[0].id().unwrap();
         let second_id = loaded.cards[1].id().unwrap();
         assert_eq!(
-            loaded.cards[0].section_context, loaded.cards[1].section_context,
-            "precondition: both cards sit under the one section"
+            loaded.cards[0].topic_context, loaded.cards[1].topic_context,
+            "precondition: both cards sit under the one topic"
         );
 
         let mut store = state::open_store(&deck_path, dir.path()).unwrap();
@@ -1714,8 +1714,8 @@ it reads line two\n\
             build.session.current_id()
         );
         assert!(
-            !build.session.section_first_for_current(),
-            "the first card's progress lies outside the Recognize partition and still marks the section met"
+            !build.session.topic_first_for_current(),
+            "the first card's progress lies outside the Recognize partition and still marks the topic met"
         );
     }
 
@@ -1790,9 +1790,9 @@ it reads line two\n\
     }
 
     #[test]
-    fn region_selection_keeps_a_section_met_outside_the_region_quiet() {
+    fn region_selection_keeps_a_topic_met_outside_the_region_quiet() {
         let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("sectioned.md");
+        let deck_path = dir.path().join("with_topic.md");
         write_initialized(
             &deck_path,
             "# Ownership\n\nEach value has one owner.\n\n## First\nfirst answer\n<!-- id: card-9w2c7x4k1m8q3z5t0v6b2n4d8f -->\n\n## Second\nsecond answer\n<!-- id: card-3k5m9q2w7x4c1t8z0v6b2n4d8f -->\n",
@@ -1801,8 +1801,8 @@ it reads line two\n\
         let first_id = loaded.cards[0].id().unwrap();
         let second_id = loaded.cards[1].id().unwrap();
         assert_eq!(
-            loaded.cards[0].section_context, loaded.cards[1].section_context,
-            "precondition: both cards sit under the one section"
+            loaded.cards[0].topic_context, loaded.cards[1].topic_context,
+            "precondition: both cards sit under the one topic"
         );
 
         let mut store = state::open_store(&deck_path, dir.path()).unwrap();
@@ -1842,8 +1842,8 @@ it reads line two\n\
             build.session.current_id()
         );
         assert!(
-            !build.session.section_first_for_current(),
-            "the first card's progress lies outside the region and still marks the section met"
+            !build.session.topic_first_for_current(),
+            "the first card's progress lies outside the region and still marks the topic met"
         );
     }
 

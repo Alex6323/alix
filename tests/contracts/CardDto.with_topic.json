@@ -42,7 +42,7 @@
   "images_back": [],
   "note": [],
   "reshaped": false,
-  "section_context": [
+  "topic_context": [
     "*Ownership* rules",
     "Borrowing has rules.",
     "",
@@ -50,7 +50,7 @@
     "let x = 1;",
     "```"
   ],
-  "section_context_runs": [
+  "topic_context_runs": [
     [
       {
         "italic": true,
@@ -82,7 +82,7 @@
       }
     ]
   ],
-  "section_context_units": [
+  "topic_context_units": [
     {
       "kind": "code",
       "lines": [

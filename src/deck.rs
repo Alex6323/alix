@@ -1230,7 +1230,7 @@ mod tests {
     }
 
     #[test]
-    fn a_both_direction_cards_reverse_half_keeps_its_section_context() {
+    fn a_both_direction_cards_reverse_half_keeps_its_topic_context() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("both.md");
         std::fs::write(
@@ -1242,10 +1242,7 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         assert_eq!(2, deck.cards.len());
         for card in &deck.cards {
-            assert_eq!(
-                vec!["Road safety", "Applies in rain."],
-                card.section_context
-            );
+            assert_eq!(vec!["Road safety", "Applies in rain."], card.topic_context);
         }
     }
 
@@ -1666,7 +1663,7 @@ mod tests {
     #[test]
     fn empty_deck_is_not_started() {
         let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "e.md", "# only a section\n");
+        let path = write_deck(dir.path(), "e.md", "# only a topic\n");
         let deck = Deck::load(&path).unwrap();
         let (store, _s) = empty_store();
         assert!(deck.cards.is_empty());
@@ -2591,7 +2588,7 @@ mod tests {
         std::fs::write(&path, "## a\nb\n").unwrap();
         assert_eq!("Eng-Sayings", Deck::load(&path).unwrap().display_name());
 
-        // An H1 is section context now, never a name.
+        // An H1 is topic context now, never a name.
         std::fs::write(&path, "# English Sayings\n\n## a\nb\n").unwrap();
         assert_eq!("Eng-Sayings", Deck::load(&path).unwrap().display_name());
 
@@ -2615,7 +2612,7 @@ mod tests {
     fn no_directives_yields_empty_settings() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
-        std::fs::write(&path, "# a section\n\n## f\nb\n").unwrap();
+        std::fs::write(&path, "# a topic\n\n## f\nb\n").unwrap();
 
         let deck = Deck::load(&path).unwrap();
         assert_eq!(None, deck.settings.reveal);

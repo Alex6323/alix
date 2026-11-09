@@ -179,6 +179,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Breaking: a `#` heading block is a **topic** everywhere, in the book, the
+  web and phone interfaces, doctor and parse messages, exam prompts, and the
+  web API. The web API's `section_first`, `section_context`,
+  `section_context_runs`, `section_context_units` are `topic_first`,
+  `topic_context`, `topic_context_runs`, `topic_context_units`;
+  `ExamDto.sections`, `RemoteExamDto.sections` and `DeckItemDto.sections`
+  are `topics` (`ExamSectionDto` is `ExamTopicDto`); `ExamGradeDto.section`
+  is `topic`; the exam ideas document's `sections` is `topics`, so an ideas
+  file written before is unreadable until rewritten with `topics`.
+
 - The phone's sync conflict choice reads "Keep the phone's progress" and
   "Keep the desktop's progress", each naming what it keeps (the phone side
   says when it holds no card progress), with the later save marked newer and

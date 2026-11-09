@@ -40,7 +40,7 @@ export function createStudy({
     appendKeypointList,
     appendReveal,
     appendRuns,
-    appendSectionContext,
+    appendTopicContext,
     appendTable,
     chip,
     diagramImage,
@@ -75,8 +75,8 @@ export function createStudy({
   let questionFilled = 0;
   let blanksInline = false;
   let citationView = clientModel.citationView;
-  let sectionView = clientModel.sectionView;
-  let autoOpenedSection = null;
+  let topicView = clientModel.topicView;
+  let autoOpenedTopic = null;
   let panelKind = null;
   let hintScope = null;
   let hintsShown = 0;
@@ -158,11 +158,11 @@ export function createStudy({
     } catch (error) {}
   }
   function openWalk(deck) {
-    autoOpenedSection = null;
+    autoOpenedTopic = null;
     return api("/api/walk", post({ deck })).then(apply);
   }
   function openTutorial() {
-    autoOpenedSection = null;
+    autoOpenedTopic = null;
     return api("/api/tutorial", post({})).then(apply);
   }
   function walkReveal() {
@@ -199,11 +199,11 @@ export function createStudy({
   }
   function walkGrade(grade) { api("/api/walk/grade", post({ grade })).then(apply).catch(() => load()); }
   function nextWalk() {
-    autoOpenedSection = null;
+    autoOpenedTopic = null;
     api("/api/walk/restart", post({})).then(apply).catch(() => load());
   }
   function leaveWalk() {
-    autoOpenedSection = null;
+    autoOpenedTopic = null;
     closeMenu();
     api("/api/walk/leave", post({})).then(apply).catch(() => load());
   }
@@ -240,7 +240,7 @@ export function createStudy({
     api("/api/deselect", post({})).then(apply);
   }
   function browseGo(delta) { if (!browsing) return; const n = browsing.i + delta; if (n >= 0 && n < browsing.cards.length) { browsing.i = n; rerender(); } }
-  function deselect() { confirmingLeave = false; autoOpenedSection = null; closeMenu(); api("/api/deselect", post({})).then(apply); }
+  function deselect() { confirmingLeave = false; autoOpenedTopic = null; closeMenu(); api("/api/deselect", post({})).then(apply); }
 
   // Returning to the picker mid-session abandons the cards still queued, so warn
   // first; a finished session (or the select phase) leaves straight away.
@@ -265,7 +265,7 @@ export function createStudy({
       trace: traceData(),
       revealed,
       citationView,
-      sectionView,
+      topicView,
       answerConcealed,
       feedback,
       typelineChecked,
@@ -282,7 +282,7 @@ export function createStudy({
     replaceTraceSession(clientModel.trace);
     revealed = clientModel.revealed;
     citationView = clientModel.citationView;
-    sectionView = clientModel.sectionView;
+    topicView = clientModel.topicView;
     if (legend && legend.parentElement) legend.parentElement.inert = false;
     answerConcealed = clientModel.answerConcealed;
     feedback = clientModel.feedback;
@@ -424,7 +424,7 @@ export function createStudy({
   }
   function showFeedback(f) {
     feedback = f;
-    removeSectionSheet();
+    removeTopicSheet();
     fillBottom();
     renderLegend();
   }
@@ -841,14 +841,14 @@ export function createStudy({
     }
   }
 
-  function hasSection() {
-    return !!(state && state.card && (state.card.section_context || []).length);
+  function hasTopic() {
+    return !!(state && state.card && (state.card.topic_context || []).length);
   }
-  function contextOffered() { return hasSection() && !isAnswered(); }
+  function contextOffered() { return hasTopic() && !isAnswered(); }
 
-  function openSection() {
+  function openTopic() {
     if (!contextOffered()) return;
-    showPanel("section");
+    showPanel("topic");
   }
 
   function hintCount() {
@@ -908,38 +908,38 @@ export function createStudy({
       }
       return;
     }
-    drawer.setAttribute("aria-label", `Section context: ${state.card.section_context[0]}`);
-    closer.setAttribute("aria-label", "Close section context");
-    appendSectionContext(
+    drawer.setAttribute("aria-label", `Topic context: ${state.card.topic_context[0]}`);
+    closer.setAttribute("aria-label", "Close topic context");
+    appendTopicContext(
       panel,
-      state.card.section_context,
-      state.card.section_context_runs,
-      state.card.section_context_units,
+      state.card.topic_context,
+      state.card.topic_context_runs,
+      state.card.topic_context_units,
       contextDiagram,
     );
   }
 
   function showPanel(kind) {
-    const open = doc.querySelector(".section-drawer");
-    if (sectionView && open) {
+    const open = doc.querySelector(".topic-drawer");
+    if (topicView && open) {
       panelKind = kind;
-      fillPanel(open, open.querySelector(".section-drawer-panel"), open.querySelector(".section-drawer-close"));
+      fillPanel(open, open.querySelector(".topic-drawer-panel"), open.querySelector(".topic-drawer-close"));
       return;
     }
     if (!doc.getElementById("card")) return;
-    sectionView = true;
+    topicView = true;
     panelKind = kind;
-    const drawer = el("div", "section-drawer");
+    const drawer = el("div", "topic-drawer");
     drawer.setAttribute("role", "dialog");
     drawer.setAttribute("aria-modal", "true");
-    const scrim = el("div", "section-drawer-scrim");
-    scrim.addEventListener("click", closeSection);
+    const scrim = el("div", "topic-drawer-scrim");
+    scrim.addEventListener("click", closeTopic);
     drawer.appendChild(scrim);
-    const panel = el("section", "section-drawer-panel");
+    const panel = el("section", "topic-drawer-panel");
     panel.tabIndex = -1;
-    const closer = el("button", "section-drawer-close", "×");
+    const closer = el("button", "topic-drawer-close", "×");
     closer.type = "button";
-    closer.addEventListener("click", closeSection);
+    closer.addEventListener("click", closeTopic);
     fillPanel(drawer, panel, closer);
     drawer.appendChild(panel);
     doc.body.appendChild(drawer);
@@ -955,33 +955,33 @@ export function createStudy({
 
   // The sheet lives on the body, so a rerender that rebuilds the card must
   // take it down itself.
-  function removeSectionSheet() {
-    doc.querySelectorAll(".section-drawer").forEach((stale) => stale.remove());
+  function removeTopicSheet() {
+    doc.querySelectorAll(".topic-drawer").forEach((stale) => stale.remove());
     if (legend && legend.parentElement) legend.parentElement.inert = false;
-    sectionView = false;
+    topicView = false;
     panelKind = null;
   }
 
-  function autoOpenSection() {
-    if (!hasSection() || !state.section_first) return;
-    const key = state.card.section_context.join("\n");
-    if (autoOpenedSection === key) return;
-    autoOpenedSection = key;
-    openSection();
+  function autoOpenTopic() {
+    if (!hasTopic() || !state.topic_first) return;
+    const key = state.card.topic_context.join("\n");
+    if (autoOpenedTopic === key) return;
+    autoOpenedTopic = key;
+    openTopic();
   }
 
-  function closeSection() {
-    if (!sectionView) return;
-    const drawer = doc.querySelector(".section-drawer");
-    const panel = drawer && drawer.querySelector(".section-drawer-panel");
+  function closeTopic() {
+    if (!topicView) return;
+    const drawer = doc.querySelector(".topic-drawer");
+    const panel = drawer && drawer.querySelector(".topic-drawer-panel");
     if (panel && panel.offsetHeight && panel.animate) {
       const animation = panel.animate(
         [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
         { duration: 170, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "forwards" },
       );
-      animation.onfinish = removeSectionSheet;
+      animation.onfinish = removeTopicSheet;
     } else {
-      removeSectionSheet();
+      removeTopicSheet();
     }
   }
 
@@ -1777,7 +1777,7 @@ export function createStudy({
     contextChip = confidenceRight = null;
     clearLegendSides();
     if (state.card) setMenuContext(isWalking() ? "walk" : "review");
-    if (contextOffered()) contextChip = chip("Context", "quiet", openSection, label(keys.context));
+    if (contextOffered()) contextChip = chip("Context", "quiet", openTopic, label(keys.context));
     if (isWalking()) { renderWalkLegend(); return; }
     if (feedback) {
       if (isIntroducing()) {
@@ -2122,7 +2122,7 @@ export function createStudy({
   }
 
   function prepareRender() {
-    removeSectionSheet();
+    removeTopicSheet();
     stopDuePoll();
     summaryPaint = null;
     summaryReady = false;
@@ -2158,7 +2158,7 @@ export function createStudy({
       renderWalkDone();
     } else {
       renderCard();
-      autoOpenSection();
+      autoOpenTopic();
     }
   }
 
@@ -2172,12 +2172,12 @@ export function createStudy({
         if (e.key === "G" || e.key === "End") { e.preventDefault(); browsing.i = browsing.cards.length - 1; rerender(); return; }
         return;
       }
-      if (sectionView) {
+      if (topicView) {
         if (e.key === "Enter" && doc.activeElement && doc.activeElement.tagName === "BUTTON") return;
         e.preventDefault();
-        if (e.key === "Escape") closeSection();
-        else if (hit(e, keys.context)) { if (panelKind === "section") closeSection(); else openSection(); }
-        else if (hit(e, keys.hint)) { if (panelKind === "hint") closeSection(); else openHints(); }
+        if (e.key === "Escape") closeTopic();
+        else if (hit(e, keys.context)) { if (panelKind === "topic") closeTopic(); else openTopic(); }
+        else if (hit(e, keys.hint)) { if (panelKind === "hint") closeTopic(); else openHints(); }
         else if (e.key === "Enter" && panelKind === "hint") nextHint();
         return;
       }
@@ -2204,7 +2204,7 @@ export function createStudy({
         }
         return;
       }
-      if (contextOffered() && hitOutsideField(e, keys.context)) { e.preventDefault(); openSection(); return; }
+      if (contextOffered() && hitOutsideField(e, keys.context)) { e.preventDefault(); openTopic(); return; }
       if (hintsOffered() && hitOutsideField(e, keys.hint)) { e.preventDefault(); openHints(); return; }
       // `s` swaps a cited card between its answer and its source, once answered.
       if ((state.card.citations || []).length && isAnswered() && !e.ctrlKey && e.key.toLowerCase() === "s") {
@@ -2350,7 +2350,7 @@ export function createStudy({
       if (e.key === "Enter" || hit(e, keys.restart)) { e.preventDefault(); nextWalk(); }
       return;
     }
-    if (contextOffered() && hitOutsideField(e, keys.context)) { e.preventDefault(); openSection(); return; }
+    if (contextOffered() && hitOutsideField(e, keys.context)) { e.preventDefault(); openTopic(); return; }
     if (state.phase === "answer") {
       if ((state.card.citations || []).length && !e.ctrlKey && e.key.toLowerCase() === "s") {
         e.preventDefault(); toggleCitation(); return;
@@ -2403,7 +2403,7 @@ export function createStudy({
     apply,
     buildCardShell,
     handleKey,
-    hasSection,
+    hasTopic,
     contextOffered,
     hintsOffered,
     skipOffered,
@@ -2413,7 +2413,7 @@ export function createStudy({
     isWalking,
     keys: () => keys,
     load,
-    openSection,
+    openTopic,
     openHints,
     openBrowse,
     openWalk,
@@ -2425,7 +2425,7 @@ export function createStudy({
     renderSourceExcerpt,
     replaceState,
     screen,
-    sectionOpen: () => sectionView,
+    topicOpen: () => topicView,
     setBrowseKeys,
     setKeys,
     sourceTerms,

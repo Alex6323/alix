@@ -1936,12 +1936,12 @@ mod tests {
             &crate::deck::Deck::load(&phone_deck).unwrap(),
             &phone,
         );
-        let examined = crate::exam_status::select_sections(
+        let examined = crate::exam_status::select_topics(
             &crate::exam::open_for_exam(&desktop_deck).unwrap(),
             crate::exam_status::ExamScope::Cards(&asked),
         );
         assert!(
-            examined.unknown_cards.is_empty() && examined.sections.len() == 1,
+            examined.unknown_cards.is_empty() && examined.topics.len() == 1,
             "a phone needs-work sitting: asked {asked:?}, desktop does not know {:?}",
             examined.unknown_cards
         );

@@ -445,10 +445,10 @@ export function contextLine(text, runs, cls, tag = "div") {
   return line;
 }
 
-export function appendSectionContext(parent, lines, runs, units, makeDiagram) {
+export function appendTopicContext(parent, lines, runs, units, makeDiagram) {
   lines = lines || [];
   if (!lines.length) return;
-  parent.appendChild(contextLine(lines[0], runs && runs[0], "section-heading", "h2"));
+  parent.appendChild(contextLine(lines[0], runs && runs[0], "topic-heading", "h2"));
 
   const blockUnits = units || [];
   let unitIndex = 0;
@@ -463,14 +463,14 @@ export function appendSectionContext(parent, lines, runs, units, makeDiagram) {
       flushParagraph();
       return;
     }
-    if (!paragraph) paragraph = el("p", "section-prose");
+    if (!paragraph) paragraph = el("p", "topic-prose");
     else paragraph.appendChild(document.createTextNode(" "));
     appendContextLineText(paragraph, lines[index], runs && runs[index]);
   };
   const appendBlock = (unit, source) => {
     flushParagraph();
     if (unit && unit.kind === "sentence") {
-      parent.appendChild(contextLine(unit.text, unit.runs, "section-prose", "p"));
+      parent.appendChild(contextLine(unit.text, unit.runs, "topic-prose", "p"));
     } else if (unit && unit.kind === "diagram") {
       parent.appendChild(makeDiagram ? makeDiagram(unit) : diagramImage(unit));
     } else {

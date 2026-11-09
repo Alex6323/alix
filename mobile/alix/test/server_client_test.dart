@@ -476,11 +476,11 @@ void main() {
       expect(exam.unknownCards, isEmpty);
       expect(exam.verdicts, isNotNull);
       expect(exam.verdicts!.total, 1);
-      expect(exam.sections, hasLength(1));
-      expect(exam.sections.single.label, 'Ownership');
-      expect(exam.sections.single.pass, isFalse);
-      expect(exam.sections.single.cards, ['card-0123456789abcdefghjkmnpqrs']);
-      expect(exam.grades.single.section, 0);
+      expect(exam.topics, hasLength(1));
+      expect(exam.topics.single.label, 'Ownership');
+      expect(exam.topics.single.pass, isFalse);
+      expect(exam.topics.single.cards, ['card-0123456789abcdefghjkmnpqrs']);
+      expect(exam.grades.single.topic, 0);
       expect(exam.grades.single.shape, 'instance');
       expect(exam.grades.single.mentalModel, '');
     });
@@ -512,7 +512,7 @@ void main() {
           'ideas': {
             'version': 1,
             'material': 'xxh64-0123456789abcdef',
-            'sections': <Object>[],
+            'topics': <Object>[],
           },
         });
       });
@@ -526,7 +526,7 @@ void main() {
       expect(exam.ideas, {
         'version': 1,
         'material': 'xxh64-0123456789abcdef',
-        'sections': <Object>[],
+        'topics': <Object>[],
       });
       expect(exam.grades.single.mentalModel, 'ownership controls destruction');
     });
@@ -544,7 +544,7 @@ void main() {
       const ideas = {
         'version': 1,
         'material': 'xxh64-0123456789abcdef',
-        'sections': <Object>[],
+        'topics': <Object>[],
       };
 
       final result = await client.examStart(

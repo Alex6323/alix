@@ -106,7 +106,7 @@ settle gap in between. The card's first grade is its first learning event,
 and the sitting's *introduced* count stays at zero. This is for a pass over
 a deck you already know (a cram, a re-read), where the introduction step is
 friction; a deck you are meeting for the first time loses the guess-first
-encounter and its section sheets. On the phone it is the **Skip introduction**
+encounter and its topic sheets. On the phone it is the **Skip introduction**
 switch in the sheet a tap on a deck row opens; over the API it is
 `skip_introduction` on `/api/select`.
 
@@ -255,7 +255,7 @@ per card. Neutral means untouched; grey means **seen** (you met the card:
 acknowledged it, or answered and got it wrong); white means **learning** (at
 least one full or partly pass, not yet graduated); a **learned** (graduated) card is green, yellow, or red by how
 well you'd recall it right now; purple means retired. An **outlined** cell,
-unfilled, is a [sub-card](03-the-deck-format.md#sections-and-sub-cards) still
+unfilled, is a [sub-card](03-the-deck-format.md#topics-and-sub-cards) still
 gated on its parent's graduation, which is why it is usually untouched as well.
 A region visibly greens up as you master it, and the breadcrumb doubles as a
 progress map.

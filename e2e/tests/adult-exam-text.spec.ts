@@ -26,7 +26,7 @@ const base = {
   answer: "",
   on_last: true,
   grades: [],
-  sections: [],
+  topics: [],
   verdicts: null,
   full: true,
   mastered: false,
@@ -100,7 +100,7 @@ test("exam results render the question, feedback, and rubric points from their u
     current: 1,
     question: null,
     question_units: null,
-    sections: [{
+    topics: [{
       label: "Bindings",
       cards: ["card-0123456789abcdefghjkmnpqrs"],
       pass: false,
@@ -114,7 +114,7 @@ test("exam results render the question, feedback, and rubric points from their u
         points: ["raw point"],
         points_units: [[sentence([{ text: "Only " }, { text: "v", code: true }, { text: " is mutable." }])]],
         answer: "w is not mutable",
-        section: 0,
+        topic: 0,
         shape: "boundary",
         model: "pattern binding mutability",
         verdict: "PARTIAL",

@@ -117,7 +117,7 @@ class ReviewCardView extends StatelessWidget {
     required this.onIntroduce,
     required this.onGrade,
     required this.onOpenTutor,
-    required this.onOpenSection,
+    required this.onOpenTopic,
     this.onOpenHint,
   });
 
@@ -156,7 +156,7 @@ class ReviewCardView extends StatelessWidget {
   final VoidCallback onIntroduce;
   final ValueChanged<ReviewGrade> onGrade;
   final ValueChanged<ReviewTutorCardModel> onOpenTutor;
-  final ValueChanged<ReviewCardModel> onOpenSection;
+  final ValueChanged<ReviewCardModel> onOpenTopic;
   final ValueChanged<ReviewCardModel>? onOpenHint;
 
   bool get _hasChoices => state.choices?.isNotEmpty ?? false;
@@ -1523,11 +1523,11 @@ class ReviewCardView extends StatelessWidget {
   List<Widget> _legendChips(ReviewCardModel card) {
     final openHint = onOpenHint;
     final chips = [
-      if (card.hasSection && !_answered(card))
+      if (card.hasTopic && !_answered(card))
         ReviewChip(
           label: 'Context',
           kind: ReviewChipKind.quiet,
-          onTap: () => onOpenSection(card),
+          onTap: () => onOpenTopic(card),
         ),
       ..._modeChips(card),
       if (openHint != null &&
@@ -2089,16 +2089,16 @@ void _walkContextBlocks(
   }
 }
 
-TextStyle _sectionProseStyle(ThemeData theme, AlixTokens tokens) {
+TextStyle _topicProseStyle(ThemeData theme, AlixTokens tokens) {
   return theme.textTheme.bodyMedium?.copyWith(color: tokens.text, height: 1.45) ??
       TextStyle(color: tokens.text, height: 1.45);
 }
 
-/// The section's prose after its heading (line 0): consecutive plain lines
+/// The topic's prose after its heading (line 0): consecutive plain lines
 /// are one paragraph (a hard wrap is a space, as in Markdown), a blank line
 /// ends it, a closed fence is a code block, a closed `$$` block its diagram,
 /// the labelling context's walk.
-List<Widget> _sectionProse(
+List<Widget> _topicProse(
   ReviewCardModel card,
   AlixTokens tokens,
   TextStyle style,
@@ -2121,10 +2121,10 @@ List<Widget> _sectionProse(
     runParts.clear();
   }
 
-  final body = card.section.isEmpty ? const <String>[] : card.section.sublist(1);
+  final body = card.topic.isEmpty ? const <String>[] : card.topic.sublist(1);
   _walkContextBlocks(
     body,
-    card.sectionUnits,
+    card.topicUnits,
     onBlock: (source, unit, closed) {
       flush();
       if (closed && unit is ReviewDiagramModel) {
@@ -2137,14 +2137,14 @@ List<Widget> _sectionProse(
     },
     onLine: (index) {
       final at = index + 1;
-      final line = card.section[at];
+      final line = card.topic[at];
       if (line.trim().isEmpty) {
         flush();
         return;
       }
       textParts.add(line);
       runParts.add(
-        at < card.sectionRuns.length ? card.sectionRuns[at] : null,
+        at < card.topicRuns.length ? card.topicRuns[at] : null,
       );
     },
   );
@@ -2167,7 +2167,7 @@ List<InlineRunModel> _joinRunLines(List<List<InlineRunModel>> lines) {
   ];
 }
 
-enum ReviewHelpMode { section, hint }
+enum ReviewHelpMode { topic, hint }
 
 Future<void> showReviewHelpSheet(
   BuildContext context,
@@ -2183,7 +2183,7 @@ Future<void> showReviewHelpSheet(
     isScrollControlled: true,
     useSafeArea: true,
     builder: (_) => !offerHints || card.hints.isEmpty
-        ? SectionSheet(card: card)
+        ? TopicSheet(card: card)
         : ReviewHelpSheet(
             card: card,
             initialMode: initialMode,
@@ -2195,15 +2195,15 @@ Future<void> showReviewHelpSheet(
   );
 }
 
-class SectionSheet extends StatelessWidget {
-  const SectionSheet({super.key, required this.card});
+class TopicSheet extends StatelessWidget {
+  const TopicSheet({super.key, required this.card});
 
   final ReviewCardModel card;
 
   @override
   Widget build(BuildContext context) => ReviewHelpSheet(
     card: card,
-    initialMode: ReviewHelpMode.section,
+    initialMode: ReviewHelpMode.topic,
     offerHints: false,
     openedHints: () => 0,
     onOpenHint: () => false,
@@ -2211,11 +2211,11 @@ class SectionSheet extends StatelessWidget {
   );
 }
 
-Future<void> showSectionSheet(BuildContext context, ReviewCardModel card) {
+Future<void> showTopicSheet(BuildContext context, ReviewCardModel card) {
   return showReviewHelpSheet(
     context,
     card,
-    initialMode: ReviewHelpMode.section,
+    initialMode: ReviewHelpMode.topic,
     offerHints: false,
     openedHints: () => 0,
     onOpenHint: () => false,
@@ -2271,9 +2271,9 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
     final hints = widget.openedHints();
     final opened = hints < card.hints.length ? hints : card.hints.length;
     final selector =
-        widget.offerHints && card.hasSection && card.hints.isNotEmpty;
-    final title = _mode == ReviewHelpMode.section
-        ? card.sectionTitle
+        widget.offerHints && card.hasTopic && card.hints.isNotEmpty;
+    final title = _mode == ReviewHelpMode.topic
+        ? card.topicTitle
         : 'Hints';
     return SafeArea(
       child: Padding(
@@ -2291,8 +2291,8 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
                     child: Text(
                       title,
                       key: ValueKey(
-                        _mode == ReviewHelpMode.section
-                            ? 'section-sheet-title'
+                        _mode == ReviewHelpMode.topic
+                            ? 'topic-sheet-title'
                             : 'hint-sheet-title',
                       ),
                       style: theme.textTheme.titleMedium,
@@ -2300,7 +2300,7 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
                   ),
                 ),
                 IconButton(
-                  key: const ValueKey('section-sheet-close'),
+                  key: const ValueKey('topic-sheet-close'),
                   onPressed: () => Navigator.of(context).pop(),
                   icon: Icon(
                     Icons.close,
@@ -2319,10 +2319,10 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
                   ReviewChip(
                     key: const ValueKey('review-help-context'),
                     label: 'Context',
-                    kind: _mode == ReviewHelpMode.section
+                    kind: _mode == ReviewHelpMode.topic
                         ? ReviewChipKind.base
                         : ReviewChipKind.quiet,
-                    onTap: () => _select(ReviewHelpMode.section),
+                    onTap: () => _select(ReviewHelpMode.topic),
                   ),
                   ReviewChip(
                     key: const ValueKey('review-help-hint'),
@@ -2341,11 +2341,11 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
                 padding: const EdgeInsets.only(right: 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: _mode == ReviewHelpMode.section
-                      ? _sectionProse(
+                  children: _mode == ReviewHelpMode.topic
+                      ? _topicProse(
                           card,
                           tokens,
-                          _sectionProseStyle(theme, tokens),
+                          _topicProseStyle(theme, tokens),
                         )
                       : [
                           for (var index = 0; index < opened; index++) ...[
@@ -2369,7 +2369,7 @@ class _ReviewHelpSheetState extends State<ReviewHelpSheet> {
                                     unitWidget(
                                       card.hints[index][unitIndex],
                                       tokens,
-                                      _sectionProseStyle(theme, tokens),
+                                      _topicProseStyle(theme, tokens),
                                       TextAlign.start,
                                     ),
                                   ],

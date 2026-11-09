@@ -69,14 +69,14 @@
           "text": "Why does Rust use ownership?"
         }
       ],
-      "section": 0,
       "shape": "instance",
+      "topic": 0,
       "verdict": "FAIL"
     }
   ],
   "ideas": {
     "material": "xxh64-00000000000000ab",
-    "sections": [
+    "topics": [
       {
         "heading": "Ownership",
         "ideas": [
@@ -108,7 +108,9 @@
       }
     ]
   ],
-  "sections": [
+  "strictness": "balanced",
+  "thinking": false,
+  "topics": [
     {
       "cards": [
         "card-0123456789abcdefghjkmnpqrs"
@@ -122,8 +124,6 @@
       }
     }
   ],
-  "strictness": "balanced",
-  "thinking": false,
   "unknown_cards": [],
   "verdicts": {
     "partial": 0,

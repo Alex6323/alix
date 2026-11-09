@@ -135,7 +135,7 @@ WalkStateModel _stateFromBridge(bridge.WalkState state) {
         ? null
         : [for (final runs in state.choiceRuns!) inlineRunsFromBridge(runs)],
     choicesMultiple: state.choicesMultiple,
-    sectionFirst: state.sectionFirst,
+    topicFirst: state.topicFirst,
     position: state.position,
     total: state.total,
     label: state.label,

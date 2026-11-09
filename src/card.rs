@@ -158,10 +158,10 @@ pub struct Card {
     /// answer line it asks. Empty unless every asked blank is a text span
     /// outside math and fences.
     pub hole_steps: Vec<usize>,
-    /// The card's section: its `# ` heading and that section's prose. Shown
+    /// The card's topic: its `# ` heading and that topic's prose. Shown
     /// only on demand and never part of identity, so re-filing a card
     /// changes what it explains, never what it is.
-    pub section_context: Vec<String>,
+    pub topic_context: Vec<String>,
     /// A titled card table's title, already composed into `front`; kept to
     /// compose the reversed half.
     pub table_title: Option<String>,
@@ -316,7 +316,7 @@ impl Card {
             front_steps: Vec::new(),
             rect_step: None,
             hole_steps: Vec::new(),
-            section_context: Vec::new(),
+            topic_context: Vec::new(),
             table_title: None,
             back,
             notes,
@@ -387,8 +387,8 @@ impl Card {
         card.deck_id = Arc::clone(&self.deck_id);
         card.definitions = Arc::clone(&self.definitions);
         // Built after the parser has finished, so the builder's stamp never
-        // reaches it: the reverse half must carry the section itself.
-        card.section_context = self.section_context.clone();
+        // reaches it: the reverse half must carry the topic itself.
+        card.topic_context = self.topic_context.clone();
         card.block_line = self.block_line;
         card.parent_block = self.parent_block;
         card.reveal = self.reveal;

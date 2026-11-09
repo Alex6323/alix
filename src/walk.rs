@@ -23,8 +23,8 @@ pub struct WalkSession {
     order: Vec<usize>,
     position: usize,
     phase: Phase,
-    shown_sections: HashSet<Vec<String>>,
-    section_first: bool,
+    shown_topics: HashSet<Vec<String>>,
+    topic_first: bool,
     choice_seed: u64,
     pick: Option<bool>,
     hint_opened: bool,
@@ -38,8 +38,8 @@ impl WalkSession {
             order: Vec::new(),
             position: 0,
             phase: Phase::Done,
-            shown_sections: HashSet::new(),
-            section_first: false,
+            shown_topics: HashSet::new(),
+            topic_first: false,
             choice_seed: now_ms,
             pick: None,
             hint_opened: false,
@@ -52,7 +52,7 @@ impl WalkSession {
     pub fn restart(&mut self, store: &Store, now_ms: u64) {
         self.order = walk_order(&self.cards, store);
         self.position = 0;
-        self.shown_sections.clear();
+        self.shown_topics.clear();
         self.choice_seed = now_ms;
         self.enter();
     }
@@ -89,8 +89,8 @@ impl WalkSession {
         !self.tutorial
     }
 
-    pub fn section_first(&self) -> bool {
-        self.section_first
+    pub fn topic_first(&self) -> bool {
+        self.topic_first
     }
 
     pub fn question(&self) -> Option<ChoiceQuestion> {
@@ -180,13 +180,13 @@ impl WalkSession {
     fn enter(&mut self) {
         self.pick = None;
         self.hint_opened = false;
-        let Some(section) = self.current().map(|card| card.section_context.clone()) else {
+        let Some(topic) = self.current().map(|card| card.topic_context.clone()) else {
             self.phase = Phase::Done;
-            self.section_first = false;
+            self.topic_first = false;
             return;
         };
         self.phase = Phase::Front;
-        self.section_first = !section.is_empty() && self.shown_sections.insert(section);
+        self.topic_first = !topic.is_empty() && self.shown_topics.insert(topic);
     }
 }
 
@@ -205,7 +205,7 @@ fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
     }
     order = waiting;
     let mut spaced = Vec::with_capacity(order.len());
-    for run in order.chunk_by(|&a, &b| cards[a].section_context == cards[b].section_context) {
+    for run in order.chunk_by(|&a, &b| cards[a].topic_context == cards[b].topic_context) {
         let run = session::round_robin_siblings(run.to_vec(), cards);
         spaced.extend(session::separate_siblings(run, cards));
     }
@@ -235,7 +235,7 @@ mod tests {
         store::{CardState, FsrsState},
     };
 
-    fn card(line: usize, section: &[&str]) -> Card {
+    fn card(line: usize, topic: &[&str]) -> Card {
         let mut card = Card::plain(
             Arc::from("deck.md"),
             format!("front {line}"),
@@ -244,7 +244,7 @@ mod tests {
             line,
         );
         card.token = Some(Arc::from(format!("tok{line}").as_str()));
-        card.section_context = section.iter().map(|text| (*text).to_string()).collect();
+        card.topic_context = topic.iter().map(|text| (*text).to_string()).collect();
         card
     }
 
@@ -378,9 +378,9 @@ mod tests {
 
     #[test]
     fn law_a_got_sibling_stays_out_while_waiting_items_remain() {
-        let section = ["# One"];
-        let a = card(1, &section);
-        let b = card(2, &section);
+        let topic = ["# One"];
+        let a = card(1, &topic);
+        let b = card(2, &topic);
         let cards = vec![a.clone(), reversed(&a), b.clone()];
         let (mut store, _dir) = store();
         let state = store.get_or_insert(&id(&b));
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn law_a_resumed_full_pass_opens_the_section_of_its_first_item() {
+    fn law_a_resumed_full_pass_opens_the_topic_of_its_first_item() {
         let cards: Vec<Card> = (0..4)
             .map(|line| card(line, if line < 2 { &["# S1"] } else { &["# S2"] }))
             .collect();
@@ -409,8 +409,8 @@ mod tests {
         walk.restart(&store, 300);
         assert_eq!(
             (id(&cards[1]), true),
-            (id(walk.current().unwrap()), walk.section_first()),
-            "the resumed full pass starts at the least recently walked item and opens its section"
+            (id(walk.current().unwrap()), walk.topic_first()),
+            "the resumed full pass starts at the least recently walked item and opens its topic"
         );
     }
 
@@ -498,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn law_sibling_items_are_spread_within_their_section_and_sections_stay_contiguous() {
+    fn law_sibling_items_are_spread_within_their_topic_and_topics_stay_contiguous() {
         let one = ["# One"];
         let two = ["# Two"];
         let a = card(1, &one);
@@ -534,18 +534,18 @@ mod tests {
                 order_ids(&walk)
             );
         }
-        let sections: Vec<&Vec<String>> = served.iter().map(|card| &card.section_context).collect();
-        let mut runs = sections.clone();
+        let topics: Vec<&Vec<String>> = served.iter().map(|card| &card.topic_context).collect();
+        let mut runs = topics.clone();
         runs.dedup();
         assert_eq!(
             2,
             runs.len(),
-            "each section is one contiguous run: {sections:?}"
+            "each topic is one contiguous run: {topics:?}"
         );
     }
 
     #[test]
-    fn law_section_first_marks_first_contact_in_every_walk() {
+    fn law_topic_first_marks_first_contact_in_every_walk() {
         let one = ["# One"];
         let two = ["# Two"];
         let cards = vec![
@@ -562,13 +562,13 @@ mod tests {
             let mut flags = Vec::new();
             let mut at = 100 * (round + 1);
             while walk.phase() != Phase::Done {
-                flags.push(walk.section_first());
+                flags.push(walk.topic_first());
                 step(&mut walk, &mut store, at);
                 at += 1;
             }
             assert_eq!(
                 expected, flags,
-                "walk {round}: each section opens on its first item only"
+                "walk {round}: each topic opens on its first item only"
             );
             walk.restart(&store, 1_000);
         }
@@ -576,13 +576,13 @@ mod tests {
         walk.restart(&store, 3_000);
         let mut flags = Vec::new();
         while walk.phase() != Phase::Done {
-            flags.push(walk.section_first());
+            flags.push(walk.topic_first());
             step(&mut walk, &mut store, 4_000 + flags.len() as u64);
         }
         assert_eq!(
             2,
             flags.iter().filter(|&&first| first).count(),
-            "a walk restarted mid-pass meets both sections afresh: {flags:?}"
+            "a walk restarted mid-pass meets both topics afresh: {flags:?}"
         );
     }
 

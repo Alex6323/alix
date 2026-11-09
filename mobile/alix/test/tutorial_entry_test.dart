@@ -21,7 +21,7 @@ void main() {
   setUp(answerPathProvider);
   setUpAll(() async => RustLib.init());
 
-  final sheetTitle = find.byKey(const ValueKey('section-sheet-title'));
+  final sheetTitle = find.byKey(const ValueKey('topic-sheet-title'));
 
   Directory temp(String prefix) {
     final dir = Directory.systemTemp.createTempSync(prefix);
@@ -58,7 +58,7 @@ void main() {
     expect(find.byType(ReviewCantOpenView), findsNothing,
         reason: '$step: it opened');
     expect(sheetTitle, findsOneWidget,
-        reason: '$step: the tutorial section opens on its first card');
+        reason: '$step: the tutorial topic opens on its first card');
     expect(File('${support.path}/tutorial/tutorial.md').existsSync(), isTrue,
         reason:
             '$step: the tutorial lives in the support dir\'s tutorial folder');

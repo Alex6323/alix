@@ -47,7 +47,7 @@ const _pollingPhases = {'generating', 'grading', 'remediating'};
 /// A full-screen AI exam sitting on the paired desktop: one immersive flow,
 /// mirroring how review_screen.dart structures itself (a plain header, the
 /// deck name truncating, a Close affordance). Phase-driven off
-/// [RemoteExam.phase]; see `docs/API.md` section 4.10 / `RemoteExamDto`.
+/// [RemoteExam.phase]; see `docs/API.md` 4.10 / `RemoteExamDto`.
 class ExamScreen extends StatefulWidget {
   const ExamScreen({
     super.key,
@@ -90,7 +90,7 @@ class ExamScreen extends StatefulWidget {
   /// sitting, with the terminal DTO.
   final String? Function(RemoteExam exam, BigInt nowMs) applyResult;
 
-  /// The card ids whose sections to examine; null sits the full deck.
+  /// The card ids whose topics to examine; null sits the full deck.
   final List<String>? cards;
 
   final RemoteExam? initialExam;
@@ -575,8 +575,8 @@ class _ExamScreenState extends State<ExamScreen> {
         Expanded(
           child: ListView(
             children: [
-              for (final section in exam.sections) _sectionRow(section, tokens),
-              if (exam.sections.isNotEmpty) const SizedBox(height: 8),
+              for (final topic in exam.topics) _topicRow(topic, tokens),
+              if (exam.topics.isNotEmpty) const SizedBox(height: 8),
               for (final g in exam.grades) _gradeRow(g, tokens),
               if (exam.gaps.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -604,23 +604,23 @@ class _ExamScreenState extends State<ExamScreen> {
   String _points(double points) =>
       points == points.roundToDouble() ? '${points.toInt()}' : points.toStringAsFixed(1);
 
-  Widget _sectionRow(RemoteExamSection section, AlixTokens tokens) {
+  Widget _topicRow(RemoteExamTopic topic, AlixTokens tokens) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Expanded(
-            child: Text(section.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            child: Text(topic.label, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
           const SizedBox(width: 12),
           Text(
-            '${_points(section.verdicts.points)} / ${section.verdicts.total}',
+            '${_points(topic.verdicts.points)} / ${topic.verdicts.total}',
             style: TextStyle(color: tokens.dim),
           ),
           const SizedBox(width: 12),
           Text(
-            section.pass ? 'pass' : 'needs work',
-            style: TextStyle(color: section.pass ? tokens.good : tokens.again, fontSize: 12),
+            topic.pass ? 'pass' : 'needs work',
+            style: TextStyle(color: topic.pass ? tokens.good : tokens.again, fontSize: 12),
           ),
         ],
       ),

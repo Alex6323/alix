@@ -31,11 +31,11 @@ pub(super) struct CardDto {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) hole_steps: Vec<usize>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) section_context: Vec<String>,
+    pub(super) topic_context: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) section_context_runs: Vec<Vec<InlineRun>>,
+    pub(super) topic_context_runs: Vec<Vec<InlineRun>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) section_context_units: Vec<ContentUnit>,
+    pub(super) topic_context_units: Vec<ContentUnit>,
     pub(super) back: Vec<String>,
     pub(super) back_runs: Vec<Vec<InlineRun>>,
     pub(super) back_units: Vec<ContentUnit>,
@@ -132,7 +132,7 @@ pub(super) struct StateDto {
     pub(super) keypoints: Option<Vec<String>>,
     pub(super) keypoint_runs: Option<Vec<Vec<InlineRun>>>,
     pub(super) introducing: bool,
-    pub(super) section_first: bool,
+    pub(super) topic_first: bool,
     pub(super) mode: &'static str,
     pub(super) depth: &'static str,
     pub(super) input: &'static str,
@@ -177,7 +177,7 @@ pub(super) struct WalkDto {
     pub(super) choices: Option<Vec<String>>,
     pub(super) choices_multiple: Option<bool>,
     pub(super) choice_runs: Option<Vec<Vec<InlineRun>>>,
-    pub(super) section_first: bool,
+    pub(super) topic_first: bool,
     pub(super) mode: &'static str,
     pub(super) input: &'static str,
     pub(super) position: usize,
@@ -670,7 +670,7 @@ pub(super) struct ExamDto {
     pub(super) answer_locked: bool,
     pub(super) on_last: bool,
     pub(super) grades: Vec<ExamGradeDto>,
-    pub(super) sections: Vec<ExamSectionDto>,
+    pub(super) topics: Vec<ExamTopicDto>,
     pub(super) verdicts: Option<VerdictsDto>,
     pub(super) full: bool,
     pub(super) mastered: bool,
@@ -688,12 +688,12 @@ pub(super) struct ExamDto {
 pub(super) struct ExamRowDto {
     pub(super) passed_at_ms: Option<u64>,
     pub(super) full_exam_result: Option<VerdictsDto>,
-    pub(super) sections: SectionTallyDto,
+    pub(super) topics: TopicTallyDto,
     pub(super) exam_filter: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
-pub(super) struct SectionTallyDto {
+pub(super) struct TopicTallyDto {
     pub(super) passed: usize,
     pub(super) needs_work: usize,
     pub(super) new_cards: usize,
@@ -709,7 +709,7 @@ impl From<crate::exam_status::ExamRow> for ExamRowDto {
                 partial: f.partial,
                 total: f.total,
             }),
-            sections: SectionTallyDto {
+            topics: TopicTallyDto {
                 passed: row.tally.passed,
                 needs_work: row.tally.needs_work,
                 new_cards: row.tally.new_cards,
@@ -728,7 +728,7 @@ pub(super) struct VerdictsDto {
 }
 
 #[derive(Serialize)]
-pub(super) struct ExamSectionDto {
+pub(super) struct ExamTopicDto {
     pub(super) label: String,
     pub(super) cards: Vec<String>,
     pub(super) pass: bool,
@@ -736,7 +736,7 @@ pub(super) struct ExamSectionDto {
 }
 
 pub(super) struct ExamResultParts {
-    pub(super) sections: Vec<ExamSectionDto>,
+    pub(super) topics: Vec<ExamTopicDto>,
     pub(super) verdicts: Option<VerdictsDto>,
     pub(super) mastered: bool,
 }
@@ -744,25 +744,25 @@ pub(super) struct ExamResultParts {
 pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
     let Some(result) = s.result() else {
         return ExamResultParts {
-            sections: Vec::new(),
+            topics: Vec::new(),
             verdicts: None,
             mastered: false,
         };
     };
-    let verdicts = |score: exam::SectionScore| VerdictsDto {
+    let verdicts = |score: exam::TopicScore| VerdictsDto {
         pass: score.pass,
         partial: score.partial,
         total: score.total,
     };
     let count = result.count();
     ExamResultParts {
-        sections: s
-            .sections()
+        topics: s
+            .topics()
             .iter()
-            .zip(&result.sections)
-            .map(|(section, score)| ExamSectionDto {
-                label: section.label.clone(),
-                cards: section.card_ids.clone(),
+            .zip(&result.topics)
+            .map(|(topic, score)| ExamTopicDto {
+                label: topic.label.clone(),
+                cards: topic.card_ids.clone(),
                 pass: score.passed,
                 verdicts: verdicts(*score),
             })
@@ -774,7 +774,7 @@ pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
 
 #[derive(Serialize)]
 pub(super) struct ExamGradeDto {
-    pub(super) section: usize,
+    pub(super) topic: usize,
     pub(super) shape: &'static str,
     pub(super) mental_model: String,
     pub(super) question: String,
@@ -796,7 +796,7 @@ pub(super) fn exam_grade_dto(
 ) -> ExamGradeDto {
     let each = |texts: &[String]| texts.iter().map(|t| exam_text_units(t)).collect();
     ExamGradeDto {
-        section: question.section,
+        topic: question.topic,
         shape: question.shape.label(),
         mental_model: question.mental_model.clone(),
         question: question.prompt.clone(),
@@ -862,7 +862,7 @@ pub(super) fn exam_dto(ex: &Examining, store: &crate::store::Store) -> ExamDto {
         answer_locked: s.is_locked(s.current_index()),
         on_last: s.on_last(),
         grades,
-        sections: parts.sections,
+        topics: parts.topics,
         verdicts: parts.verdicts,
         full: s.full(),
         mastered: parts.mastered,
@@ -966,7 +966,7 @@ pub(super) struct RemoteExamDto {
     pub(super) questions: Vec<String>,
     pub(super) questions_units: Vec<Vec<ContentUnit>>,
     pub(super) grades: Vec<ExamGradeDto>,
-    pub(super) sections: Vec<ExamSectionDto>,
+    pub(super) topics: Vec<ExamTopicDto>,
     pub(super) verdicts: Option<VerdictsDto>,
     pub(super) full: bool,
     pub(super) mastered: bool,
@@ -1276,7 +1276,7 @@ pub(super) fn review_state(
             keypoints: None,
             keypoint_runs: None,
             introducing: false,
-            section_first: false,
+            topic_first: false,
             mode: mode_name(Mode::default()),
             depth: depth_name(Depth::default()),
             input: input_name(Input::default()),
@@ -1357,7 +1357,7 @@ pub(super) fn review_state(
         keypoints: s.keypoints,
         keypoint_runs: s.keypoint_runs,
         introducing: s.introducing,
-        section_first: s.section_first,
+        topic_first: s.topic_first,
         mode: mode_name(s.mode),
         depth: depth_name(s.depth),
         input: input_name(s.input),
@@ -1440,7 +1440,7 @@ pub(super) fn walk_dto(w: &Walking, study_revision: u64, save_error: Option<&str
             .then_some(true),
         choices: question.map(|q| q.options),
         choice_runs,
-        section_first: session.section_first(),
+        topic_first: session.topic_first(),
         mode: mode_name(session.mode()),
         input: input_name(card.and_then(|c| c.input).unwrap_or_default()),
         position: session.position(),
@@ -1580,9 +1580,9 @@ pub(super) fn card_dto(view: CardView, id: Option<String>) -> CardDto {
             })
             .collect(),
         hole_steps: view.hole_steps,
-        section_context: view.section_context,
-        section_context_runs: view.section_context_runs,
-        section_context_units: web_units(view.section_context_units),
+        topic_context: view.topic_context,
+        topic_context_runs: view.topic_context_runs,
+        topic_context_units: web_units(view.topic_context_units),
         back: view.back,
         back_runs: view.back_runs,
         back_units: web_units(view.back_units),
@@ -1725,7 +1725,7 @@ mod tests {
         .unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),
-            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"models\"'*) printf '%s' '{\"sections\":[{\"section\":1,\"models\":[\"m\"]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"section\":1,\"shape\":\"fix\",\"idea\":1,\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
+            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"models\"'*) printf '%s' '{\"topics\":[{\"topic\":1,\"models\":[\"m\"]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"topic\":1,\"shape\":\"fix\",\"idea\":1,\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
         );
         let deck = crate::deck::Deck::load(&base).unwrap();
         let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();

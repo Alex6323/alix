@@ -91,7 +91,7 @@ study = createStudy({
     appendKeypointList,
     appendReveal,
     appendRuns,
-    appendSectionContext,
+    appendTopicContext,
     appendTable,
     chip,
     clearLegendSides,
@@ -406,22 +406,22 @@ menu.addEventListener("mousedown", (e) => e.preventDefault());
 menu.addEventListener("click", (e) => e.stopPropagation());
 document.getElementById("mAsk").addEventListener("click", () => {
   menu.classList.remove("open");
-  if (study.sectionOpen()) return;
+  if (study.topicOpen()) return;
   // Mirrors the footer/keyboard availability: a trace offers the tutor only once
   // a checkpoint is revealed (nothing to ask about while still predicting).
   if (trace.isOpen()) { if (trace.data().phase === "reveal") tutor.show(); }
   else if (study.isAnswered()) tutor.show();
 });
-document.getElementById("mContext").addEventListener("click", () => { menu.classList.remove("open"); study.openSection(); });
+document.getElementById("mContext").addEventListener("click", () => { menu.classList.remove("open"); study.openTopic(); });
 document.getElementById("mHint").addEventListener("click", () => { menu.classList.remove("open"); study.openHints(); });
-document.getElementById("mSkip").addEventListener("click", () => { menu.classList.remove("open"); if (!study.sectionOpen()) study.skip(); });
+document.getElementById("mSkip").addEventListener("click", () => { menu.classList.remove("open"); if (!study.topicOpen()) study.skip(); });
 document.getElementById("mRemove").addEventListener("click", () => {
   menu.classList.remove("open");
-  if (!study.sectionOpen()) study.remove();
+  if (!study.topicOpen()) study.remove();
 });
 const mDraw = document.getElementById("mDraw");
 study.syncDrawMenu();
-mDraw.addEventListener("click", () => { if (!study.sectionOpen()) study.toggleDraw(); });
+mDraw.addEventListener("click", () => { if (!study.topicOpen()) study.toggleDraw(); });
 document.addEventListener("click", () => menu.classList.remove("open"));
 
 

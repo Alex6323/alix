@@ -103,7 +103,7 @@ Widget _card({
           onIntroduce: () {},
           onGrade: (_) {},
           onOpenTutor: (_) {},
-          onOpenSection: (_) {},
+          onOpenTopic: (_) {},
         ),
       ),
     ),

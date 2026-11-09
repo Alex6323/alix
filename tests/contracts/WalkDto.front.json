@@ -67,8 +67,8 @@
   "mode": "choice",
   "phase": "front",
   "position": 0,
-  "section_first": true,
   "study_revision": 4,
+  "topic_first": true,
   "total": 3,
   "tutorial": true
 }

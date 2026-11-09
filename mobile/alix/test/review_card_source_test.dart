@@ -116,7 +116,7 @@ class _Harness extends StatelessWidget {
             onIntroduce: () {},
             onGrade: (_) {},
             onOpenTutor: (_) {},
-            onOpenSection: (_) {},
+            onOpenTopic: (_) {},
           ),
         ),
       ),

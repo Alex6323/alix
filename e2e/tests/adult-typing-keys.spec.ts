@@ -18,7 +18,7 @@ test.afterEach(async ({ request }) => {
   fs.rmSync(WORKSPACE, { recursive: true, force: true });
 });
 
-test("typing the context key into an answer field types it and opens no section", async ({ page }) => {
+test("typing the context key into an answer field types it and opens no topic", async ({ page }) => {
   fs.mkdirSync(path.join(WORKSPACE, "decks"), { recursive: true });
   fs.writeFileSync(path.join(WORKSPACE, "alix.toml"), 'title = "Typing Keys"\n');
   fs.writeFileSync(
@@ -48,7 +48,7 @@ cache
     page.getByRole("button", { name: /^Reconstruct/ }).click(),
   ]);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".section-drawer"), "the first introduction's drawer closes").toHaveCount(0);
+  await expect(page.locator(".topic-drawer"), "the first introduction's drawer closes").toHaveCount(0);
   await page.getByRole("button", { name: "Reveal" }).click();
   await Promise.all([
     page.waitForResponse((response) => response.url().includes("/api/introduce")),
@@ -71,5 +71,5 @@ cache
   await field.focus();
   await page.keyboard.type("cache");
   await expect(field, "every letter lands in the field").toHaveValue("cache");
-  await expect(page.locator(".section-drawer"), "no section drawer opened").toBeHidden();
+  await expect(page.locator(".topic-drawer"), "no topic drawer opened").toBeHidden();
 });

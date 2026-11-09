@@ -87,7 +87,7 @@ Widget _pump({
         onIntroduce: () {},
         onGrade: onGrade ?? (_) {},
         onOpenTutor: (_) {},
-        onOpenSection: (_) {},
+        onOpenTopic: (_) {},
       ),
     ),
   );

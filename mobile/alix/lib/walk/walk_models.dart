@@ -12,7 +12,7 @@ class WalkStateModel {
     Iterable<String>? choices,
     Iterable<Iterable<InlineRunModel>>? choiceRuns,
     this.choicesMultiple,
-    this.sectionFirst = false,
+    this.topicFirst = false,
     required this.position,
     required this.total,
     this.label = '',
@@ -33,7 +33,7 @@ class WalkStateModel {
   final List<String>? choices;
   final List<List<InlineRunModel>>? choiceRuns;
   final bool? choicesMultiple;
-  final bool sectionFirst;
+  final bool topicFirst;
   final int position;
   final int total;
   final String label;
@@ -51,7 +51,7 @@ class WalkStateModel {
     depth: ReviewDepth.recall,
     input: input,
     introducing: false,
-    sectionFirst: sectionFirst,
+    topicFirst: topicFirst,
     choices: choices,
     choiceRuns: choiceRuns,
     choicesMultiple: choicesMultiple,

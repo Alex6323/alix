@@ -149,7 +149,7 @@ fn extract_ids(text: &str) -> (Option<String>, Vec<ScannedCard>) {
             if crate::parser::is_card_depth(depth) {
                 heading_line = n;
             } else {
-                // A section closes the card chain: an id below it belongs
+                // A topic closes the card chain: an id below it belongs
                 // to no card, so no heading may stay open to claim it.
                 heading_line = 0;
             }

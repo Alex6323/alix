@@ -8,8 +8,8 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 pub use crate::exam_status::{
-    ExamFilter, ExamScope, ExamSection, ExamStatus, SECTION_NUDGE_CARDS, SectionStatus,
-    SectionTally, exam_sections, exam_status, oversized_sections,
+    ExamFilter, ExamScope, ExamStatus, ExamTopic, TOPIC_NUDGE_CARDS, TopicStatus, TopicTally,
+    exam_status, exam_topics, oversized_topics,
 };
 use crate::{
     ask::{self, parse_json},
@@ -25,7 +25,7 @@ const MAX_SOURCE_BYTES: usize = 100_000;
 pub struct ExamQuestion {
     pub prompt: String,
     pub points: Vec<String>,
-    pub section: usize,
+    pub topic: usize,
     pub shape: Shape,
     pub mental_model: String,
     pub idea: usize,
@@ -85,11 +85,11 @@ pub struct AnswerGrade {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamResult {
     pub grades: Vec<AnswerGrade>,
-    pub sections: Vec<SectionScore>,
+    pub topics: Vec<TopicScore>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SectionScore {
+pub struct TopicScore {
     pub pass: u32,
     pub partial: u32,
     pub total: u32,
@@ -98,10 +98,10 @@ pub struct SectionScore {
 
 impl ExamResult {
     pub fn scored(questions: &[ExamQuestion], grades: Vec<AnswerGrade>, threshold: f64) -> Self {
-        let count = questions.iter().map(|q| q.section + 1).max().unwrap_or(0);
-        let mut sections = vec![SectionScore::default(); count];
+        let count = questions.iter().map(|q| q.topic + 1).max().unwrap_or(0);
+        let mut topics = vec![TopicScore::default(); count];
         for (question, grade) in questions.iter().zip(&grades) {
-            let score = &mut sections[question.section];
+            let score = &mut topics[question.topic];
             score.total += 1;
             match grade.verdict {
                 Verdict::Pass => score.pass += 1,
@@ -109,16 +109,16 @@ impl ExamResult {
                 Verdict::Fail => {}
             }
         }
-        for score in &mut sections {
+        for score in &mut topics {
             score.passed =
                 score.total > 0 && f64::from(score.pass) / f64::from(score.total) >= threshold;
         }
-        Self { grades, sections }
+        Self { grades, topics }
     }
 
-    pub fn count(&self) -> SectionScore {
-        let mut count = SectionScore::default();
-        for score in &self.sections {
+    pub fn count(&self) -> TopicScore {
+        let mut count = TopicScore::default();
+        for score in &self.topics {
             count.pass += score.pass;
             count.partial += score.partial;
             count.total += score.total;
@@ -160,7 +160,7 @@ pub fn generate_questions(
     generate_questions_from(
         &sources,
         Some(&root),
-        &exam_sections(deck),
+        &exam_topics(deck),
         None,
         cfg,
         ask_cfg,
@@ -194,18 +194,13 @@ pub struct PreparedQuestion {
 }
 
 impl Prepared {
-    pub fn new(
-        generated: &Generated,
-        sections: &[ExamSection],
-        run: &AskConfig,
-        now_ms: u64,
-    ) -> Self {
+    pub fn new(generated: &Generated, topics: &[ExamTopic], run: &AskConfig, now_ms: u64) -> Self {
         let questions: Vec<PreparedQuestion> = generated
             .questions
             .iter()
             .filter_map(|q| {
                 Some(PreparedQuestion {
-                    heading: sections.get(q.section)?.label.clone(),
+                    heading: topics.get(q.topic)?.label.clone(),
                     idea: q.idea,
                     prompt: q.prompt.clone(),
                     points: q.points.clone(),
@@ -248,7 +243,7 @@ impl Prepared {
     /// This exam narrowed to the questions a sitting kept, with its answers.
     pub fn narrowed(
         &self,
-        sections: &[ExamSection],
+        topics: &[ExamTopic],
         questions: &[ExamQuestion],
         answers: &[String],
     ) -> Self {
@@ -257,7 +252,7 @@ impl Prepared {
                 .iter()
                 .filter_map(|q| {
                     Some(PreparedQuestion {
-                        heading: sections.get(q.section)?.label.clone(),
+                        heading: topics.get(q.topic)?.label.clone(),
                         idea: q.idea,
                         prompt: q.prompt.clone(),
                         points: q.points.clone(),
@@ -271,23 +266,23 @@ impl Prepared {
         }
     }
 
-    /// The deck's current sections this exam still covers, and its questions
+    /// The deck's current topics this exam still covers, and its questions
     /// and answers re-indexed onto them; a question whose heading is gone is
     /// dropped.
-    pub fn against(&self, deck: &Deck) -> (Vec<ExamSection>, Vec<ExamQuestion>, Vec<String>) {
-        let current = exam_sections(deck);
-        let sections: Vec<ExamSection> = current
+    pub fn against(&self, deck: &Deck) -> (Vec<ExamTopic>, Vec<ExamQuestion>, Vec<String>) {
+        let current = exam_topics(deck);
+        let topics: Vec<ExamTopic> = current
             .into_iter()
             .filter(|s| self.questions.iter().any(|q| q.heading == s.label))
             .collect();
         let mut questions = Vec::new();
         let mut answers = Vec::new();
         for (q, answer) in self.questions.iter().zip(&self.answers) {
-            if let Some(at) = sections.iter().position(|s| s.label == q.heading) {
+            if let Some(at) = topics.iter().position(|s| s.label == q.heading) {
                 questions.push(ExamQuestion {
                     prompt: q.prompt.clone(),
                     points: q.points.clone(),
-                    section: at,
+                    topic: at,
                     shape: q.shape,
                     mental_model: q.mental_model.clone(),
                     idea: q.idea,
@@ -295,7 +290,7 @@ impl Prepared {
                 answers.push(answer.clone());
             }
         }
-        (sections, questions, answers)
+        (topics, questions, answers)
     }
 }
 
@@ -340,7 +335,7 @@ pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()
 pub(crate) fn generate_questions_from(
     sources: &ExamLayers,
     base: Option<&Path>,
-    sections: &[ExamSection],
+    topics: &[ExamTopic],
     ideas: Option<crate::exam_ideas::IdeasDocument>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
@@ -349,16 +344,16 @@ pub(crate) fn generate_questions_from(
     for source in sources.own.iter().chain(&sources.workspace) {
         crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
     }
-    if sections.is_empty() {
+    if topics.is_empty() {
         bail!("the deck has no cards to examine");
     }
     let run = run_config(cfg, ask_cfg);
     let material = crate::exam_ideas::material_fingerprint(&source_section(sources, base)?);
     let mut doc = crate::exam_ideas::IdeasDocument::for_material(ideas, &material);
-    let headings: Vec<&str> = sections.iter().map(|s| s.label.as_str()).collect();
+    let headings: Vec<&str> = topics.iter().map(|s| s.label.as_str()).collect();
     let missing = doc.missing_headings(&headings);
     if !missing.is_empty() {
-        let unlisted: Vec<ExamSection> = sections
+        let unlisted: Vec<ExamTopic> = topics
             .iter()
             .filter(|s| missing.contains(&s.label.as_str()))
             .cloned()
@@ -370,8 +365,8 @@ pub(crate) fn generate_questions_from(
             |raw| checked_models(unlisted.len(), raw),
             "the listed models",
         )?;
-        for (section, ideas) in unlisted.iter().zip(listed) {
-            doc.set_section(&section.label, ideas);
+        for (topic, ideas) in unlisted.iter().zip(listed) {
+            doc.set_topic(&topic.label, ideas);
         }
     }
     let chosen: Vec<Vec<usize>> = headings.iter().map(|h| doc.select(h)).collect();
@@ -379,26 +374,22 @@ pub(crate) fn generate_questions_from(
         .iter()
         .zip(&chosen)
         .map(|(heading, picks)| {
-            let section = doc.section(heading);
+            let topic = doc.topic(heading);
             picks
                 .iter()
-                .filter_map(|&at| {
-                    section
-                        .and_then(|s| s.ideas.get(at))
-                        .map(|i| i.text.clone())
-                })
+                .filter_map(|&at| topic.and_then(|s| s.ideas.get(at)).map(|i| i.text.clone()))
                 .collect()
         })
         .collect();
     let mut questions = with_one_retry(
         job,
         &run,
-        &questions_prompt(sources, base, sections, &chosen_text, cfg)?,
+        &questions_prompt(sources, base, topics, &chosen_text, cfg)?,
         |raw| checked_questions(&chosen_text, raw),
         "the generated questions",
     )?;
     for question in &mut questions {
-        question.idea = chosen[question.section][question.idea];
+        question.idea = chosen[question.topic][question.idea];
     }
     Ok(Generated {
         questions,
@@ -428,21 +419,21 @@ fn with_one_retry<T>(
 }
 
 pub(crate) fn checked_models(
-    section_count: usize,
+    topic_count: usize,
     raw: &str,
 ) -> std::result::Result<Vec<Vec<String>>, String> {
     let dto: ModelsDto =
         parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
-    let mut models: Vec<Vec<String>> = vec![Vec::new(); section_count];
-    for listed in dto.sections {
+    let mut models: Vec<Vec<String>> = vec![Vec::new(); topic_count];
+    for listed in dto.topics {
         let Some(slot) = listed
-            .section
+            .topic
             .checked_sub(1)
             .and_then(|at| models.get_mut(at))
         else {
             return Err(format!(
-                "it lists models for section {}, but there are {section_count} sections",
-                listed.section
+                "it lists models for topic {}, but there are {topic_count} topics",
+                listed.topic
             ));
         };
         for model in listed.models.iter().map(|model| model.trim()) {
@@ -452,7 +443,7 @@ pub(crate) fn checked_models(
         }
     }
     if let Some(at) = models.iter().position(Vec::is_empty) {
-        return Err(format!("section {} lists no mental model", at + 1));
+        return Err(format!("topic {} lists no mental model", at + 1));
     }
     Ok(models)
 }
@@ -463,7 +454,7 @@ pub(crate) fn checked_questions(
 ) -> std::result::Result<Vec<ExamQuestion>, String> {
     let dto: QuestionsDto =
         parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
-    let section_count = models.len();
+    let topic_count = models.len();
     let mut covered: Vec<Vec<bool>> = models.iter().map(|m| vec![false; m.len()]).collect();
     let mut questions = Vec::new();
     for generated in dto.questions {
@@ -474,13 +465,13 @@ pub(crate) fn checked_questions(
             return Err("a question has an empty prompt or no key points".to_string());
         }
         let Some(at) = generated
-            .section
+            .topic
             .checked_sub(1)
-            .filter(|at| *at < section_count)
+            .filter(|at| *at < topic_count)
         else {
             return Err(format!(
-                "a question names section {}, but there are {section_count} sections",
-                generated.section
+                "a question names topic {}, but there are {topic_count} topics",
+                generated.topic
             ));
         };
         let Some(which) = generated
@@ -489,7 +480,7 @@ pub(crate) fn checked_questions(
             .filter(|which| *which < models[at].len())
         else {
             return Err(format!(
-                "a question in section {} names idea {}, but that section lists {}",
+                "a question in topic {} names idea {}, but that topic lists {}",
                 at + 1,
                 generated.idea,
                 models[at].len()
@@ -497,7 +488,7 @@ pub(crate) fn checked_questions(
         };
         if covered[at][which] {
             return Err(format!(
-                "section {} asks idea {} more than once",
+                "topic {} asks idea {} more than once",
                 at + 1,
                 which + 1
             ));
@@ -506,16 +497,16 @@ pub(crate) fn checked_questions(
         questions.push(ExamQuestion {
             prompt: generated.prompt,
             points: generated.points,
-            section: at,
+            topic: at,
             shape: generated.shape,
             mental_model: models[at][which].clone(),
             idea: which,
         });
     }
-    for (at, section) in covered.iter().enumerate() {
-        if let Some(which) = section.iter().position(|done| !done) {
+    for (at, topic) in covered.iter().enumerate() {
+        if let Some(which) = topic.iter().position(|done| !done) {
             return Err(format!(
-                "section {} lists the idea `{}` but asks no question about it",
+                "topic {} lists the idea `{}` but asks no question about it",
                 at + 1,
                 models[at][which]
             ));
@@ -576,7 +567,7 @@ static GENERATION_SPAWNS: std::sync::atomic::AtomicUsize = std::sync::atomic::At
 pub fn spawn_generation(
     sources: ExamLayers,
     base: Option<PathBuf>,
-    sections: Vec<ExamSection>,
+    topics: Vec<ExamTopic>,
     ideas: Option<crate::exam_ideas::IdeasDocument>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
@@ -590,7 +581,7 @@ pub fn spawn_generation(
         let r = generate_questions_from(
             &sources,
             base.as_deref(),
-            &sections,
+            &topics,
             ideas,
             &cfg,
             &ask_cfg,
@@ -614,7 +605,7 @@ pub fn exam_files(deck: &Deck) -> Option<(PathBuf, PathBuf)> {
 /// the receiver reports, so a learner who left still finds them.
 pub fn spawn_prepare(
     deck: &Deck,
-    sections: Vec<ExamSection>,
+    topics: Vec<ExamTopic>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
 ) -> (Receiver<Result<(), String>>, ask::AskJob) {
@@ -632,7 +623,7 @@ pub fn spawn_prepare(
             let generated = generate_questions_from(
                 &sources,
                 Some(&base),
-                &sections,
+                &topics,
                 ideas,
                 &cfg,
                 &ask_cfg,
@@ -640,7 +631,7 @@ pub fn spawn_prepare(
             )?;
             generated.ideas.save(&ideas_path)?;
             let run = run_config(&cfg, &ask_cfg);
-            Prepared::new(&generated, &sections, &run, crate::time::now_ms()).save(&prepared_path)
+            Prepared::new(&generated, &topics, &run, crate::time::now_ms()).save(&prepared_path)
         })()
         .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
@@ -716,8 +707,8 @@ pub struct Sitting {
     error: Option<String>,
     pending_since: Option<u64>,
     remediated_count: Option<usize>,
-    sections: Vec<ExamSection>,
-    deck_sections: Vec<ExamSection>,
+    topics: Vec<ExamTopic>,
+    deck_topics: Vec<ExamTopic>,
     unlocked: bool,
     ideas: Option<crate::exam_ideas::IdeasDocument>,
     locked: Vec<bool>,
@@ -731,18 +722,18 @@ impl Drop for Sitting {
 }
 
 fn sitting_record(
-    sections: &[ExamSection],
+    topics: &[ExamTopic],
     full: bool,
     result: &ExamResult,
 ) -> crate::store::SittingRecord {
     let count = result.count();
     crate::store::SittingRecord {
-        sections: sections
+        topics: topics
             .iter()
-            .zip(&result.sections)
+            .zip(&result.topics)
             .filter(|(_, score)| score.total > 0)
-            .map(|(section, score)| crate::store::SectionRecord {
-                card_ids: section.card_ids.clone(),
+            .map(|(topic, score)| crate::store::TopicRecord {
+                card_ids: topic.card_ids.clone(),
                 pass: score.passed,
             })
             .collect(),
@@ -759,18 +750,18 @@ impl Sitting {
     }
 
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
-        Self::start_with(deck, exam_sections(deck), None, strictness, cfg, ask_cfg)
+        Self::start_with(deck, exam_topics(deck), None, strictness, cfg, ask_cfg)
     }
 
     pub fn start_with(
         deck: &Deck,
-        sections: Vec<ExamSection>,
+        topics: Vec<ExamTopic>,
         ideas: Option<crate::exam_ideas::IdeasDocument>,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        let mut sitting = Self::idle(deck, sections, strictness, cfg, ask_cfg);
+        let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
         sitting.error = source_boundary_error(deck);
         if sitting.error.is_some() {
             sitting.phase = Phase::Results;
@@ -779,7 +770,7 @@ impl Sitting {
         let (rx, job) = spawn_generation(
             examination_sources(deck),
             Some(workspace::content_root(&deck.path)),
-            sitting.sections.clone(),
+            sitting.topics.clone(),
             ideas,
             sitting.cfg.clone(),
             sitting.ask_cfg.clone(),
@@ -793,7 +784,7 @@ impl Sitting {
 
     fn idle(
         deck: &Deck,
-        sections: Vec<ExamSection>,
+        topics: Vec<ExamTopic>,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -815,8 +806,8 @@ impl Sitting {
             error: None,
             pending_since: None,
             remediated_count: None,
-            sections,
-            deck_sections: exam_sections(deck),
+            topics,
+            deck_topics: exam_topics(deck),
             unlocked: false,
             ideas: None,
             locked: Vec::new(),
@@ -832,7 +823,7 @@ impl Sitting {
     )]
     pub fn from_prepared(
         deck: &Deck,
-        sections: Vec<ExamSection>,
+        topics: Vec<ExamTopic>,
         questions: Vec<ExamQuestion>,
         answers: Vec<String>,
         ideas: crate::exam_ideas::IdeasDocument,
@@ -840,7 +831,7 @@ impl Sitting {
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        let mut sitting = Self::idle(deck, sections, strictness, cfg, ask_cfg);
+        let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
         sitting.locked = answers.iter().map(|a| !a.trim().is_empty()).collect();
         sitting.current = sitting.locked.iter().position(|l| !l).unwrap_or(0);
         sitting.answers = answers;
@@ -866,12 +857,12 @@ impl Sitting {
         }
     }
 
-    pub fn sections(&self) -> &[ExamSection] {
-        &self.sections
+    pub fn topics(&self) -> &[ExamTopic] {
+        &self.topics
     }
 
     pub fn full(&self) -> bool {
-        self.sections.len() == self.deck_sections.len()
+        self.topics.len() == self.deck_topics.len()
     }
 
     pub fn unlocked(&self) -> bool {
@@ -978,7 +969,7 @@ impl Sitting {
             .zip(&result.grades)
             .filter_map(|(question, grade)| {
                 Some(crate::exam_ideas::AskedIdea {
-                    heading: self.sections.get(question.section)?.label.clone(),
+                    heading: self.topics.get(question.topic)?.label.clone(),
                     idea: question.idea,
                     passed: grade.verdict == Verdict::Pass,
                 })
@@ -1102,13 +1093,9 @@ impl Sitting {
         match effect {
             Some(Effect::Graded) => {
                 if let Some(result) = &self.result {
-                    let record = sitting_record(&self.sections, self.full(), result);
-                    self.unlocked = store.record_sitting(
-                        &self.deck_token,
-                        &self.deck_sections,
-                        &record,
-                        now_ms,
-                    );
+                    let record = sitting_record(&self.topics, self.full(), result);
+                    self.unlocked =
+                        store.record_sitting(&self.deck_token, &self.deck_topics, &record, now_ms);
                 }
                 store_mutated = true;
             }
@@ -1290,16 +1277,16 @@ fn truncate(text: &str) -> (String, bool) {
     )
 }
 
-fn section_scope(sections: &[ExamSection]) -> String {
+fn topic_scope(topics: &[ExamTopic]) -> String {
     let mut scope = String::new();
-    for (i, section) in sections.iter().enumerate() {
-        scope.push_str(&format!("Section {}: {}\n", i + 1, section.label));
-        for line in section.context.iter().skip(1) {
+    for (i, topic) in topics.iter().enumerate() {
+        scope.push_str(&format!("Topic {}: {}\n", i + 1, topic.label));
+        for line in topic.context.iter().skip(1) {
             scope.push_str(line);
             scope.push('\n');
         }
         scope.push_str("Cards:\n");
-        for card in &section.cards {
+        for card in &topic.cards {
             scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
         }
         scope.push('\n');
@@ -1310,28 +1297,28 @@ fn section_scope(sections: &[ExamSection]) -> String {
 pub(crate) fn models_prompt(
     sources: &ExamLayers,
     base: Option<&Path>,
-    sections: &[ExamSection],
+    topics: &[ExamTopic],
     cfg: &ExamConfig,
 ) -> Result<String> {
     let sources = source_section(sources, base)?;
-    let scope = section_scope(sections);
+    let scope = topic_scope(topics);
     let mut prompt = format!(
         "You are preparing an oral exam that verifies a student truly UNDERSTANDS a \
          topic.\n\n\
          {sources}\n\
-         The student drilled a flashcard deck on this material, split into the sections \
-         below. Each section's heading, with the prose under it when there is any, marks \
+         The student drilled a flashcard deck on this material, split into the topics \
+         below. Each topic's heading, with the prose under it when there is any, marks \
          out its topic. Its cards show only what the student has drilled so far; they do \
          not mark the edge of the topic.\n\n\
          {scope}\
-         For EACH section, in deck order, list its mental models: the distinct ideas a \
-         student must understand to master that section's topic, as the source above \
+         For EACH topic, in deck order, list its mental models: the distinct ideas a \
+         student must understand to master that topic's topic, as the source above \
          teaches them. Cover everything the source teaches within that topic, whether or \
-         not a card states it, and leave out what belongs to another section's topic. \
-         List as many as the section really holds, at least one; name each model in a \
+         not a card states it, and leave out what belongs to another topic's topic. \
+         List as many as the topic really holds, at least one; name each model in a \
          short phrase.\n\n\
          Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
-         {{\"sections\": [{{\"section\": 1, \"models\": [\"...\", \"...\"]}}]}}"
+         {{\"topics\": [{{\"topic\": 1, \"models\": [\"...\", \"...\"]}}]}}"
     );
     push_extra(&mut prompt, cfg);
     Ok(prompt)
@@ -1352,45 +1339,45 @@ fn push_extra(prompt: &mut String, cfg: &ExamConfig) {
 pub(crate) fn questions_prompt(
     sources: &ExamLayers,
     base: Option<&Path>,
-    sections: &[ExamSection],
+    topics: &[ExamTopic],
     models: &[Vec<String>],
     cfg: &ExamConfig,
 ) -> Result<String> {
     let sources = source_section(sources, base)?;
-    if sections.is_empty() {
+    if topics.is_empty() {
         bail!("the deck has no cards to examine");
     }
     let mut scope = String::from(
         "The student drilled a flashcard deck on this material, split into the \
-         sections below. Its cards are SCOPE ONLY: they show what the deck already \
+         topics below. Its cards are SCOPE ONLY: they show what the deck already \
          asks. NEVER ask what a card states, and never rephrase a card; test the \
-         mental model behind the section instead.\n\n",
+         mental model behind the topic instead.\n\n",
     );
-    scope.push_str(&section_scope(sections));
-    scope.push_str("The ideas this exam examines, per section, numbered:\n");
+    scope.push_str(&topic_scope(topics));
+    scope.push_str("The ideas this exam examines, per topic, numbered:\n");
     for (i, listed) in models.iter().enumerate() {
-        scope.push_str(&format!("Section {}:\n", i + 1));
+        scope.push_str(&format!("Topic {}:\n", i + 1));
         for (n, idea) in listed.iter().enumerate() {
             scope.push_str(&format!("{}. {idea}\n", n + 1));
         }
     }
     scope.push('\n');
     let ask = format!(
-        "{scope}For EACH section, in deck order, write EXACTLY one question for every \
+        "{scope}For EACH topic, in deck order, write EXACTLY one question for every \
          idea listed for it, no more. An idea a card states is still examined: ask the \
-         student to apply it, never to recite the card. Across a section, start with an \
+         student to apply it, never to recite the card. Across a topic, start with an \
          instance and then take the three shapes in turn:\n\
          - instance: a concrete case the source supports but no card shows \
          (\"given this program, what does the compiler report?\");\n\
-         - boundary: when does the section's idea stop holding, or what changes \
+         - boundary: when does the topic's idea stop holding, or what changes \
          if a condition flips;\n\
          - fix: a short statement or snippet with exactly one seeded mistake about \
-         the section's idea; the student must find and correct it.\n\
+         the topic's idea; the student must find and correct it.\n\
          Every question must be answerable from the source above and demand \
-         reasoning in the student's own words. Tag every question with its section's \
-         number, its shape, and the number of the idea it tests within that section.\n\n"
+         reasoning in the student's own words. Tag every question with its topic's \
+         number, its shape, and the number of the idea it tests within that topic.\n\n"
     );
-    let shape = "{\"questions\": [{\"section\": 1, \"shape\": \"instance|boundary|fix\", \
+    let shape = "{\"questions\": [{\"topic\": 1, \"shape\": \"instance|boundary|fix\", \
                  \"idea\": 1, \"prompt\": \"...\", \
                  \"points\": [\"...\", \"...\"]}]}";
     let mut prompt = format!(
@@ -1568,7 +1555,7 @@ fn remediation_prompt(gaps: &[String]) -> String {
 }
 
 /// A generated block counts as cards when it carries a front at any card
-/// depth; a section heading alone is prose.
+/// depth; a topic heading alone is prose.
 fn has_card_fronts(text: &str) -> bool {
     text.lines().any(|l| {
         crate::parser::heading_depth(l).is_some_and(|(d, _)| crate::parser::is_card_depth(d))
@@ -1595,7 +1582,7 @@ fn clean_deck_output(raw: &str) -> String {
 
 #[derive(Debug, Deserialize)]
 struct ModelsDto {
-    sections: Vec<SectionModelsDto>,
+    topics: Vec<TopicModelsDto>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1604,14 +1591,14 @@ struct QuestionsDto {
 }
 
 #[derive(Debug, Deserialize)]
-struct SectionModelsDto {
-    section: usize,
+struct TopicModelsDto {
+    topic: usize,
     models: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct GeneratedQuestionDto {
-    section: usize,
+    topic: usize,
     shape: Shape,
     idea: usize,
     prompt: String,
@@ -1702,8 +1689,8 @@ mod tests {
         );
     }
 
-    const ONE_SECTION_REPLY: &str = "{\"sections\":[{\"section\":1,\"models\":[\"m\"]}],\
-        \"questions\":[{\"section\":1,\"shape\":\"instance\",\"idea\":1,\
+    const ONE_TOPIC_REPLY: &str = "{\"topics\":[{\"topic\":1,\"models\":[\"m\"]}],\
+        \"questions\":[{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\
         \"prompt\":\"Why move?\",\"points\":[\"avoids double free\"]}]}";
 
     fn deck_with_exam_and_card(srcs: &[&str]) -> Deck {
@@ -1713,12 +1700,12 @@ mod tests {
         }
     }
 
-    fn models_for(sections: usize) -> Vec<Vec<String>> {
-        vec![vec!["m".to_string()]; sections]
+    fn models_for(topics: usize) -> Vec<Vec<String>> {
+        vec![vec!["m".to_string()]; topics]
     }
 
-    fn one_section() -> Vec<ExamSection> {
-        vec![ExamSection {
+    fn one_topic() -> Vec<ExamTopic> {
+        vec![ExamTopic {
             label: "Moves".to_string(),
             context: vec!["Moves".to_string()],
             cards: vec!["Q: a\nA: b".to_string()],
@@ -1763,7 +1750,7 @@ mod tests {
     fn generated_card_text_is_recognized_at_every_depth() {
         assert!(has_card_fronts("### only a sub-card\nanswer\n"));
         assert!(has_card_fronts("#### deep\nanswer\n"));
-        assert!(!has_card_fronts("# just a section\nprose\n"));
+        assert!(!has_card_fronts("# just a topic\nprose\n"));
     }
 
     #[test]
@@ -1818,16 +1805,16 @@ mod tests {
         );
     }
 
-    /// A fact-deck exam grades against the source, never a card's section
+    /// A fact-deck exam grades against the source, never a card's topic
     /// context. This is a signature-name tripwire for that boundary, not a
     /// generic ban on deck-derived values: question generation takes the
-    /// sections as scope.
+    /// topics as scope.
     #[test]
-    fn exam_prompt_signatures_ban_section_like_names() {
+    fn exam_prompt_signatures_ban_topic_like_names() {
         let source = include_str!("exam.rs");
         let builders: [(&str, &[&str]); 4] = [
-            ("fn questions_prompt(", &["sections: &[ExamSection]"]),
-            ("fn models_prompt(", &["sections: &[ExamSection]"]),
+            ("fn questions_prompt(", &["topics: &[ExamTopic]"]),
+            ("fn models_prompt(", &["topics: &[ExamTopic]"]),
             ("fn grade_prompt(", &[]),
             ("fn remediation_prompt(", &[]),
         ];
@@ -1843,10 +1830,18 @@ mod tests {
             let unpinned = trace_grounding
                 .iter()
                 .fold(params.to_string(), |rest, pinned| rest.replace(pinned, ""));
-            for banned in ["context", "section", "Section", "cards", "deck_body"] {
+            for banned in [
+                "context",
+                "section",
+                "Section",
+                "topic",
+                "Topic",
+                "cards",
+                "deck_body",
+            ] {
                 assert!(
                     !unpinned.contains(banned),
-                    "{builder} takes `{banned}`: section/card context must not enter \
+                    "{builder} takes `{banned}`: topic/card context must not enter \
                      exam prompt signatures.\n{params}"
                 );
             }
@@ -1868,7 +1863,7 @@ mod tests {
         let p = questions_prompt(
             &sources,
             None,
-            &one_section(),
+            &one_topic(),
             &models_for(1),
             &ExamConfig::default(),
         )
@@ -1896,7 +1891,7 @@ mod tests {
         let prompt = questions_prompt(
             &sources,
             Some(dir.path()),
-            &one_section(),
+            &one_topic(),
             &models_for(1),
             &ExamConfig::default(),
         )
@@ -1931,7 +1926,7 @@ mod tests {
         let prompt = questions_prompt(
             &sources,
             Some(dir.path()),
-            &one_section(),
+            &one_topic(),
             &models_for(1),
             &ExamConfig::default(),
         )
@@ -1968,7 +1963,7 @@ mod tests {
         let prompt = questions_prompt(
             &sources,
             None,
-            &one_section(),
+            &one_topic(),
             &models_for(1),
             &ExamConfig::default(),
         )
@@ -1996,7 +1991,7 @@ mod tests {
         let p = questions_prompt(
             &sources,
             None,
-            &one_section(),
+            &one_topic(),
             &models_for(1),
             &ExamConfig::default(),
         )
@@ -2008,10 +2003,10 @@ mod tests {
     }
 
     #[test]
-    fn questions_prompt_asks_per_section_in_the_three_shapes_with_cards_as_scope_only() {
+    fn questions_prompt_asks_per_topic_in_the_three_shapes_with_cards_as_scope_only() {
         let sources = url_layers(&["https://example.org/ownership"]);
-        let sections = [
-            ExamSection {
+        let topics = [
+            ExamTopic {
                 label: "# Moves".to_string(),
                 context: vec![
                     "# Moves".to_string(),
@@ -2020,7 +2015,7 @@ mod tests {
                 cards: vec!["Q: What does `let b = a;` do to a String?\nA: Moves it".to_string()],
                 ..Default::default()
             },
-            ExamSection {
+            ExamTopic {
                 label: "# Borrows".to_string(),
                 context: vec!["# Borrows".to_string()],
                 cards: vec!["Q: How many &mut at once?\nA: One".to_string()],
@@ -2030,18 +2025,15 @@ mod tests {
         let p = questions_prompt(
             &sources,
             None,
-            &sections,
-            &models_for(sections.len()),
+            &topics,
+            &models_for(topics.len()),
             &ExamConfig::default(),
         )
         .unwrap();
-        let moves = p.find("# Moves").expect("first section heading");
-        let borrows = p.find("# Borrows").expect("second section heading");
-        assert!(moves < borrows, "sections keep deck order: {p}");
-        assert!(
-            p.contains("Values move on assignment."),
-            "section prose: {p}"
-        );
+        let moves = p.find("# Moves").expect("first topic heading");
+        let borrows = p.find("# Borrows").expect("second topic heading");
+        assert!(moves < borrows, "topics keep deck order: {p}");
+        assert!(p.contains("Values move on assignment."), "topic prose: {p}");
         assert!(
             p.contains("What does `let b = a;` do to a String?"),
             "card scope: {p}"
@@ -2051,25 +2043,25 @@ mod tests {
             "scope only: {p}"
         );
         for rule in [
-            "The ideas this exam examines, per section, numbered:",
+            "The ideas this exam examines, per topic, numbered:",
             "write EXACTLY one question for every \
          idea listed for it, no more",
             "ask the \
          student to apply it, never to recite the card",
-            "the number of the idea it tests within that section",
+            "the number of the idea it tests within that topic",
         ] {
             assert!(p.contains(rule), "ideas rule {rule:?}: {p}");
         }
         for shape in ["instance:", "boundary:", "fix:"] {
             assert!(p.contains(shape), "shape {shape}: {p}");
         }
-        for tag in ["\"section\"", "\"shape\"", "\"idea\""] {
+        for tag in ["\"topic\"", "\"shape\"", "\"idea\""] {
             assert!(p.contains(tag), "json carries {tag}: {p}");
         }
     }
 
     #[test]
-    fn exam_sections_group_cards_by_heading_in_deck_order_and_merge_repeated_headings() {
+    fn exam_topics_group_cards_by_heading_in_deck_order_and_merge_repeated_headings() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("d.md");
         std::fs::write(
@@ -2078,32 +2070,24 @@ mod tests {
         )
         .unwrap();
         let deck = Deck::load(&path).unwrap();
-        let sections = exam_sections(&deck);
-        let headings: Vec<_> = sections
-            .iter()
-            .map(|s| s.context.first().cloned())
-            .collect();
+        let topics = exam_topics(&deck);
+        let headings: Vec<_> = topics.iter().map(|s| s.context.first().cloned()).collect();
         assert_eq!(
             vec![Some("A".to_string()), Some("B".to_string())],
             headings,
             "same heading text merges; first appearance orders"
         );
-        assert_eq!(
-            2,
-            sections[0].cards.len(),
-            "a1 and a2: {:?}",
-            sections[0].cards
-        );
-        assert!(sections[0].cards[0].contains("a1?") && sections[0].cards[0].contains("one"));
+        assert_eq!(2, topics[0].cards.len(), "a1 and a2: {:?}", topics[0].cards);
+        assert!(topics[0].cards[0].contains("a1?") && topics[0].cards[0].contains("one"));
     }
 
     #[test]
-    fn section_status_follows_member_records_and_any_fail_wins() {
-        use SectionStatus::*;
+    fn topic_status_follows_member_records_and_any_fail_wins() {
+        use TopicStatus::*;
         type Row = (
             &'static str,
             [Option<bool>; 3],
-            [SectionStatus; 2],
+            [TopicStatus; 2],
             ExamFilter,
         );
         let rows: [Row; 7] = [
@@ -2138,13 +2122,13 @@ mod tests {
                 ExamFilter::Partial,
             ),
             (
-                "one section unexamined",
+                "one topic unexamined",
                 [Some(true), Some(true), None],
                 [Passed, Unexamined],
                 ExamFilter::Partial,
             ),
             (
-                "every section needs work",
+                "every topic needs work",
                 [Some(false), Some(false), Some(false)],
                 [NeedsWork, NeedsWork],
                 ExamFilter::All,
@@ -2169,13 +2153,13 @@ mod tests {
                 }
             }
             let status = deck.exam_status(&store);
-            assert_eq!(expected.to_vec(), status.sections, "{label}: statuses");
+            assert_eq!(expected.to_vec(), status.topics, "{label}: statuses");
             assert_eq!(filter, status.filter(), "{label}: filter");
             let tally = status.tally();
             assert_eq!(
                 2,
                 tally.passed + tally.needs_work + tally.new_cards + tally.unexamined,
-                "{label}: the tally counts every section once"
+                "{label}: the tally counts every topic once"
             );
             assert_eq!(
                 expected.iter().filter(|s| **s == Passed).count(),
@@ -2191,7 +2175,7 @@ mod tests {
     }
 
     #[test]
-    fn sections_follow_headings_merge_repeats_and_label_the_unsectioned_with_the_deck_title() {
+    fn topics_follow_headings_merge_repeats_and_label_the_leading_topic_with_the_deck_title() {
         let rows = [
             (
                 "no heading",
@@ -2220,21 +2204,20 @@ mod tests {
             std::fs::write(&path, format!("---\ntitle: Ownership\n---\n\n{body}")).unwrap();
             crate::stamp::stamp_deck(&path).unwrap();
             let deck = Deck::load(&path).unwrap();
-            let sections = exam_sections(&deck);
-            let got: Vec<(&str, usize)> = sections
+            let topics = exam_topics(&deck);
+            let got: Vec<(&str, usize)> = topics
                 .iter()
                 .map(|s| (s.label.as_str(), s.card_ids.len()))
                 .collect();
-            assert_eq!(expected, got, "{label}: (label, member ids) per section");
+            assert_eq!(expected, got, "{label}: (label, member ids) per topic");
             let mut every_id: Vec<String> =
                 deck.cards.iter().filter_map(|card| card.id()).collect();
-            let mut listed: Vec<String> =
-                sections.iter().flat_map(|s| s.card_ids.clone()).collect();
+            let mut listed: Vec<String> = topics.iter().flat_map(|s| s.card_ids.clone()).collect();
             every_id.sort();
             listed.sort();
             assert_eq!(
                 every_id, listed,
-                "{label}: every card id belongs to exactly one section"
+                "{label}: every card id belongs to exactly one topic"
             );
         }
     }
@@ -2242,7 +2225,7 @@ mod tests {
     #[test]
     fn questions_prompt_asks_for_standalone_fenced_questions_that_hide_the_answer() {
         let sources = url_layers(&["https://example.org/ownership"]);
-        for sections in [vec![ExamSection {
+        for topics in [vec![ExamTopic {
             label: "# Moves".to_string(),
             context: vec!["# Moves".to_string()],
             cards: vec!["Q: a\nA: b".to_string()],
@@ -2251,8 +2234,8 @@ mod tests {
             let p = questions_prompt(
                 &sources,
                 None,
-                &sections,
-                &models_for(sections.len()),
+                &topics,
+                &models_for(topics.len()),
                 &ExamConfig::default(),
             )
             .unwrap();
@@ -2266,8 +2249,8 @@ mod tests {
             ] {
                 assert!(
                     p.contains(rule),
-                    "{} sections: missing {rule:?}",
-                    sections.len()
+                    "{} topics: missing {rule:?}",
+                    topics.len()
                 );
             }
         }
@@ -2276,7 +2259,7 @@ mod tests {
     #[test]
     fn models_prompt_bounds_the_topic_by_the_heading_and_shows_cards_only_as_what_is_drilled() {
         let sources = url_layers(&["https://x"]);
-        let p = models_prompt(&sources, None, &one_section(), &ExamConfig::default()).unwrap();
+        let p = models_prompt(&sources, None, &one_topic(), &ExamConfig::default()).unwrap();
         assert!(
             p.contains("heading, with the prose under it when there is any, marks out its topic"),
             "the heading bounds the topic: {p}"
@@ -2300,7 +2283,7 @@ mod tests {
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&sources, None, &one_section(), &models_for(1), &cfg).unwrap();
+        let p = questions_prompt(&sources, None, &one_topic(), &models_for(1), &cfg).unwrap();
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
     }
@@ -2312,8 +2295,8 @@ mod tests {
         let cli = crate::testutil::fake_replies(
             dir.path(),
             &[
-                "{\"sections\":[{\"section\":1,\"models\":[\"ownership\"]}]}",
-                "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\
+                "{\"topics\":[{\"topic\":1,\"models\":[\"ownership\"]}]}",
+                "{\"questions\":[{\"topic\":1,\"shape\":\"instance\",\
                  \"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
             ],
         );
@@ -2459,8 +2442,8 @@ mod tests {
 
     #[test]
     fn parse_questions_from_fenced_json() {
-        let raw = "Here you go:\n```json\n{\"sections\": [{\"section\": 1, \"models\": [\"m\"]}], \
-                   \"questions\": [{\"section\": 1, \"shape\": \"fix\", \"idea\": 1, \
+        let raw = "Here you go:\n```json\n{\"topics\": [{\"topic\": 1, \"models\": [\"m\"]}], \
+                   \"questions\": [{\"topic\": 1, \"shape\": \"fix\", \"idea\": 1, \
                    \"prompt\": \"Q1\", \"points\": [\"a\", \"b\"]}]}\n```";
         let dto: QuestionsDto = parse_json(raw).unwrap();
         assert_eq!(1, dto.questions.len());
@@ -2493,7 +2476,7 @@ mod tests {
     }
 
     #[test]
-    fn section_pass_and_sitting_count_follow_the_verdicts() {
+    fn topic_pass_and_sitting_count_follow_the_verdicts() {
         use Verdict::*;
         type Row = (
             &'static str,
@@ -2513,7 +2496,7 @@ mod tests {
                 true,
             ),
             (
-                "a PARTIAL fails its section at 1.0",
+                "a PARTIAL fails its topic at 1.0",
                 &[(0, Pass), (0, Partial), (1, Pass)],
                 1.0,
                 [false, true],
@@ -2521,7 +2504,7 @@ mod tests {
                 false,
             ),
             (
-                "a PARTIAL passes its section at 0.5",
+                "a PARTIAL passes its topic at 0.5",
                 &[(0, Pass), (0, Partial), (1, Pass)],
                 0.5,
                 [true, true],
@@ -2529,7 +2512,7 @@ mod tests {
                 true,
             ),
             (
-                "a fail in one section leaves the other passed",
+                "a fail in one topic leaves the other passed",
                 &[(0, Fail), (1, Pass)],
                 1.0,
                 [false, true],
@@ -2537,7 +2520,7 @@ mod tests {
                 false,
             ),
             (
-                "an unexamined section is not scored",
+                "an unexamined topic is not scored",
                 &[(1, Pass)],
                 1.0,
                 [false, true],
@@ -2548,8 +2531,8 @@ mod tests {
         for (label, graded, threshold, passes, count, _) in rows {
             let questions: Vec<ExamQuestion> = graded
                 .iter()
-                .map(|(section, _)| ExamQuestion {
-                    section: *section,
+                .map(|(topic, _)| ExamQuestion {
+                    topic: *topic,
                     ..Default::default()
                 })
                 .collect();
@@ -2562,8 +2545,8 @@ mod tests {
                 })
                 .collect();
             let result = ExamResult::scored(&questions, grades, threshold);
-            let sections: Vec<bool> = result.sections.iter().map(|s| s.passed).collect();
-            assert_eq!(passes.to_vec(), sections, "{label}: section passes");
+            let topics: Vec<bool> = result.topics.iter().map(|s| s.passed).collect();
+            assert_eq!(passes.to_vec(), topics, "{label}: topic passes");
             let total = result.count();
             assert_eq!(
                 count,
@@ -2581,7 +2564,7 @@ mod tests {
     #[test]
     fn gaps_collects_missed_from_non_passes_deduped() {
         let result = ExamResult {
-            sections: Vec::new(),
+            topics: Vec::new(),
             grades: vec![
                 AnswerGrade {
                     verdict: Verdict::Pass,
@@ -2652,7 +2635,7 @@ mod tests {
         let prompt = questions_prompt(
             &sources,
             Some(dir.path()),
-            &one_section(),
+            &one_topic(),
             &models_for(1),
             &ExamConfig::default(),
         )
@@ -2733,7 +2716,7 @@ mod tests {
 
         let prompt = dir.path().join("prompt.txt");
         let args = dir.path().join("args.txt");
-        std::fs::write(dir.path().join("reply.json"), ONE_SECTION_REPLY).unwrap();
+        std::fs::write(dir.path().join("reply.json"), ONE_TOPIC_REPLY).unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),
             &format!(
@@ -2929,7 +2912,7 @@ mod tests {
         let deck = crate::deck::Deck::load(&path).unwrap();
         let resumed = Sitting::from_prepared(
             &deck,
-            exam_sections(&deck),
+            exam_topics(&deck),
             vec![ExamQuestion::default(); 3],
             vec!["one".to_string(), String::new(), String::new()],
             crate::exam_ideas::IdeasDocument::default(),
@@ -2957,7 +2940,7 @@ mod tests {
 
         let sitting = Sitting::from_prepared(
             &deck,
-            exam_sections(&deck),
+            exam_topics(&deck),
             vec![ExamQuestion::default()],
             vec![String::new()],
             crate::exam_ideas::IdeasDocument::default(),
@@ -2986,15 +2969,15 @@ mod tests {
         let cli = crate::testutil::fake_replies(
             dir.path(),
             &[
-                "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}]}",
-                "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\"idea\":2,\
-                 \"prompt\":\"Q1\",\"points\":[\"p\"]},{\"section\":1,\"shape\":\"fix\",\
+                "{\"topics\":[{\"topic\":1,\"models\":[\"m\",\"n\"]}]}",
+                "{\"questions\":[{\"topic\":1,\"shape\":\"instance\",\"idea\":2,\
+                 \"prompt\":\"Q1\",\"points\":[\"p\"]},{\"topic\":1,\"shape\":\"fix\",\
                  \"idea\":1,\"prompt\":\"Q2\",\"points\":[\"p\"]}]}",
             ],
         );
         let (rx, _job) = spawn_prepare(
             &deck,
-            exam_sections(&deck),
+            exam_topics(&deck),
             ExamConfig::default(),
             ask_config(&cli),
         );
@@ -3026,7 +3009,7 @@ mod tests {
         assert_eq!(prepared.material, ideas.material, "step 1: same material");
         assert_eq!(
             2,
-            ideas.section("Moves").unwrap().ideas.len(),
+            ideas.topic("Moves").unwrap().ideas.len(),
             "step 1: ideas kept"
         );
 
@@ -3045,17 +3028,17 @@ mod tests {
         )
         .unwrap();
         let renamed = open_for_exam(&path).unwrap();
-        let (sections, questions, answers) = prepared.against(&renamed);
+        let (topics, questions, answers) = prepared.against(&renamed);
         assert!(
-            sections.is_empty() && questions.is_empty() && answers.is_empty(),
+            topics.is_empty() && questions.is_empty() && answers.is_empty(),
             "step 3: a renamed heading drops its questions"
         );
-        let (sections, questions, _) = prepared.against(&deck);
+        let (topics, questions, _) = prepared.against(&deck);
         assert_eq!(
             (1, vec![0, 0]),
             (
-                sections.len(),
-                questions.iter().map(|q| q.section).collect::<Vec<_>>()
+                topics.len(),
+                questions.iter().map(|q| q.topic).collect::<Vec<_>>()
             ),
             "step 3: an unchanged heading keeps them, re-indexed"
         );
@@ -3080,8 +3063,8 @@ mod tests {
             &format!(
                 "input=$(cat)\n\
                  case \"$input\" in\n\
-                 *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}]}}' ;;\n\
-                 *'\"questions\"'*) mkdir -p {}; printf '%s' '{{\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}}]}}' ;;\n\
+                 *'\"models\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}]}}' ;;\n\
+                 *'\"questions\"'*) mkdir -p {}; printf '%s' '{{\"questions\":[{{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}}]}}' ;;\n\
                  esac",
                 ideas_path.display()
             ),
@@ -3089,7 +3072,7 @@ mod tests {
 
         let (rx, _job) = spawn_prepare(
             &deck,
-            exam_sections(&deck),
+            exam_topics(&deck),
             ExamConfig::default(),
             ask_config(&cli),
         );
@@ -3106,14 +3089,14 @@ mod tests {
     }
 
     #[test]
-    fn grading_records_each_asked_idea_under_its_section_heading() {
+    fn grading_records_each_asked_idea_under_its_topic_heading() {
         let mut sitting = test_sitting(Strictness::Balanced);
-        sitting.sections = vec![ExamSection {
+        sitting.topics = vec![ExamTopic {
             label: "H".to_string(),
             ..Default::default()
         }];
         let mut ideas = crate::exam_ideas::IdeasDocument::new("m".to_string());
-        ideas.set_section("H", vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        ideas.set_topic("H", vec!["a".to_string(), "b".to_string(), "c".to_string()]);
         sitting.ideas = Some(ideas);
         sitting.questions = vec![
             ExamQuestion {
@@ -3132,9 +3115,9 @@ mod tests {
         };
         sitting.record_ideas(&ExamResult {
             grades: vec![grade(Verdict::Pass), grade(Verdict::Partial)],
-            sections: Vec::new(),
+            topics: Vec::new(),
         });
-        let marked: Vec<_> = sitting.ideas().unwrap().sections[0]
+        let marked: Vec<_> = sitting.ideas().unwrap().topics[0]
             .ideas
             .iter()
             .map(|i| (i.last_asked_ms.is_some(), i.last_passed))
@@ -3168,8 +3151,8 @@ mod tests {
             error: None,
             pending_since: None,
             remediated_count: None,
-            sections: Vec::new(),
-            deck_sections: Vec::new(),
+            topics: Vec::new(),
+            deck_topics: Vec::new(),
             unlocked: false,
             ideas: None,
             locked: vec![false],
@@ -3263,11 +3246,11 @@ mod tests {
     #[test]
     fn generation_lists_models_then_questions_and_retries_each_call_once() {
         let _lock = exec_lock();
-        let models = "{\"sections\":[{\"section\":1,\"models\":[\"m\",\"n\"]}]}".to_string();
-        let no_models = "{\"sections\":[]}".to_string();
-        let q = |section: usize, idea: usize, prompt: &str, points: &str| {
+        let models = "{\"topics\":[{\"topic\":1,\"models\":[\"m\",\"n\"]}]}".to_string();
+        let no_models = "{\"topics\":[]}".to_string();
+        let q = |topic: usize, idea: usize, prompt: &str, points: &str| {
             format!(
-                "{{\"section\":{section},\"shape\":\"fix\",\"idea\":{idea},\
+                "{{\"topic\":{topic},\"shape\":\"fix\",\"idea\":{idea},\
                  \"prompt\":\"{prompt}\",\"points\":[{points}]}}"
             )
         };
@@ -3297,29 +3280,29 @@ mod tests {
                 "no model listed, twice",
                 vec![
                     no_models.clone(),
-                    "{\"sections\":[{\"section\":1,\"models\":[\" \"]}]}".to_string(),
+                    "{\"topics\":[{\"topic\":1,\"models\":[\" \"]}]}".to_string(),
                 ],
                 2,
-                Some("the listed models were rejected twice: section 1 lists no mental model"),
+                Some("the listed models were rejected twice: topic 1 lists no mental model"),
             ),
             (
-                "models for a section that does not exist, twice",
+                "models for a topic that does not exist, twice",
                 vec![
-                    "{\"sections\":[{\"section\":2,\"models\":[\"m\"]}]}".to_string(),
-                    "{\"sections\":[{\"section\":0,\"models\":[\"m\"]}]}".to_string(),
+                    "{\"topics\":[{\"topic\":2,\"models\":[\"m\"]}]}".to_string(),
+                    "{\"topics\":[{\"topic\":0,\"models\":[\"m\"]}]}".to_string(),
                 ],
                 2,
-                Some("lists models for section 0"),
+                Some("lists models for topic 0"),
             ),
             (
-                "a question outside every section, twice",
+                "a question outside every topic, twice",
                 vec![
                     models.clone(),
                     questions(&[q(2, 1, "Q", "\"p\"")]),
                     questions(&[q(0, 1, "Q", "\"p\"")]),
                 ],
                 3,
-                Some("the generated questions were rejected twice: a question names section 0"),
+                Some("the generated questions were rejected twice: a question names topic 0"),
             ),
             (
                 "an unlisted model, twice",
@@ -3329,7 +3312,7 @@ mod tests {
                     questions(&[q(1, 9, "Q", "\"p\"")]),
                 ],
                 3,
-                Some("names idea 9, but that section lists 2"),
+                Some("names idea 9, but that topic lists 2"),
             ),
             (
                 "the same idea twice, twice",
@@ -3339,7 +3322,7 @@ mod tests {
                     questions(&[q(1, 1, "Q1", "\"p\""), q(1, 1, "Q2", "\"p\"")]),
                 ],
                 3,
-                Some("section 1 asks idea 1 more than once"),
+                Some("topic 1 asks idea 1 more than once"),
             ),
             (
                 "an uncovered model, twice",
@@ -3405,9 +3388,9 @@ mod tests {
         let cli = crate::testutil::fake_replies(
             dir.path(),
             &[
-                "{\"sections\":[]}",
-                "{\"sections\":[{\"section\":1,\"models\":[\"moves transfer ownership\"]}]}",
-                "{\"questions\":[{\"section\":1,\"shape\":\"instance\",\
+                "{\"topics\":[]}",
+                "{\"topics\":[{\"topic\":1,\"models\":[\"moves transfer ownership\"]}]}",
+                "{\"questions\":[{\"topic\":1,\"shape\":\"instance\",\
                  \"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
             ],
         );
@@ -3421,7 +3404,7 @@ mod tests {
             read(1)
         );
         assert!(
-            read(2).contains("Your previous answer was rejected: section 1 lists no mental model"),
+            read(2).contains("Your previous answer was rejected: topic 1 lists no mental model"),
             "call 2 retries the listing with the reason: {}",
             read(2)
         );
@@ -3518,7 +3501,7 @@ mod tests {
     fn generate_questions_end_to_end() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(dir.path(), ONE_SECTION_REPLY);
+        let cli = fake_reply(dir.path(), ONE_TOPIC_REPLY);
         let deck = deck_with_exam_and_card(&["https://x"]);
         let qs = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
         assert_eq!(1, qs.len());
@@ -3526,8 +3509,8 @@ mod tests {
         assert_eq!(vec!["avoids double free"], qs[0].points);
         assert_eq!(
             (0, Shape::Instance, "m"),
-            (qs[0].section, qs[0].shape, qs[0].mental_model.as_str()),
-            "the 1-based section becomes an index; the shape and the idea's text are kept"
+            (qs[0].topic, qs[0].shape, qs[0].mental_model.as_str()),
+            "the 1-based topic becomes an index; the shape and the idea's text are kept"
         );
     }
 
@@ -3641,8 +3624,8 @@ mod tests {
             "input=$(cat)\n\
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
-             *'\"models\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\",\"n\"]}}]}}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"sections\":[{{\"section\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"section\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"section\":1,\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
+             *'\"models\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\",\"n\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"topic\":1,\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
              *) printf '## Why does X?\\npoint one\\n' ;;\n\
              esac"
         );
@@ -3710,7 +3693,7 @@ mod tests {
                 .get("card-qc")
                 .and_then(|c| c.exam_result)
                 .map(|r| r.pass),
-            "a failed section is recorded on its card"
+            "a failed topic is recorded on its card"
         );
         assert!(!s.unlocked());
 
@@ -3791,7 +3774,7 @@ mod tests {
         assert!(s.result().unwrap().count().passed);
         assert!(
             store.deck_passed("deck-d1"),
-            "every section passed: passed_at_ms"
+            "every topic passed: passed_at_ms"
         );
         assert!(
             store.deck_mastered("deck-d1"),
@@ -3804,7 +3787,7 @@ mod tests {
                 .get("card-qc")
                 .and_then(|c| c.exam_result)
                 .map(|r| r.pass),
-            "the section's verdict is on its card"
+            "the topic's verdict is on its card"
         );
         assert_eq!(
             Some((2, 0, 2)),
@@ -4047,7 +4030,7 @@ mod windows_tests {
             workspace: Vec::new(),
         };
 
-        let section = ExamSection {
+        let topic = ExamTopic {
             label: "Moves".to_string(),
             context: vec!["Moves".to_string()],
             ..Default::default()
@@ -4055,7 +4038,7 @@ mod windows_tests {
         let prompt = questions_prompt(
             &sources,
             Some(dir.path()),
-            &[section],
+            &[topic],
             &[vec!["m".to_string()]],
             &ExamConfig::default(),
         )

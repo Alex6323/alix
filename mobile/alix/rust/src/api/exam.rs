@@ -4,14 +4,14 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ExamSectionOutcome {
+pub struct ExamTopicOutcome {
     pub cards: Vec<String>,
     pub pass: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamOutcome {
-    pub sections: Vec<ExamSectionOutcome>,
+    pub topics: Vec<ExamTopicOutcome>,
     pub full: bool,
     pub pass: u32,
     pub partial: u32,
@@ -186,12 +186,12 @@ pub fn apply_exam_result(
     let deck = alix::deck::Deck::load(&path)?;
     let mut store = open_store(&path, &root_dir, device)?;
     let record = alix::store::SittingRecord {
-        sections: outcome
-            .sections
+        topics: outcome
+            .topics
             .into_iter()
-            .map(|section| alix::store::SectionRecord {
-                card_ids: section.cards,
-                pass: section.pass,
+            .map(|topic| alix::store::TopicRecord {
+                card_ids: topic.cards,
+                pass: topic.pass,
             })
             .collect(),
         full: outcome.full,
@@ -242,7 +242,7 @@ mod tests {
 
     const NOW: u64 = 1_700_000_000_000;
 
-    fn two_section_deck(root: &Path) -> PathBuf {
+    fn two_topic_deck(root: &Path) -> PathBuf {
         let path = root.join("d.md");
         std::fs::write(
             &path,
@@ -262,7 +262,7 @@ mod tests {
     fn exam_ideas_round_trip_in_the_phone_store() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_section_deck(root);
+        let path = two_topic_deck(root);
         let deck_path = path.to_string_lossy().into_owned();
         let root_dir = root.to_string_lossy().into_owned();
 
@@ -271,7 +271,7 @@ mod tests {
             exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
         );
 
-        let first = r#"{"version":1,"material":"xxh64-first","sections":[]}"#;
+        let first = r#"{"version":1,"material":"xxh64-first","topics":[]}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), first.to_string()).unwrap();
         assert_eq!(
             Some(
@@ -285,7 +285,7 @@ mod tests {
         assert!(root.join(".alix/exam/deck-d.json").is_file());
         assert!(!root.join(".alix/exam/deck-d.json.tmp").exists());
 
-        let second = r#"{"version":1,"material":"xxh64-second","sections":[]}"#;
+        let second = r#"{"version":1,"material":"xxh64-second","topics":[]}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), second.to_string()).unwrap();
         assert_eq!(
             Some(
@@ -310,7 +310,7 @@ mod tests {
     fn phone_answers_resume_only_the_exact_question_set() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_section_deck(root);
+        let path = two_topic_deck(root);
         let deck_path = path.to_string_lossy().into_owned();
         let root_dir = root.to_string_lossy().into_owned();
         let questions = vec!["one?".to_string(), "two?".to_string()];
@@ -362,7 +362,7 @@ mod tests {
     fn phone_answers_reject_an_unknown_field() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_section_deck(root);
+        let path = two_topic_deck(root);
         let prepared = root.join(".alix/exam/deck-d.prepared.json");
         std::fs::create_dir_all(prepared.parent().unwrap()).unwrap();
         std::fs::write(
@@ -389,9 +389,9 @@ mod tests {
     fn apply_exam_result_records_like_the_desktop() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_section_deck(root);
+        let path = two_topic_deck(root);
         let deck_path = path.to_string_lossy().into_owned();
-        let section = |id: &str, pass| ExamSectionOutcome {
+        let topic = |id: &str, pass| ExamTopicOutcome {
             cards: vec![id.to_string()],
             pass,
         };
@@ -400,7 +400,7 @@ mod tests {
             deck_path.clone(),
             root_arg(root),
             ExamOutcome {
-                sections: vec![section("card-a1", true), section("card-b1", false)],
+                topics: vec![topic("card-a1", true), topic("card-b1", false)],
                 full: true,
                 pass: 1,
                 partial: 0,
@@ -413,7 +413,7 @@ mod tests {
         let store = reopened(&path, root);
         assert!(
             !applied.unlocked,
-            "full sitting with a failed section: no unlock"
+            "full sitting with a failed topic: no unlock"
         );
         assert_eq!(
             None, applied.standing,
@@ -435,21 +435,21 @@ mod tests {
                 .get("card-b1")
                 .and_then(|c| c.exam_result)
                 .map(|r| r.pass),
-            "each examined card carries its section's verdict"
+            "each examined card carries its topic's verdict"
         );
         assert_eq!(
             Some("card-b1".to_string()),
             exam_start_cards(deck_path.clone(), root_arg(root), true)
                 .unwrap()
                 .and_then(|ids| ids.into_iter().next()),
-            "the filter names only the section that needs work"
+            "the filter names only the topic that needs work"
         );
 
         let applied = apply_exam_result(
             deck_path.clone(),
             root_arg(root),
             ExamOutcome {
-                sections: vec![section("card-b1", true)],
+                topics: vec![topic("card-b1", true)],
                 full: false,
                 pass: 1,
                 partial: 0,
@@ -462,7 +462,7 @@ mod tests {
         let store = reopened(&path, root);
         assert!(
             applied.unlocked,
-            "a filtered sitting passing the last section unlocks"
+            "a filtered sitting passing the last topic unlocks"
         );
         assert!(
             applied
@@ -489,7 +489,7 @@ mod tests {
     fn exam_start_stamps_new_cards_and_a_full_sitting_names_no_cards() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_section_deck(root);
+        let path = two_topic_deck(root);
         let text = std::fs::read_to_string(&path).unwrap();
         std::fs::write(&path, format!("{text}\n## b2\nnew\n")).unwrap();
 
@@ -508,7 +508,7 @@ mod tests {
     fn apply_exam_remediation_creates_personal_cards_once() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_section_deck(root);
+        let path = two_topic_deck(root);
         let deck_path = path.to_string_lossy().into_owned();
         let remediation = "## a1\nx\n\n## why b?\nbecause\n".to_string();
 

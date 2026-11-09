@@ -1168,14 +1168,14 @@ mod tests {
         );
         let deck = Deck::load(root.join("d.md")).unwrap();
         let mut store = crate::state::open_store(&root.join("d.md"), root).unwrap();
-        let section = |id: &str, pass| crate::store::SectionRecord {
+        let topic = |id: &str, pass| crate::store::TopicRecord {
             card_ids: vec![id.to_string()],
             pass,
         };
         store.record_exam_result(
             &deck,
             &crate::store::SittingRecord {
-                sections: vec![section("card-a1", true), section("card-b1", false)],
+                topics: vec![topic("card-a1", true), topic("card-b1", false)],
                 full: true,
                 pass: 1,
                 partial: 1,
@@ -1188,7 +1188,7 @@ mod tests {
         let rows = list_root(root, &ReviewConfig::default(), T0);
         let row = rows.iter().find(|r| r.title == "d").unwrap();
 
-        assert!(!row.passed, "one section still needs work");
+        assert!(!row.passed, "one topic still needs work");
         assert_eq!(
             Some("last (1 Jan) 1.5 / 2"),
             row.exam_badge.as_deref(),

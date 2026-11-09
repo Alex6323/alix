@@ -84,7 +84,7 @@ cloze card and types it regardless.
 It also warns when the question still shows a span's hidden text outside
 its blank: a `##` line repeating the hidden words above the blanked
 sentence, another block of the card, a second occurrence the blank does not
-cover, or the card's section heading and prose. The card would show its
+cover, or the card's topic heading and prose. The card would show its
 answer before the reveal. The check ignores case and runs of whitespace and
 matches whole words only, so a hidden `ox` does not fire on `box`. An image
 blank's label is not displayed text and is not checked.

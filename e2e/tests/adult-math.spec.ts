@@ -35,7 +35,7 @@ async function openQuestionFitBrowse(page: any, request: any, cards: any[]) {
   await expect(page.locator(".region.q")).toBeVisible();
 }
 
-test("adult section blocks render paired bare math and keep unmatched openers literal", async ({ page, request }) => {
+test("adult topic blocks render paired bare math and keep unmatched openers literal", async ({ page, request }) => {
   const browseResponse = await request.post("/api/browse", {
     data: { deck: "animals/math.md" },
   });
@@ -48,7 +48,7 @@ test("adult section blocks render paired bare math and keep unmatched openers li
   expect(mathUnit, "the fixture must provide one reusable display-math unit").toBeTruthy();
 
   await page.evaluate(async (unit) => {
-    const { appendSectionContext, el } = await import("/review.js");
+    const { appendTopicContext, el } = await import("/review.js");
     const audit = el("div", "context-block-audit");
     for (const [name, lines, units] of [
       ["bare", ["Heading", "$$", unit.text, "$$"], [unit]],
@@ -56,7 +56,7 @@ test("adult section blocks render paired bare math and keep unmatched openers li
       ["unclosed", ["Heading", "$$", unit.text], []],
     ]) {
       const surface = el("section", `surface-${name}`);
-      appendSectionContext(surface, lines, null, units);
+      appendTopicContext(surface, lines, null, units);
       audit.appendChild(surface);
     }
     document.getElementById("stage")!.replaceChildren(audit);

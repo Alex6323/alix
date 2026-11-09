@@ -14,7 +14,7 @@ Welcome to Alix. This is a walk: you read a deck one card at a time, think
 about each question, reveal the answer, and say how it went. Nothing is
 scheduled yet; a walk is how you meet a deck before you study it. The nine
 cards below each teach one thing about Alix by having you do it, and the walk
-picks up where you left off. This text is the deck's section, the background
+picks up where you left off. This text is the deck's topic, the background
 its cards share; you can bring it back on any card.
 
 ## Reveal this answer, then end the card with one of the three buttons under it. What do they mean?
@@ -25,10 +25,10 @@ Missed it, Partly, Got it: how recalling went, in your own honest judgement.
 > grades schedule the card instead, sooner after a miss, later after a hit.
 <!-- id: card-2vfndxf2jmv6y3140b90pb4tcp -->
 
-## This deck has a section: the text that framed it before the first card. Open it again with the Context chip, then reveal.
-The Context chip opens the card's section while the question is still on screen.
+## This deck has a topic: the text that framed it before the first card. Open it again with the Context chip, then reveal.
+The Context chip opens the card's topic while the question is still on screen.
 > [!NOTE]
-> A section opens by itself the first time a walk reaches one of its cards.
+> A topic opens by itself the first time a walk reaches one of its cards.
 > After that it waits behind the chip (or the `c` key on the web) until the
 > answer shows. Authors put the background there, so the question itself
 > stays short.

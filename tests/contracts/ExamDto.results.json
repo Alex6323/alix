@@ -67,8 +67,8 @@
           ]
         }
       ],
-      "section": 0,
       "shape": "instance",
+      "topic": 0,
       "verdict": "PASS"
     }
   ],
@@ -78,7 +78,10 @@
   "question": null,
   "question_units": null,
   "remediated_count": null,
-  "sections": [
+  "standing": "passed (2 Nov)",
+  "strictness": "balanced",
+  "thinking": false,
+  "topics": [
     {
       "cards": [
         "card-0123456789abcdefghjkmnpqrs"
@@ -92,9 +95,6 @@
       }
     }
   ],
-  "standing": "passed (2 Nov)",
-  "strictness": "balanced",
-  "thinking": false,
   "total": 1,
   "unlocks": [
     "next.md"

@@ -5,19 +5,19 @@ appear: a *deck* key is a line in the frontmatter (the `---`-fenced YAML block
 at the top of the file), a *card* key is a `<!-- key: value -->` comment at the
 card's end (comment machinery trails its card, the id line last), and *deck · card* keys work either way, with the card one
 taking precedence. The heading rows are structure rather than keys: `#` scopes a
-section, the rest scope a card. Each links to the chapter that explains it in
+topic, the rest scope a card. Each links to the chapter that explains it in
 full.
 
 | Token | Scope | What it does |
 | --- | --- | --- |
 | `##` front | card | Starts a card at column 0; the lines below are the answer. [→ ch 3](03-the-deck-format.md) |
-| `#` heading | section | Opens a section: its text and the prose under it are the shared context of every card below, shown on demand (`c` in the web app), never while you answer. Takes no directives and no card ID. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
-| `###` to `######` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Six hashes is the deepest, since a seventh is prose. [→ ch 3](03-the-deck-format.md#sections-and-sub-cards) |
+| `#` heading | topic | Opens a topic: its text and the prose under it are the shared context of every card below, shown on demand (`c` in the web app), never while you answer. Takes no directives and no card ID. [→ ch 3](03-the-deck-format.md#topics-and-sub-cards) |
+| `###` to `######` front | card | A sub-card of the card one level shallower, withheld from review until that parent graduates. Six hashes is the deepest, since a seventh is prose. [→ ch 3](03-the-deck-format.md#topics-and-sub-cards) |
 | `>` block | card | A blockquote: a note shown after you answer when its first line is an alert badge (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), otherwise a quotation that belongs to the answer and reveals with it. [→ ch 3](03-the-deck-format.md) |
 | `<!-- -->` | anywhere | A deck's comments are alix machinery, not editorial prose. A comment that is not recognized (a directive, a locator, an id, or an invocation) is ignored and draws a doctor finding, whatever its length. Prose about a deck belongs in `description:`, its origin in `exam:`. |
 | `choices: single` / `choices: multiple` | card | Invocation comment on the line below a task list: maps it to a [choice card](03-the-deck-format.md#choice-cards-task-lists), one correct answer or select-all-that-apply. A bare task list stays a literal checklist. |
 | `cards` | card | Invocation comment on the line below a pipe table: maps it to a [card table](03-the-deck-format.md#card-tables). A bare table renders literally. |
-| `plain` | card · section | On the line below a task list, a table, or a thematic break of any spelling: keeps that one shape literal (for a break: the divider and thematic-break grammar, in every position, including where the break would otherwise be an error). |
+| `plain` | card · topic | On the line below a task list, a table, or a thematic break of any spelling: keeps that one shape literal (for a break: the divider and thematic-break grammar, in every position, including where the break would otherwise be an error). |
 | `choices` | deck | Deck-wide default task-list mapping: `single` or `multiple`. A per-card invocation overrides it. [→ ch 3](03-the-deck-format.md#choice-cards-task-lists) |
 | `format-version` | deck | Reserved. The deck **format's** version, not the deck's own. Absence means `1`, so alix never writes it; any number other than `1` is refused rather than guessed at. [→ ch 3](03-the-deck-format.md) |
 | `id` | deck | The frontmatter deck ID (`deck-<token>`) marks an initialized deck and authorizes maintenance of missing card IDs. Its `deck-` prefix is what tells alix's decks apart. [→ ch 3](03-the-deck-format.md) |

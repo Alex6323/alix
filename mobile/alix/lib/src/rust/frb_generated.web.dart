@@ -239,7 +239,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ExamOutcome dco_decode_exam_outcome(dynamic raw);
 
   @protected
-  ExamSectionOutcome dco_decode_exam_section_outcome(dynamic raw);
+  ExamTopicOutcome dco_decode_exam_topic_outcome(dynamic raw);
 
   @protected
   ExcerptLine dco_decode_excerpt_line(dynamic raw);
@@ -296,7 +296,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw);
 
   @protected
-  List<ExamSectionOutcome> dco_decode_list_exam_section_outcome(dynamic raw);
+  List<ExamTopicOutcome> dco_decode_list_exam_topic_outcome(dynamic raw);
 
   @protected
   List<ExcerptLine> dco_decode_list_excerpt_line(dynamic raw);
@@ -775,9 +775,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer);
 
   @protected
-  ExamSectionOutcome sse_decode_exam_section_outcome(
-    SseDeserializer deserializer,
-  );
+  ExamTopicOutcome sse_decode_exam_topic_outcome(SseDeserializer deserializer);
 
   @protected
   ExcerptLine sse_decode_excerpt_line(SseDeserializer deserializer);
@@ -838,7 +836,7 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<DeckStrip> sse_decode_list_deck_strip(SseDeserializer deserializer);
 
   @protected
-  List<ExamSectionOutcome> sse_decode_list_exam_section_outcome(
+  List<ExamTopicOutcome> sse_decode_list_exam_topic_outcome(
     SseDeserializer deserializer,
   );
 
@@ -1424,8 +1422,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer);
 
   @protected
-  void sse_encode_exam_section_outcome(
-    ExamSectionOutcome self,
+  void sse_encode_exam_topic_outcome(
+    ExamTopicOutcome self,
     SseSerializer serializer,
   );
 
@@ -1505,8 +1503,8 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  void sse_encode_list_exam_section_outcome(
-    List<ExamSectionOutcome> self,
+  void sse_encode_list_exam_topic_outcome(
+    List<ExamTopicOutcome> self,
     SseSerializer serializer,
   );
 

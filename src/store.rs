@@ -244,7 +244,7 @@ pub struct FullExamResult {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SittingRecord {
-    pub sections: Vec<SectionRecord>,
+    pub topics: Vec<TopicRecord>,
     pub full: bool,
     pub pass: u32,
     pub partial: u32,
@@ -252,7 +252,7 @@ pub struct SittingRecord {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SectionRecord {
+pub struct TopicRecord {
     pub card_ids: Vec<String>,
     pub pass: bool,
 }
@@ -1270,24 +1270,24 @@ impl Store {
 
     pub fn record_exam_result(&mut self, deck: &Deck, record: &SittingRecord, now_ms: u64) -> bool {
         let deck_id = deck.deck_token.clone().unwrap_or_default();
-        let sections = crate::exam_status::exam_sections(deck);
-        self.record_sitting(&deck_id, &sections, record, now_ms)
+        let topics = crate::exam_status::exam_topics(deck);
+        self.record_sitting(&deck_id, &topics, record, now_ms)
     }
 
     /// Returns whether this sitting set the deck's `passed_at_ms`.
     pub fn record_sitting(
         &mut self,
         deck_id: &str,
-        deck_sections: &[crate::exam_status::ExamSection],
+        deck_topics: &[crate::exam_status::ExamTopic],
         record: &SittingRecord,
         now_ms: u64,
     ) -> bool {
-        for section in &record.sections {
+        for topic in &record.topics {
             let result = ExamRecord {
                 at_ms: now_ms,
-                pass: section.pass,
+                pass: topic.pass,
             };
-            for id in &section.card_ids {
+            for id in &topic.card_ids {
                 self.get_or_insert(id).exam_result = Some(result);
             }
         }
@@ -1303,7 +1303,7 @@ impl Store {
             });
         }
         let newly_passed = !self.deck_passed(deck_id)
-            && crate::exam_status::status_of(deck_sections, self).all_passed();
+            && crate::exam_status::status_of(deck_topics, self).all_passed();
         if newly_passed {
             self.set_deck_passed(deck_id, now_ms);
         }
@@ -1319,16 +1319,16 @@ impl Store {
 
     #[cfg(test)]
     pub(crate) fn record_full_marks(&mut self, deck: &Deck, now_ms: u64) {
-        let sections: Vec<SectionRecord> = crate::exam_status::exam_sections(deck)
+        let topics: Vec<TopicRecord> = crate::exam_status::exam_topics(deck)
             .into_iter()
-            .map(|section| SectionRecord {
-                card_ids: section.card_ids,
+            .map(|topic| TopicRecord {
+                card_ids: topic.card_ids,
                 pass: true,
             })
             .collect();
-        let total = sections.len() as u32;
+        let total = topics.len() as u32;
         let record = SittingRecord {
-            sections,
+            topics,
             full: true,
             pass: total,
             partial: 0,
@@ -1706,7 +1706,7 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
                         blocks.push(vec![raw]);
                         open = true;
                     } else {
-                        // A section owns no card: its heading and prose
+                        // A topic owns no card: its heading and prose
                         // belong to no block, so nothing may append to the
                         // card above it.
                         open = false;
@@ -3203,7 +3203,7 @@ mod tests {
     }
 
     /// Spec law 2, the block-splitter's row: a deck holding every
-    /// structural heading splits into one block per CARD, with sections and
+    /// structural heading splits into one block per CARD, with topics and
     /// their prose owned by no card. A splitter that only knows `## ` would
     /// swallow a sub-card into its parent and reset the wrong progress.
     #[test]
@@ -3217,7 +3217,7 @@ mod tests {
         assert_eq!(vec!["## a", "### b", "#### c", "## d"], fronts);
         assert!(
             !blocks.iter().any(|b| b.contains("prose")),
-            "a section's prose belongs to no card: {blocks:?}"
+            "a topic's prose belongs to no card: {blocks:?}"
         );
     }
 
@@ -3852,19 +3852,19 @@ mod tests {
         assert!(store.progress("card-a").is_none());
     }
 
-    const TWO_SECTION_DECK: &str = "---\nformat-version: 1\nid: deck-rec\nexam: source.txt\n---\n\
+    const TWO_TOPIC_DECK: &str = "---\nformat-version: 1\nid: deck-rec\nexam: source.txt\n---\n\
         # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n<!-- id: card-a2 -->\n\n\
         # B\n\n## b1\nx\n<!-- id: card-b1 -->\n";
 
     fn record(deck: &Deck, examined: &[Option<bool>], counts: (u32, u32, u32)) -> SittingRecord {
-        let sections = crate::exam_status::exam_sections(deck);
+        let topics = crate::exam_status::exam_topics(deck);
         SittingRecord {
-            sections: sections
+            topics: topics
                 .iter()
                 .zip(examined)
-                .filter_map(|(section, pass)| {
-                    pass.map(|pass| SectionRecord {
-                        card_ids: section.card_ids.clone(),
+                .filter_map(|(topic, pass)| {
+                    pass.map(|pass| TopicRecord {
+                        card_ids: topic.card_ids.clone(),
                         pass,
                     })
                 })
@@ -3908,7 +3908,7 @@ mod tests {
                 newly_passed: [true, false],
             },
             Row {
-                label: "filtered pass completing every section",
+                label: "filtered pass completing every topic",
                 sittings: &[
                     (&[Some(true), Some(false)], (2, 0, 3)),
                     (&[None, Some(true)], (1, 0, 1)),
@@ -3956,7 +3956,7 @@ mod tests {
         for row in rows {
             let dir = tempfile::tempdir().unwrap();
             let deck_path = dir.path().join("rec.md");
-            std::fs::write(&deck_path, TWO_SECTION_DECK).unwrap();
+            std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
             let deck = Deck::load(&deck_path).unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
             let mut newly = [false; 2];
@@ -3998,7 +3998,7 @@ mod tests {
     fn clearing_a_decks_exam_keeps_drilling_and_the_rest_of_its_progress() {
         let dir = tempfile::tempdir().unwrap();
         let deck_path = dir.path().join("rec.md");
-        std::fs::write(&deck_path, TWO_SECTION_DECK).unwrap();
+        std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
         let deck = Deck::load(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.record_exam_result(

@@ -127,7 +127,7 @@ Future<void> pumpRow(
           onIntroduce: () {},
           onGrade: (_) {},
           onOpenTutor: (_) {},
-          onOpenSection: (_) {},
+          onOpenTopic: (_) {},
         ),
       ),
     ),

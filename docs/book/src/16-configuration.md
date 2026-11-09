@@ -26,7 +26,7 @@ empty list (`make_note = []`) leaves an action without a key; its button still
 works. The rebindable `[keys.review]` actions are `failed`, `partly`, `passed`,
 `reveal`, `submit` (default `enter`, submits a typed answer, a line, or a multiple-choice selection; an answer typed into several fields submits on Shift+Enter instead, and Enter moves to the next field), `skip`
 (no default key), `remove` (no default key, deletes the card from the deck file),
-`ask` (default `a`), `context` (default `c`, open the card's section drawer), `hint`
+`ask` (default `a`), `context` (default `c`, open the card's topic drawer), `hint`
 (default `i`, show the card's next hint while you answer), `continue`
 (default `space`/`enter`, moves on from an answered card or after a pick in a walk),
 `restart` (default `r`), `quit` (default `esc`, leaves the session, the walk, or
