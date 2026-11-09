@@ -286,8 +286,8 @@ impl Transfer {
             .with_context(|| format!("cannot write {}", self.destination_progress.display()))
     }
 
-    /// Copied on move too: `verify_source_unchanged` still reads the source
-    /// tree after this, and the sidecar removal deletes the original.
+    /// Copied even on move: the source folder must stay whole until the move
+    /// removes it.
     fn carry_roots(&self) -> Result<()> {
         let roots = self
             .source_files

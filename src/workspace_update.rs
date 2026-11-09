@@ -1202,8 +1202,7 @@ fn publish_assets(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Res
 
 /// Copies are content-addressed, so an existing one is verified equal and
 /// never rewritten; the manifest is replaced atomically; the live roots file
-/// is this machine's and stays untouched. `preflight_apply` has verified the
-/// staged folder.
+/// is this machine's and stays untouched.
 fn publish_sources(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Result<()> {
     for update in &manifest.decks {
         let source = WorkspaceFiles::new(staging).sources_for(&update.deck_id);

@@ -147,7 +147,9 @@ link-free stat precedes the read without that handle check. A copy no row
 names is residue, reported only; a damaged manifest (unparseable, another
 version, or failing validation) is an error, never a list of copies to
 collect. The roots file beside the manifest holds absolute local folders and
-is private by the `*.local.*` pattern, so it never travels (`src/sources/`).
+is private by the `*.local.*` pattern, so it never leaves the machine: share,
+sync, and receive omit it, and only a same-machine deck copy or move carries
+it (`src/sources/`, `src/deck_transfer.rs`).
 
 Every `alix deck source` command first passes that verified load, refuses a
 deck outside a workspace and a deck whose topic ids are duplicated, and
