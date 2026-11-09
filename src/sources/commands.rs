@@ -19,13 +19,13 @@ use crate::{
     config::BackendKind,
     deck::{self, Deck},
     exam_status, locator, parser, state,
-    store::StoreError,
+    store::{Store, StoreError},
     topic,
     workspace::{self, WorkspaceFiles},
 };
 
 #[derive(Debug, Error)]
-#[error("results not kept for {}: {source}", .topics.join(", "))]
+#[error("results not kept for {}", .topics.join(", "))]
 pub struct KeepResultsNotSaved {
     pub topics: Vec<String>,
     #[source]
@@ -184,26 +184,28 @@ fn open(deck_path: &Path) -> Result<Opened> {
     })
 }
 
-fn fingerprints(manifest: &Manifest) -> Result<BTreeMap<String, String>> {
-    Ok(manifest.fingerprints()?)
+struct KeepResults {
+    before: BTreeMap<String, String>,
+    store: Store,
 }
 
-fn keep_topic_results(
-    opened: &Opened,
-    manifest: &Manifest,
-    before: &BTreeMap<String, String>,
-) -> Result<()> {
-    let after = fingerprints(manifest)?;
-    let personal = crate::assemble::personal_cards(&opened.deck).cards;
-    let current = exam_status::current_stamp(&opened.deck, &personal, Some(manifest));
-    let mut store = state::open_deck_store(
+fn open_keep_results(opened: &Opened) -> Result<KeepResults> {
+    let before = opened.manifest.fingerprints()?;
+    let store = state::open_deck_store(
         &state::UserFiles::new(&opened.root),
         &opened.deck_id,
         &opened.deck.subject,
     )?;
-    let stamp_before = store.exam_stamp(&opened.deck_id).cloned();
-    let rekeyed = store.keep_results(&opened.deck_id, before, &after, &current);
-    if rekeyed.is_empty() && store.exam_stamp(&opened.deck_id) == stamp_before.as_ref() {
+    Ok(KeepResults { before, store })
+}
+
+fn keep_topic_results(opened: &Opened, manifest: &Manifest, keep: KeepResults) -> Result<()> {
+    let KeepResults { before, mut store } = keep;
+    let after = manifest.fingerprints()?;
+    let personal = crate::assemble::personal_cards(&opened.deck).cards;
+    let current = exam_status::current_stamp(&opened.deck, &personal, Some(manifest));
+    let rekeyed = store.keep_results(&opened.deck_id, &before, &after, &current);
+    if rekeyed.is_empty() {
         return Ok(());
     }
     store.save().map_err(|source| KeepResultsNotSaved {
@@ -598,8 +600,8 @@ pub fn update(
     keep_results: bool,
 ) -> Result<UpdateReport> {
     let opened = open(deck)?;
-    let before = keep_results
-        .then(|| fingerprints(&opened.manifest))
+    let keep = keep_results
+        .then(|| open_keep_results(&opened))
         .transpose()?;
     let old_id = resolve_source_prefix(&opened.manifest, source)?.to_string();
     let mut manifest = opened.manifest.clone();
@@ -640,8 +642,8 @@ pub fn update(
     );
     let new_copies = vec![(copy_name(&new_id, &placed.display), placed.bytes)];
     let report = finish(&opened, manifest.clone(), new_copies, None)?;
-    if let Some(before) = &before {
-        keep_topic_results(&opened, &manifest, before)?;
+    if let Some(keep) = keep {
+        keep_topic_results(&opened, &manifest, keep)?;
     }
     Ok(UpdateReport {
         old_id,
@@ -818,8 +820,8 @@ pub(super) fn live_state(id: &str, display: &DisplayPath, dir: &Path) -> (Drift,
 
 pub fn repair(deck: &Path, keep_results: bool) -> Result<RepairReport> {
     let opened = open(deck)?;
-    let before = keep_results
-        .then(|| fingerprints(&opened.manifest))
+    let keep = keep_results
+        .then(|| open_keep_results(&opened))
         .transpose()?;
     let mut report = RepairReport::default();
     let mut rows: Vec<(String, Row)> = Vec::with_capacity(opened.manifest.sources.len());
@@ -891,10 +893,8 @@ pub fn repair(deck: &Path, keep_results: bool) -> Result<RepairReport> {
         sources: rows.into_iter().collect(),
     };
     report.collected = finish(&opened, manifest.clone(), new_copies, None)?.collected;
-    if let Some(before) = &before
-        && !report.refrozen.is_empty()
-    {
-        keep_topic_results(&opened, &manifest, before)?;
+    if let Some(keep) = keep {
+        keep_topic_results(&opened, &manifest, keep)?;
     }
     Ok(report)
 }
@@ -911,7 +911,6 @@ mod tests {
             testkit::{DECK, TOPIC_A, TOPIC_B, Workspace},
         },
         state,
-        store::Store,
     };
 
     const A: &[u8] = b"one\ntwo\nthree\nfour\nfive\n";
@@ -1976,6 +1975,47 @@ mod tests {
     }
 
     #[test]
+    fn keep_results_refuses_a_progress_document_the_loader_refuses_before_writing_anything() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        fs::write(progress_path(&workspace), b"{").unwrap();
+        let sources_before = workspace.snapshot();
+        let store_bytes = fs::read(progress_path(&workspace)).unwrap();
+        workspace.write_live("a.rs", EDITED);
+
+        let error = update_a(&workspace, true).expect_err("a refused document fails the command");
+
+        assert!(
+            error.downcast_ref::<StoreError>().is_some(),
+            "the loader's refusal is the error: {error:#}"
+        );
+        assert_eq!(
+            sources_before,
+            workspace.snapshot(),
+            "the manifest and the copies are untouched"
+        );
+        assert_eq!(
+            store_bytes,
+            fs::read(progress_path(&workspace)).unwrap(),
+            "the store is untouched"
+        );
+    }
+
+    #[test]
+    fn a_same_bytes_update_with_keep_results_rekeys_nothing_and_writes_no_store() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        rewrite_deck(&workspace, "## q4\na4\n<!-- id: card-q4 -->\n", "");
+        let store_bytes = fs::read(progress_path(&workspace)).unwrap();
+
+        update_a(&workspace, true).unwrap_or_else(|error| panic!("update: {error:#}"));
+
+        assert_eq!(
+            store_bytes,
+            fs::read(progress_path(&workspace)).unwrap(),
+            "no fingerprint moved, so nothing is re-keyed and the store is not written"
+        );
+    }
+
+    #[test]
     fn keep_results_names_the_topics_it_could_not_keep_when_the_store_write_fails() {
         let scenario = || {
             let workspace = examined(&["a.rs"], &[TOPIC_A, TOPIC_B]);
@@ -2056,9 +2096,17 @@ mod tests {
                         not_saved.topics,
                         "{step}: row 3 names both topics"
                     );
+                    assert_eq!(
+                        "results not kept for Alpha, Beta",
+                        error.to_string(),
+                        "{step}: the message names the topics only"
+                    );
                     assert!(
-                        format!("{error:#}").starts_with("results not kept for Alpha, Beta: "),
-                        "{step}: {error:#}"
+                        error
+                            .chain()
+                            .nth(1)
+                            .is_some_and(|cause| cause.to_string().contains("injected fault")),
+                        "{step}: the store error travels as the source: {error:#}"
                     );
                     3
                 }
