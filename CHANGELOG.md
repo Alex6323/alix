@@ -794,9 +794,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The tutor writes a personal note as a deck-grammar note: the `>` block
   under the `<!-- note: card-id -->` marker opens with `> [!NOTE]`, and a
   block with no badge line is no longer read (`alix doctor` names it by line
-  and card). A personal file written before this change fails as ordinary
-  invalid
-  input. The
+  and card). A personal file written before this change still loads its cards,
+  but an old unbadged note is ignored and `alix doctor` warns about it. The
   `format` augmentation's fingerprint now covers the badge of every note, so
   a reshape cached for a card with a machine note is recomputed on the next
   `alix deck augment --target format`.

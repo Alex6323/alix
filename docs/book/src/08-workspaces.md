@@ -7,11 +7,12 @@ own progress.
 
 ## Do you need one?
 
-**For a single deck you study yourself, no.** A plain `.md` file in your decks
-folder is a complete deck: it reviews, schedules, grades, and takes
-[the exam](12-the-ai-exam.md) the same way a workspace member does. A
-workspace adds settings and files *around* a group of decks; around one deck
-there is nothing for it to do.
+**For a single deck you only want to drill, no.** A plain `.md` file in your
+decks folder is complete for review and scheduling. The [AI
+exam](12-the-ai-exam.md) is the exception: a loose deck cannot own frozen exam
+sources and therefore has no exam, so put the deck in a workspace when you
+want one. A workspace otherwise adds settings and files *around* a group of
+decks.
 
 Reach for a workspace when one of these becomes true:
 
