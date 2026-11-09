@@ -170,9 +170,10 @@ fn print_workspace_update_report(action: &str, report: &alix::workspace_update::
 pub(crate) fn init_cmd(args: DeckInitArgs) -> Result<()> {
     let outcome = alix::assets::initialize(&args.deck)?;
     println!(
-        "Initialized {} ({} card ids assigned)",
+        "Initialized {} ({} card ids, {} topic ids assigned)",
         args.deck.display(),
-        outcome.stamp.minted_cards.len()
+        outcome.stamp.minted_cards.len(),
+        outcome.stamp.minted_topics.len()
     );
     if let Some(freeze) = &outcome.freeze {
         if freeze.diagrams > 0 {

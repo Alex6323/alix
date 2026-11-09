@@ -25,8 +25,6 @@ pub struct CardDupe {
     pub losers: Vec<(PathBuf, usize)>,
 }
 
-/// A topic id held by more than one topic. Never reminted: the author deletes
-/// each copy's id line by hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicDupe {
     pub id: String,

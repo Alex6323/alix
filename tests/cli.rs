@@ -925,6 +925,11 @@ fn deck_init_mints_topic_ids_and_doctor_is_then_quiet_about_them() {
         "init: {}",
         stderr(&initialized)
     );
+    assert!(
+        String::from_utf8_lossy(&initialized.stdout).contains("(2 card ids, 2 topic ids assigned)"),
+        "init: {}",
+        String::from_utf8_lossy(&initialized.stdout)
+    );
     let text = std::fs::read_to_string(&deck).unwrap();
     assert_eq!(
         2,

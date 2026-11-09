@@ -251,21 +251,9 @@ fn stamp_deck_with_mode(path: &Path, initialize: bool) -> Result<StampOutcome, S
     }
 
     let mut topic_mints: Vec<(usize, String)> = Vec::new();
-    for (index, topic) in deck.topics.iter().enumerate() {
-        let (Some(heading), None) = (topic.line, &topic.token) else {
-            continue;
-        };
-        let next_heading = deck.topics.get(index + 1).and_then(|next| next.line);
-        let first_block = deck
-            .cards
-            .iter()
-            .filter(|card| card.topic == index)
-            .map(|card| card.block_line)
-            .chain(deck.tables.iter().map(|table| table.line))
-            .filter(|line| *line > heading && next_heading.is_none_or(|next| *line < next))
-            .min();
+    for end in topic_block_ends(body, &unminted_topic_blocks(&deck)) {
         topic_mints.push((
-            topic_block_end(body, heading, first_block.or(next_heading)),
+            end,
             token::format_topic_id(&token::mint().map_err(StampError::Mint)?),
         ));
     }
@@ -739,18 +727,60 @@ fn table_block_end(lines: &[&str], header: usize) -> usize {
     last
 }
 
-/// 1-based last non-blank line from `heading` up to the line before `stop`
-/// (or the end of the text): where a topic's id marker closes its heading block.
-fn topic_block_end(text: &str, heading: usize, stop: Option<usize>) -> usize {
-    text.lines()
+/// (heading line, first line past the heading block, `None` at the end of
+/// the text) of every headed topic without a token, ascending.
+fn unminted_topic_blocks(deck: &parser::ParsedDeck) -> Vec<(usize, Option<usize>)> {
+    let headings: Vec<usize> = deck
+        .topics
+        .iter()
+        .map(|topic| topic.line.unwrap_or(0))
+        .collect();
+    let mut first_block: Vec<Option<usize>> = vec![None; deck.topics.len()];
+    let blocks = deck
+        .cards
+        .iter()
+        .map(|card| (card.topic, card.block_line))
+        .chain(deck.tables.iter().map(|table| {
+            let topic = headings.partition_point(|heading| *heading < table.line);
+            (topic.saturating_sub(1), table.line)
+        }));
+    for (topic, line) in blocks {
+        if let Some(slot) = first_block.get_mut(topic) {
+            *slot = Some(slot.map_or(line, |first| first.min(line)));
+        }
+    }
+    deck.topics
+        .iter()
         .enumerate()
-        .map(|(index, line)| (index + 1, line))
-        .skip(heading - 1)
-        .take_while(|(line, _)| stop.is_none_or(|stop| *line < stop))
-        .filter(|(_, raw)| !raw.trim_matches(&WS[..]).is_empty())
-        .map(|(line, _)| line)
-        .last()
-        .unwrap_or(heading)
+        .filter_map(|(index, topic)| {
+            let heading = topic.line.filter(|_| topic.token.is_none())?;
+            let next_heading = deck.topics.get(index + 1).and_then(|next| next.line);
+            Some((heading, first_block[index].or(next_heading)))
+        })
+        .collect()
+}
+
+/// For each block, the 1-based last non-blank line from its heading up to
+/// the line before its stop: where its id marker closes the heading block.
+fn topic_block_ends(text: &str, blocks: &[(usize, Option<usize>)]) -> Vec<usize> {
+    let mut ends: Vec<usize> = blocks.iter().map(|(heading, _)| *heading).collect();
+    let mut at = 0;
+    for (index, raw) in text.lines().enumerate() {
+        let line = index + 1;
+        while blocks
+            .get(at)
+            .is_some_and(|(_, stop)| stop.is_some_and(|stop| line >= stop))
+        {
+            at += 1;
+        }
+        let Some((heading, _)) = blocks.get(at) else {
+            break;
+        };
+        if line > *heading && !raw.trim_matches(&WS[..]).is_empty() {
+            ends[at] = line;
+        }
+    }
+    ends
 }
 
 fn heading_id_marker(rest: &str) -> bool {
@@ -968,6 +998,39 @@ mod tests {
             );
             assert!(end >= front, "block ends before its own front: {front}");
         }
+    }
+
+    #[test]
+    fn a_minted_topic_marker_follows_the_heading_block_s_link_definitions_and_directives() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            "---\nid: deck-x\n---\n# A\nprose [r]\n[r]: /url\n<!-- reveal: line -->\n\n## q\na\n",
+        );
+        stamp_initialized_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!("<!-- reveal: line -->", lines[6], "{text}");
+        assert!(lines[7].starts_with("<!-- id: topic-"), "{text}");
+        assert_eq!(
+            "", lines[8],
+            "the blank line stays after the marker: {text}"
+        );
+    }
+
+    #[test]
+    fn a_topic_whose_only_block_is_an_empty_card_table_takes_its_marker_before_the_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write(
+            &dir,
+            "d.md",
+            "---\nid: deck-x\n---\n## lead\na\n# A\nprose\n| a | b |\n|---|---|\n<!-- cards -->\n",
+        );
+        stamp_initialized_deck(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let deck = parser::parse("d.md", &text).unwrap();
+        assert_eq!(Some(9), deck.topics[1].marker_line, "{text}");
     }
 
     #[test]

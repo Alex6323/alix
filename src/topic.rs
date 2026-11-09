@@ -24,7 +24,7 @@ impl Topic {
 }
 
 pub fn duplicated_topics(deck: &Deck, workspace_root: Option<&Path>) -> Vec<TopicDupe> {
-    let mut found = same_deck_duplicates(deck);
+    let mut found = same_deck_duplicates(&deck.path, &deck.topics);
     if let Some(root) = workspace_root {
         let ids: Vec<String> = deck.topic_ids().into_iter().flatten().collect();
         found.extend(
@@ -38,14 +38,14 @@ pub fn duplicated_topics(deck: &Deck, workspace_root: Option<&Path>) -> Vec<Topi
     found
 }
 
-fn same_deck_duplicates(deck: &Deck) -> Vec<TopicDupe> {
+pub fn same_deck_duplicates(path: &Path, topics: &[Topic]) -> Vec<TopicDupe> {
     let mut found: Vec<TopicDupe> = Vec::new();
-    for topic in &deck.topics {
+    for topic in topics {
         let (Some(token), Some(line)) = (topic.token.as_deref(), topic.marker_line) else {
             continue;
         };
         let id = token::format_topic_id(token);
-        let site = (deck.path.clone(), line);
+        let site = (path.to_path_buf(), line);
         match found.iter_mut().find(|dupe| dupe.id == id) {
             Some(dupe) => dupe.copies.push(site),
             None => found.push(TopicDupe {
@@ -66,7 +66,7 @@ mod tests {
     use super::*;
     use crate::{
         assemble::{self, AssembleConfig, SelectOptions, Selected},
-        parser::{self, LintKind},
+        parser,
     };
 
     const REPEATED: &str =
@@ -101,16 +101,14 @@ mod tests {
     #[test]
     fn a_topic_id_repeated_in_one_deck_names_the_later_topic_and_review_still_opens() {
         let parsed = parser::parse("d.md", REPEATED).unwrap();
-        let repeats: Vec<(usize, &LintKind)> = parsed
-            .lints
-            .iter()
-            .filter(|lint| matches!(lint.kind, LintKind::DuplicateTopicId { .. }))
-            .map(|lint| (lint.line, &lint.kind))
-            .collect();
         assert_eq!(
-            vec![(6, &LintKind::DuplicateTopicId { first_line: 2 })],
-            repeats,
-            "parse: the later marker carries the lint"
+            vec![TopicDupe {
+                id: "topic-a".to_string(),
+                keeper: (PathBuf::from("d.md"), 2),
+                copies: vec![(PathBuf::from("d.md"), 6)],
+            }],
+            same_deck_duplicates(Path::new("d.md"), &parsed.topics),
+            "parse: the later marker is the copy"
         );
 
         let dir = tempfile::tempdir().unwrap();

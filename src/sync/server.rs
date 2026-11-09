@@ -221,13 +221,11 @@ impl SyncCatalog {
                         continue;
                     }
                 };
-                let deck = if deck.deck_token.is_some()
-                    && deck.cards.iter().any(|card| card.id().is_none())
-                {
+                let deck = if deck.deck_token.is_some() && !fully_identified(&deck) {
                     match crate::stamp::stamp_initialized_deck(&deck_path)
                         .ok()
                         .and_then(|_| crate::deck::Deck::load(&deck_path).ok())
-                        .filter(|stamped| stamped.cards.iter().all(|card| card.id().is_some()))
+                        .filter(fully_identified)
                     {
                         Some(stamped) => stamped,
                         None => {
@@ -353,6 +351,14 @@ impl SyncCatalog {
 }
 
 #[cfg(feature = "full")]
+fn fully_identified(deck: &crate::deck::Deck) -> bool {
+    deck.cards.iter().all(|card| card.id().is_some())
+        && deck
+            .topics
+            .iter()
+            .all(|topic| topic.heading.is_none() || topic.token.is_some())
+}
+
 fn lightweight_deck_id(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     crate::parser::deck_identity(&text).ok().flatten()
@@ -1002,6 +1008,38 @@ mod tests {
             .map(|card| card.front.clone())
             .collect();
         assert!(unstamped.is_empty(), "served without an id: {unstamped:?}");
+    }
+
+    #[test]
+    fn a_pull_serves_a_minted_topic_marker_and_a_second_pull_is_byte_identical() {
+        let served = tempfile::tempdir().unwrap();
+        let deck = served.path().join("inside.md");
+        std::fs::write(
+            &deck,
+            "---\nformat-version: 1\nid: \"deck-inside\"\n---\n# Topic\n## q\na\n<!-- id: card-inside -->\n",
+        )
+        .unwrap();
+        let pull = || {
+            let recent = crate::recent::RecentDecks::load(served.path().join("recent.json"));
+            let catalog = SyncCatalog::load(
+                served.path(),
+                &recent,
+                &mut crate::cache::DeckCache::default(),
+            )
+            .unwrap();
+            let stage = tempfile::tempdir().unwrap();
+            let pull = catalog
+                .stage_pull("inside.md", "root-00000000000000000000000000", stage.path())
+                .unwrap();
+            std::fs::read_to_string(pull.root.join("inside.md")).unwrap()
+        };
+        let first = pull();
+        assert_eq!(
+            1,
+            first.matches("<!-- id: topic-").count(),
+            "first pull: the topic is minted before it travels: {first}"
+        );
+        assert_eq!(first, pull(), "second pull: byte-identical");
     }
 
     #[cfg(unix)]

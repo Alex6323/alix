@@ -466,8 +466,9 @@ title is an error.
 `alix doctor` warns about a topic that has prose but no card before the next
 `#`, since a topic introduces the cards under it; a `#` typed where `##` was
 meant often looks like that.
-It also warns when two topics share a heading, since the exam merges them
-into one topic, and, on a deck with an exam, when a topic holds more than
+It also warns when two topics share a heading: they are separate topics, each
+with its own ID, that a reader cannot tell apart by name. On a deck with an
+exam it warns when a topic holds more than
 15 cards: the exam asks 3 questions per topic and a pass credits every card
 in it, so a long topic is passed on a small share of what it teaches.
 

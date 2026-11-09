@@ -143,9 +143,6 @@ pub enum LintKind {
     DuplicateTopicHeading {
         first_line: usize,
     },
-    DuplicateTopicId {
-        first_line: usize,
-    },
     HintContainsAnswer {
         answer: String,
     },
@@ -1065,7 +1062,6 @@ struct ScannedBody {
 /// topic to join, so a line that would join it is the error instead.
 fn topic_line(
     topic: &mut Vec<String>,
-    marker_line: Option<usize>,
     seen_heading: bool,
     lineno: usize,
     line: String,
@@ -1078,9 +1074,6 @@ fn topic_line(
     }
     if !seen_heading {
         return Err(ParseError::ProseBeforeFirstHeading(lineno));
-    }
-    if let Some(marker) = marker_line {
-        return Err(ParseError::MisplacedTopicMarker(marker));
     }
     if separated && topic.len() > 1 && topic.last().is_some_and(|line| !line.is_empty()) {
         topic.push(String::new());
@@ -1145,6 +1138,24 @@ fn close_topic(topics: &mut [Topic], lines: &[String]) {
     }
 }
 
+fn may_follow_topic_marker(lines: &[&str], idx: usize) -> bool {
+    let raw = lines[idx];
+    let topic_marker = trim_ws(raw)
+        .strip_prefix("<!--")
+        .and_then(|rest| rest.strip_suffix("-->"))
+        .and_then(directive)
+        .is_some_and(|(key, value)| key == "id" && value.starts_with("topic-"));
+    let card_table = raw.starts_with('|')
+        && lines
+            .get(idx + 1)
+            .is_some_and(|next| next.starts_with('|') && is_delimiter_row(next))
+        && matches!(
+            trailing_table_mapping(lines, idx),
+            Some((_, Mapping::Cards))
+        );
+    topic_marker || card_table || heading_depth(raw).is_some()
+}
+
 fn topic_token(value: &str, line: usize) -> Result<&str, ParseError> {
     value
         .strip_prefix("topic-")
@@ -1160,10 +1171,9 @@ fn attach_topic_marker(
     value: &str,
     line: usize,
     topic_has_cards: bool,
-    lints: &mut Vec<Lint>,
 ) -> Result<(), ParseError> {
     let token = topic_token(value, line)?;
-    let Some((open, earlier)) = topics.split_last_mut() else {
+    let Some(open) = topics.last_mut() else {
         return Err(ParseError::OrphanTopicId(line));
     };
     if open.heading.is_none() {
@@ -1174,16 +1184,6 @@ fn attach_topic_marker(
     }
     if open.marker_line.is_some() {
         return Err(ParseError::DuplicateTopicMarker(line));
-    }
-    if let Some(first_line) = earlier
-        .iter()
-        .find(|topic| topic.token.as_deref() == Some(token))
-        .and_then(|topic| topic.marker_line)
-    {
-        lints.push(Lint {
-            line,
-            kind: LintKind::DuplicateTopicId { first_line },
-        });
     }
     open.token = Some(token.to_string());
     open.marker_line = Some(line);
@@ -1267,7 +1267,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if current.is_none() {
                 topic_line(
                     &mut topic,
-                    open_marker(&topics),
                     seen_heading,
                     lineno,
                     raw.to_string(),
@@ -1303,6 +1302,15 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             continue;
         }
 
+        if let Some(marker) = open_marker(&topics)
+            && !topic_has_cards
+            && current.is_none()
+            && !trim_ws(raw).is_empty()
+            && !may_follow_topic_marker(lines, idx)
+        {
+            return Err(ParseError::MisplacedTopicMarker(marker));
+        }
+
         if footnote_definition(raw) {
             return Err(ParseError::FootnoteDefinition(lineno));
         }
@@ -1331,7 +1339,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if current.is_none() {
                 topic_line(
                     &mut topic,
-                    open_marker(&topics),
                     seen_heading,
                     lineno,
                     raw.to_string(),
@@ -1556,7 +1563,6 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             if current.is_none() {
                 topic_line(
                     &mut topic,
-                    open_marker(&topics),
                     seen_heading,
                     lineno,
                     rest.to_string(),
@@ -1582,14 +1588,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 invocation_below(lines, idx + 1).is_some_and(|(_, m)| m == Mapping::Plain);
             if plain_trails {
                 if current.is_none() {
-                    topic_line(
-                        &mut topic,
-                        open_marker(&topics),
-                        seen_heading,
-                        lineno,
-                        t.to_string(),
-                        prev_blank,
-                    )?;
+                    topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?;
                 } else {
                     push_content(&mut current, lineno, t.to_string())?;
                 }
@@ -1684,14 +1683,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                 }
                 // A topic has no card to own a note, so the line is
                 // ordinary topic prose either way.
-                None => topic_line(
-                    &mut topic,
-                    open_marker(&topics),
-                    seen_heading,
-                    lineno,
-                    t.to_string(),
-                    prev_blank,
-                )?,
+                None => topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?,
             }
             prev_blank = false;
             prev_heading = false;
@@ -1778,13 +1770,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                             if !value.starts_with("topic-") {
                                 return Err(ParseError::OrphanCardId(lineno));
                             }
-                            attach_topic_marker(
-                                &mut topics,
-                                &value,
-                                lineno,
-                                topic_has_cards,
-                                lints,
-                            )?;
+                            attach_topic_marker(&mut topics, &value, lineno, topic_has_cards)?;
                         }
                         None if matches!(key.as_str(), "blank" | "cover" | "crop") => {
                             return Err(ParseError::InvalidRegion {
@@ -1835,14 +1821,7 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
         // has no topics at all (D16), so nothing accumulates there and a
         // personal card stays context-free.
         if current.is_none() {
-            topic_line(
-                &mut topic,
-                open_marker(&topics),
-                seen_heading,
-                lineno,
-                t.to_string(),
-                prev_blank,
-            )?;
+            topic_line(&mut topic, seen_heading, lineno, t.to_string(), prev_blank)?;
             prev_blank = false;
             prev_heading = false;
             prev_prose = true;
@@ -12267,7 +12246,7 @@ the answer
         assert_eq!(vec!["prose"], deck.topics[1].prose);
         assert_eq!(1, deck.cards[0].topic, "`# A` is topics[1]");
         type Expect = fn(&ParseError) -> bool;
-        let cases: [(&str, Expect); 5] = [
+        let cases: [(&str, Expect); 7] = [
             (
                 "# A\n<!-- id: topic-a -->\n<!-- id: topic-b -->\n## q\na\n",
                 |e| matches!(e, ParseError::DuplicateTopicMarker(3)),
@@ -12285,10 +12264,25 @@ the answer
             ("# A\n<!-- id: topic-AB -->\n## q\na\n", |e| {
                 matches!(e, ParseError::InvalidTopicId { line: 2, .. })
             }),
+            ("# A\n<!-- id: topic-a -->\n[r]: /url\n## q\na\n", |e| {
+                matches!(e, ParseError::MisplacedTopicMarker(2))
+            }),
+            (
+                "# A\n<!-- id: topic-a -->\n<!-- reveal: line -->\n## q\na\n",
+                |e| matches!(e, ParseError::MisplacedTopicMarker(2)),
+            ),
         ];
         for (text, is) in cases {
             let error = super::parse("d", text).unwrap_err();
             assert!(is(&error), "{text:?} gave {error:?}");
+        }
+        for allowed in [
+            "# A\n<!-- id: topic-a -->\n\n\n## q\na\n",
+            "# A\n<!-- id: topic-a -->\n\n| a | b |\n|---|---|\n| x | y |\n<!-- cards -->\n",
+            "# A\n<!-- id: topic-a -->\n\n# B\n",
+        ] {
+            let deck = super::parse("d", allowed);
+            assert!(deck.is_ok(), "{allowed:?} gave {deck:?}");
         }
     }
 

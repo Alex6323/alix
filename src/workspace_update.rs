@@ -18,6 +18,7 @@ use crate::{
     deck::{AtRewrite, Deck, DeckError},
     parser,
     source::CitationIntegrity,
+    token,
     workspace::{self, Workspace, WorkspaceFiles},
 };
 
@@ -43,6 +44,10 @@ write the replacement as a new card WITHOUT an ID comment.
 not write a replacement unless the current source supports a useful new card.
 - New cards never carry an ID. Alix assigns their IDs after validation.
 - Never move, copy, invent, or reuse an existing ID.
+- Every existing `<!-- id: topic-... -->` line stays exactly once, directly \
+after its own `#` heading block (the heading and its prose), even when you \
+reword the heading or prose. Never delete, copy, or invent a topic ID; a new \
+`#` topic carries no ID line.
 
 UPDATE RULES:
 - Preserve the frontmatter `id`, `title`, `description`, trace, requires, \
@@ -518,6 +523,7 @@ fn stage_member(
     )?;
     validate_proposal_metadata(deck, &candidate, live_source)?;
     let identity = validate_unstamped_proposal(deck, &candidate)?;
+    validate_topic_identity(deck, &candidate)?;
 
     let initialized = assets::initialize_staged(&staged_path, root)
         .with_context(|| format!("cannot freeze proposal {}", staged_path.display()))?;
@@ -541,6 +547,7 @@ fn stage_member(
         );
     }
     validate_staged_identity(deck, &staged_deck, &added_tokens)?;
+    validate_staged_topics(deck, &staged_deck, &initialized.stamp.minted_topics)?;
 
     let retired_ids = retired_card_ids(deck, &identity.retired_tokens);
     let staged_augment = WorkspaceFiles::new(staging).augment_for(deck_id(&staged_deck));
@@ -841,6 +848,49 @@ fn validate_unstamped_proposal(current: &Deck, candidate: &Deck) -> Result<Ident
             .cloned()
             .collect(),
     })
+}
+
+fn topic_ids(deck: &Deck) -> Vec<String> {
+    deck.topics
+        .iter()
+        .filter_map(|topic| topic.token.as_deref().map(token::format_topic_id))
+        .collect()
+}
+
+fn validate_topic_identity(current: &Deck, candidate: &Deck) -> Result<()> {
+    let live = topic_ids(current).into_iter().collect::<BTreeSet<_>>();
+    let mut kept = BTreeSet::new();
+    for id in topic_ids(candidate) {
+        if !live.contains(&id) {
+            bail!("proposal assigns unknown topic ID `{id}`; new topics must not carry IDs");
+        }
+        if !kept.insert(id.clone()) {
+            bail!(
+                "proposal copies topic ID `{id}` onto a second topic; keep it on its own topic only"
+            );
+        }
+    }
+    if let Some(id) = live.difference(&kept).next() {
+        bail!("proposal drops topic ID `{id}`; keep every existing topic ID line on its own topic");
+    }
+    Ok(())
+}
+
+fn validate_staged_topics(current: &Deck, staged: &Deck, minted: &[String]) -> Result<()> {
+    let live = topic_ids(current).into_iter().collect::<BTreeSet<_>>();
+    let added = topic_ids(staged)
+        .into_iter()
+        .filter(|id| !live.contains(id))
+        .collect::<BTreeSet<_>>();
+    if added != minted.iter().cloned().collect::<BTreeSet<_>>() {
+        bail!(
+            "{} minted {} topic IDs but introduced {} unknown topic IDs",
+            staged.path.display(),
+            minted.len(),
+            added.len()
+        );
+    }
+    Ok(())
 }
 
 fn validate_staged_identity(current: &Deck, staged: &Deck, added: &[String]) -> Result<()> {
@@ -1377,6 +1427,16 @@ mod tests {
     }
 
     fn workspace(source_text: &str) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
+        workspace_with(
+            source_text,
+            "## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+        )
+    }
+
+    fn workspace_with(
+        source_text: &str,
+        body: &str,
+    ) -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
         let directory = tempfile::tempdir().unwrap();
         // Staging canonicalizes the workspace root; on macOS the raw tempdir
         // path traverses the /var -> /private/var symlink, so the fixture must
@@ -1394,7 +1454,7 @@ mod tests {
         fs::write(
             &deck,
             format!(
-                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n",
+                "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: {0}\ncite:\n  - src: {0}\n---\n{body}",
                 parser::yaml_quote(&source.display().to_string())
             ),
         )
@@ -1503,6 +1563,14 @@ mod tests {
         assert!(UPDATE_PROMPT.contains("`description`"), "{UPDATE_PROMPT}");
     }
 
+    #[test]
+    fn the_update_prompt_names_topic_id_lines() {
+        assert!(
+            UPDATE_PROMPT.contains("`<!-- id: topic-... -->`"),
+            "{UPDATE_PROMPT}"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn changed_learning_content_cannot_keep_the_old_card_id() {
@@ -1533,6 +1601,83 @@ mod tests {
                 .iter()
                 .any(|card| card.id().as_deref() == Some("card-oldcard"))
         );
+    }
+
+    #[cfg(unix)]
+    const TOPIC_CARD: &str =
+        "## Old question\nOld answer\n<!-- at: src:code.rs:1 -->\n<!-- id: card-oldcard -->\n";
+
+    #[cfg(unix)]
+    #[test]
+    fn a_proposal_that_drops_copies_or_invents_a_topic_id_is_refused() {
+        let _lock = exec_lock();
+        let live = format!("# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}");
+        let rows = [
+            (
+                "dropped",
+                format!("# Topic\n{TOPIC_CARD}"),
+                "proposal drops topic ID `topic-livetopic`",
+            ),
+            (
+                "copied",
+                format!(
+                    "{live}# Other\n<!-- id: topic-livetopic -->\n## Second\nNew answer\n<!-- at: src:code.rs:1 -->\n"
+                ),
+                "proposal copies topic ID `topic-livetopic` onto a second topic",
+            ),
+            (
+                "invented",
+                format!(
+                    "{live}# Other\n<!-- id: topic-invented -->\n## Second\nNew answer\n<!-- at: src:code.rs:1 -->\n"
+                ),
+                "proposal assigns unknown topic ID `topic-invented`",
+            ),
+        ];
+        for (case, body, expected) in rows {
+            let (_dir, workspace, source, deck) = workspace_with("Old answer\n", &live);
+            let before = fs::read_to_string(&deck).unwrap();
+            let command = fake_reply(&workspace, &proposal(&source, &body));
+            let error = stage(
+                &workspace,
+                &GenerateDeckConfig::default(),
+                &ask_config(&command),
+            )
+            .unwrap_err();
+            assert!(format!("{error:#}").contains(expected), "{case}: {error:#}");
+            assert_eq!(
+                before,
+                fs::read_to_string(&deck).unwrap(),
+                "{case}: the live deck is untouched"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_proposal_that_keeps_its_topic_id_is_staged_and_a_new_topic_is_minted() {
+        let _lock = exec_lock();
+        let live = format!("# Topic\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}");
+        let (_dir, workspace, source, _) = workspace_with("Old answer\n", &live);
+        let command = fake_reply(
+            &workspace,
+            &proposal(
+                &source,
+                &format!(
+                    "# Topic, reworded\nNew prose.\n<!-- id: topic-livetopic -->\n{TOPIC_CARD}# Other\n## Second\nOld answer\n<!-- at: src:code.rs:1 -->\n"
+                ),
+            ),
+        );
+        let report = stage(
+            &workspace,
+            &GenerateDeckConfig::default(),
+            &ask_config(&command),
+        )
+        .unwrap();
+        let staged = Deck::load(report.staging.join("decks/facts.md")).unwrap();
+        let ids = topic_ids(&staged);
+        assert_eq!(2, ids.len(), "{ids:?}");
+        assert_eq!("topic-livetopic", ids[0], "the live topic keeps its id");
+        assert_ne!("topic-livetopic", ids[1], "the new topic gets a fresh id");
     }
 
     #[cfg(unix)]

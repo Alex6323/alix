@@ -15,7 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   malformed topic marker is a parse error; `alix doctor` warns on a topic
   without an ID and reports a topic ID shared by two topics, in one deck or
   across decks, as an error naming the copy to delete. alix never remints a
-  duplicated topic ID.
+  duplicated topic ID. Only blank lines may follow a topic marker before the
+  topic's first card or the next `#`. `alix deck init` reports the topic IDs
+  it assigned, a synced deck travels with its topic IDs minted, and
+  `alix workspace update` refuses a proposal that drops, copies, or invents
+  a topic ID.
 
 - `[exam] effort` sets the backend effort for writing and grading exams,
   over `[ask] effort`; a workspace's `alix.local.toml` may set its own.
@@ -24,9 +28,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deck's passed and mastered instants, its last full count) and keeps drilling
   progress. It names the decks whose exams it will lock before asking.
 
-- `alix doctor` warns when two sections of a deck share a heading (the exam
-  merges them into one section) and, on a deck with an exam, when a section
-  holds more than 15 cards.
+- `alix doctor` warns when two topics of a deck share a heading (separate
+  topics that read the same) and, on a deck with an exam, when a topic holds
+  more than 15 cards.
 
 - Web: **Tutorial** in the deck picker's ☰ menu, and a **Tutorial** button
   when the picker finds no decks, open a nine-card tutorial as a walk. It

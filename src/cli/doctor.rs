@@ -132,15 +132,16 @@ fn deck_findings(path: &Path, report: &mut Report) {
     span_anchor_findings(path, &deck.cards, report);
 
     for lint in &deck.lints {
-        if matches!(lint.kind, alix::parser::LintKind::DuplicateTopicId { .. }) {
-            continue;
-        }
         let msg = lint_message(path, lint);
         if matches!(lint.kind, alix::parser::LintKind::BadValue { .. }) {
             report.error(msg);
         } else {
             report.warn(msg);
         }
+    }
+
+    for dupe in alix::topic::same_deck_duplicates(path, &deck.topics) {
+        report.error(dupe.to_string());
     }
 
     let mut tokens: Vec<String> = Vec::new();
@@ -225,9 +226,6 @@ fn deck_findings(path: &Path, report: &mut Report) {
         report,
     );
     if let Ok(deck) = Deck::load(path) {
-        for dupe in alix::topic::duplicated_topics(&deck, None) {
-            report.error(dupe.to_string());
-        }
         deck_resource_findings(&deck, report);
     }
 }
@@ -816,12 +814,9 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
         LintKind::TopicWithoutCards => "topic has prose but no card below it; a topic \
              introduces the cards under it"
             .to_string(),
-        LintKind::DuplicateTopicId { first_line } => {
-            format!("topic id repeats the one on line {first_line}")
-        }
         LintKind::DuplicateTopicHeading { first_line } => format!(
-            "topic heading repeats the one on line {first_line}; the exam merges both into \
-             one topic, so rename one"
+            "topic heading repeats the one on line {first_line}; they are separate topics \
+             that read the same, so rename one"
         ),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
              (cards included) was swallowed as its content"

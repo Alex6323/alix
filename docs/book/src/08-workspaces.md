@@ -152,6 +152,11 @@ together and the replacement receives a fresh ID during staging. Obsolete
 cards are removed rather than rewritten in place under their old learning
 history.
 
+A topic ID stays with its topic. A proposal must keep every existing topic ID
+exactly once and may not add one; a proposal that drops, copies, or invents a
+topic ID is refused. A new `#` topic in the proposal receives a fresh ID
+during staging.
+
 The first update implementation accepts local file and directory sources. A
 remote URL source remains review and tutor context, but cannot yet be captured
 as a new portable snapshot.
