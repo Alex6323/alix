@@ -1138,6 +1138,19 @@ fn close_topic(topics: &mut [Topic], lines: &[String]) {
     }
 }
 
+fn is_table_header(lines: &[&str], idx: usize) -> bool {
+    lines[idx].starts_with('|')
+        && lines
+            .get(idx + 1)
+            .is_some_and(|next| next.starts_with('|') && is_delimiter_row(next))
+}
+
+fn declared_table_mapping(lines: &[&str], idx: usize) -> Option<(usize, Mapping)> {
+    is_table_header(lines, idx)
+        .then(|| trailing_table_mapping(lines, idx))
+        .flatten()
+}
+
 fn may_follow_topic_marker(lines: &[&str], idx: usize) -> bool {
     let raw = lines[idx];
     let topic_marker = trim_ws(raw)
@@ -1145,14 +1158,10 @@ fn may_follow_topic_marker(lines: &[&str], idx: usize) -> bool {
         .and_then(|rest| rest.strip_suffix("-->"))
         .and_then(directive)
         .is_some_and(|(key, value)| key == "id" && value.starts_with("topic-"));
-    let card_table = raw.starts_with('|')
-        && lines
-            .get(idx + 1)
-            .is_some_and(|next| next.starts_with('|') && is_delimiter_row(next))
-        && matches!(
-            trailing_table_mapping(lines, idx),
-            Some((_, Mapping::Cards))
-        );
+    let card_table = matches!(
+        declared_table_mapping(lines, idx),
+        Some((_, Mapping::Cards))
+    );
     topic_marker || card_table || heading_depth(raw).is_some()
 }
 
@@ -1354,13 +1363,8 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
             continue;
         }
 
-        let table_header = raw.starts_with('|')
-            && lines
-                .get(idx + 1)
-                .is_some_and(|next| next.starts_with('|') && is_delimiter_row(next));
-        let declared = table_header
-            .then(|| trailing_table_mapping(lines, idx))
-            .flatten();
+        let table_header = is_table_header(lines, idx);
+        let declared = declared_table_mapping(lines, idx);
         if let Some((line, Mapping::Plain)) = declared {
             literal_table_invocation = Some(line);
         }

@@ -128,8 +128,8 @@ src/paired.rs:288: replace || with && in check_entry_name
 # `end_line` at 2023, and every trailing machinery comment overwrites it at
 # 2048 before either escape at 1152 or 1746; errors return no table first.
 # Line-pinned because `scan` holds other arithmetic.
-src/parser/mod.rs:1430: replace + with - in scan
-src/parser/mod.rs:1430: replace + with * in scan
+src/parser/mod.rs:1434: replace + with - in scan
+src/parser/mod.rs:1434: replace + with * in scan
 
 # EQUIVALENT, provably. `ground` reaches this comparison only through
 # `hex_color`, so `ink` is always the luminance of an 8-bit RGB triple.
@@ -246,4 +246,4 @@ src/parser/stream.rs:195: replace < with <= in MaskableStream::word_bounded
 # become another component kind, which the `_` arm already refuses. The
 # check is kept as a loud guard, so weakening its `||` chain to `&&`
 # changes nothing observable. Line-pinned.
-src/sync/server.rs:612: replace || with && in wire_path
+src/sync/server.rs:613: replace || with && in wire_path

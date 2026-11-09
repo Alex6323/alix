@@ -359,6 +359,7 @@ fn fully_identified(deck: &crate::deck::Deck) -> bool {
             .all(|topic| topic.heading.is_none() || topic.token.is_some())
 }
 
+#[cfg(feature = "full")]
 fn lightweight_deck_id(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     crate::parser::deck_identity(&text).ok().flatten()
