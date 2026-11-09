@@ -115,6 +115,8 @@ void main() {
     questions: ['Why ownership?', 'What is borrowing?'],
     topics: [
       RemoteExamTopic(
+        topicId: 'topic-0wnersh1pt0p1c0000000000',
+        fingerprint: 'fp-ownership',
         label: 'Ownership',
         cards: ['card-a'],
         pass: true,
@@ -147,6 +149,8 @@ void main() {
     questions: ['Why ownership?'],
     topics: [
       RemoteExamTopic(
+        topicId: 'topic-0wnersh1pt0p1c0000000000',
+        fingerprint: 'fp-ownership',
         label: 'Ownership',
         cards: ['card-a'],
         pass: false,

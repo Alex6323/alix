@@ -484,12 +484,16 @@ class ExamVerdicts {
 /// One examined topic of a sitting. Mirrors `RemoteExamTopicDto`.
 class RemoteExamTopic {
   const RemoteExamTopic({
+    required this.topicId,
+    required this.fingerprint,
     required this.label,
     required this.cards,
     required this.pass,
     required this.verdicts,
   });
 
+  final String topicId;
+  final String fingerprint;
   final String label;
   final List<String> cards;
   final bool pass;
@@ -497,10 +501,16 @@ class RemoteExamTopic {
 
   static RemoteExamTopic? fromJson(dynamic json) {
     if (json is! Map) return null;
+    final topicId = _asString(json['topic_id']);
+    final fingerprint = _asString(json['fingerprint']);
     final label = _asString(json['label']);
     final verdicts = ExamVerdicts.fromJson(json['verdicts']);
-    if (label == null || verdicts == null) return null;
+    if (topicId == null || fingerprint == null || label == null || verdicts == null) {
+      return null;
+    }
     return RemoteExamTopic(
+      topicId: topicId,
+      fingerprint: fingerprint,
       label: label,
       cards: _asStringList(json['cards']),
       pass: _asBool(json['pass']),

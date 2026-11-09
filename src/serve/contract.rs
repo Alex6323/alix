@@ -859,6 +859,8 @@ fn examdto_results_phase_wire_shape() {
             },
         )],
         topics: vec![ExamTopicDto {
+            topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
+            fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
             pass: true,
@@ -921,6 +923,8 @@ fn examdto_results_phase_wire_shape() {
                 "missed_units": []
             }],
             "topics": [{
+                "topic_id": "topic-0wnersh1pt0p1c0000000000",
+                "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
                 "label": "Ownership",
                 "cards": ["card-0123456789abcdefghjkmnpqrs"],
                 "pass": true,
@@ -1635,10 +1639,10 @@ fn decklistdto_wire_shape() {
                     tally: crate::exam_status::TopicTally {
                         passed: 2,
                         needs_work: 1,
-                        new_cards: 0,
                         unexamined: 0,
                     },
                     filter: crate::exam_status::ExamFilter::Partial,
+                    exam_changed: true,
                 }
                 .into(),
                 is_trace: false,
@@ -1729,8 +1733,9 @@ fn decklistdto_wire_shape() {
                 "mastered": false,
                 "passed_at_ms": null,
                 "full_exam_result": null,
-                "topics": {"passed": 0, "needs_work": 0, "new_cards": 0, "unexamined": 0},
+                "topics": {"passed": 0, "needs_work": 0, "unexamined": 0},
                 "exam_filter": "none",
+                "exam_changed": false,
                 "is_trace": false,
                 "examable": false,
                 "has_exam": false,
@@ -1753,8 +1758,9 @@ fn decklistdto_wire_shape() {
                     "mastered": false,
                     "passed_at_ms": 1_700_000_000_000_u64,
                     "full_exam_result": {"pass": 5, "partial": 1, "total": 6},
-                    "topics": {"passed": 2, "needs_work": 1, "new_cards": 0, "unexamined": 0},
+                    "topics": {"passed": 2, "needs_work": 1, "unexamined": 0},
                     "exam_filter": "partial",
+                    "exam_changed": true,
                     "is_trace": false,
                     "examable": true,
                     "has_exam": true,
@@ -1800,8 +1806,9 @@ fn decklistdto_wire_shape() {
                 "mastered": false,
                 "passed_at_ms": null,
                 "full_exam_result": null,
-                "topics": {"passed": 0, "needs_work": 0, "new_cards": 0, "unexamined": 0},
+                "topics": {"passed": 0, "needs_work": 0, "unexamined": 0},
                 "exam_filter": "none",
+                "exam_changed": false,
                 "is_trace": false,
                 "examable": false,
                 "has_exam": false,
@@ -2844,6 +2851,8 @@ fn remoteexamdto_results_wire_shape() {
         questions: vec!["Why does Rust use ownership?".to_string()],
         questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
         topics: vec![ExamTopicDto {
+            topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
+            fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
             pass: false,
@@ -2906,6 +2915,8 @@ fn remoteexamdto_results_wire_shape() {
             "questions": ["Why does Rust use ownership?"],
             "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
             "topics": [{
+                "topic_id": "topic-0wnersh1pt0p1c0000000000",
+                "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
                 "label": "Ownership",
                 "cards": ["card-0123456789abcdefghjkmnpqrs"],
                 "pass": false,
@@ -2951,6 +2962,8 @@ fn remoteexamdto_remediated_wire_shape() {
         questions: vec!["Why does Rust use ownership?".to_string()],
         questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
         topics: vec![ExamTopicDto {
+            topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
+            fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
             pass: false,
@@ -3004,6 +3017,8 @@ fn remoteexamdto_remediated_wire_shape() {
             "questions": ["Why does Rust use ownership?"],
             "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
             "topics": [{
+                "topic_id": "topic-0wnersh1pt0p1c0000000000",
+                "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
                 "label": "Ownership",
                 "cards": ["card-0123456789abcdefghjkmnpqrs"],
                 "pass": false,

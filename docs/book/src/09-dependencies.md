@@ -60,8 +60,13 @@ mistake or a file that merely shares a required id's name; see
 so a required trace never gates.
 
 A prerequisite counts as passed once every one of its topics has passed at
-`[exam] pass_threshold`, across one sitting or several. That moment is kept: a
-later weaker sitting never locks a dependent again. A deck that has sat its own
+`[exam] pass_threshold`, across one sitting or several, by a sitting that met
+the [review condition](12-the-ai-exam.md#results-a-count-per-topic). That
+moment is kept: a later weaker sitting never locks a dependent again, and
+neither does a change to the prerequisite's material: a passed deck whose
+sources or unsourced cards changed since reads as
+[*sources changed*](12-the-ai-exam.md#what-a-standing-means), but it still
+counts as passed and the unlock stays. A deck that has sat its own
 exam at least once, pass or fail, stays unlocked from then on, even if a
 prerequisite's exam is reset later; the reset can only lock dependents that
 never sat theirs.

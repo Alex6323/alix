@@ -580,15 +580,18 @@ class _PickerScreenState extends State<PickerScreen> {
     final support = await _support();
     final config = readActivePairing(support);
     if (config == null || !mounted) return;
+    final exam_bridge.ExamSittingStart start;
     final List<String>? cards;
     Map<String, dynamic>? ideas;
     try {
+      start = exam_bridge.examSittingStart(
+        deckPath: entry.path,
+        rootDir: root,
+        needsWorkOnly: needsWorkOnly,
+        nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+      );
       if (initialExam == null) {
-        cards = exam_bridge.examStartCards(
-          deckPath: entry.path,
-          rootDir: root,
-          needsWorkOnly: needsWorkOnly,
-        );
+        cards = start.cards;
         final encoded = exam_bridge.examIdeasLoad(
           deckPath: entry.path,
           rootDir: root,
@@ -637,6 +640,7 @@ class _PickerScreenState extends State<PickerScreen> {
             deckPath: entry.path,
             rootDir: root,
             exam: exam,
+            start: start,
             nowMs: nowMs,
             device: widget.device,
           ),

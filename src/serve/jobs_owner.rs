@@ -904,6 +904,12 @@ impl JobsState {
         let Ok(Some(sources)) = deck.sources() else {
             return Started::Conflict;
         };
+        let Ok(store) = crate::assemble::store_for(
+            std::slice::from_ref(&path),
+            self.config.instance_store.as_deref(),
+        ) else {
+            return Started::Conflict;
+        };
         let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
         let scope = match &cards {
             Some(ids) => exam::ExamScope::Cards(ids),
@@ -914,11 +920,18 @@ impl JobsState {
             return Started::Conflict;
         }
         let estimate = exam::wait_estimate(&ask_cfg);
+        let start = exam::sitting_start(
+            &deck,
+            &store,
+            crate::session::now_ms(),
+            self.config.review.retire_after_days,
+        );
         let sitting = exam::Sitting::start_with(
             &deck,
             selection.topics,
             sources,
             ideas,
+            start,
             strictness,
             exam_cfg,
             ask_cfg,

@@ -621,7 +621,7 @@ mod tests {
             ..Default::default()
         });
         store.set_last_launch("deck-walk", crate::depth::Launch::Recognize);
-        store.set_deck_passed("deck-walk", 60);
+        store.set_deck_passed("deck-walk", 60, &crate::store::ExamStamp::default());
         let before = store.clone();
         let snapshot = |store: &Store| -> Vec<Option<CardState>> {
             cards

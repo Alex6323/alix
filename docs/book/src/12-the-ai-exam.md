@@ -167,23 +167,37 @@ stays responsive while it thinks.
 
 A sitting reports points, not a verdict: each Pass is worth 1, each Partial
 0.5, each Fail 0, shown as `17 / 18` or `17.5 / 18`, with the same count for
-each examined topic and the shape of each question. Every examined card
-records its topic's latest result:
+each examined topic and the shape of each question. The deck's progress
+records each examined topic's latest result, together with the fingerprint
+of the sources it was examined over:
 
 - A **topic passes** when its share of Pass answers reaches `pass_threshold`
   (a fraction; 1.0, every answer, by default; a Partial counts as no Pass
-  here). Each examined card then stores its topic's verdict, so a topic
-  reads as *needs work* when any of its cards carries a failed verdict, *has
-  new cards* when some cards were added since its last sitting, *passed* when
-  every card carries a passing one, and *never examined* when none carries
-  one.
+  here). A topic reads as *passed* while its latest result passed, *needs
+  work* while it failed, and *never examined* when it has no result or its
+  sources changed since the result was recorded: a result earned on older
+  material does not count, so "only topics needing work" always includes a
+  topic whose sources changed. The topic's cards play no part in this:
+  adding a card to a passed topic keeps it passed, and a topic with no cards
+  can be examined.
+- A sitting can set a standing only when it meets the **review condition**
+  at its start: every card of every topic *without* a source, retired cards
+  included, has graduated at Recall or deeper, its latest grade at that
+  depth was a pass, and it is not yet due. Those cards are the only evidence
+  that an unsourced topic was learned, so they must be learned first. A
+  sitting that starts without the condition still runs and records every
+  topic's result, but sets neither passed nor mastered.
 - The deck is **passed** the first time every topic has passed, whether in
-  one sitting or across several filtered ones. Passing, not mere drilling, is
+  one sitting or across several filtered ones, by a sitting that met the
+  review condition. Passing, not mere drilling, is
   what unlocks decks that `requires:` this one, and a deck that has sat its
   exam once is never locked again by its own prerequisites. Source-less decks
   are unaffected: finishing them just means drilled (`done ✓`).
-- The deck is **mastered** the first time a full sitting (every topic)
-  scores every answer Pass; a filtered sitting never sets it.
+- The deck is **mastered** the first time a full sitting (every topic) that
+  met the review condition scores every answer Pass; a filtered sitting
+  never sets it.
+
+## What a standing means
 
 Neither passed nor mastered is taken back by a later, weaker sitting. The
 results screen and the deck row both name the highest of them with the day
@@ -191,6 +205,19 @@ it was reached, and the row adds the last full sitting's day and points:
 `passed (2 Nov) · last (4 Nov) 12 / 18`, `mastered (4 Nov) · last (4 Nov)
 18 / 18`, or `last (4 Nov) 15 / 18` when examined but not passed. A date
 outside the current year names the year (`31 Dec 2025`).
+
+A standing names the material it was earned on: the sitting that sets it
+records the sourced topics' fingerprints and the id of every card in the
+unsourced topics, sidecar cards included. When that material changes later
+(a source refrozen or rebound, a topic given or stripped of its source, a
+card or a blank added to an unsourced topic, a remediation card among them),
+the standing reads as **sources changed**: `alix stats` prints
+`passed (sources changed)` or `mastered (sources changed)`. It still stands:
+a dependent it unlocked stays unlocked, and mastered stays mastered. Re-sit
+(the changed topics are the ones needing work) and pass in a sitting that
+meets the review condition, and the standing is re-earned on the current
+material. Removing a card or a whole unsourced topic, editing card text or
+headings, and a card becoming due or lapsing never change a standing.
 
 Whenever an answer missed key points, the results offer to turn the gaps into
 **remediation cards**: a cloze card or a plain card for a missed fact, an open
@@ -210,8 +237,8 @@ in a file you own, you can read, edit, or delete them yourself.
 
 Resetting a whole deck (`alix reset <deck>`) also clears its exam state, so a
 re-drilled deck must pass again; `alix reset <deck> --exam` clears only the
-exam state (each card's result, passed, mastered and the last count) and
-names the decks whose exams it will lock. Resetting only an individual card
+exam state (each topic's result, the material stamp, passed, mastered and the
+last count) and names the decks whose exams it will lock. Resetting only an individual card
 (`--card`) leaves the deck's passed and mastered state intact.
 
 ## Strictness: match the rigor to the material

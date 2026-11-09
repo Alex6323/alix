@@ -1152,9 +1152,16 @@ fn findings_in(dir: &Path, drift: DriftChecks) -> Report {
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
             let mut known_cards: HashSet<String> = HashSet::new();
+            let mut known_topics: HashMap<String, HashSet<String>> = HashMap::new();
             let mut any_fresh = false;
             for path in &deck_files {
                 if let Ok(deck) = Deck::load(path) {
+                    if let Some(deck_id) = &deck.deck_token {
+                        known_topics
+                            .entry(deck_id.clone())
+                            .or_default()
+                            .extend(deck.topic_ids().into_iter().flatten());
+                    }
                     for card in &deck.cards {
                         if let Some(id) = card.id() {
                             if store.get(&id).is_none() {
@@ -1168,7 +1175,7 @@ fn findings_in(dir: &Path, drift: DriftChecks) -> Report {
                     known_cards.extend(deck.ignored_ids());
                 }
             }
-            let orphans = store.orphans(&known_cards, &known_deck_ids);
+            let orphans = store.orphans(&known_cards, &known_deck_ids, &known_topics);
             for key in &orphans.cards {
                 report.warn(format!(
                     "orphaned store key (card) `{key}` matches no card in {}",
@@ -1179,6 +1186,11 @@ fn findings_in(dir: &Path, drift: DriftChecks) -> Report {
                 report.warn(format!(
                     "orphaned store key (deck) `{key}` matches no deck in {}",
                     dir.display()
+                ));
+            }
+            for (deck_id, topic_id) in &orphans.topics {
+                report.warn(format!(
+                    "orphaned store key (topic) `{topic_id}` matches no topic in {deck_id}"
                 ));
             }
             if !orphans.cards.is_empty() && any_fresh {
@@ -4347,6 +4359,55 @@ printf ']}}'
         .unwrap();
         std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
         assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_ok());
+    }
+
+    #[test]
+    fn doctor_warns_on_an_orphaned_topic_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        w(ws, alix::workspace::MANIFEST, "");
+        let decks = ws.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        w(
+            &decks,
+            "d.md",
+            "---\nformat-version: 1\nid: deck-d\n---\n# A\n<!-- id: topic-a -->\n\n## a\n1\n<!-- id: card-a1 -->\n",
+        );
+        let deck = decks.join("d.md");
+        bind_source(&deck, vec!["topic-a".to_string()]);
+        let mut store =
+            alix::state::open_store(&deck, &alix::workspace::root_store_path(ws)).unwrap();
+        for topic_id in ["topic-a", "topic-gone"] {
+            let record = alix::store::SittingRecord {
+                topics: vec![alix::store::TopicRecord {
+                    topic_id: topic_id.to_string(),
+                    fingerprint: "f".to_string(),
+                    pass: true,
+                }],
+                ..Default::default()
+            };
+            store.record_sitting(
+                "deck-d",
+                &[],
+                &record,
+                1,
+                false,
+                &alix::store::ExamStamp::default(),
+            );
+        }
+        store.save().unwrap();
+
+        let report = workspace_findings(ws, DriftChecks::default());
+
+        let warnings = report.warnings.join("\n");
+        assert!(
+            warnings.contains("orphaned store key (topic) `topic-gone` matches no topic in deck-d"),
+            "{warnings}"
+        );
+        assert!(
+            !warnings.contains("orphaned store key (topic) `topic-a`"),
+            "a result for a live topic is no orphan: {warnings}"
+        );
     }
 
     #[test]

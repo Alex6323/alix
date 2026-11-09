@@ -39,21 +39,49 @@ void examAnswersClear({
   required String rootDir,
 }) => bridge.examAnswersClear(deckPath: deckPath, rootDir: rootDir);
 
-List<String>? examStartCards({
+/// A sitting's starting state, evaluated once against the phone's store:
+/// the cards to ask about (null for a full sitting), whether the review
+/// condition holds, and the evidence stamp a standing records.
+class ExamSittingStart {
+  const ExamSittingStart({
+    required this.cards,
+    required this.eligible,
+    required this.sourced,
+    required this.unsourcedCards,
+  });
+
+  final List<String>? cards;
+  final bool eligible;
+  final String sourced;
+  final List<String> unsourcedCards;
+}
+
+ExamSittingStart examSittingStart({
   required String deckPath,
   required String rootDir,
   required bool needsWorkOnly,
-}) => bridge.examStartCards(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  needsWorkOnly: needsWorkOnly,
-);
+  required BigInt nowMs,
+}) {
+  final start = bridge.examSittingStart(
+    deckPath: deckPath,
+    rootDir: rootDir,
+    needsWorkOnly: needsWorkOnly,
+    nowMs: nowMs,
+  );
+  return ExamSittingStart(
+    cards: start.cards,
+    eligible: start.eligible,
+    sourced: start.stamp.sourced,
+    unsourcedCards: start.stamp.unsourcedCards,
+  );
+}
 
 /// The deck's standing after the sitting, worded by the core, or null.
 String? applyExamResult({
   required String deckPath,
   required String rootDir,
   required RemoteExam exam,
+  required ExamSittingStart start,
   required BigInt nowMs,
   String? device,
 }) {
@@ -64,12 +92,21 @@ String? applyExamResult({
     outcome: bridge.ExamOutcome(
       topics: [
         for (final topic in exam.topics)
-          bridge.ExamTopicOutcome(cards: topic.cards, pass: topic.pass),
+          bridge.ExamTopicOutcome(
+            topicId: topic.topicId,
+            fingerprint: topic.fingerprint,
+            pass: topic.pass,
+          ),
       ],
       full: exam.full,
       pass: verdicts?.pass ?? 0,
       partial: verdicts?.partial ?? 0,
       total: verdicts?.total ?? 0,
+      eligible: start.eligible,
+      stamp: bridge.ExamStamp(
+        sourced: start.sourced,
+        unsourcedCards: start.unsourcedCards,
+      ),
     ),
     nowMs: nowMs,
     device: device,

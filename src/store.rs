@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
         Mutex,
@@ -115,15 +115,21 @@ pub struct CardState {
     // Capped to HISTORY_CAP; oldest entries drop first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<Review>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exam_result: Option<ExamRecord>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ExamRecord {
     pub at_ms: u64,
     pub pass: bool,
+    pub fingerprint: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ExamStamp {
+    pub sourced: String,
+    pub unsourced_cards: Vec<String>,
 }
 
 impl CardState {
@@ -142,7 +148,6 @@ impl CardState {
             total_passes: 0,
             streak: 0,
             history: Vec::new(),
-            exam_result: None,
         }
     }
 
@@ -205,13 +210,17 @@ impl CardState {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DeckProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passed_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mastered_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exam_stamp: Option<ExamStamp>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub topic_results: BTreeMap<String, ExamRecord>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_exam_result: Option<FullExamResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -253,7 +262,8 @@ pub struct SittingRecord {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TopicRecord {
-    pub card_ids: Vec<String>,
+    pub topic_id: String,
+    pub fingerprint: String,
     pub pass: bool,
 }
 
@@ -424,9 +434,10 @@ pub enum StoreError {
     UnownedKey { kind: &'static str, key: String },
     #[error("{subject}: deck is not initialized")]
     MissingDeckId { subject: String },
+    #[error("{path}: progress document holds an exam standing without its evidence stamp")]
+    StandingWithoutStamp { path: PathBuf },
 }
 
-#[cfg(feature = "full")]
 fn validate_deck_file(
     path: &Path,
     expected_deck_id: &str,
@@ -443,6 +454,16 @@ fn validate_deck_file(
             path: path.to_path_buf(),
             expected: expected_deck_id.to_string(),
             actual: file.deck_id.clone(),
+        });
+    }
+    standing_has_stamp(path, &file.deck)
+}
+
+fn standing_has_stamp(path: &Path, progress: &DeckProgress) -> Result<(), StoreError> {
+    let standing = progress.passed_at_ms.is_some() || progress.mastered_at_ms.is_some();
+    if standing && progress.exam_stamp.is_none() {
+        return Err(StoreError::StandingWithoutStamp {
+            path: path.to_path_buf(),
         });
     }
     Ok(())
@@ -595,7 +616,7 @@ fn write_deck_data(
         subject: subject.to_string(),
         revision,
         cards: data.cards.clone(),
-        deck: data.deck,
+        deck: data.deck.clone(),
         writer: data.writer.clone(),
     };
     write_json_atomic(path, &file)
@@ -657,19 +678,7 @@ pub(crate) fn read_deck_data(
         path: path.to_path_buf(),
         source,
     })?;
-    if file.version != DECK_DOCUMENT_VERSION {
-        return Err(StoreError::Version {
-            path: path.to_path_buf(),
-            version: file.version,
-        });
-    }
-    if file.deck_id != expected_deck_id {
-        return Err(StoreError::DeckOwner {
-            path: path.to_path_buf(),
-            expected: expected_deck_id.to_string(),
-            actual: file.deck_id,
-        });
-    }
+    validate_deck_file(path, expected_deck_id, &file)?;
     let subject = current_subject.unwrap_or(&file.subject).to_string();
     Ok((
         file.revision,
@@ -778,19 +787,7 @@ impl Store {
                 path: path.clone(),
                 source,
             })?;
-        if file.version != DECK_DOCUMENT_VERSION {
-            return Err(StoreError::Version {
-                path,
-                version: file.version,
-            });
-        }
-        if file.deck_id != deck_id {
-            return Err(StoreError::DeckOwner {
-                path,
-                expected: deck_id,
-                actual: file.deck_id,
-            });
-        }
+        validate_deck_file(&path, &deck_id, &file)?;
 
         // Deck-level state is keyed by the stable id in memory, never by the
         // filename; the document holds exactly one deck's progress.
@@ -929,7 +926,7 @@ impl Store {
             merge_owned(&mut cards, &mut owners.cards, &data.cards, &deck_id, "card")?;
             owners.decks.insert(deck_id.clone(), deck_id.clone());
             if !data.deck.is_empty() {
-                decks.insert(deck_id.clone(), data.deck);
+                decks.insert(deck_id.clone(), data.deck.clone());
             }
             if data.writer.as_ref().is_some_and(|candidate| {
                 last_writer
@@ -1022,7 +1019,7 @@ impl Store {
             self.cards.insert(key.clone(), value.clone());
         }
         for (key, value) in &owner.decks {
-            self.decks.insert(key.clone(), *value);
+            self.decks.insert(key.clone(), value.clone());
         }
         self.failed_decks.remove(deck_id);
     }
@@ -1263,15 +1260,37 @@ impl Store {
         self.decks.get(deck_id).and_then(|d| d.full_exam_result)
     }
 
-    pub fn set_deck_passed(&mut self, deck_id: &str, now_ms: u64) {
-        let entry = self.decks.entry(deck_id.to_string()).or_default();
-        entry.passed_at_ms.get_or_insert(now_ms);
+    pub fn topic_result(&self, deck_id: &str, topic_id: &str) -> Option<&ExamRecord> {
+        self.decks
+            .get(deck_id)
+            .and_then(|d| d.topic_results.get(topic_id))
     }
 
-    pub fn record_exam_result(&mut self, deck: &Deck, record: &SittingRecord, now_ms: u64) -> bool {
+    pub fn topic_results(&self, deck_id: &str) -> Option<&BTreeMap<String, ExamRecord>> {
+        self.decks.get(deck_id).map(|d| &d.topic_results)
+    }
+
+    pub fn exam_stamp(&self, deck_id: &str) -> Option<&ExamStamp> {
+        self.decks.get(deck_id).and_then(|d| d.exam_stamp.as_ref())
+    }
+
+    pub fn set_deck_passed(&mut self, deck_id: &str, now_ms: u64, stamp: &ExamStamp) {
+        let entry = self.decks.entry(deck_id.to_string()).or_default();
+        entry.passed_at_ms.get_or_insert(now_ms);
+        entry.exam_stamp.get_or_insert_with(|| stamp.clone());
+    }
+
+    pub fn record_exam_result(
+        &mut self,
+        deck: &Deck,
+        record: &SittingRecord,
+        now_ms: u64,
+        eligible: bool,
+        stamp: &ExamStamp,
+    ) -> bool {
         let deck_id = deck.deck_token.clone().unwrap_or_default();
         let topics = crate::exam_status::examined_topics(deck);
-        self.record_sitting(&deck_id, &topics, record, now_ms)
+        self.record_sitting(&deck_id, &topics, record, now_ms, eligible, stamp)
     }
 
     /// Returns whether this sitting set the deck's `passed_at_ms`.
@@ -1281,38 +1300,44 @@ impl Store {
         deck_topics: &[crate::exam_status::ExamTopic],
         record: &SittingRecord,
         now_ms: u64,
+        eligible: bool,
+        stamp: &ExamStamp,
     ) -> bool {
+        let progress = self.decks.entry(deck_id.to_string()).or_default();
         for topic in &record.topics {
-            let result = ExamRecord {
-                at_ms: now_ms,
-                pass: topic.pass,
-            };
-            for id in &topic.card_ids {
-                self.get_or_insert(id).exam_result = Some(result);
-            }
+            progress.topic_results.insert(
+                topic.topic_id.clone(),
+                ExamRecord {
+                    at_ms: now_ms,
+                    pass: topic.pass,
+                    fingerprint: topic.fingerprint.clone(),
+                },
+            );
         }
         if record.full {
-            self.decks
-                .entry(deck_id.to_string())
-                .or_default()
-                .full_exam_result = Some(FullExamResult {
+            progress.full_exam_result = Some(FullExamResult {
                 at_ms: now_ms,
                 pass: record.pass,
                 partial: record.partial,
                 total: record.total,
             });
         }
-        let newly_passed = !self.deck_passed(deck_id)
-            && crate::exam_status::status_of(deck_topics, self).all_passed();
+        let all_passed = crate::exam_status::status_of(deck_id, deck_topics, self).all_passed();
+        let masters = record.full && record.total > 0 && record.pass == record.total;
+        let newly_passed = eligible && all_passed && !self.deck_passed(deck_id);
+        let progress = self.decks.entry(deck_id.to_string()).or_default();
         if newly_passed {
-            self.set_deck_passed(deck_id, now_ms);
+            progress.passed_at_ms.get_or_insert(now_ms);
         }
-        if record.full && record.total > 0 && record.pass == record.total {
-            self.decks
-                .entry(deck_id.to_string())
-                .or_default()
-                .mastered_at_ms
-                .get_or_insert(now_ms);
+        if eligible && masters {
+            progress.mastered_at_ms.get_or_insert(now_ms);
+        }
+        let sitting_passed = record.topics.iter().all(|topic| topic.pass);
+        if eligible && sitting_passed && (all_passed || masters) {
+            progress.exam_stamp = Some(stamp.clone());
+        }
+        if progress.is_empty() {
+            self.decks.remove(deck_id);
         }
         newly_passed
     }
@@ -1322,7 +1347,8 @@ impl Store {
         let topics: Vec<TopicRecord> = crate::exam_status::examined_topics(deck)
             .into_iter()
             .map(|topic| TopicRecord {
-                card_ids: topic.card_ids,
+                topic_id: topic.topic_id,
+                fingerprint: topic.fingerprint,
                 pass: true,
             })
             .collect();
@@ -1334,29 +1360,25 @@ impl Store {
             partial: 0,
             total,
         };
-        self.record_exam_result(deck, &record, now_ms);
+        let stamp = crate::exam_status::sitting_start(deck, self, now_ms, None).stamp;
+        self.record_exam_result(deck, &record, now_ms, true, &stamp);
     }
 
     pub fn ever_examined(&self, deck: &Deck) -> bool {
         let deck_id = deck.deck_token.as_deref().unwrap_or_default();
-        self.full_exam_result(deck_id).is_some()
-            || deck.cards.iter().filter_map(|card| card.id()).any(|id| {
-                self.get(&id)
-                    .is_some_and(|state| state.exam_result.is_some())
-            })
+        self.decks.get(deck_id).is_some_and(|progress| {
+            progress.full_exam_result.is_some() || !progress.topic_results.is_empty()
+        })
     }
 
     pub fn clear_deck_exam(&mut self, deck: &Deck) {
-        for id in deck.cards.iter().filter_map(|card| card.id()) {
-            if let Some(state) = self.cards.get_mut(&id) {
-                state.exam_result = None;
-            }
-        }
         let deck_id = deck.deck_token.as_deref().unwrap_or_default();
         if let Some(progress) = self.decks.get_mut(deck_id) {
             progress.passed_at_ms = None;
             progress.mastered_at_ms = None;
             progress.full_exam_result = None;
+            progress.topic_results.clear();
+            progress.exam_stamp = None;
             if progress.is_empty() {
                 self.decks.remove(deck_id);
             }
@@ -1418,10 +1440,13 @@ impl Store {
         &self.path
     }
 
+    /// `known_topic_ids` maps each known deck id to its topic ids; a topic
+    /// result under a known deck that the map does not list is an orphan.
     pub fn orphans(
         &self,
         known_card_ids: &HashSet<String>,
         known_deck_ids: &HashSet<String>,
+        known_topic_ids: &HashMap<String, HashSet<String>>,
     ) -> Orphans {
         let mut cards: Vec<String> = self
             .cards
@@ -1435,9 +1460,27 @@ impl Store {
             .filter(|k| !known_deck_ids.contains(*k))
             .cloned()
             .collect();
+        let mut topics: Vec<(String, String)> = self
+            .decks
+            .iter()
+            .filter(|(deck_id, _)| known_deck_ids.contains(*deck_id))
+            .flat_map(|(deck_id, progress)| {
+                let known = known_topic_ids.get(deck_id);
+                progress
+                    .topic_results
+                    .keys()
+                    .filter(move |topic_id| !known.is_some_and(|known| known.contains(*topic_id)))
+                    .map(move |topic_id| (deck_id.clone(), topic_id.clone()))
+            })
+            .collect();
         cards.sort();
         decks.sort();
-        Orphans { cards, decks }
+        topics.sort();
+        Orphans {
+            cards,
+            decks,
+            topics,
+        }
     }
 
     pub fn prune_orphans(&mut self, orphans: &Orphans) -> usize {
@@ -1450,6 +1493,17 @@ impl Store {
         for deck_id in &orphans.decks {
             if self.decks.remove(deck_id).is_some() {
                 removed += 1;
+            }
+        }
+        for (deck_id, topic_id) in &orphans.topics {
+            let Some(progress) = self.decks.get_mut(deck_id) else {
+                continue;
+            };
+            if progress.topic_results.remove(topic_id).is_some() {
+                removed += 1;
+            }
+            if progress.is_empty() {
+                self.decks.remove(deck_id);
             }
         }
         removed
@@ -1483,15 +1537,16 @@ impl Store {
 pub struct Orphans {
     pub cards: Vec<String>,
     pub decks: Vec<String>,
+    pub topics: Vec<(String, String)>,
 }
 
 impl Orphans {
     pub fn is_empty(&self) -> bool {
-        self.cards.is_empty() && self.decks.is_empty()
+        self.cards.is_empty() && self.decks.is_empty() && self.topics.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.cards.len() + self.decks.len()
+        self.cards.len() + self.decks.len() + self.topics.len()
     }
 }
 
@@ -2155,21 +2210,45 @@ mod tests {
         store.set_last_launch("d1", Launch::Recall);
         store.set_last_launch("d2", Launch::Recall);
 
+        for topic_id in ["topic-live", "topic-gone"] {
+            let record = SittingRecord {
+                topics: vec![TopicRecord {
+                    topic_id: topic_id.to_string(),
+                    fingerprint: "f".to_string(),
+                    pass: true,
+                }],
+                ..Default::default()
+            };
+            store.record_sitting("d1", &[], &record, 1, false, &ExamStamp::default());
+        }
+
         let known_cards: HashSet<String> = ["live".to_string(), "card-vq".to_string()]
             .into_iter()
             .collect();
         let known_deck_ids: HashSet<String> = ["d1".to_string()].into_iter().collect();
-        let orphans = store.orphans(&known_cards, &known_deck_ids);
+        let known_topic_ids: HashMap<String, HashSet<String>> =
+            HashMap::from([("d1".to_string(), HashSet::from(["topic-live".to_string()]))]);
+        let orphans = store.orphans(&known_cards, &known_deck_ids, &known_topic_ids);
         assert_eq!(vec!["gone".to_string()], orphans.cards);
         assert_eq!(vec!["d2".to_string()], orphans.decks);
-        assert_eq!(2, orphans.len());
+        assert_eq!(
+            vec![("d1".to_string(), "topic-gone".to_string())],
+            orphans.topics,
+            "a topic result under a known deck that names no topic of it"
+        );
+        assert_eq!(3, orphans.len());
 
-        assert_eq!(2, store.prune_orphans(&orphans));
+        assert_eq!(3, store.prune_orphans(&orphans));
         assert!(store.get("live").is_some());
         assert!(store.get("card-vq").is_some());
         assert_eq!(Some(Launch::Recall), store.last_launch("d1"));
         assert!(store.get("gone").is_none());
         assert_eq!(None, store.last_launch("d2"));
+        assert!(
+            store.topic_result("d1", "topic-live").is_some(),
+            "the live result stays"
+        );
+        assert_eq!(None, store.topic_result("d1", "topic-gone"));
     }
 
     #[test]
@@ -2179,9 +2258,9 @@ mod tests {
 
         store.get_or_insert("card-doom").introduced_ms = Some(0);
         store.get_or_insert("card-doom-ba1b2c3").introduced_ms = Some(0);
-        store.set_deck_passed("doomed", 1);
+        store.set_deck_passed("doomed", 1, &ExamStamp::default());
         store.get_or_insert("keep").introduced_ms = Some(0);
-        store.set_deck_passed("keep", 1);
+        store.set_deck_passed("keep", 1, &ExamStamp::default());
 
         let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
         let wiped = store.wipe_deck(&tokens, "doomed");
@@ -2204,7 +2283,7 @@ mod tests {
         store.get_or_insert("card-doom-0").introduced_ms = Some(0);
         let tokens: HashSet<String> = ["card-doom".to_string()].into_iter().collect();
         assert_eq!(0, store.wipe_deck(&tokens, "doomed"));
-        let orphans = store.orphans(&HashSet::new(), &HashSet::new());
+        let orphans = store.orphans(&HashSet::new(), &HashSet::new(), &HashMap::new());
         assert_eq!(vec!["card-doom-0".to_string()], orphans.cards);
     }
 
@@ -2504,7 +2583,7 @@ mod tests {
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
         store.get_or_insert("card1").introduced_ms = Some(1);
-        store.set_deck_passed("deck1", 2);
+        store.set_deck_passed("deck1", 2, &ExamStamp::default());
         store.save().unwrap();
 
         let text = std::fs::read_to_string(&path).unwrap();
@@ -2522,7 +2601,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("progress/deck1.json");
         let mut store = Store::open_deck(&path, "deck1", "old.md").unwrap();
-        store.set_deck_passed("deck1", 2);
+        store.set_deck_passed("deck1", 2, &ExamStamp::default());
         store.get_or_insert("card-one").introduced_ms = Some(1);
         store.save().unwrap();
 
@@ -2655,7 +2734,7 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         assert!(!store.deck_passed("deck1"));
         assert_eq!(None, store.deck_passed_at("deck1"));
-        store.set_deck_passed("deck1", 1234);
+        store.set_deck_passed("deck1", 1234, &ExamStamp::default());
         assert!(store.deck_passed("deck1"));
         assert_eq!(Some(1234), store.deck_passed_at("deck1"));
         store.save().unwrap();
@@ -2672,7 +2751,7 @@ mod tests {
     fn clear_also_drops_deck_passed() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.set_deck_passed("a", 1);
+        store.set_deck_passed("a", 1, &ExamStamp::default());
         store.clear();
         assert!(!store.deck_passed("a"));
     }
@@ -4167,48 +4246,74 @@ mod tests {
     }
 
     #[test]
-    fn an_exam_record_round_trips_and_a_later_result_overwrites_it() {
+    fn a_progress_document_with_a_card_exam_result_is_rejected() {
+        let parsed =
+            serde_json::from_str::<CardState>(r#"{"exam_result":{"at_ms":1,"pass":true}}"#);
+        assert!(parsed.is_err(), "{parsed:?}");
+
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("deck1.json");
-        let mut store = Store::open(&path).unwrap();
-        store.get_or_insert("card-a").exam_result = Some(ExamRecord {
-            at_ms: 1,
-            pass: true,
-        });
-        store.save().unwrap();
-        let mut reloaded = Store::open(&path).unwrap();
-        assert_eq!(
-            Some(ExamRecord {
-                at_ms: 1,
-                pass: true
-            }),
-            reloaded.get("card-a").unwrap().exam_result,
-            "round trip"
-        );
-        reloaded.get_or_insert("card-a").exam_result = Some(ExamRecord {
-            at_ms: 2,
-            pass: false,
-        });
-        assert_eq!(
-            Some(ExamRecord {
-                at_ms: 2,
-                pass: false
-            }),
-            reloaded.get("card-a").unwrap().exam_result,
-            "a later result overwrites"
+        let path = dir.path().join("deck-old.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"deck_id":"deck-old","subject":"old.md","revision":1,"cards":{"card-a":{"exam_result":{"at_ms":1,"pass":true}}}}"#,
+        )
+        .unwrap();
+        let opened = Store::open_deck(&path, "deck-old", "old.md").err();
+        assert!(
+            matches!(opened, Some(StoreError::Format { .. })),
+            "ordinary invalid input: {opened:?}"
         );
     }
 
     #[test]
-    fn a_card_with_only_an_exam_result_is_not_engaged() {
+    fn a_topic_result_round_trips_and_a_later_result_overwrites_it() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
-        store.get_or_insert("card-a").exam_result = Some(ExamRecord {
-            at_ms: 1,
-            pass: true,
-        });
-        assert!(!store.get("card-a").unwrap().engaged());
-        assert!(store.progress("card-a").is_none());
+        let path = dir.path().join("deck1.json");
+        let mut store = Store::open(&path).unwrap();
+        let sitting = |pass, fingerprint: &str| SittingRecord {
+            topics: vec![TopicRecord {
+                topic_id: "topic-a".to_string(),
+                fingerprint: fingerprint.to_string(),
+                pass,
+            }],
+            ..Default::default()
+        };
+        store.record_sitting(
+            "deck1",
+            &[],
+            &sitting(true, "f1"),
+            1,
+            false,
+            &ExamStamp::default(),
+        );
+        store.save().unwrap();
+        let mut reloaded = Store::open(&path).unwrap();
+        assert_eq!(
+            Some(&ExamRecord {
+                at_ms: 1,
+                pass: true,
+                fingerprint: "f1".to_string(),
+            }),
+            reloaded.topic_result("deck1", "topic-a"),
+            "round trip"
+        );
+        reloaded.record_sitting(
+            "deck1",
+            &[],
+            &sitting(false, "f2"),
+            2,
+            false,
+            &ExamStamp::default(),
+        );
+        assert_eq!(
+            Some(&ExamRecord {
+                at_ms: 2,
+                pass: false,
+                fingerprint: "f2".to_string(),
+            }),
+            reloaded.topic_result("deck1", "topic-a"),
+            "a later result overwrites"
+        );
     }
 
     const TWO_TOPIC_DECK: &str = "---\nformat-version: 1\nid: deck-rec\n---\n\
@@ -4223,7 +4328,8 @@ mod tests {
                 .zip(examined)
                 .filter_map(|(topic, pass)| {
                     pass.map(|pass| TopicRecord {
-                        card_ids: topic.card_ids.clone(),
+                        topic_id: topic.topic_id.clone(),
+                        fingerprint: topic.fingerprint.clone(),
                         pass,
                     })
                 })
@@ -4235,35 +4341,50 @@ mod tests {
         }
     }
 
+    fn stamp_of(deck: &Deck, store: &Store) -> ExamStamp {
+        crate::exam_status::sitting_start(deck, store, 0, None).stamp
+    }
+
+    fn two_topic_deck() -> (tempfile::TempDir, Deck) {
+        let (dir, decks) = crate::sources::testkit::workspace_decks();
+        let deck_path = decks.join("rec.md");
+        std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
+        let deck = Deck::load(crate::sources::testkit::sourced(deck_path)).unwrap();
+        (dir, deck)
+    }
+
     #[test]
     fn recording_follows_the_four_steps() {
         type Sitting = (&'static [Option<bool>], (u32, u32, u32));
         struct Row {
             label: &'static str,
             sittings: &'static [Sitting],
-            cards: [Option<bool>; 3],
+            topics: [Option<bool>; 2],
             full: Option<(u64, u32, u32, u32)>,
             passed_at: Option<u64>,
             mastered_at: Option<u64>,
+            stamped: bool,
             newly_passed: [bool; 2],
         }
         let rows = [
             Row {
                 label: "full pass at 100%",
                 sittings: &[(&[Some(true), Some(true)], (3, 0, 3))],
-                cards: [Some(true), Some(true), Some(true)],
+                topics: [Some(true), Some(true)],
                 full: Some((1, 3, 0, 3)),
                 passed_at: Some(1),
                 mastered_at: Some(1),
+                stamped: true,
                 newly_passed: [true, false],
             },
             Row {
                 label: "full pass below 100%",
                 sittings: &[(&[Some(true), Some(true)], (2, 1, 3))],
-                cards: [Some(true), Some(true), Some(true)],
+                topics: [Some(true), Some(true)],
                 full: Some((1, 2, 1, 3)),
                 passed_at: Some(1),
                 mastered_at: None,
+                stamped: true,
                 newly_passed: [true, false],
             },
             Row {
@@ -4272,10 +4393,11 @@ mod tests {
                     (&[Some(true), Some(false)], (2, 0, 3)),
                     (&[None, Some(true)], (1, 0, 1)),
                 ],
-                cards: [Some(true), Some(true), Some(true)],
+                topics: [Some(true), Some(true)],
                 full: Some((1, 2, 0, 3)),
                 passed_at: Some(2),
                 mastered_at: None,
+                stamped: true,
                 newly_passed: [false, true],
             },
             Row {
@@ -4284,10 +4406,11 @@ mod tests {
                     (&[Some(true), Some(true)], (3, 0, 3)),
                     (&[Some(false), Some(false)], (0, 0, 3)),
                 ],
-                cards: [Some(false), Some(false), Some(false)],
+                topics: [Some(false), Some(false)],
                 full: Some((2, 0, 0, 3)),
                 passed_at: Some(1),
                 mastered_at: Some(1),
+                stamped: true,
                 newly_passed: [true, false],
             },
             Row {
@@ -4296,42 +4419,48 @@ mod tests {
                     (&[Some(true), Some(true)], (3, 0, 3)),
                     (&[Some(true), Some(true)], (3, 0, 3)),
                 ],
-                cards: [Some(true), Some(true), Some(true)],
+                topics: [Some(true), Some(true)],
                 full: Some((2, 3, 0, 3)),
                 passed_at: Some(1),
                 mastered_at: Some(1),
+                stamped: true,
                 newly_passed: [true, false],
             },
             Row {
                 label: "a filtered sitting never writes the count",
                 sittings: &[(&[None, Some(true)], (1, 0, 1))],
-                cards: [None, None, Some(true)],
+                topics: [None, Some(true)],
                 full: None,
                 passed_at: None,
                 mastered_at: None,
+                stamped: false,
                 newly_passed: [false, false],
             },
         ];
         for row in rows {
-            let (dir, decks) = crate::sources::testkit::workspace_decks();
-            let deck_path = decks.join("rec.md");
-            std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
-            let deck = Deck::load(crate::sources::testkit::sourced(deck_path)).unwrap();
+            let (dir, deck) = two_topic_deck();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let stamp = stamp_of(&deck, &store);
             let mut newly = [false; 2];
             for (at, (examined, counts)) in row.sittings.iter().enumerate() {
                 newly[at] = store.record_exam_result(
                     &deck,
                     &record(&deck, examined, *counts),
                     at as u64 + 1,
+                    true,
+                    &stamp,
                 );
             }
             let label = row.label;
-            let cards: Vec<Option<bool>> = ["card-a1", "card-a2", "card-b1"]
+            let topics: Vec<Option<bool>> = crate::exam_status::examined_topics(&deck)
                 .iter()
-                .map(|id| store.get(id).and_then(|s| s.exam_result).map(|r| r.pass))
+                .map(|topic| {
+                    store
+                        .topic_result("deck-rec", &topic.topic_id)
+                        .map(|result| result.pass)
+                })
                 .collect();
-            assert_eq!(row.cards.to_vec(), cards, "{label}: card records");
+            assert_eq!(row.topics.to_vec(), topics, "{label}: topic results");
             assert_eq!(
                 row.full,
                 store
@@ -4349,28 +4478,82 @@ mod tests {
                 store.deck_mastered_at("deck-rec"),
                 "{label}: mastered_at_ms"
             );
+            assert_eq!(
+                row.stamped.then_some(&stamp),
+                store.exam_stamp("deck-rec"),
+                "{label}: exam_stamp"
+            );
             assert_eq!(row.newly_passed, newly, "{label}: newly passed per sitting");
         }
     }
 
     #[test]
-    fn clearing_a_decks_exam_keeps_drilling_and_the_rest_of_its_progress() {
-        let (dir, decks) = crate::sources::testkit::workspace_decks();
-        let deck_path = decks.join("rec.md");
-        std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
-        let deck = Deck::load(crate::sources::testkit::sourced(deck_path)).unwrap();
+    fn a_sitting_with_a_failed_topic_keeps_the_old_stamp() {
+        let (dir, deck) = two_topic_deck();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let first = stamp_of(&deck, &store);
         store.record_exam_result(
             &deck,
             &record(&deck, &[Some(true), Some(true)], (3, 0, 3)),
             1,
+            true,
+            &first,
+        );
+        let later = ExamStamp {
+            sourced: "later".to_string(),
+            unsourced_cards: vec!["card-new".to_string()],
+        };
+
+        store.record_exam_result(
+            &deck,
+            &record(&deck, &[Some(true), Some(false)], (2, 0, 3)),
+            2,
+            true,
+            &later,
+        );
+        assert_eq!(
+            Some(&first),
+            store.exam_stamp("deck-rec"),
+            "a failed topic leaves the stamp as it was"
+        );
+        assert_eq!(
+            Some(1),
+            store.deck_passed_at("deck-rec"),
+            "the standing is latched"
+        );
+
+        store.record_exam_result(
+            &deck,
+            &record(&deck, &[None, Some(true)], (1, 0, 1)),
+            3,
+            true,
+            &later,
+        );
+        assert_eq!(
+            Some(&later),
+            store.exam_stamp("deck-rec"),
+            "a passing sitting after which every topic passes replaces the stamp, passed or not"
+        );
+    }
+
+    #[test]
+    fn clearing_a_decks_exam_keeps_drilling_and_the_rest_of_its_progress() {
+        let (dir, deck) = two_topic_deck();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let stamp = stamp_of(&deck, &store);
+        store.record_exam_result(
+            &deck,
+            &record(&deck, &[Some(true), Some(true)], (3, 0, 3)),
+            1,
+            true,
+            &stamp,
         );
         store.get_or_insert("card-a1").total_reviews = 4;
         store.set_last_launch("deck-rec", Launch::Recall);
         assert!(store.ever_examined(&deck), "examined before the clear");
         assert!(
-            store.get("card-a1").unwrap().exam_result.is_some(),
-            "setup: the sitting recorded on the cards"
+            store.exam_stamp("deck-rec").is_some(),
+            "setup: the sitting stamped the deck"
         );
 
         store.clear_deck_exam(&deck);
@@ -4379,6 +4562,13 @@ mod tests {
         assert_eq!(None, store.deck_passed_at("deck-rec"));
         assert_eq!(None, store.deck_mastered_at("deck-rec"));
         assert_eq!(None, store.full_exam_result("deck-rec"));
+        assert_eq!(None, store.exam_stamp("deck-rec"));
+        assert!(
+            store
+                .topic_results("deck-rec")
+                .is_some_and(BTreeMap::is_empty),
+            "no topic result survives"
+        );
         assert_eq!(
             4,
             store.get("card-a1").unwrap().total_reviews,
@@ -4395,10 +4585,97 @@ mod tests {
             total: 3,
             ..Default::default()
         };
-        store.record_exam_result(&deck, &count_only, 2);
+        store.record_exam_result(&deck, &count_only, 2, true, &stamp);
         assert!(
             store.ever_examined(&deck),
             "a stored full count alone means the deck has sat its exam"
+        );
+    }
+
+    #[test]
+    fn clearing_a_decks_exam_clears_topic_results_and_the_stamp_in_one_write() {
+        let (dir, deck) = two_topic_deck();
+        let path = dir.path().join("deck-rec.json");
+        let mut store = Store::open(&path).unwrap();
+        let stamp = stamp_of(&deck, &store);
+        store.record_exam_result(
+            &deck,
+            &record(&deck, &[Some(true), Some(true)], (3, 0, 3)),
+            1,
+            true,
+            &stamp,
+        );
+        store.set_last_launch("deck-rec", Launch::Recall);
+        store.save().unwrap();
+        let before: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        for key in [
+            "topic_results",
+            "exam_stamp",
+            "passed_at_ms",
+            "mastered_at_ms",
+        ] {
+            assert!(
+                before["deck"].get(key).is_some(),
+                "setup: {key} written: {before}"
+            );
+        }
+
+        store.clear_deck_exam(&deck);
+        store.save().unwrap();
+
+        let after: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        for key in [
+            "topic_results",
+            "exam_stamp",
+            "passed_at_ms",
+            "mastered_at_ms",
+            "full_exam_result",
+        ] {
+            assert!(after["deck"].get(key).is_none(), "{key} cleared: {after}");
+        }
+        assert_eq!("recall", after["deck"]["last_launch"], "{after}");
+        Store::open(&path).expect("the cleared document loads");
+    }
+
+    #[test]
+    fn a_standing_without_a_stamp_is_refused_by_every_deck_document_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck-s.json");
+        let document = r#"{"version":1,"deck_id":"deck-s","subject":"s.md","revision":1,"cards":{},"deck":{"passed_at_ms":1}}"#;
+        std::fs::write(&path, document).unwrap();
+
+        let rows: Vec<(&str, Option<StoreError>)> = vec![
+            (
+                "Store::open_deck",
+                Store::open_deck(&path, "deck-s", "s.md").err(),
+            ),
+            (
+                "read_deck_data",
+                read_deck_data(&path, "deck-s", None).err(),
+            ),
+            #[cfg(feature = "full")]
+            (
+                "ValidatedDeckDocument::parse",
+                ValidatedDeckDocument::parse(document.as_bytes(), "deck-s").err(),
+            ),
+        ];
+        for (label, error) in rows {
+            assert!(
+                matches!(error, Some(StoreError::StandingWithoutStamp { .. })),
+                "{label}: {error:?}"
+            );
+        }
+
+        let stamped = r#"{"version":1,"deck_id":"deck-s","subject":"s.md","revision":1,"cards":{},"deck":{"passed_at_ms":1,"exam_stamp":{"sourced":"x","unsourced_cards":[]}}}"#;
+        std::fs::write(&path, stamped).unwrap();
+        assert_eq!(
+            Some(1),
+            Store::open_deck(&path, "deck-s", "s.md")
+                .unwrap()
+                .deck_passed_at("deck-s"),
+            "control: the same standing with its stamp loads"
         );
     }
 }

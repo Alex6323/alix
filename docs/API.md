@@ -229,8 +229,11 @@ call per topic, each card bound to its topic in the personal file; `POST /api/ex
 `StateDto`. A prepared exam is current while every topic it asks about is
 still examined over the same sources; otherwise start answers 409 and keeps
 it, and generating again rewrites only the changed or new topics, keeping the
-other topics' questions and answers. The result is recorded on the examined cards when
-grading settles.
+other topics' questions and answers. When grading settles, each examined
+topic's result is recorded under its topic id with the source fingerprint it
+was examined over; whether the sitting may set a standing was decided once at
+its start (the review condition), together with the evidence stamp a standing
+records.
 
 ### 4.4 Augment
 
@@ -1157,10 +1160,11 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
 | `reviewable_recognize` / `reviewable_recall` / `reviewable_reconstruct` | bool | Per-depth honest due-ness — gate depth choices on these. Same group-aggregates-members caveat as `reviewable`. `reviewable_recognize` is pick-only: it needs a card that is both due at Recognize **and** recognizable (see `can_recognize`). |
 | `can_recognize` | bool | The deck has at least one recognizable card: authored task-list options, or cached choice distractors (`alix deck augment --target choices`), that build a pick. Gate the **Recognize** depth on this: a deck without it can build no pick, so Recognize is unavailable (grey it out) even under cram. Group rows aggregate members. |
-| `mastered` | bool | A full sitting scored every answer PASS (`mastered_at_ms`). |
-| `passed_at_ms` | number? | When every topic of the deck first passed at `pass_threshold`; unlocks dependents' exams. Null when never. |
+| `mastered` | bool | A full sitting that met the review condition scored every answer PASS (`mastered_at_ms`). |
+| `passed_at_ms` | number? | When every topic of the deck first passed at `pass_threshold`, in a sitting that met the review condition; unlocks dependents' exams. Null when never. |
 | `full_exam_result` | {pass, partial, total}? | Raw verdict counts of the last full sitting (points are pass + partial / 2). Null when none. |
-| `topics` | {passed, needs_work, new_cards, unexamined} | Topic counts by status, read from the cards' exam records. All zero for a deck without an exam. |
+| `topics` | {passed, needs_work, unexamined} | Topic counts by status, read from the deck's topic results: a result counts only while its fingerprint equals the topic's current sources' fingerprint, so a topic whose sources changed is `unexamined`. All zero for a deck without an exam. |
+| `exam_changed` | bool | The deck holds a standing (`passed_at_ms` or `mastered`) and the material it was earned on has changed since: a sourced topic's fingerprint differs from the standing's stamp, or an unsourced topic holds a card id the stamp does not list. Render the standing dotted; it still unlocks. False without a standing. |
 | `exam_filter` | string | What "only topics needing work" would select: `none` (every topic passed) \| `partial` \| `all` (no topic passed) *(closed)*. `none` for a deck without an exam. |
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |
@@ -1556,9 +1560,12 @@ Example (from the pinned test):
 
 ### ExamTopicDto
 
-`label: string` (the topic's heading, or the deck title for cards without
-one), `cards: [card-id]` (the topic's member cards, which the result is
-recorded on), `pass: bool` (the share of PASS reached `pass_threshold`),
+`topic_id: string` (the topic's id, the deck id for the leading topic),
+`fingerprint: string` (the fingerprint of the sources the topic was examined
+over; the result is recorded under `topic_id` with it, and counts only while
+it equals the topic's current one), `label: string` (the topic's heading, or
+the deck title for cards without one), `cards: [card-id]` (the topic's member
+cards), `pass: bool` (the share of PASS reached `pass_threshold`),
 `verdicts: {pass, partial, total}`.
 
 ### ExamGradeDto
@@ -1747,7 +1754,7 @@ phone applies it to its own state).
 | `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
 | `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
 | `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
-| `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` on its `cards` in its own store; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
+| `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` under its `topic_id` with its `fingerprint` in its own store, with the review condition and evidence stamp it evaluated at its own start; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `gaps` | [string] | Named understanding gaps. |
 | `can_remediate` | bool | A failed topic has an answer that missed key points. |

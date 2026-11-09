@@ -504,7 +504,7 @@ pub(super) enum StudyCommand {
         catalog: crate::sync::SyncCatalog,
         deck_id: String,
         pulled_revision: Option<u64>,
-        document: crate::store::ValidatedDeckDocument,
+        document: Box<crate::store::ValidatedDeckDocument>,
         reply: Reply<SyncPushReply>,
     },
 }
@@ -856,7 +856,7 @@ impl StudyHandle {
             catalog,
             deck_id,
             pulled_revision,
-            document,
+            document: Box::new(document),
             reply,
         })
     }
@@ -1608,7 +1608,7 @@ impl StudyState {
                 document,
                 reply,
             } => {
-                let out = self.sync_push(catalog, &deck_id, pulled_revision, document);
+                let out = self.sync_push(catalog, &deck_id, pulled_revision, *document);
                 let _ = reply.send(out);
             }
         }
@@ -2263,12 +2263,19 @@ impl StudyState {
                     .flatten()
                     .unwrap_or_default();
                 let prepared = prepared.narrowed(&topics, &questions, &answers);
+                let start = exam::sitting_start(
+                    &deck,
+                    &candidate,
+                    now_ms(),
+                    self.config.review_cfg.retire_after_days,
+                );
                 let sitting = exam::Sitting::from_prepared(
                     &deck,
                     topics,
                     questions,
                     answers,
                     ideas,
+                    start,
                     strictness,
                     self.config
                         .exam_cfg

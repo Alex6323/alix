@@ -178,6 +178,26 @@ fn decks_store(decks: &[&str]) -> alix::store::Store {
     alix::state::open_stores(&paths, &root).unwrap()
 }
 
+/// A topic result written as a sitting records it, without a standing.
+fn record_topic_result(store: &mut alix::store::Store, deck_id: &str, topic_id: &str, pass: bool) {
+    let record = alix::store::SittingRecord {
+        topics: vec![alix::store::TopicRecord {
+            topic_id: topic_id.to_string(),
+            fingerprint: String::new(),
+            pass,
+        }],
+        ..Default::default()
+    };
+    store.record_sitting(
+        deck_id,
+        &[],
+        &record,
+        1,
+        false,
+        &alix::store::ExamStamp::default(),
+    );
+}
+
 fn augmentation_text(deck: &str) -> String {
     let deck = alix::deck::Deck::load(deck).unwrap();
     let deck_id = deck.deck_token.as_deref().unwrap();
@@ -827,6 +847,39 @@ fn a_sidecar_card_naming_an_unknown_topic_joins_the_leading_topic_and_doctor_war
             .any(|line| line == format!("warning: {warning}")),
         "doctor prints the same line: {err}"
     );
+}
+
+#[test]
+fn reset_orphans_removes_an_orphaned_topic_result_and_keeps_live_ones() {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let deck = write(
+        &ws.join("decks"),
+        "d.md",
+        "---\nformat-version: 1\nid: deck-d\n---\n# A\n<!-- id: topic-a -->\n\n## a\n1\n<!-- id: card-a1 -->\n",
+    );
+    let mut store = deck_store(&deck);
+    record_topic_result(&mut store, "deck-d", "topic-a", true);
+    record_topic_result(&mut store, "deck-d", "topic-gone", false);
+    store.save().unwrap();
+
+    let out = alix(&["reset", "--orphans", ws.to_str().unwrap(), "--yes"]);
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains("Reset 1 orphaned key(s)."),
+        "only the gone topic's result is an orphan: {}",
+        stdout(&out)
+    );
+    let reloaded = deck_store(&deck);
+    assert_eq!(
+        Some(true),
+        reloaded.topic_result("deck-d", "topic-a").map(|r| r.pass),
+        "the live topic's result stays"
+    );
+    assert_eq!(None, reloaded.topic_result("deck-d", "topic-gone"));
 }
 
 #[test]
@@ -1526,7 +1579,7 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
         .unwrap();
         store.get_or_insert(&cards[0].id().unwrap());
     }
-    store.set_deck_passed("deck-decka", 0);
+    store.set_deck_passed("deck-decka", 0, &alix::store::ExamStamp::default());
     store.save().unwrap();
 
     let out = alix(&["reset", ws.to_str().unwrap(), "--yes"]);
@@ -1585,11 +1638,8 @@ fn reset_exam_clears_exam_state_only_and_lists_never_examined_dependents() {
     }
     let mut store = decks_store(&[&a, &b]);
     store.get_or_insert("card-exa1").total_reviews = 3;
-    store.get_or_insert("card-exa1").exam_result = Some(alix::store::ExamRecord {
-        at_ms: 1,
-        pass: true,
-    });
-    store.set_deck_passed("deck-exa", 1);
+    record_topic_result(&mut store, "deck-exa", "deck-exa", true);
+    store.set_deck_passed("deck-exa", 1, &alix::store::ExamStamp::default());
     store.save().unwrap();
 
     let refused = alix(&["reset", &a, "--exam", "--card", "qa", "--yes"]);
@@ -1609,7 +1659,11 @@ fn reset_exam_clears_exam_state_only_and_lists_never_examined_dependents() {
         "the passed instant is cleared"
     );
     let card = reloaded.get("card-exa1").expect("drilling progress kept");
-    assert_eq!(None, card.exam_result, "the card's exam record is cleared");
+    assert_eq!(
+        None,
+        reloaded.topic_result("deck-exa", "deck-exa"),
+        "the topic's exam record is cleared"
+    );
     assert_eq!(3, card.total_reviews, "drilling progress kept");
 }
 
@@ -1629,11 +1683,9 @@ fn reset_exam_all_reaches_decks_inside_configured_workspaces() {
     );
     let config = decks_config(&root);
     let mut store = decks_store(&[&deck]);
-    store.get_or_insert("card-a").exam_result = Some(alix::store::ExamRecord {
-        at_ms: 1,
-        pass: true,
-    });
-    store.set_deck_passed("deck-a", 1);
+    store.get_or_insert("card-a");
+    record_topic_result(&mut store, "deck-a", "deck-a", true);
+    store.set_deck_passed("deck-a", 1, &alix::store::ExamStamp::default());
     store.save().unwrap();
 
     let out = alix(&["reset", "--exam", "--all", "--yes", "--config", &config]);
@@ -1641,7 +1693,7 @@ fn reset_exam_all_reaches_decks_inside_configured_workspaces() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let reloaded = decks_store(&[&deck]);
     assert!(!reloaded.deck_passed("deck-a"));
-    assert_eq!(None, reloaded.get("card-a").unwrap().exam_result);
+    assert_eq!(None, reloaded.topic_result("deck-a", "deck-a"));
 }
 
 #[test]
@@ -1658,11 +1710,9 @@ fn reset_exam_all_reaches_decks_inside_plain_folders() {
     );
     let config = decks_config(&root);
     let mut store = decks_store(&[&deck]);
-    store.get_or_insert("card-a").exam_result = Some(alix::store::ExamRecord {
-        at_ms: 1,
-        pass: true,
-    });
-    store.set_deck_passed("deck-a", 1);
+    store.get_or_insert("card-a");
+    record_topic_result(&mut store, "deck-a", "deck-a", true);
+    store.set_deck_passed("deck-a", 1, &alix::store::ExamStamp::default());
     store.save().unwrap();
 
     let out = alix(&["reset", "--exam", "--all", "--yes", "--config", &config]);
@@ -1670,7 +1720,7 @@ fn reset_exam_all_reaches_decks_inside_plain_folders() {
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     let reloaded = decks_store(&[&deck]);
     assert!(!reloaded.deck_passed("deck-a"));
-    assert_eq!(None, reloaded.get("card-a").unwrap().exam_result);
+    assert_eq!(None, reloaded.topic_result("deck-a", "deck-a"));
 }
 
 #[cfg(unix)]
@@ -1690,11 +1740,9 @@ fn reset_exam_all_does_not_follow_directory_symlinks_outside_configured_root() {
     std::os::unix::fs::symlink(&outside, root.join("linked-outside")).unwrap();
     let config = decks_config(&root);
     let mut store = decks_store(&[&deck]);
-    store.get_or_insert("card-a").exam_result = Some(alix::store::ExamRecord {
-        at_ms: 1,
-        pass: true,
-    });
-    store.set_deck_passed("deck-a", 1);
+    store.get_or_insert("card-a");
+    record_topic_result(&mut store, "deck-a", "deck-a", true);
+    store.set_deck_passed("deck-a", 1, &alix::store::ExamStamp::default());
     store.save().unwrap();
 
     let out = alix(&["reset", "--exam", "--all", "--yes", "--config", &config]);
@@ -1706,7 +1754,7 @@ fn reset_exam_all_does_not_follow_directory_symlinks_outside_configured_root() {
         "a deck outside the configured root must not be reset through a directory symlink"
     );
     assert!(
-        reloaded.get("card-a").unwrap().exam_result.is_some(),
+        reloaded.topic_result("deck-a", "deck-a").is_some(),
         "outside exam records must remain untouched"
     );
 }
@@ -2196,13 +2244,16 @@ fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
         let dir = TempDir::new().unwrap();
         let deck = write(dir.path(), "math.md", VALID_DECK);
         let mut store = deck_store(&deck);
+        let loaded = alix::deck::Deck::load(&deck).unwrap();
+        let now = alix::time::now_ms();
+        let stamp = alix::exam_status::sitting_start(&loaded, &store, now, None).stamp;
         if full_marks {
-            let loaded = alix::deck::Deck::load(&deck).unwrap();
             let topics: Vec<alix::store::TopicRecord> =
                 alix::exam_status::exam_topics(&loaded, None)
                     .into_iter()
                     .map(|topic| alix::store::TopicRecord {
-                        card_ids: topic.card_ids,
+                        topic_id: topic.topic_id,
+                        fingerprint: topic.fingerprint,
                         pass: true,
                     })
                     .collect();
@@ -2214,9 +2265,9 @@ fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
                 partial: 0,
                 total,
             };
-            store.record_exam_result(&loaded, &record, alix::time::now_ms());
+            store.record_exam_result(&loaded, &record, now, true, &stamp);
         } else {
-            store.set_deck_passed("deck-mathdeck", alix::time::now_ms());
+            store.set_deck_passed("deck-mathdeck", now, &stamp);
         }
         store.save().unwrap();
 
@@ -3006,7 +3057,7 @@ fn deck_reset_without_yes_leaves_store_unchanged() {
         .unwrap();
     let mut store = deck_store(&deck);
     store.get_or_insert(&card_id);
-    store.set_deck_passed("deck-mathdeck", 0);
+    store.set_deck_passed("deck-mathdeck", 0, &alix::store::ExamStamp::default());
     let personal_id = sample_personal_card(&deck, "deck-mathdeck");
     store.get_or_insert(&personal_id);
     store.save().unwrap();
@@ -3038,7 +3089,11 @@ fn deck_reset_clears_a_mastery_only_store() {
     let dir = TempDir::new().unwrap();
     let deck = write(dir.path(), "math.md", VALID_DECK);
     let mut store = deck_store(&deck);
-    store.set_deck_passed("deck-mathdeck", alix::time::now_ms());
+    store.set_deck_passed(
+        "deck-mathdeck",
+        alix::time::now_ms(),
+        &alix::store::ExamStamp::default(),
+    );
     store.save().unwrap();
 
     let out = alix(&["reset", &deck, "--yes"]);

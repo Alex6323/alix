@@ -239,6 +239,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ExamOutcome dco_decode_exam_outcome(dynamic raw);
 
   @protected
+  ExamStamp dco_decode_exam_stamp(dynamic raw);
+
+  @protected
+  ExamStart dco_decode_exam_start(dynamic raw);
+
+  @protected
   ExamTopicOutcome dco_decode_exam_topic_outcome(dynamic raw);
 
   @protected
@@ -773,6 +779,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer);
+
+  @protected
+  ExamStamp sse_decode_exam_stamp(SseDeserializer deserializer);
+
+  @protected
+  ExamStart sse_decode_exam_start(SseDeserializer deserializer);
 
   @protected
   ExamTopicOutcome sse_decode_exam_topic_outcome(SseDeserializer deserializer);
@@ -1420,6 +1432,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_exam_stamp(ExamStamp self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_exam_start(ExamStart self, SseSerializer serializer);
 
   @protected
   void sse_encode_exam_topic_outcome(

@@ -432,7 +432,11 @@ void main() {
           'subject': 'z-mastered.md',
           'revision': 1,
           'cards': {},
-          'deck': {'passed_at_ms': 1, 'mastered_at_ms': 1},
+          'deck': {
+            'passed_at_ms': 1,
+            'mastered_at_ms': 1,
+            'exam_stamp': {'sourced': 'x', 'unsourced_cards': <String>[]},
+          },
         }),
       );
       return root;

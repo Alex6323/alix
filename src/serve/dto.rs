@@ -690,13 +690,13 @@ pub(super) struct ExamRowDto {
     pub(super) full_exam_result: Option<VerdictsDto>,
     pub(super) topics: TopicTallyDto,
     pub(super) exam_filter: &'static str,
+    pub(super) exam_changed: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub(super) struct TopicTallyDto {
     pub(super) passed: usize,
     pub(super) needs_work: usize,
-    pub(super) new_cards: usize,
     pub(super) unexamined: usize,
 }
 
@@ -712,10 +712,10 @@ impl From<crate::exam_status::ExamRow> for ExamRowDto {
             topics: TopicTallyDto {
                 passed: row.tally.passed,
                 needs_work: row.tally.needs_work,
-                new_cards: row.tally.new_cards,
                 unexamined: row.tally.unexamined,
             },
             exam_filter: row.filter.label(),
+            exam_changed: row.exam_changed,
         }
     }
 }
@@ -729,6 +729,8 @@ pub(super) struct VerdictsDto {
 
 #[derive(Serialize)]
 pub(super) struct ExamTopicDto {
+    pub(super) topic_id: String,
+    pub(super) fingerprint: String,
     pub(super) label: String,
     pub(super) cards: Vec<String>,
     pub(super) pass: bool,
@@ -761,6 +763,8 @@ pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
             .iter()
             .zip(&result.topics)
             .map(|(topic, score)| ExamTopicDto {
+                topic_id: topic.topic_id.clone(),
+                fingerprint: topic.fingerprint.clone(),
                 label: topic.label.clone(),
                 cards: topic.card_ids.clone(),
                 pass: score.passed,
@@ -1738,6 +1742,7 @@ mod tests {
         let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();
         let mut sitting = exam::Sitting::start(
             &deck,
+            exam::sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             crate::config::ExamConfig::default(),
             crate::testutil::ask_config(&cli),

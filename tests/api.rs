@@ -9353,10 +9353,21 @@ fn write_two_topic_exam_deck_with_a_passed(dir: &Path) {
         )],
     );
     let mut store = alix::state::open_store(&deck, &dir.join(EXAM_WS)).unwrap();
-    store.get_or_insert("card-sa1").exam_result = Some(alix::store::ExamRecord {
-        at_ms: 1,
-        pass: true,
-    });
+    let loaded = alix::deck::Deck::load(&deck).unwrap();
+    let topic_a = alix::exam_status::examined_topics(&loaded)
+        .into_iter()
+        .find(|topic| topic.topic_id == "topic-sa")
+        .expect("topic A is sourced");
+    let record = alix::store::SittingRecord {
+        topics: vec![alix::store::TopicRecord {
+            topic_id: topic_a.topic_id,
+            fingerprint: topic_a.fingerprint,
+            pass: true,
+        }],
+        ..Default::default()
+    };
+    let start = alix::exam_status::sitting_start(&loaded, &store, 1, None);
+    store.record_exam_result(&loaded, &record, 1, start.eligible, &start.stamp);
     store.save().unwrap();
 }
 
@@ -9417,10 +9428,9 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_topic_results() {
     assert_eq!(
         Some(true),
         store
-            .get("card-sb1")
-            .and_then(|c| c.exam_result)
+            .topic_result("deck-twosect", "topic-sb")
             .map(|r| r.pass),
-        "the examined topic's card is recorded"
+        "the examined topic's result is recorded"
     );
     assert!(
         store.deck_passed("deck-twosect"),
@@ -9479,7 +9489,7 @@ fn remote_exam_start_examines_topics_of_the_named_cards_reports_unknown_ids_and_
     .unwrap();
     assert_eq!(
         None,
-        store.get("card-sb1").and_then(|c| c.exam_result),
+        store.topic_result("deck-twosect", "topic-sb"),
         "a remote sitting never writes the desktop store"
     );
 }

@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `exam_answers_path`, `exam_files`, `exam_ideas_path`, `open_store`, `parse`, `save`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PhonePreparedExam`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 String? examIdeasLoad({required String deckPath, required String rootDir}) =>
     RustLib.instance.api.crateApiExamExamIdeasLoad(
@@ -54,15 +54,18 @@ void examAnswersClear({required String deckPath, required String rootDir}) =>
       rootDir: rootDir,
     );
 
-/// `None` asks for a full sitting.
-List<String>? examStartCards({
+/// `cards` is `None` for a full sitting. The review condition and the
+/// stamp are evaluated here, once, against the phone's own store.
+ExamStart examSittingStart({
   required String deckPath,
   required String rootDir,
   required bool needsWorkOnly,
-}) => RustLib.instance.api.crateApiExamExamStartCards(
+  required BigInt nowMs,
+}) => RustLib.instance.api.crateApiExamExamSittingStart(
   deckPath: deckPath,
   rootDir: rootDir,
   needsWorkOnly: needsWorkOnly,
+  nowMs: nowMs,
 );
 
 ExamApplied applyExamResult({
@@ -117,6 +120,8 @@ class ExamOutcome {
   final int pass;
   final int partial;
   final int total;
+  final bool eligible;
+  final ExamStamp stamp;
 
   const ExamOutcome({
     required this.topics,
@@ -124,6 +129,8 @@ class ExamOutcome {
     required this.pass,
     required this.partial,
     required this.total,
+    required this.eligible,
+    required this.stamp,
   });
 
   @override
@@ -132,7 +139,9 @@ class ExamOutcome {
       full.hashCode ^
       pass.hashCode ^
       partial.hashCode ^
-      total.hashCode;
+      total.hashCode ^
+      eligible.hashCode ^
+      stamp.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -143,23 +152,69 @@ class ExamOutcome {
           full == other.full &&
           pass == other.pass &&
           partial == other.partial &&
-          total == other.total;
+          total == other.total &&
+          eligible == other.eligible &&
+          stamp == other.stamp;
+}
+
+class ExamStamp {
+  final String sourced;
+  final List<String> unsourcedCards;
+
+  const ExamStamp({required this.sourced, required this.unsourcedCards});
+
+  @override
+  int get hashCode => sourced.hashCode ^ unsourcedCards.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExamStamp &&
+          runtimeType == other.runtimeType &&
+          sourced == other.sourced &&
+          unsourcedCards == other.unsourcedCards;
+}
+
+class ExamStart {
+  final List<String>? cards;
+  final bool eligible;
+  final ExamStamp stamp;
+
+  const ExamStart({this.cards, required this.eligible, required this.stamp});
+
+  @override
+  int get hashCode => cards.hashCode ^ eligible.hashCode ^ stamp.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExamStart &&
+          runtimeType == other.runtimeType &&
+          cards == other.cards &&
+          eligible == other.eligible &&
+          stamp == other.stamp;
 }
 
 class ExamTopicOutcome {
-  final List<String> cards;
+  final String topicId;
+  final String fingerprint;
   final bool pass;
 
-  const ExamTopicOutcome({required this.cards, required this.pass});
+  const ExamTopicOutcome({
+    required this.topicId,
+    required this.fingerprint,
+    required this.pass,
+  });
 
   @override
-  int get hashCode => cards.hashCode ^ pass.hashCode;
+  int get hashCode => topicId.hashCode ^ fingerprint.hashCode ^ pass.hashCode;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is ExamTopicOutcome &&
           runtimeType == other.runtimeType &&
-          cards == other.cards &&
+          topicId == other.topicId &&
+          fingerprint == other.fingerprint &&
           pass == other.pass;
 }

@@ -272,7 +272,7 @@ mod tests {
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
         store.get_or_insert("card-card1");
-        store.set_deck_passed("deck-deck1", 1);
+        store.set_deck_passed("deck-deck1", 1, &crate::store::ExamStamp::default());
         store.save().unwrap();
         std::fs::rename(&old_path, &new_path).unwrap();
 
@@ -298,7 +298,7 @@ mod tests {
         let old_path = dir.path().join("old.md");
         deck(&old_path, "deck1", "card1");
         let mut store = open_store(&old_path, dir.path()).unwrap();
-        store.set_deck_passed("deck-deck1", 1);
+        store.set_deck_passed("deck-deck1", 1, &crate::store::ExamStamp::default());
         store.set_last_launch("deck-deck1", crate::depth::Launch::Recall);
         store.save().unwrap();
 
@@ -317,7 +317,11 @@ mod tests {
         );
 
         let known_deck_ids: HashSet<String> = std::iter::once("deck-deck1".to_string()).collect();
-        let orphans = aggregate.orphans(&HashSet::new(), &known_deck_ids);
+        let orphans = aggregate.orphans(
+            &HashSet::new(),
+            &known_deck_ids,
+            &std::collections::HashMap::new(),
+        );
         assert!(
             orphans.decks.is_empty(),
             "a renamed-but-still-known deck must not report as an orphan: {orphans:?}"

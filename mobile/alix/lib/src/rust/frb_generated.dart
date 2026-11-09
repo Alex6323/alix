@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => 373332917;
+  int get rustContentHash => -1583179561;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -311,10 +311,11 @@ abstract class RustLibApi extends BaseApi {
     required String json,
   });
 
-  List<String>? crateApiExamExamStartCards({
+  ExamStart crateApiExamExamSittingStart({
     required String deckPath,
     required String rootDir,
     required bool needsWorkOnly,
+    required BigInt nowMs,
   });
 
   Future<void> crateApiSimpleInitApp();
@@ -1902,10 +1903,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  List<String>? crateApiExamExamStartCards({
+  ExamStart crateApiExamExamSittingStart({
     required String deckPath,
     required String rootDir,
     required bool needsWorkOnly,
+    required BigInt nowMs,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -1914,23 +1916,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
           sse_encode_bool(needsWorkOnly, serializer);
+          sse_encode_u_64(nowMs, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_opt_list_String,
+          decodeSuccessData: sse_decode_exam_start,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiExamExamStartCardsConstMeta,
-        argValues: [deckPath, rootDir, needsWorkOnly],
+        constMeta: kCrateApiExamExamSittingStartConstMeta,
+        argValues: [deckPath, rootDir, needsWorkOnly, nowMs],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiExamExamStartCardsConstMeta => const TaskConstMeta(
-    debugName: "exam_start_cards",
-    argNames: ["deckPath", "rootDir", "needsWorkOnly"],
-  );
+  TaskConstMeta get kCrateApiExamExamSittingStartConstMeta =>
+      const TaskConstMeta(
+        debugName: "exam_sitting_start",
+        argNames: ["deckPath", "rootDir", "needsWorkOnly", "nowMs"],
+      );
 
   @override
   Future<void> crateApiSimpleInitApp() {
@@ -3085,14 +3089,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExamOutcome dco_decode_exam_outcome(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 5)
-      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return ExamOutcome(
       topics: dco_decode_list_exam_topic_outcome(arr[0]),
       full: dco_decode_bool(arr[1]),
       pass: dco_decode_u_32(arr[2]),
       partial: dco_decode_u_32(arr[3]),
       total: dco_decode_u_32(arr[4]),
+      eligible: dco_decode_bool(arr[5]),
+      stamp: dco_decode_exam_stamp(arr[6]),
+    );
+  }
+
+  @protected
+  ExamStamp dco_decode_exam_stamp(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return ExamStamp(
+      sourced: dco_decode_String(arr[0]),
+      unsourcedCards: dco_decode_list_String(arr[1]),
+    );
+  }
+
+  @protected
+  ExamStart dco_decode_exam_start(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return ExamStart(
+      cards: dco_decode_opt_list_String(arr[0]),
+      eligible: dco_decode_bool(arr[1]),
+      stamp: dco_decode_exam_stamp(arr[2]),
     );
   }
 
@@ -3100,11 +3131,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ExamTopicOutcome dco_decode_exam_topic_outcome(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ExamTopicOutcome(
-      cards: dco_decode_list_String(arr[0]),
-      pass: dco_decode_bool(arr[1]),
+      topicId: dco_decode_String(arr[0]),
+      fingerprint: dco_decode_String(arr[1]),
+      pass: dco_decode_bool(arr[2]),
     );
   }
 
@@ -4684,21 +4716,51 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pass = sse_decode_u_32(deserializer);
     var var_partial = sse_decode_u_32(deserializer);
     var var_total = sse_decode_u_32(deserializer);
+    var var_eligible = sse_decode_bool(deserializer);
+    var var_stamp = sse_decode_exam_stamp(deserializer);
     return ExamOutcome(
       topics: var_topics,
       full: var_full,
       pass: var_pass,
       partial: var_partial,
       total: var_total,
+      eligible: var_eligible,
+      stamp: var_stamp,
+    );
+  }
+
+  @protected
+  ExamStamp sse_decode_exam_stamp(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_sourced = sse_decode_String(deserializer);
+    var var_unsourcedCards = sse_decode_list_String(deserializer);
+    return ExamStamp(sourced: var_sourced, unsourcedCards: var_unsourcedCards);
+  }
+
+  @protected
+  ExamStart sse_decode_exam_start(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_cards = sse_decode_opt_list_String(deserializer);
+    var var_eligible = sse_decode_bool(deserializer);
+    var var_stamp = sse_decode_exam_stamp(deserializer);
+    return ExamStart(
+      cards: var_cards,
+      eligible: var_eligible,
+      stamp: var_stamp,
     );
   }
 
   @protected
   ExamTopicOutcome sse_decode_exam_topic_outcome(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_cards = sse_decode_list_String(deserializer);
+    var var_topicId = sse_decode_String(deserializer);
+    var var_fingerprint = sse_decode_String(deserializer);
     var var_pass = sse_decode_bool(deserializer);
-    return ExamTopicOutcome(cards: var_cards, pass: var_pass);
+    return ExamTopicOutcome(
+      topicId: var_topicId,
+      fingerprint: var_fingerprint,
+      pass: var_pass,
+    );
   }
 
   @protected
@@ -6664,6 +6726,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.pass, serializer);
     sse_encode_u_32(self.partial, serializer);
     sse_encode_u_32(self.total, serializer);
+    sse_encode_bool(self.eligible, serializer);
+    sse_encode_exam_stamp(self.stamp, serializer);
+  }
+
+  @protected
+  void sse_encode_exam_stamp(ExamStamp self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.sourced, serializer);
+    sse_encode_list_String(self.unsourcedCards, serializer);
+  }
+
+  @protected
+  void sse_encode_exam_start(ExamStart self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_list_String(self.cards, serializer);
+    sse_encode_bool(self.eligible, serializer);
+    sse_encode_exam_stamp(self.stamp, serializer);
   }
 
   @protected
@@ -6672,7 +6751,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     SseSerializer serializer,
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_String(self.cards, serializer);
+    sse_encode_String(self.topicId, serializer);
+    sse_encode_String(self.fingerprint, serializer);
     sse_encode_bool(self.pass, serializer);
   }
 

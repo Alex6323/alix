@@ -109,8 +109,11 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
             review.retire_after_days,
         );
 
+        let exam_changed = alix::exam_status::exam_row(&deck, &store, Some(&personal)).exam_changed;
         let state = match deck.state(&store) {
+            _ if store.deck_mastered(deck_id) && exam_changed => "mastered (sources changed)",
             _ if store.deck_mastered(deck_id) => "mastered ✓",
+            _ if store.deck_passed(deck_id) && exam_changed => "passed (sources changed)",
             _ if store.deck_passed(deck_id) => "passed ✓",
             DeckState::NotStarted => "not started",
             DeckState::Started => "in progress",
@@ -467,9 +470,16 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
     // nor an orphan.
     let mut known_cards: HashSet<String> = HashSet::new();
     let mut known_deck_tokens: HashSet<String> = HashSet::new();
+    let mut known_topics: HashMap<String, HashSet<String>> = HashMap::new();
     for path in &deck_paths {
         let deck = Deck::load(path)
             .context("refusing to judge orphans while a deck in the target cannot be read")?;
+        if let Some(deck_id) = &deck.deck_token {
+            known_topics
+                .entry(deck_id.clone())
+                .or_default()
+                .extend(deck.topic_ids().into_iter().flatten());
+        }
         known_deck_tokens.extend(deck.deck_token.clone());
         known_cards.extend(deck.cards.iter().filter_map(Card::id));
         known_cards.extend(alix::personal::card_ids(&deck));
@@ -481,14 +491,14 @@ fn reset_orphans(args: &ResetArgs, config: &Config) -> Result<()> {
         Some(deck) if deck.is_file() => state::open_store(deck, &store_path)?,
         _ => state::open_aggregate_store(&store_path)?,
     };
-    let orphans = store.orphans(&known_cards, &known_deck_tokens);
+    let orphans = store.orphans(&known_cards, &known_deck_tokens, &known_topics);
     if orphans.is_empty() {
         println!("No orphaned progress to reset.");
         return Ok(());
     }
     let n = orphans.len();
     if !confirm(
-        &format!("Reset {n} orphaned key(s) (matching no known card or deck)?"),
+        &format!("Reset {n} orphaned key(s) (matching no known card, deck or topic)?"),
         args.yes,
     )? {
         println!("Cancelled.");

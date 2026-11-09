@@ -152,7 +152,11 @@ past 21 days of FSRS stability (in practice a few weeks of regular
 drilling), the same bar at all three depths, Recognize included. Only the
 highest badged depth shows: **solid** while the deck still clears the bar,
 **dotted** once a card has since lapsed below it (a badge, once earned, keeps
-its date, a high-water mark, not a live pass/fail).
+its date, a high-water mark, not a live pass/fail). An exam standing
+(*passed*, *mastered*) is a high-water mark of the same kind: it keeps its
+date, and it reads as [*sources
+changed*](12-the-ai-exam.md#what-a-standing-means) once the material it was
+earned on changed, never on time alone.
 
 A deck shows a small "new" chip while **any** of its cards has never been
 presented, whether or not the deck is badged. It clears only once every card

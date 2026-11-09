@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 373332917;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1583179561;
 
 // Section: executor
 
@@ -2122,14 +2122,14 @@ fn wire__crate__api__exam__exam_ideas_save_impl(
         },
     )
 }
-fn wire__crate__api__exam__exam_start_cards_impl(
+fn wire__crate__api__exam__exam_sitting_start_impl(
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "exam_start_cards",
+            debug_name: "exam_sitting_start",
             port: None,
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
         },
@@ -2146,13 +2146,15 @@ fn wire__crate__api__exam__exam_start_cards_impl(
             let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
             let api_needs_work_only = <bool>::sse_decode(&mut deserializer);
+            let api_now_ms = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
-                    let output_ok = crate::api::exam::exam_start_cards(
+                    let output_ok = crate::api::exam::exam_sitting_start(
                         api_deck_path,
                         api_root_dir,
                         api_needs_work_only,
+                        api_now_ms,
                     )?;
                     Ok(output_ok)
                 })(),
@@ -3555,12 +3557,42 @@ impl SseDecode for crate::api::exam::ExamOutcome {
         let mut var_pass = <u32>::sse_decode(deserializer);
         let mut var_partial = <u32>::sse_decode(deserializer);
         let mut var_total = <u32>::sse_decode(deserializer);
+        let mut var_eligible = <bool>::sse_decode(deserializer);
+        let mut var_stamp = <crate::api::exam::ExamStamp>::sse_decode(deserializer);
         return crate::api::exam::ExamOutcome {
             topics: var_topics,
             full: var_full,
             pass: var_pass,
             partial: var_partial,
             total: var_total,
+            eligible: var_eligible,
+            stamp: var_stamp,
+        };
+    }
+}
+
+impl SseDecode for crate::api::exam::ExamStamp {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_sourced = <String>::sse_decode(deserializer);
+        let mut var_unsourcedCards = <Vec<String>>::sse_decode(deserializer);
+        return crate::api::exam::ExamStamp {
+            sourced: var_sourced,
+            unsourced_cards: var_unsourcedCards,
+        };
+    }
+}
+
+impl SseDecode for crate::api::exam::ExamStart {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_cards = <Option<Vec<String>>>::sse_decode(deserializer);
+        let mut var_eligible = <bool>::sse_decode(deserializer);
+        let mut var_stamp = <crate::api::exam::ExamStamp>::sse_decode(deserializer);
+        return crate::api::exam::ExamStart {
+            cards: var_cards,
+            eligible: var_eligible,
+            stamp: var_stamp,
         };
     }
 }
@@ -3568,10 +3600,12 @@ impl SseDecode for crate::api::exam::ExamOutcome {
 impl SseDecode for crate::api::exam::ExamTopicOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_cards = <Vec<String>>::sse_decode(deserializer);
+        let mut var_topicId = <String>::sse_decode(deserializer);
+        let mut var_fingerprint = <String>::sse_decode(deserializer);
         let mut var_pass = <bool>::sse_decode(deserializer);
         return crate::api::exam::ExamTopicOutcome {
-            cards: var_cards,
+            topic_id: var_topicId,
+            fingerprint: var_fingerprint,
             pass: var_pass,
         };
     }
@@ -5139,7 +5173,7 @@ fn pde_ffi_dispatcher_sync_impl(
         43 => wire__crate__api__exam__exam_answers_save_impl(ptr, rust_vec_len, data_len),
         44 => wire__crate__api__exam__exam_ideas_load_impl(ptr, rust_vec_len, data_len),
         45 => wire__crate__api__exam__exam_ideas_save_impl(ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__exam__exam_start_cards_impl(ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__exam__exam_sitting_start_impl(ptr, rust_vec_len, data_len),
         48 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
         53 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
         54 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
@@ -5664,6 +5698,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamOutcome {
             self.pass.into_into_dart().into_dart(),
             self.partial.into_into_dart().into_dart(),
             self.total.into_into_dart().into_dart(),
+            self.eligible.into_into_dart().into_dart(),
+            self.stamp.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5677,10 +5713,48 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamOutcome>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamTopicOutcome {
+impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamStamp {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.sourced.into_into_dart().into_dart(),
+            self.unsourced_cards.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::exam::ExamStamp {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamStamp>
+    for crate::api::exam::ExamStamp
+{
+    fn into_into_dart(self) -> crate::api::exam::ExamStamp {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamStart {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.cards.into_into_dart().into_dart(),
+            self.eligible.into_into_dart().into_dart(),
+            self.stamp.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::exam::ExamStart {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamStart>
+    for crate::api::exam::ExamStart
+{
+    fn into_into_dart(self) -> crate::api::exam::ExamStart {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamTopicOutcome {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.topic_id.into_into_dart().into_dart(),
+            self.fingerprint.into_into_dart().into_dart(),
             self.pass.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -7021,13 +7095,33 @@ impl SseEncode for crate::api::exam::ExamOutcome {
         <u32>::sse_encode(self.pass, serializer);
         <u32>::sse_encode(self.partial, serializer);
         <u32>::sse_encode(self.total, serializer);
+        <bool>::sse_encode(self.eligible, serializer);
+        <crate::api::exam::ExamStamp>::sse_encode(self.stamp, serializer);
+    }
+}
+
+impl SseEncode for crate::api::exam::ExamStamp {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.sourced, serializer);
+        <Vec<String>>::sse_encode(self.unsourced_cards, serializer);
+    }
+}
+
+impl SseEncode for crate::api::exam::ExamStart {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<Vec<String>>>::sse_encode(self.cards, serializer);
+        <bool>::sse_encode(self.eligible, serializer);
+        <crate::api::exam::ExamStamp>::sse_encode(self.stamp, serializer);
     }
 }
 
 impl SseEncode for crate::api::exam::ExamTopicOutcome {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <Vec<String>>::sse_encode(self.cards, serializer);
+        <String>::sse_encode(self.topic_id, serializer);
+        <String>::sse_encode(self.fingerprint, serializer);
         <bool>::sse_encode(self.pass, serializer);
     }
 }

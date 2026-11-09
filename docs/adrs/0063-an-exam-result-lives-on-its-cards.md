@@ -3,7 +3,11 @@
 - Status: Accepted
 - Recorded: 2026-11-04
 - Retrospective: No
-- Evidence: pub exam_result: Option<ExamRecord> in src/store.rs
+- Amended by: 0064 (the card-level `CardState.exam_result` and the section
+  status derived from member records, replaced by per-topic
+  `DeckProgress.topic_results` keyed by topic id with the source
+  fingerprint; the `--exam` reset clause's "card records", now the topic
+  results and the evidence stamp)
 - Evidence: pub passed_at_ms: Option<u64> in src/store.rs
 - Evidence: pub full_exam_result: Option<FullExamResult> in src/store.rs
 - Evidence: pub fn exam_status(deck: &Deck, store: &Store) -> ExamStatus in src/exam_status.rs

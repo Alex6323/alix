@@ -114,8 +114,10 @@
       "cards": [
         "card-0123456789abcdefghjkmnpqrs"
       ],
+      "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
       "label": "Ownership",
       "pass": false,
+      "topic_id": "topic-0wnersh1pt0p1c0000000000",
       "verdicts": {
         "partial": 0,
         "pass": 0,

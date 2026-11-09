@@ -1480,7 +1480,7 @@ mod tests {
                 Box::new(|s: &mut Store| {
                     review(s, &a, Grade::Pass, Depth::Recall);
                     review(s, &b, Grade::Pass, Depth::Recall);
-                    s.set_deck_passed("deck-d1", 1);
+                    s.set_deck_passed("deck-d1", 1, &crate::store::ExamStamp::default());
                 }),
                 DeckState::ExamDue,
             ),
@@ -1590,7 +1590,11 @@ mod tests {
         let (mut store, _s) = empty_store();
         assert_eq!(DeckState::NotStarted, deck.state(&store));
 
-        store.set_deck_passed(deck.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(
+            deck.deck_token.as_deref().unwrap(),
+            1,
+            &crate::store::ExamStamp::default(),
+        );
         assert_eq!(
             DeckState::NotStarted,
             deck.state(&store),
@@ -1640,7 +1644,11 @@ mod tests {
         assert_eq!(DeckState::ExamDue, basics.state(&store));
         assert!(is_locked(&advanced, dd, &store));
 
-        store.set_deck_passed(basics.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(
+            basics.deck_token.as_deref().unwrap(),
+            1,
+            &crate::store::ExamStamp::default(),
+        );
         assert!(!is_locked(&advanced, dd, &store));
     }
 
@@ -1820,7 +1828,11 @@ mod tests {
         assert!(is_locked(&c, dd, &store));
         retire(&mut store, &b.cards[0].id().unwrap());
         assert!(is_locked(&c, dd, &store));
-        store.set_deck_passed(a.deck_token.as_deref().unwrap(), 1);
+        store.set_deck_passed(
+            a.deck_token.as_deref().unwrap(),
+            1,
+            &crate::store::ExamStamp::default(),
+        );
         assert!(!is_locked(&c, dd, &store));
     }
 
@@ -1890,7 +1902,7 @@ mod tests {
             "the id edge must survive the prerequisite's rename"
         );
 
-        store.set_deck_passed(CANONICAL_DECK_ID, 1);
+        store.set_deck_passed(CANONICAL_DECK_ID, 1, &crate::store::ExamStamp::default());
         assert!(!is_locked(&advanced, dd, &store));
     }
 
@@ -2030,14 +2042,30 @@ mod tests {
             }
             let (mut store, _s) = empty_store();
             for name in passed {
-                store.set_deck_passed(&format!("deck-{name}"), 1);
+                store.set_deck_passed(
+                    &format!("deck-{name}"),
+                    1,
+                    &crate::store::ExamStamp::default(),
+                );
             }
             for name in sat {
-                store.get_or_insert(&format!("card-{name}1")).exam_result =
-                    Some(crate::store::ExamRecord {
-                        at_ms: 1,
+                let deck_id = format!("deck-{name}");
+                let record = crate::store::SittingRecord {
+                    topics: vec![crate::store::TopicRecord {
+                        topic_id: deck_id.clone(),
+                        fingerprint: String::new(),
                         pass: false,
-                    });
+                    }],
+                    ..Default::default()
+                };
+                store.record_sitting(
+                    &deck_id,
+                    &[],
+                    &record,
+                    1,
+                    false,
+                    &crate::store::ExamStamp::default(),
+                );
             }
             let b = Deck::load(decks.as_path().join("b.md")).unwrap();
             let c = Deck::load(decks.as_path().join("c.md")).unwrap();

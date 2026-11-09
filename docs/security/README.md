@@ -99,7 +99,12 @@ synchronization-conflict detection warn about likely same-deck concurrency;
 none of these mechanisms authenticates a writer or merges concurrent changes.
 An error after the rename remains visible, but progress and augmentation
 bookkeeping advances to the revision that already committed, keeping later
-saves retryable.
+saves retryable. Every load of a progress document, the sync push body
+included, validates it before anything reads it: an unknown field, a
+foreign version or owner, or an exam standing without its evidence stamp is
+refused as invalid input, never repaired or partially read
+(`a_standing_without_a_stamp_is_refused_by_every_deck_document_load`,
+`src/store.rs`).
 
 Recursive bulk exam reset canonicalizes the configured decks root and each
 candidate directory, and does not enter a directory whose target is outside

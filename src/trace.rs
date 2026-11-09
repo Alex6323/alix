@@ -557,7 +557,7 @@ mod tests {
         assert!(!store.deck_passed(&deck_id));
         assert_eq!(DeckState::Finished, deck.state(&store));
 
-        store.set_deck_passed(&deck_id, 99);
+        store.set_deck_passed(&deck_id, 99, &crate::store::ExamStamp::default());
         assert_eq!(DeckState::Finished, deck.state(&store));
     }
 

@@ -944,7 +944,11 @@ mod tests {
         store
             .get_or_insert(&deck_b.cards[0].id().unwrap())
             .introduced_ms = Some(0);
-        store.set_deck_passed(deck_a.deck_token.as_deref().unwrap(), 0);
+        store.set_deck_passed(
+            deck_a.deck_token.as_deref().unwrap(),
+            0,
+            &crate::store::ExamStamp::default(),
+        );
 
         let n = reset_decks(&mut store, [&deck_a]).unwrap();
         assert_eq!(1, n);
@@ -1607,7 +1611,11 @@ mod tests {
             known_decks.extend(deck.deck_token);
         }
         let aggregate = crate::state::open_aggregate_store(&ws).unwrap();
-        let orphans = aggregate.orphans(&known_cards, &known_decks);
+        let orphans = aggregate.orphans(
+            &known_cards,
+            &known_decks,
+            &std::collections::HashMap::new(),
+        );
         assert!(
             orphans.cards.contains(&"card-cb1".to_string()),
             "the same predicate doctor consumes must report the failed member's valid progress: {orphans:?}"
@@ -1709,10 +1717,10 @@ mod tests {
 
         // Deck A: a card schedule, deck-family mastery, records.
         store.get_or_insert("card-c1").introduced_ms = Some(0);
-        store.set_deck_passed("deck-da1", 1);
+        store.set_deck_passed("deck-da1", 1, &crate::store::ExamStamp::default());
         // Deck B (shares the store): its own schedule + mastery.
         store.get_or_insert("card-cb1").introduced_ms = Some(0);
-        store.set_deck_passed("deck-db1", 1);
+        store.set_deck_passed("deck-db1", 1, &crate::store::ExamStamp::default());
         store.save().unwrap();
 
         let cache_path = WorkspaceFiles::new(dir.path()).augment();
@@ -1752,7 +1760,7 @@ mod tests {
         write_deck(dir.path(), "a.md", "da1", "c1");
         let mut store = crate::state::open_store(&dir.path().join("a.md"), dir.path()).unwrap();
         store.get_or_insert("card-c1").introduced_ms = Some(0);
-        store.set_deck_passed("deck-da1", 1);
+        store.set_deck_passed("deck-da1", 1, &crate::store::ExamStamp::default());
         store.save().unwrap();
 
         replace_deck(dir.path(), "a", "## new q\nnew ans\n", &mut store).unwrap();
@@ -1760,7 +1768,11 @@ mod tests {
         let deck = Deck::load(dir.path().join("a.md")).unwrap();
         let known_ids: HashSet<String> = deck.cards.iter().filter_map(|c| c.id()).collect();
         let known_deck_id = deck.deck_token.clone().unwrap();
-        let orphans = store.orphans(&known_ids, &once(&known_deck_id));
+        let orphans = store.orphans(
+            &known_ids,
+            &once(&known_deck_id),
+            &std::collections::HashMap::new(),
+        );
         assert!(orphans.is_empty(), "{orphans:?}");
     }
 
@@ -2063,14 +2075,30 @@ mod tests {
                 .collect();
             let mut store = Store::open(dir.join("p.json")).unwrap();
             for name in passed {
-                store.set_deck_passed(&format!("deck-{name}"), 1);
+                store.set_deck_passed(
+                    &format!("deck-{name}"),
+                    1,
+                    &crate::store::ExamStamp::default(),
+                );
             }
             for name in sat {
-                store.get_or_insert(&format!("card-{name}1")).exam_result =
-                    Some(crate::store::ExamRecord {
-                        at_ms: 1,
+                let deck_id = format!("deck-{name}");
+                let record = crate::store::SittingRecord {
+                    topics: vec![crate::store::TopicRecord {
+                        topic_id: deck_id.clone(),
+                        fingerprint: String::new(),
                         pass: true,
-                    });
+                    }],
+                    ..Default::default()
+                };
+                store.record_sitting(
+                    &deck_id,
+                    &[],
+                    &record,
+                    1,
+                    false,
+                    &crate::store::ExamStamp::default(),
+                );
             }
 
             let locked = decks_an_exam_reset_locks(&decks, &decks[..1], &store, Some(&dir));

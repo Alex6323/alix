@@ -13,6 +13,7 @@ Scaffold
                         Expanded
                           Column
                             Text("Mastered")
+                            Text("mastered (1 Jan 1970)")
                       Padding(EdgeInsets(0.0, 4.0, 0.0, 0.0))
                         SizedBox(width=null, height=14.0)
                           Row

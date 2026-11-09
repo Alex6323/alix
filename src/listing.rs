@@ -523,7 +523,7 @@ fn deck_summary(
         _ => (false, false, false, false),
     };
     let exam = match (deck, store) {
-        (Some(d), Some(s)) => crate::exam_status::exam_row(d, s),
+        (Some(d), Some(s)) => crate::exam_status::exam_row(d, s, None),
         _ => crate::exam_status::ExamRow::default(),
     };
     let last_launch = match (deck, store, augment, &pools) {
@@ -707,7 +707,7 @@ pub fn deck_status(
     // grounding that's merely fully drilled stays "done".
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     let mastered = matches!(state, DeckState::Finished) && store.deck_mastered(deck_id);
-    let exam = crate::exam_status::exam_row(deck, store);
+    let exam = crate::exam_status::exam_row(deck, store, Some(&personal));
     let badge = match exam.badge(session::now_ms()) {
         Some(mut badge) => {
             let to_drill = total - retired;
@@ -1141,7 +1141,7 @@ mod tests {
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(
             progress.join("deck-a.json"),
-            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"deck":{"passed_at_ms":1,"mastered_at_ms":1}}"#,
+            r#"{"version":1,"deck_id":"deck-a","subject":"a.md","revision":1,"cards":{},"deck":{"passed_at_ms":1,"mastered_at_ms":1,"exam_stamp":{"sourced":"x","unsourced_cards":[]}}}"#,
         )
         .unwrap();
         std::fs::write(progress.join("deck-b.json"), "{ not json").unwrap();
@@ -1173,20 +1173,25 @@ mod tests {
         crate::sources::testkit::sourced(path.clone());
         let deck = Deck::load(&path).unwrap();
         let mut store = crate::state::open_store(&path, &workspace::store_path(&ws)).unwrap();
-        let topic = |id: &str, pass| crate::store::TopicRecord {
-            card_ids: vec![id.to_string()],
+        let topics = crate::exam_status::examined_topics(&deck);
+        let topic = |at: usize, pass| crate::store::TopicRecord {
+            topic_id: topics[at].topic_id.clone(),
+            fingerprint: topics[at].fingerprint.clone(),
             pass,
         };
+        let start = crate::exam_status::sitting_start(&deck, &store, T0, None);
         store.record_exam_result(
             &deck,
             &crate::store::SittingRecord {
-                topics: vec![topic("card-a1", true), topic("card-b1", false)],
+                topics: vec![topic(0, true), topic(1, false)],
                 full: true,
                 pass: 1,
                 partial: 1,
                 total: 2,
             },
             T0,
+            start.eligible,
+            &start.stamp,
         );
         store.save().unwrap();
 

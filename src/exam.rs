@@ -18,8 +18,8 @@ use crate::{
 };
 pub use crate::{
     exam_status::{
-        ExamFilter, ExamScope, ExamStatus, ExamTopic, TOPIC_NUDGE_CARDS, TopicStatus, TopicTally,
-        exam_status, exam_topics, examined_topics, oversized_topics,
+        ExamFilter, ExamScope, ExamStatus, ExamTopic, SittingStart, TOPIC_NUDGE_CARDS, TopicStatus,
+        TopicTally, exam_status, exam_topics, examined_topics, oversized_topics, sitting_start,
     },
     sources::SourceText,
 };
@@ -848,6 +848,7 @@ pub struct Sitting {
     remediated_topics: HashSet<String>,
     topics: Vec<ExamTopic>,
     deck_topics: Vec<ExamTopic>,
+    start: SittingStart,
     unlocked: bool,
     ideas: Option<IdeasDocument>,
     locked: Vec<bool>,
@@ -872,7 +873,8 @@ fn sitting_record(
             .zip(&result.topics)
             .filter(|(_, score)| score.total > 0)
             .map(|(topic, score)| crate::store::TopicRecord {
-                card_ids: topic.card_ids.clone(),
+                topic_id: topic.topic_id.clone(),
+                fingerprint: topic.fingerprint.clone(),
                 pass: score.passed,
             })
             .collect(),
@@ -888,13 +890,20 @@ impl Sitting {
         &self.deck_token
     }
 
-    pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
+    pub fn start(
+        deck: &Deck,
+        start: SittingStart,
+        strictness: Strictness,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Self {
         match deck.sources() {
             Ok(Some(sources)) => Self::start_with(
                 deck,
                 examined_topics(deck),
                 sources,
                 None,
+                start,
                 strictness,
                 cfg,
                 ask_cfg,
@@ -917,7 +926,14 @@ impl Sitting {
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        let mut sitting = Self::idle(deck, Vec::new(), strictness, cfg, ask_cfg);
+        let mut sitting = Self::idle(
+            deck,
+            Vec::new(),
+            SittingStart::default(),
+            strictness,
+            cfg,
+            ask_cfg,
+        );
         sitting.error = Some(error);
         sitting.phase = Phase::Results;
         sitting
@@ -925,11 +941,16 @@ impl Sitting {
 
     /// A sitting over `topics`, written from `sources`: only topics the
     /// sources bind are sent to the model.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "a sitting's whole starting state"
+    )]
     pub fn start_with(
         deck: &Deck,
         topics: Vec<ExamTopic>,
         sources: DeckSources,
         ideas: Option<IdeasDocument>,
+        start: SittingStart,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -949,7 +970,7 @@ impl Sitting {
         if let Some(error) = refusal {
             return Self::refused(deck, error, strictness, cfg, ask_cfg);
         }
-        let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
+        let mut sitting = Self::idle(deck, topics, start, strictness, cfg, ask_cfg);
         let (rx, job) = spawn_generation(
             sitting.topics.clone(),
             sources,
@@ -967,6 +988,7 @@ impl Sitting {
     fn idle(
         deck: &Deck,
         topics: Vec<ExamTopic>,
+        start: SittingStart,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -991,6 +1013,7 @@ impl Sitting {
             remediated_topics: HashSet::new(),
             topics,
             deck_topics: examined_topics(deck),
+            start,
             unlocked: false,
             ideas: None,
             locked: Vec::new(),
@@ -1010,6 +1033,7 @@ impl Sitting {
         questions: Vec<ExamQuestion>,
         answers: Vec<String>,
         ideas: crate::exam_ideas::IdeasDocument,
+        start: SittingStart,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
@@ -1017,7 +1041,7 @@ impl Sitting {
         if let Some(error) = topic_refusal(deck, cached_manifest(deck)) {
             return Self::refused(deck, error, strictness, cfg, ask_cfg);
         }
-        let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
+        let mut sitting = Self::idle(deck, topics, start, strictness, cfg, ask_cfg);
         sitting.locked = answers.iter().map(|a| !a.trim().is_empty()).collect();
         sitting.current = sitting.locked.iter().position(|l| !l).unwrap_or(0);
         sitting.answers = answers;
@@ -1053,6 +1077,14 @@ impl Sitting {
 
     pub fn unlocked(&self) -> bool {
         self.unlocked
+    }
+
+    pub fn eligible(&self) -> bool {
+        self.start.eligible
+    }
+
+    pub fn stamp(&self) -> &crate::store::ExamStamp {
+        &self.start.stamp
     }
 
     pub fn phase(&self) -> &Phase {
@@ -1290,8 +1322,14 @@ impl Sitting {
             Some(Effect::Graded) => {
                 if let Some(result) = &self.result {
                     let record = sitting_record(&self.topics, self.full(), result);
-                    self.unlocked =
-                        store.record_sitting(&self.deck_token, &self.deck_topics, &record, now_ms);
+                    self.unlocked = store.record_sitting(
+                        &self.deck_token,
+                        &self.deck_topics,
+                        &record,
+                        now_ms,
+                        self.start.eligible,
+                        &self.start.stamp,
+                    );
                 }
                 store_mutated = true;
             }
@@ -1904,54 +1942,49 @@ mod tests {
     }
 
     #[test]
-    fn topic_status_follows_member_records_and_any_fail_wins() {
+    fn topic_status_follows_the_topics_counting_result() {
         use TopicStatus::*;
         type Row = (
             &'static str,
-            [Option<bool>; 3],
+            [Option<(bool, bool)>; 2],
             [TopicStatus; 2],
             ExamFilter,
         );
-        let rows: [Row; 7] = [
+        // per topic: (pass, recorded on the current fingerprint)
+        let rows: [Row; 6] = [
             (
                 "never examined",
-                [None, None, None],
+                [None, None],
                 [Unexamined, Unexamined],
                 ExamFilter::All,
             ),
             (
                 "all passed",
-                [Some(true), Some(true), Some(true)],
+                [Some((true, true)), Some((true, true))],
                 [Passed, Passed],
                 ExamFilter::None,
             ),
             (
-                "a card without a record among passes",
-                [Some(true), None, Some(true)],
-                [NewCards, Passed],
-                ExamFilter::Partial,
-            ),
-            (
-                "a fail beside a missing record",
-                [Some(false), None, Some(true)],
-                [NeedsWork, Passed],
-                ExamFilter::Partial,
-            ),
-            (
-                "any fail wins over a pass",
-                [Some(true), Some(false), Some(true)],
+                "a fail beside a pass",
+                [Some((false, true)), Some((true, true))],
                 [NeedsWork, Passed],
                 ExamFilter::Partial,
             ),
             (
                 "one topic unexamined",
-                [Some(true), Some(true), None],
+                [Some((true, true)), None],
                 [Passed, Unexamined],
                 ExamFilter::Partial,
             ),
             (
+                "a pass on older material reads unexamined",
+                [Some((true, false)), Some((true, true))],
+                [Unexamined, Passed],
+                ExamFilter::Partial,
+            ),
+            (
                 "every topic needs work",
-                [Some(false), Some(false), Some(false)],
+                [Some((false, true)), Some((false, true))],
                 [NeedsWork, NeedsWork],
                 ExamFilter::All,
             ),
@@ -1964,19 +1997,33 @@ mod tests {
             source(&ws, "s.txt", "s\n", &["topic-a", "topic-b"]);
             let deck = Deck::load(ws.deck()).unwrap();
             let mut store = Store::open(ws.root().join("p.json")).unwrap();
-            for (id, pass) in ["card-a1", "card-a2", "card-b1"].iter().zip(records) {
-                if let Some(pass) = pass {
-                    store.get_or_insert(id).exam_result =
-                        Some(crate::store::ExamRecord { at_ms: 1, pass });
-                }
-            }
+            let topics = examined_topics(&deck);
+            let record = crate::store::SittingRecord {
+                topics: topics
+                    .iter()
+                    .zip(records)
+                    .filter_map(|(topic, record)| {
+                        record.map(|(pass, current)| crate::store::TopicRecord {
+                            topic_id: topic.topic_id.clone(),
+                            fingerprint: if current {
+                                topic.fingerprint.clone()
+                            } else {
+                                "older".to_string()
+                            },
+                            pass,
+                        })
+                    })
+                    .collect(),
+                ..Default::default()
+            };
+            store.record_sitting(DECK, &topics, &record, 1, false, &Default::default());
             let status = deck.exam_status(&store);
             assert_eq!(expected.to_vec(), status.topics, "{label}: statuses");
             assert_eq!(filter, status.filter(), "{label}: filter");
             let tally = status.tally();
             assert_eq!(
                 2,
-                tally.passed + tally.needs_work + tally.new_cards + tally.unexamined,
+                tally.passed + tally.needs_work + tally.unexamined,
                 "{label}: the tally counts every topic once"
             );
             assert_eq!(
@@ -2616,6 +2663,7 @@ mod tests {
         assert!(boundary.contains("missing.txt"), "{boundary}");
         let sitting = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Lenient,
             ExamConfig::default(),
             AskConfig::default(),
@@ -2708,6 +2756,7 @@ mod tests {
             vec![ExamQuestion::default(); 3],
             vec!["one".to_string(), String::new(), String::new()],
             crate::exam_ideas::IdeasDocument::default(),
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             AskConfig::default(),
@@ -2736,6 +2785,7 @@ mod tests {
             vec![ExamQuestion::default()],
             vec![String::new()],
             crate::exam_ideas::IdeasDocument::default(),
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             AskConfig::default(),
@@ -2931,6 +2981,7 @@ mod tests {
             strictness,
             cfg: ExamConfig::default(),
             ask_cfg: AskConfig::default(),
+            start: SittingStart::default(),
             phase: Phase::Answering,
             questions: vec![ExamQuestion {
                 prompt: "first".to_string(),
@@ -3366,6 +3417,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -3393,11 +3445,8 @@ mod tests {
         assert!(!store.deck_passed(DECK));
         assert_eq!(
             Some(false),
-            store
-                .get("card-qc")
-                .and_then(|c| c.exam_result)
-                .map(|r| r.pass),
-            "a failed topic is recorded on its card"
+            store.topic_result(DECK, DECK).map(|r| r.pass),
+            "a failed topic is recorded by its topic id"
         );
         assert!(!s.unlocked());
 
@@ -3429,6 +3478,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -3466,6 +3516,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Strict,
             ExamConfig::default(),
             ask_config(&cli),
@@ -3486,11 +3537,8 @@ mod tests {
         assert!(s.unlocked(), "this sitting set passed_at_ms");
         assert_eq!(
             Some(true),
-            store
-                .get("card-qc")
-                .and_then(|c| c.exam_result)
-                .map(|r| r.pass),
-            "the topic's verdict is on its card"
+            store.topic_result(DECK, DECK).map(|r| r.pass),
+            "the topic's verdict is recorded by its topic id"
         );
         assert_eq!(
             Some((2, 0, 2)),
@@ -3519,6 +3567,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -3568,6 +3617,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli1),
@@ -3592,6 +3642,7 @@ mod tests {
         );
         let mut s2 = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli2),
@@ -3786,6 +3837,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            sitting_start(&deck, &store, 0, None),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -3828,6 +3880,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -3859,6 +3912,7 @@ mod tests {
 
         let mut s = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -4144,6 +4198,7 @@ mod tests {
             questions,
             answers,
             IdeasDocument::default(),
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             AskConfig::default(),
@@ -4190,6 +4245,7 @@ mod tests {
         let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
         let fresh = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -4210,6 +4266,7 @@ mod tests {
             questions,
             answers,
             IdeasDocument::default(),
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             AskConfig::default(),
@@ -4391,6 +4448,7 @@ mod tests {
         let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
         let mut sitting = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -4420,6 +4478,7 @@ mod tests {
         let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS]);
         let sitting = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -4453,6 +4512,7 @@ mod tests {
         );
         let sitting = Sitting::start(
             &deck,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             AskConfig::default(),
@@ -4544,6 +4604,7 @@ mod tests {
             exam_topics(&deck, Some(&sources.manifest)),
             sources,
             None,
+            SittingStart::default(),
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
@@ -4590,6 +4651,7 @@ mod tests {
                 examined_topics(&deck),
                 sources,
                 None,
+                SittingStart::default(),
                 Strictness::Balanced,
                 ExamConfig::default(),
                 ask_config(&cli),
@@ -4657,12 +4719,12 @@ mod tests {
 
     #[test]
     fn a_sitting_records_only_the_topics_it_asked_about() {
-        let topic = |id: &str, card: &str| ExamTopic {
+        let topic = |id: &str, fingerprint: &str| ExamTopic {
             topic_id: id.to_string(),
-            card_ids: vec![card.to_string()],
+            fingerprint: fingerprint.to_string(),
             ..Default::default()
         };
-        let topics = [topic("topic-a", "card-a"), topic("topic-b", "card-b")];
+        let topics = [topic("topic-a", "fp-a"), topic("topic-b", "fp-b")];
         let score = |total, pass| TopicScore {
             pass,
             partial: 0,
@@ -4675,13 +4737,135 @@ mod tests {
         };
         let record = sitting_record(&topics, false, &result);
         assert_eq!(
-            vec![(vec!["card-a".to_string()], true)],
+            vec![("topic-a", "fp-a", true)],
             record
                 .topics
                 .iter()
-                .map(|t| (t.card_ids.clone(), t.pass))
+                .map(|t| (t.topic_id.as_str(), t.fingerprint.as_str(), t.pass))
                 .collect::<Vec<_>>(),
             "a topic without a question records nothing"
+        );
+    }
+
+    fn graduated_pass_at(now_ms: u64) -> crate::store::CardState {
+        crate::store::CardState {
+            recall: Some(crate::store::FsrsState {
+                state: 2,
+                scheduled_days: 5,
+                due_ms: now_ms + 86_400_000,
+                ..Default::default()
+            }),
+            history: vec![crate::store::Review {
+                ts_ms: now_ms.saturating_sub(1),
+                grade: crate::scheduler::Grade::Pass,
+                depth: crate::depth::Depth::Recall,
+                propagated: false,
+                confidence: None,
+            }],
+            ..crate::store::CardState::new()
+        }
+    }
+
+    fn pass_sitting(deck: &Deck, store: &mut Store, cli: &std::path::Path, now_ms: u64) -> Sitting {
+        let start = sitting_start(
+            deck,
+            store,
+            now_ms,
+            Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
+        );
+        let mut s = Sitting::start(
+            deck,
+            start,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(cli),
+        );
+        drain(&mut s, store);
+        s.set_answer("a".to_string());
+        s.next();
+        s.set_answer("b".to_string());
+        s.submit();
+        drain(&mut s, store);
+        assert_eq!(&Phase::Results, s.phase(), "{:?}", s.error());
+        assert!(s.result().unwrap().count().passed, "the fake grades pass");
+        s
+    }
+
+    #[test]
+    fn a_passing_sitting_on_an_already_passed_deck_replaces_the_stamp() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let ws = workspace_with(
+            "# A\n<!-- id: topic-a -->\n\n## a1?\none\n<!-- id: card-a1 -->\n\n\
+             # U\n<!-- id: topic-u -->\n\n## u1?\ntwo\n<!-- id: card-u1 -->\n",
+        );
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-a"]);
+        let now = 1_000_000;
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        *store.get_or_insert("card-u1") = graduated_pass_at(now);
+        let deck = opened(&ws);
+
+        let first = pass_sitting(&deck, &mut store, &cli, now);
+        assert!(first.eligible(), "sitting 1: u1 meets the condition");
+        assert!(first.unlocked(), "sitting 1 set passed_at_ms");
+        let stamp_1 = store
+            .exam_stamp(DECK)
+            .cloned()
+            .expect("sitting 1 stamped the deck");
+        assert_eq!(vec!["card-u1".to_string()], stamp_1.unsourced_cards);
+
+        let text = std::fs::read_to_string(ws.deck()).unwrap();
+        std::fs::write(
+            ws.deck(),
+            format!("{text}\n## u2?\nthree\n<!-- id: card-u2 -->\n"),
+        )
+        .unwrap();
+        let deck = opened(&ws);
+        assert!(
+            crate::exam_status::exam_row(&deck, &store, Some(&[])).exam_changed,
+            "a card added to an unsourced topic dots the standing"
+        );
+
+        let control = pass_sitting(&deck, &mut store, &cli, now);
+        assert!(
+            !control.eligible(),
+            "control: the unscheduled u2 fails the condition"
+        );
+        assert!(
+            !control.unlocked(),
+            "control: an already passed deck unlocks nothing"
+        );
+        assert_eq!(
+            Some(&stamp_1),
+            store.exam_stamp(DECK),
+            "control: an ineligible sitting leaves the stamp"
+        );
+
+        *store.get_or_insert("card-u2") = graduated_pass_at(now);
+        let second = pass_sitting(&deck, &mut store, &cli, now);
+        assert!(
+            second.eligible(),
+            "sitting 2: both unsourced cards meet the condition"
+        );
+        assert!(!second.unlocked(), "sitting 2: the deck was already passed");
+        assert_eq!(
+            Some(second.stamp()),
+            store.exam_stamp(DECK),
+            "sitting 2 replaces the stamp although passed_at_ms was already set"
+        );
+        assert_eq!(
+            vec!["card-u1".to_string(), "card-u2".to_string()],
+            second.stamp().unsourced_cards,
+            "the new stamp lists the added card"
+        );
+        assert!(
+            !crate::exam_status::exam_row(&deck, &store, Some(&[])).exam_changed,
+            "the standing is solid again"
         );
     }
 }

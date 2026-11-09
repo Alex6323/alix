@@ -426,16 +426,21 @@ mod tests {
         let mut store = alix::state::open_store(&base_path, &store_path).unwrap();
         let base_deck = alix::deck::Deck::load(&base_path).unwrap();
         let full_marks = alix::store::SittingRecord {
-            topics: vec![alix::store::TopicRecord {
-                card_ids: vec![base_id.clone()],
-                pass: true,
-            }],
+            topics: alix::exam_status::examined_topics(&base_deck)
+                .into_iter()
+                .map(|topic| alix::store::TopicRecord {
+                    topic_id: topic.topic_id,
+                    fingerprint: topic.fingerprint,
+                    pass: true,
+                })
+                .collect(),
             full: true,
             pass: 1,
             partial: 0,
             total: 1,
         };
-        store.record_exam_result(&base_deck, &full_marks, T0 + 1_000);
+        let start = alix::exam_status::sitting_start(&base_deck, &store, T0 + 1_000, None);
+        store.record_exam_result(&base_deck, &full_marks, T0 + 1_000, start.eligible, &start.stamp);
         store.save().unwrap();
         let rows = list();
         let base = rows.iter().find(|r| r.title == "base").unwrap();

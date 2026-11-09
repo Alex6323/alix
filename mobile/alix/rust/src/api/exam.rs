@@ -5,8 +5,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExamTopicOutcome {
-    pub cards: Vec<String>,
+    pub topic_id: String,
+    pub fingerprint: String,
     pub pass: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExamStamp {
+    pub sourced: String,
+    pub unsourced_cards: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -16,6 +23,15 @@ pub struct ExamOutcome {
     pub pass: u32,
     pub partial: u32,
     pub total: u32,
+    pub eligible: bool,
+    pub stamp: ExamStamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExamStart {
+    pub cards: Option<Vec<String>>,
+    pub eligible: bool,
+    pub stamp: ExamStamp,
 }
 
 fn open_store(
@@ -151,21 +167,29 @@ pub fn exam_answers_clear(deck_path: String, root_dir: String) -> Result<()> {
     }
 }
 
-/// `None` asks for a full sitting.
+/// `cards` is `None` for a full sitting. The review condition and the
+/// stamp are evaluated here, once, against the phone's own store.
 #[flutter_rust_bridge::frb(sync)]
-pub fn exam_start_cards(
+pub fn exam_sitting_start(
     deck_path: String,
     root_dir: String,
     needs_work_only: bool,
-) -> Result<Option<Vec<String>>> {
+    now_ms: u64,
+) -> Result<ExamStart> {
     let path = PathBuf::from(deck_path);
     alix::assemble::stamp_for_session(&path)?;
-    if !needs_work_only {
-        return Ok(None);
-    }
     let deck = alix::deck::Deck::load(&path)?;
     let store = open_store(&path, &root_dir, None)?;
-    Ok(Some(alix::exam_status::needs_work_card_ids(&deck, &store)))
+    let cards = needs_work_only.then(|| alix::exam_status::needs_work_card_ids(&deck, &store));
+    let start = alix::exam_status::sitting_start(&deck, &store, now_ms, None);
+    Ok(ExamStart {
+        cards,
+        eligible: start.eligible,
+        stamp: ExamStamp {
+            sourced: start.stamp.sourced,
+            unsourced_cards: start.stamp.unsourced_cards,
+        },
+    })
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -190,7 +214,8 @@ pub fn apply_exam_result(
             .topics
             .into_iter()
             .map(|topic| alix::store::TopicRecord {
-                card_ids: topic.cards,
+                topic_id: topic.topic_id,
+                fingerprint: topic.fingerprint,
                 pass: topic.pass,
             })
             .collect(),
@@ -199,7 +224,11 @@ pub fn apply_exam_result(
         partial: outcome.partial,
         total: outcome.total,
     };
-    let unlocked = store.record_exam_result(&deck, &record, now_ms);
+    let stamp = alix::store::ExamStamp {
+        sourced: outcome.stamp.sourced,
+        unsourced_cards: outcome.stamp.unsourced_cards,
+    };
+    let unlocked = store.record_exam_result(&deck, &record, now_ms, outcome.eligible, &stamp);
     store.save()?;
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     Ok(ExamApplied {
@@ -385,27 +414,55 @@ mod tests {
         root.to_string_lossy().into_owned()
     }
 
+    fn topic_outcome(path: &Path, heading: &str, pass: bool) -> ExamTopicOutcome {
+        let deck = alix::deck::Deck::load(path).unwrap();
+        let topic = alix::exam_status::examined_topics(&deck)
+            .into_iter()
+            .find(|topic| topic.label == heading)
+            .expect("a sourced topic with that heading");
+        ExamTopicOutcome {
+            topic_id: topic.topic_id,
+            fingerprint: topic.fingerprint,
+            pass,
+        }
+    }
+
+    fn outcome(start: &ExamStart, topics: Vec<ExamTopicOutcome>, full: bool) -> ExamOutcome {
+        let total = topics.len() as u32;
+        let pass = topics.iter().filter(|topic| topic.pass).count() as u32;
+        ExamOutcome {
+            topics,
+            full,
+            pass,
+            partial: 0,
+            total,
+            eligible: start.eligible,
+            stamp: start.stamp.clone(),
+        }
+    }
+
     #[test]
     fn apply_exam_result_records_like_the_desktop() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let path = two_topic_deck(root);
         let deck_path = path.to_string_lossy().into_owned();
-        let topic = |id: &str, pass| ExamTopicOutcome {
-            cards: vec![id.to_string()],
-            pass,
-        };
 
+        let start =
+            exam_sitting_start(deck_path.clone(), root_arg(root), false, NOW).unwrap();
+        assert_eq!(None, start.cards, "a full sitting sends no card list");
+        assert!(start.eligible, "no unsourced card: the condition holds");
         let applied = apply_exam_result(
             deck_path.clone(),
             root_arg(root),
-            ExamOutcome {
-                topics: vec![topic("card-a1", true), topic("card-b1", false)],
-                full: true,
-                pass: 1,
-                partial: 0,
-                total: 2,
-            },
+            outcome(
+                &start,
+                vec![
+                    topic_outcome(&path, "A", true),
+                    topic_outcome(&path, "B", false),
+                ],
+                true,
+            ),
             NOW,
             None,
         )
@@ -431,30 +488,22 @@ mod tests {
         );
         assert_eq!(
             Some(false),
-            store
-                .get("card-b1")
-                .and_then(|c| c.exam_result)
-                .map(|r| r.pass),
-            "each examined card carries its topic's verdict"
+            store.topic_result("deck-d", "topic-b").map(|r| r.pass),
+            "each examined topic carries its verdict by topic id"
         );
+        assert_eq!(None, store.exam_stamp("deck-d"), "a failed topic stamps nothing");
+        let filtered =
+            exam_sitting_start(deck_path.clone(), root_arg(root), true, NOW + 1).unwrap();
         assert_eq!(
-            Some("card-b1".to_string()),
-            exam_start_cards(deck_path.clone(), root_arg(root), true)
-                .unwrap()
-                .and_then(|ids| ids.into_iter().next()),
+            Some(vec!["card-b1".to_string()]),
+            filtered.cards,
             "the filter names only the topic that needs work"
         );
 
         let applied = apply_exam_result(
             deck_path.clone(),
             root_arg(root),
-            ExamOutcome {
-                topics: vec![topic("card-b1", true)],
-                full: false,
-                pass: 1,
-                partial: 0,
-                total: 1,
-            },
+            outcome(&filtered, vec![topic_outcome(&path, "B", true)], false),
             NOW + 1,
             None,
         )
@@ -474,6 +523,14 @@ mod tests {
         );
         assert_eq!(Some(NOW + 1), store.deck_passed_at("deck-d"));
         assert_eq!(
+            Some(&alix::store::ExamStamp {
+                sourced: filtered.stamp.sourced.clone(),
+                unsourced_cards: Vec::new(),
+            }),
+            store.exam_stamp("deck-d"),
+            "the stamp captured at the phone's start is written with the pass"
+        );
+        assert_eq!(
             Some(NOW),
             store.full_exam_result("deck-d").map(|r| r.at_ms),
             "a filtered sitting leaves the full count alone"
@@ -486,6 +543,56 @@ mod tests {
     }
 
     #[test]
+    fn an_ineligible_phone_start_records_results_without_a_standing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, format!("{text}\n# C\n\n## c1\nunreviewed\n")).unwrap();
+        let deck_path = path.to_string_lossy().into_owned();
+
+        let start =
+            exam_sitting_start(deck_path.clone(), root_arg(root), false, NOW).unwrap();
+        assert!(
+            !start.eligible,
+            "an unreviewed card in an unsourced topic fails the condition"
+        );
+        assert_eq!(
+            1,
+            start.stamp.unsourced_cards.len(),
+            "the stamp lists the unsourced card: {:?}",
+            start.stamp.unsourced_cards
+        );
+        let applied = apply_exam_result(
+            deck_path.clone(),
+            root_arg(root),
+            outcome(
+                &start,
+                vec![
+                    topic_outcome(&path, "A", true),
+                    topic_outcome(&path, "B", true),
+                ],
+                true,
+            ),
+            NOW,
+            None,
+        )
+        .unwrap();
+
+        let store = reopened(&path, root);
+        assert!(!applied.unlocked, "control: no unlock");
+        assert_eq!(None, applied.standing, "control: no standing");
+        assert_eq!(None, store.deck_passed_at("deck-d"));
+        assert_eq!(None, store.deck_mastered_at("deck-d"));
+        assert_eq!(None, store.exam_stamp("deck-d"));
+        assert_eq!(
+            Some(true),
+            store.topic_result("deck-d", "topic-a").map(|r| r.pass),
+            "the results are still recorded"
+        );
+    }
+
+    #[test]
     fn exam_start_stamps_new_cards_and_a_full_sitting_names_no_cards() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -493,10 +600,11 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         std::fs::write(&path, format!("{text}\n## b2\nnew\n")).unwrap();
 
-        let cards =
-            exam_start_cards(path.to_string_lossy().into_owned(), root_arg(root), false).unwrap();
+        let start =
+            exam_sitting_start(path.to_string_lossy().into_owned(), root_arg(root), false, NOW)
+                .unwrap();
 
-        assert_eq!(None, cards, "a full sitting sends no card list");
+        assert_eq!(None, start.cards, "a full sitting sends no card list");
         let deck = alix::deck::Deck::load(&path).unwrap();
         assert!(
             deck.cards.iter().all(|card| card.id().is_some()),

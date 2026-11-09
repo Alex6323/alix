@@ -47,9 +47,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `[exam] effort` sets the backend effort for writing and grading exams,
   over `[ask] effort`; a workspace's `alix.local.toml` may set its own.
 
-- `alix reset <target> --exam` clears only exam state (card exam results, the
-  deck's passed and mastered instants, its last full count) and keeps drilling
-  progress. It names the decks whose exams it will lock before asking.
+- `alix reset <target> --exam` clears only exam state (each topic's result,
+  the material stamp, the deck's passed and mastered instants, its last full
+  count) and keeps drilling progress. It names the decks whose exams it will
+  lock before asking.
+
+- The AI exam sets a standing only through a sitting that meets the review
+  condition at its start: every card of every topic without a source,
+  retired cards included, has graduated at Recall or deeper, its latest
+  grade there passed, and it is not yet due. A sitting without it still runs
+  and records every topic's result, but sets neither passed nor mastered.
+  A standing records the material it was earned on (the sourced topics'
+  fingerprints and the ids of the unsourced topics' cards, sidecar cards
+  included) and reads as *sources changed* once that material changed
+  (`alix stats` prints `passed (sources changed)`; the web API's
+  `ExamRowDto.exam_changed`); it still stands and still unlocks, and
+  passing again re-earns it on the current material. A deck that has lost
+  every source keeps its standing the same way, where before its row showed
+  none. `alix doctor` warns on
+  a topic result whose topic left the deck, and `alix reset --orphans`
+  removes it.
 
 - `alix doctor` warns when two topics of a deck share a heading (separate
   topics that read the same) and, on a deck with an exam, when a topic holds
@@ -214,6 +231,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Breaking: an exam result is recorded per topic, under the topic id with
+  the fingerprint of the sources it was examined over, instead of on each
+  card, and it counts only while that fingerprint is the topic's current
+  one, so a topic whose sources changed is unexamined until re-sat. A
+  progress document holding a card `exam_result`, or a passed or mastered
+  standing without its `exam_stamp`, is unreadable. Wire: `ExamTopicDto`
+  gains `topic_id` and `fingerprint`; `ExamRowDto.topics` loses `new_cards`
+  and the row gains `exam_changed`. The phone evaluates the review
+  condition and the stamp against its own store when it starts a sitting
+  and records the result under each topic's id.
 
 - Breaking: every card in a personal file (`<deck>.local.md`) needs a
   `<!-- topic: <topic-id> -->` line directly before its `<!-- id: -->` line,
