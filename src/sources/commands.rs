@@ -9,7 +9,9 @@ use super::{
     Binding, DeckSources, DisplayPath, MANIFEST_VERSION, Manifest, ROOTS_VERSION, Roots, Row,
     binding_of, canonical_folder, copy_name, line_count, load_verified,
     manifest::topic_of,
-    parse_binding, source_id,
+    parse_binding,
+    roots::root_problem,
+    source_id, stray_copies,
     transaction::{Candidate, CommitReport, commit, save_roots},
 };
 use crate::{
@@ -46,6 +48,15 @@ pub struct UpdateReport {
     pub new_id: String,
     pub path: String,
     pub kept_ranges: Vec<String>,
+    pub collected: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RepairReport {
+    pub refrozen: Vec<(String, String)>,
+    pub missing: Vec<String>,
+    pub skipped: Vec<(String, Drift)>,
+    pub kept_ranges: Vec<(String, String)>,
     pub collected: Vec<String>,
 }
 
@@ -404,16 +415,18 @@ fn read_source(file: &Path, roots: &Roots, key: Option<&str>) -> Result<Placed> 
     let display: DisplayPath = format!("{key}:{}", components.join("/")).parse()?;
     let bytes =
         std::fs::read(&canonical).with_context(|| format!("cannot read `{}`", file.display()))?;
-    if bytes.is_empty() {
-        bail!("`{}`: the file is empty", file.display());
-    }
-    if std::str::from_utf8(&bytes).is_err() {
-        bail!(
-            "`{}` is not UTF-8 text; the exam reads text",
-            file.display()
-        );
-    }
+    check_text(&bytes, &file.display().to_string())?;
     Ok(Placed { display, bytes })
+}
+
+fn check_text(bytes: &[u8], what: &str) -> Result<()> {
+    if bytes.is_empty() {
+        bail!("`{what}`: the file is empty");
+    }
+    if std::str::from_utf8(bytes).is_err() {
+        bail!("`{what}` is not UTF-8 text; the exam reads text");
+    }
+    Ok(())
 }
 
 fn parse_root_key(key: &str) -> Result<String> {
@@ -688,7 +701,10 @@ pub fn list(deck: &Path) -> Result<Listing> {
     let mut sources = Vec::with_capacity(opened.manifest.sources.len());
     for (id, row) in &opened.manifest.sources {
         let display: DisplayPath = row.path.parse()?;
-        let drift = drift(id, &display, &opened.roots);
+        let drift = match opened.roots.roots.get(&display.key) {
+            Some(dir) => live_state(id, &display, dir).0,
+            None => Drift::Unchecked,
+        };
         sources.push((
             display,
             SourceLine {
@@ -707,30 +723,91 @@ pub fn list(deck: &Path) -> Result<Listing> {
     })
 }
 
-fn drift(id: &str, display: &DisplayPath, roots: &Roots) -> Drift {
-    let Some(dir) = roots.roots.get(&display.key) else {
-        return Drift::Unchecked;
-    };
+pub(super) fn live_state(id: &str, display: &DisplayPath, dir: &Path) -> (Drift, Option<Vec<u8>>) {
     let live = display
         .path
         .split('/')
-        .fold(dir.clone(), |live, part| live.join(part));
+        .fold(dir.to_path_buf(), |live, part| live.join(part));
     match std::fs::symlink_metadata(&live) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Drift::Missing,
-        Err(_) => return Drift::Unreadable,
-        Ok(metadata) if metadata.file_type().is_symlink() => return Drift::Linked,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return (Drift::Missing, None);
+        }
+        Err(_) => return (Drift::Unreadable, None),
+        Ok(metadata) if metadata.file_type().is_symlink() => return (Drift::Linked, None),
         Ok(_) => {}
     }
     match std::fs::canonicalize(&live) {
         Ok(canonical) if canonical.starts_with(dir) => {}
-        Ok(_) => return Drift::Linked,
-        Err(_) => return Drift::Unreadable,
+        Ok(_) => return (Drift::Linked, None),
+        Err(_) => return (Drift::Unreadable, None),
     }
     match std::fs::read(&live) {
-        Ok(bytes) if source_id(&bytes) == id => Drift::Same,
-        Ok(_) => Drift::Changed,
-        Err(_) => Drift::Unreadable,
+        Ok(bytes) if source_id(&bytes) == id => (Drift::Same, None),
+        Ok(bytes) => (Drift::Changed, Some(bytes)),
+        Err(_) => (Drift::Unreadable, None),
     }
+}
+
+pub fn repair(deck: &Path) -> Result<RepairReport> {
+    let opened = open(deck)?;
+    let mut report = RepairReport::default();
+    let mut rows: Vec<(String, Row)> = Vec::with_capacity(opened.manifest.sources.len());
+    let mut new_copies = Vec::new();
+    let mut ordered: Vec<(&String, &Row)> = opened.manifest.sources.iter().collect();
+    ordered.sort_by(|a, b| a.1.path.cmp(&b.1.path));
+    for (id, row) in ordered {
+        let display: DisplayPath = row.path.parse()?;
+        let state = match opened.roots.roots.get(&display.key) {
+            Some(dir) if root_problem(dir).is_none() => live_state(id, &display, dir),
+            _ => (Drift::Unchecked, None),
+        };
+        let kept_id = match state {
+            (Drift::Changed, Some(bytes)) => {
+                check_text(&bytes, &row.path)?;
+                let lines = line_count(&bytes);
+                for entry in &row.bound_to {
+                    let binding = parse_binding(id, entry)?;
+                    check_ranges(&binding, lines, &format!("the live `{}`", row.path))?;
+                    if !binding.ranges.is_empty() {
+                        report.kept_ranges.push((row.path.clone(), entry.clone()));
+                    }
+                }
+                let new_id = source_id(&bytes);
+                new_copies.push((copy_name(&new_id, &display), bytes));
+                report.refrozen.push((new_id.clone(), row.path.clone()));
+                new_id
+            }
+            (Drift::Same, _) => id.clone(),
+            (Drift::Missing, _) => {
+                report.missing.push(row.path.clone());
+                id.clone()
+            }
+            (other, _) => {
+                report.skipped.push((row.path.clone(), other));
+                id.clone()
+            }
+        };
+        rows.push((kept_id, row.clone()));
+    }
+    let mut holders: BTreeMap<&str, &str> = BTreeMap::new();
+    for (id, row) in &rows {
+        if let Some(other) = holders.insert(id, &row.path) {
+            bail!(
+                "`{other}` and `{}` would hold the same bytes; a deck keeps one copy of each \
+                 file, so nothing was refrozen",
+                row.path
+            );
+        }
+    }
+    if report.refrozen.is_empty() && stray_copies(&opened.dir)?.is_empty() {
+        return Ok(report);
+    }
+    let manifest = Manifest {
+        version: MANIFEST_VERSION,
+        sources: rows.into_iter().collect(),
+    };
+    report.collected = finish(&opened, manifest, new_copies, None)?.collected;
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -960,6 +1037,27 @@ mod tests {
                 },
                 |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_B])),
                 &["topic id `topic-beta` is also at", "other.md"],
+            ),
+            (
+                "duplicated topic id in the deck, on bind",
+                |w| {
+                    let text = fs::read_to_string(w.deck()).unwrap();
+                    fs::write(w.deck(), text.replace("topic-beta", "topic-alpha")).unwrap();
+                },
+                |w| bind(&w.deck(), &first(w), &strings(&[TOPIC_A])),
+                &["topic id `topic-alpha` is also at", "d.md:"],
+            ),
+            (
+                "duplicated topic id across decks, on add",
+                |w| {
+                    fs::write(
+                        w.root().join("decks").join("other.md"),
+                        "---\nid: \"deck-other\"\n---\n# X\n<!-- id: topic-beta -->\n\n## q\na\n",
+                    )
+                    .unwrap();
+                },
+                |w| add_c(w, TOPIC_B),
+                &["topic id `topic-beta` is also at", "other.md:"],
             ),
             (
                 "last unbind",
@@ -1366,6 +1464,124 @@ mod tests {
                 .contains("topic-alpha\"]"),
             "the manifest behind the link is unchanged"
         );
+    }
+
+    #[test]
+    fn repair_refreezes_drifted_sources_and_refuses_a_convergence_naming_both_rows() {
+        let workspace = base();
+        workspace.add(&["c.rs"], &[TOPIC_B]).unwrap();
+        let refusals: [(&str, &[u8], &[u8]); 2] = [
+            ("two drifted files converge", b"same\n", b"same\n"),
+            ("one becomes another row's bytes", C, C),
+        ];
+        for (label, a_bytes, c_bytes) in refusals {
+            workspace.write_live("a.rs", a_bytes);
+            workspace.write_live("c.rs", c_bytes);
+            let before = workspace.snapshot();
+            let error = format!(
+                "{:#}",
+                repair(&workspace.deck()).expect_err("a convergence refuses the repair")
+            );
+            for path in ["`sdk:a.rs`", "`sdk:c.rs`"] {
+                assert!(error.contains(path), "{label}: names {path}: {error}");
+            }
+            assert_eq!(
+                before,
+                workspace.snapshot(),
+                "{label}: the refusal leaves the folder"
+            );
+        }
+
+        let edited = b"one\ntwo\nthree\nfour\nfive, edited\n";
+        workspace.write_live("a.rs", edited);
+        let report = repair(&workspace.deck()).unwrap_or_else(|error| panic!("repair: {error:#}"));
+        assert_eq!(
+            vec![(source_id(edited), "sdk:a.rs".to_string())],
+            report.refrozen,
+            "repair: only the drifted row is refrozen"
+        );
+        assert_eq!(
+            vec![format!("{}.rs", source_id(A))],
+            report.collected,
+            "repair: the old copy is collected"
+        );
+        let listed: Vec<(String, Drift)> = list(&workspace.deck())
+            .unwrap()
+            .sources
+            .into_iter()
+            .map(|line| (line.id, line.drift))
+            .collect();
+        assert_eq!(
+            vec![
+                (source_id(edited), Drift::Same),
+                (source_id(C), Drift::Same)
+            ],
+            listed,
+            "list: the refrozen row under its new id"
+        );
+        assert_eq!(
+            RepairReport::default(),
+            repair(&workspace.deck()).unwrap(),
+            "a second repair finds nothing to do"
+        );
+    }
+
+    #[test]
+    fn repair_keeps_missing_and_unchecked_rows_and_refuses_a_range_beyond_the_new_copy() {
+        let workspace = base();
+        workspace.add(&["c.rs"], &[TOPIC_B]).unwrap();
+        bind(
+            &workspace.deck(),
+            &source_id(C),
+            &strings(&["20-21|topic-beta"]),
+        )
+        .unwrap();
+        workspace.write_live("c.rs", b"1\n2\n");
+        let before = workspace.snapshot();
+        let error = format!("{:#}", repair(&workspace.deck()).unwrap_err());
+        assert!(
+            error.contains("range 20-21 lies beyond line 2 of the live `sdk:c.rs`"),
+            "range: {error}"
+        );
+        assert_eq!(before, workspace.snapshot(), "range: nothing written");
+
+        workspace.write_live("c.rs", b"");
+        let error = format!("{:#}", repair(&workspace.deck()).unwrap_err());
+        assert!(
+            error.contains("`sdk:c.rs`: the file is empty"),
+            "empty: {error}"
+        );
+        assert_eq!(before, workspace.snapshot(), "empty: nothing written");
+
+        workspace.write_live("c.rs", C);
+        fs::remove_file(workspace.live().join("a.rs")).unwrap();
+        let report = repair(&workspace.deck()).unwrap();
+        assert_eq!(
+            (vec!["sdk:a.rs".to_string()], Vec::new()),
+            (report.missing, report.refrozen),
+            "missing: reported, never removed"
+        );
+        assert_eq!(
+            before,
+            workspace.snapshot(),
+            "missing: the row and copy stay"
+        );
+
+        workspace.write_live("c.rs", b"edited\n");
+        let mut roots = Roots::load(&workspace.dir()).unwrap().unwrap();
+        roots.roots.insert("sdk".to_string(), PathBuf::from("src"));
+        roots.save(&workspace.dir()).unwrap();
+        let before = workspace.snapshot();
+        let report = repair(&workspace.deck()).unwrap();
+        assert_eq!(
+            vec![
+                ("sdk:a.rs".to_string(), Drift::Unchecked),
+                ("sdk:c.rs".to_string(), Drift::Unchecked)
+            ],
+            report.skipped,
+            "a root that is not an absolute folder is never used"
+        );
+        assert_eq!(before, workspace.snapshot(), "unchecked: nothing written");
     }
 
     #[test]

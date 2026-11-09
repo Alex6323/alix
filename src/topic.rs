@@ -29,16 +29,15 @@ pub fn duplicated_topics(deck: &Deck, workspace_root: Option<&Path>) -> Vec<Topi
     let mut found = same_deck_duplicates(&deck.path, &deck.topics);
     if let Some(root) = workspace_root {
         let ids: Vec<String> = deck.topic_ids().into_iter().flatten().collect();
-        if !any_named_twice(root, &ids) {
-            return found;
+        if any_named_twice(root, &ids) {
+            crate::profile::hit(crate::profile::Counter::WorkspaceTopicScans);
+            found.extend(
+                crate::dedup::scan_dir(root)
+                    .topic_dupes
+                    .into_iter()
+                    .filter(|dupe| ids.contains(&dupe.id)),
+            );
         }
-        crate::profile::hit(crate::profile::Counter::WorkspaceTopicScans);
-        found.extend(
-            crate::dedup::scan_dir(root)
-                .topic_dupes
-                .into_iter()
-                .filter(|dupe| ids.contains(&dupe.id)),
-        );
     }
     found.sort_by(|a, b| (&a.id, &a.copies).cmp(&(&b.id, &b.copies)));
     found
@@ -250,6 +249,30 @@ mod tests {
                 "no root: no cross-deck scan"
             );
         }
+    }
+
+    #[test]
+    fn findings_come_sorted_by_id_whether_or_not_the_workspace_scan_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-d\"\n---\n# A\n<!-- id: topic-b -->\n## q\na\n# B\n<!-- id: topic-b \
+             -->\n## r\nb\n# C\n<!-- id: topic-a -->\n## s\nc\n# D\n<!-- id: topic-a -->\n## t\nd\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let ids = |found: Vec<TopicDupe>| -> Vec<String> {
+            found.into_iter().map(|dupe| dupe.id).collect()
+        };
+        let sorted = vec!["topic-a".to_string(), "topic-b".to_string()];
+        assert_eq!(sorted, ids(duplicated_topics(&deck, None)), "no root");
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(
+            sorted,
+            ids(duplicated_topics(&deck, Some(empty.path()))),
+            "a root whose members repeat nothing: the fast gate returns"
+        );
     }
 
     #[test]

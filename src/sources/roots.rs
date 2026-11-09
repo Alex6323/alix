@@ -39,6 +39,16 @@ impl Roots {
     }
 }
 
+pub(super) fn root_problem(dir: &Path) -> Option<&'static str> {
+    if !dir.is_absolute() {
+        return Some("is not an absolute path");
+    }
+    match std::fs::metadata(dir) {
+        Ok(metadata) if metadata.is_dir() => None,
+        _ => Some("is not an existing folder"),
+    }
+}
+
 pub fn canonical_folder(dir: &Path) -> Result<PathBuf, SourceError> {
     let canonical = std::fs::canonicalize(dir).map_err(io_error(dir))?;
     if !canonical.is_dir() {

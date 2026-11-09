@@ -186,10 +186,10 @@ For a trace that *isn't* frozen — a loose `.md` over a live `exam:` —
 missing file, changed excerpt, or ambiguous exact match is reported without
 writing. If the exact text moved to one other range, doctor reports that safe
 rebase. After reviewing it, run
-`alix doctor <deck> --repair-source-locators` to stamp missing fingerprints and
+`alix doctor <deck> --repair-cite-locators` to stamp missing fingerprints and
 apply only unique exact rebases. Changed and ambiguous excerpts remain
 untouched. Frozen assets do not move, but doctor still verifies their
-captured text, and with `--warn-on-source-locator-drift` it also warns about
+captured text, and with `--warn-on-cite-locator-drift` it also warns about
 live-source drift.
 
 A trace deck degrades gracefully — even when it is not being traced it's a valid deck of

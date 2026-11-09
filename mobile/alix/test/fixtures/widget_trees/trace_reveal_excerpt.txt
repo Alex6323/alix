@@ -24,7 +24,7 @@ Scaffold
                         Container
                           ConstrainedBox
                             Padding(EdgeInsets(15.0, 13.0, 15.0, 13.0))
-                              Text("source excerpt has no fingerprint; review it, then run `alix doctor --repair-source-locators`")
+                              Text("source excerpt has no fingerprint; review it, then run `alix doctor --repair-cite-locators`")
                         SizedBox(width=null, height=16.0)
                         Column
                           Text("KEY POINTS")

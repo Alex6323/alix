@@ -76,6 +76,20 @@ manifest last, so an interruption leaves the old or the new state, and the
 next change deletes any copy no row names. Every subcommand and flag is
 listed in the [command reference](17-command-reference.md#the-ai-features).
 
+`alix doctor` checks every member deck's sources folder: a damaged folder
+(a copy missing, renamed, linked or not matching its id, a malformed
+manifest) and a binding to a topic the deck lacks are errors, and a copy no
+row names is a note. A live file changing is normal, so drift is opt-in:
+`alix doctor --warn-on-source-drift` warns for each source whose live file
+changed, is gone, or cannot be read, and names each key with no usable root
+on this machine together with the `root set` command that saves one.
+`alix doctor --repair-sources` refreezes every source whose live file
+changed, keeping its bindings and printing each kept range for review. It
+refuses the whole repair when two sources would end up with the same bytes,
+naming both, or when a range would lie beyond a new copy's last line. A live
+file that is gone is reported and its source kept; a source under a key
+with no usable root is never refrozen.
+
 ## Sitting the exam
 
 An exam is written ahead, then taken. Writing the questions is a long model

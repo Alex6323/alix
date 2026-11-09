@@ -498,7 +498,7 @@ You rarely write these by hand. Generating a deck from a local source
 from and fingerprints every citation. Plain
 [`alix doctor`](17-command-reference.md) reports missing fingerprints and
 fingerprint drift without writing. After reviewing the cited text,
-`alix doctor <deck> --repair-source-locators` stamps a missing fingerprint or
+`alix doctor <deck> --repair-cite-locators` stamps a missing fingerprint or
 rebases a uniquely relocated exact excerpt; changed or ambiguous excerpts
 remain untouched for semantic review. Initializing a workspace member goes one
 further and **freezes** its source evidence and local images below
@@ -508,5 +508,5 @@ file, and leaves the deck's `cite:` roots pointed at the real material: each
 frozen citation keeps its key and path in `at:` and gains an `asset:` field
 naming the content-addressed object, so a drift check can still compare
 against the live file under that key's root when it is reachable. That check
-is opt-in: `alix doctor --warn-on-source-locator-drift` reports frozen
+is opt-in: `alix doctor --warn-on-cite-locator-drift` reports frozen
 drift as a warning; plain doctor stays quiet about it.

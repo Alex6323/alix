@@ -20,6 +20,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no row names and temporaries an interrupted write left. The exam does not
   read sources yet.
 
+- `alix doctor` checks each workspace deck's sources folder: a damaged folder
+  or a binding to a topic the deck lacks is an error, and a copy no row names
+  is a note. `--warn-on-source-drift` warns for each source whose live file
+  changed, is gone, or cannot be read, and names each key with no usable root
+  on this machine with the command that saves one. `--repair-sources`
+  refreezes changed sources, keeping their bindings; it refuses the whole
+  repair when two sources would hold the same bytes, and keeps a source whose
+  live file is gone.
+
 - Topics carry permanent IDs: `alix deck init` and opening a deck write one
   `<!-- id: topic-<token> -->` line closing each `#` heading block (after its
   prose, before its first card). The cards above the first `#` are the
@@ -203,6 +212,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Breaking: `alix doctor --repair-source-locators` is renamed
+  `--repair-cite-locators`, and the citation drift flag is
+  `--warn-on-cite-locator-drift`, so the `source` flags name deck sources
+  only. The old spellings are unknown flags.
 
 - Breaking: a `#` heading block is a **topic** everywhere, in the book, the
   web and phone interfaces, doctor and parse messages, exam prompts, and the
@@ -457,10 +471,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `alix doctor` reports drift of frozen citations (the live root or file
   gone, the text changed, moved, or ambiguous) only with the new
-  `--warn-on-source-locator-drift` flag, and only as a warning. A live
+  `--warn-on-cite-locator-drift` flag, and only as a warning. A live
   citation that does not resolve is still an error. An unchanged frozen
   whole-file citation no longer reads as moved, and
-  `--repair-source-locators` rebases each frozen citation to its own lines
+  `--repair-cite-locators` rebases each frozen citation to its own lines
   when several share one locator.
 
 - Generators that write locators declare their input under the `cite:` key

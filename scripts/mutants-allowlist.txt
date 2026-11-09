@@ -228,7 +228,7 @@ src/assets.rs:163: replace default_diagram_command -> Option<&'static str> with 
 # a repair only for a flag that is set. Forcing `any` to true therefore
 # runs `run` with every flag false, which does nothing; the one extra cost
 # is listing the deck files. No output or file differs. Line-pinned.
-src/cli/doctor.rs:1633: replace Repairs::any -> bool with true
+src/cli/doctor.rs:1698: replace Repairs::any -> bool with true
 
 # EQUIVALENT. `locate` returns the piece that contains the probed byte, so
 # `range.start` is never before its piece and `range.end` never after it.

@@ -302,11 +302,11 @@ impl CitationRoots {
             }
             CitationIntegrity::Unfingerprinted { .. } => bail!(
                 "source excerpt has no fingerprint; review it, then run \
-                 `alix doctor --repair-source-locators`"
+                 `alix doctor --repair-cite-locators`"
             ),
             CitationIntegrity::Relocated { locator, .. } => bail!(
                 "source excerpt moved to `{locator}`; run \
-                 `alix doctor --repair-source-locators` to rebase it"
+                 `alix doctor --repair-cite-locators` to rebase it"
             ),
             CitationIntegrity::Changed => {
                 bail!(

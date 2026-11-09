@@ -428,7 +428,7 @@ fn doctor_reports_an_unknown_locator_key_as_an_error_in_plain_and_repair_mode() 
         stdout(&plain),
         stderr(&plain)
     );
-    let repair = alix(&["doctor", &deck, "--repair-source-locators"]);
+    let repair = alix(&["doctor", &deck, "--repair-cite-locators"]);
     assert!(
         !repair.status.success(),
         "repair doctor: stdout {}\nstderr {}",
@@ -447,7 +447,7 @@ fn plain_doctor_errors_when_a_fingerprinted_whole_file_live_citation_disappears(
         "---\ncite:\n  - src: .\n---\n\n## q\nanswer\n<!-- at: src:notes.txt -->\n",
     );
 
-    let repair = alix(&["doctor", &deck, "--repair-source-locators"]);
+    let repair = alix(&["doctor", &deck, "--repair-cite-locators"]);
     assert!(
         repair.status.success(),
         "repair doctor: stdout {}\nstderr {}",
@@ -838,7 +838,7 @@ the cited paragraph
     let out = alix_bin(&[
         "doctor",
         ws.to_str().unwrap(),
-        "--warn-on-source-locator-drift",
+        "--warn-on-cite-locator-drift",
     ]);
     assert!(
         out.status.success() && stderr(&out).contains("is intact but now at lines 3"),
@@ -846,7 +846,7 @@ the cited paragraph
         stderr(&out)
     );
 
-    let out = alix_bin(&["doctor", ws.to_str().unwrap(), "--repair-source-locators"]);
+    let out = alix_bin(&["doctor", ws.to_str().unwrap(), "--repair-cite-locators"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
     let repaired = std::fs::read_to_string(&deck).unwrap();
@@ -867,7 +867,7 @@ the cited paragraph
         !stderr(&alix_bin(&[
             "doctor",
             ws.to_str().unwrap(),
-            "--warn-on-source-locator-drift"
+            "--warn-on-cite-locator-drift"
         ]))
         .contains("frozen excerpt"),
         "the drift is gone after the repair"
@@ -905,7 +905,7 @@ fn doctor_drift_flag_reports_a_frozen_range_whose_length_no_longer_matches_its_a
     let out = alix(&[
         "doctor",
         ws.to_str().unwrap(),
-        "--warn-on-source-locator-drift",
+        "--warn-on-cite-locator-drift",
     ]);
     assert!(
         out.status.success() && stderr(&out).contains("frozen excerpt"),
@@ -977,7 +977,7 @@ fn doctor_repair_restores_the_frozen_width_for_an_all_blank_range() {
         )
         .unwrap();
 
-        let repaired = alix(&["doctor", ws.to_str().unwrap(), "--repair-source-locators"]);
+        let repaired = alix(&["doctor", ws.to_str().unwrap(), "--repair-cite-locators"]);
         assert!(repaired.status.success(), "stderr: {}", stderr(&repaired));
         assert!(
             std::fs::read_to_string(&deck)
@@ -989,7 +989,7 @@ fn doctor_repair_restores_the_frozen_width_for_an_all_blank_range() {
         let checked = alix(&[
             "doctor",
             ws.to_str().unwrap(),
-            "--warn-on-source-locator-drift",
+            "--warn-on-cite-locator-drift",
         ]);
         assert!(
             checked.status.success() && !stderr(&checked).contains("frozen excerpt"),
@@ -1025,7 +1025,7 @@ fn doctor_repair_does_not_hide_an_all_blank_range_that_runs_past_eof() {
     std::fs::write(&deck, frozen.replace("src:notes.md:2-3", "src:notes.md:2")).unwrap();
     std::fs::write(&source, "heading\n\n").unwrap();
 
-    let repaired = alix(&["doctor", ws.to_str().unwrap(), "--repair-source-locators"]);
+    let repaired = alix(&["doctor", ws.to_str().unwrap(), "--repair-cite-locators"]);
     assert!(repaired.status.success(), "stderr: {}", stderr(&repaired));
     assert!(
         !std::fs::read_to_string(&deck)
@@ -9305,6 +9305,79 @@ fn deck_source_add_list_bind_unbind_remove_round_trip_by_id_prefix() {
         stdout(&out)
     );
     assert!(!copy.exists(), "remove: the copy is deleted");
+}
+
+#[test]
+fn doctor_repair_sources_refreezes_a_drifted_source_only_when_asked() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let run = |args: &[&str]| alix_in(root.path(), home.path(), args);
+    let ws = root.path().to_str().unwrap();
+    let root_arg = format!("sdk={}", root.path().join("live").display());
+    let out = run(&[
+        "deck",
+        "source",
+        "add",
+        "decks/d.md",
+        "live/a.rs",
+        "--root",
+        &root_arg,
+        "--topic",
+        "topic-alpha",
+    ]);
+    assert!(out.status.success(), "add: {}", stderr(&out));
+    let folder = root.path().join("sources").join("deck-sourced");
+    let old_copy = folder.join(format!(
+        "{}.rs",
+        alix::sources::source_id(b"fn main() {}\n")
+    ));
+    let edited = b"fn main() { println!(); }\n";
+    let new_id = alix::sources::source_id(edited);
+    std::fs::write(root.path().join("live").join("a.rs"), edited).unwrap();
+    let drift_line = "source `sdk:a.rs` changed since it was frozen";
+
+    let out = run(&["doctor", ws]);
+    assert!(
+        out.status.success() && !stderr(&out).contains(drift_line),
+        "plain doctor: quiet about drift: {}",
+        stderr(&out)
+    );
+    assert!(old_copy.is_file(), "plain doctor: nothing refrozen");
+
+    let out = run(&["doctor", ws, "--warn-on-source-drift"]);
+    assert!(
+        out.status.success() && stderr(&out).contains(drift_line),
+        "the drift flag: one warning: {}",
+        stderr(&out)
+    );
+    assert!(old_copy.is_file(), "the drift flag: nothing refrozen");
+
+    let out = run(&["doctor", ws, "--repair-sources"]);
+    assert!(out.status.success(), "repair: {}", stderr(&out));
+    assert!(
+        stdout(&out).contains(&format!("refroze sdk:a.rs as {new_id}")),
+        "repair: names the new id: {}",
+        stdout(&out)
+    );
+    assert!(
+        folder.join(format!("{new_id}.rs")).is_file() && !old_copy.exists(),
+        "repair: the new copy replaces the old"
+    );
+    let out = run(&["doctor", ws, "--warn-on-source-drift"]);
+    assert!(
+        !stderr(&out).contains(drift_line),
+        "after repair: no drift: {}",
+        stderr(&out)
+    );
+
+    for old in ["--repair-source-locators", "--warn-on-source-locator-drift"] {
+        let out = run(&["doctor", ws, old]);
+        assert!(
+            !out.status.success() && stderr(&out).contains(old),
+            "{old}: an unknown flag: {}",
+            stderr(&out)
+        );
+    }
 }
 
 #[test]

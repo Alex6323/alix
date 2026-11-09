@@ -326,7 +326,7 @@ impl DeckSources {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::{
         collections::BTreeMap,
         fs,
@@ -342,13 +342,13 @@ mod tests {
         workspace::WorkspaceFiles,
     };
 
-    const DECK: &str = "deck-fixture";
+    pub(in crate::sources) const DECK: &str = "deck-fixture";
     const A: &[u8] = b"fn main() {}\n";
     const B: &[u8] = b"# RFC 9110\nHTTP Semantics\r\n";
 
-    struct Fixture {
-        root: TempDir,
-        dir: PathBuf,
+    pub(in crate::sources) struct Fixture {
+        pub(in crate::sources) root: TempDir,
+        pub(in crate::sources) dir: PathBuf,
         a: String,
         b: String,
     }
@@ -378,7 +378,7 @@ mod tests {
         }
     }
 
-    fn fixture() -> Fixture {
+    pub(in crate::sources) fn fixture() -> Fixture {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("sources").join(DECK);
         fs::create_dir_all(&dir).unwrap();
@@ -460,13 +460,13 @@ mod tests {
         );
     }
 
-    type Fault = (
+    pub(in crate::sources) type Fault = (
         &'static str,
         fn(&Fixture),
         fn(&Fixture, &SourceError) -> bool,
     );
 
-    fn faults() -> Vec<Fault> {
+    pub(in crate::sources) fn faults() -> Vec<Fault> {
         let mut faults: Vec<Fault> = vec![
             (
                 "version 2",

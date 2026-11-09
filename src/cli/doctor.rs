@@ -24,18 +24,24 @@ fn val_name<T: clap::ValueEnum>(value: T) -> String {
         .unwrap_or_default()
 }
 
+#[derive(Clone, Copy, Default)]
+struct DriftChecks {
+    cite_locators: bool,
+    sources: bool,
+}
+
 #[derive(Default)]
 struct Report {
     errors: Vec<String>,
     warnings: Vec<String>,
     notes: Vec<String>,
-    source_locator_drift: bool,
+    drift: DriftChecks,
 }
 
 impl Report {
-    fn new(source_locator_drift: bool) -> Self {
+    fn new(drift: DriftChecks) -> Self {
         Self {
-            source_locator_drift,
+            drift,
             ..Self::default()
         }
     }
@@ -227,7 +233,25 @@ fn deck_findings(path: &Path, report: &mut Report) {
     );
     if let Ok(deck) = Deck::load(path) {
         deck_resource_findings(&deck, report);
+        deck_source_findings(&deck, report);
     }
+}
+
+fn deck_source_findings(deck: &Deck, report: &mut Report) {
+    let Some(root) = workspace::root_for_deck(&deck.path) else {
+        return;
+    };
+    let found = alix::sources::deck_findings(&root, deck, report.drift.sources);
+    let at = deck.path.display();
+    report
+        .errors
+        .extend(found.errors.iter().map(|line| format!("{at}: {line}")));
+    report
+        .warnings
+        .extend(found.warnings.iter().map(|line| format!("{at}: {line}")));
+    report
+        .notes
+        .extend(found.notes.iter().map(|line| format!("{at}: {line}")));
 }
 
 fn span_anchor_findings(path: &Path, cards: &[alix::card::Card], report: &mut Report) {
@@ -583,7 +607,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             }
         }
     }
-    let drifts = if report.source_locator_drift {
+    let drifts = if report.drift.cite_locators {
         alix::trace::drifted_cards(deck)
     } else {
         Vec::new()
@@ -594,7 +618,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             DriftKind::Rewritten => "no longer found in the source".to_string(),
             DriftKind::Ambiguous => "occurs more than once, so its lines are unclear".to_string(),
             DriftKind::Moved { start, len } => format!(
-                "is intact but now at lines {start}-{}; `--repair-source-locators` rebases it",
+                "is intact but now at lines {start}-{}; `--repair-cite-locators` rebases it",
                 start + len.saturating_sub(1)
             ),
         };
@@ -650,13 +674,13 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
                 Ok(CitationIntegrity::Unfingerprinted { .. }) => {
                     (!counted_by_the_live_error).then(|| {
                         "has no excerpt fingerprint; review it, then run \
-                         `alix doctor --repair-source-locators`"
+                         `alix doctor --repair-cite-locators`"
                             .to_string()
                     })
                 }
                 Ok(CitationIntegrity::Relocated { locator, .. }) => Some(format!(
                     "the exact excerpt moved to `{locator}`; run \
-                     `alix doctor --repair-source-locators` to rebase it"
+                     `alix doctor --repair-cite-locators` to rebase it"
                 )),
                 Ok(CitationIntegrity::Changed) => {
                     Some("the excerpt changed or disappeared; review it manually".to_string())
@@ -815,7 +839,7 @@ fn lint_message(path: &Path, lint: &alix::parser::Lint) -> String {
              introduces the cards under it"
             .to_string(),
         LintKind::DuplicateTopicHeading { first_line } => format!(
-            "topic heading repeats the one on line {first_line}; they are separate topics \
+            "two topics share the heading of line {first_line}; they are separate topics \
              that read the same, so rename one"
         ),
         LintKind::UnclosedFence => "a fence opened here never closes; everything after it \
@@ -1001,10 +1025,10 @@ fn audit_asset_root(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut R
     }
 }
 
-fn workspace_findings(dir: &Path, source_locator_drift: bool) -> Report {
-    let mut report = Report::new(source_locator_drift);
+fn workspace_findings(dir: &Path, drift: DriftChecks) -> Report {
+    let mut report = Report::new(drift);
     for root in alix::workspace::roots_under(dir) {
-        let nested = findings_in(&root, source_locator_drift);
+        let nested = findings_in(&root, drift);
         report.errors.extend(nested.errors);
         report.warnings.extend(nested.warnings);
         report.notes.extend(nested.notes);
@@ -1030,8 +1054,8 @@ fn workspace_manifest_findings(dir: &Path, report: &mut Report) {
     }
 }
 
-fn findings_in(dir: &Path, source_locator_drift: bool) -> Report {
-    let mut report = Report::new(source_locator_drift);
+fn findings_in(dir: &Path, drift: DriftChecks) -> Report {
+    let mut report = Report::new(drift);
     workspace_manifest_findings(dir, &mut report);
     if alix::workspace::has_manifest(dir)
         && let Err(error) = alix::workspace::Workspace::load(dir)
@@ -1207,16 +1231,16 @@ fn findings_in(dir: &Path, source_locator_drift: bool) -> Report {
     report
 }
 
-fn check(decks: Vec<PathBuf>, source_locator_drift: bool) -> Result<()> {
-    let report = check_report(decks, source_locator_drift);
+fn check(decks: Vec<PathBuf>, drift: DriftChecks) -> Result<()> {
+    let report = check_report(decks, drift);
     if report.render() {
         bail!("{} error(s) found", report.errors.len());
     }
     Ok(())
 }
 
-fn check_report(decks: Vec<PathBuf>, source_locator_drift: bool) -> Report {
-    let mut report = Report::new(source_locator_drift);
+fn check_report(decks: Vec<PathBuf>, drift: DriftChecks) -> Report {
+    let mut report = Report::new(drift);
     let mut manifests_reported = std::collections::HashSet::new();
     let mut inherited_settings: HashMap<PathBuf, alix::deck::DeckSettings> = HashMap::new();
     for path in &decks {
@@ -1504,7 +1528,7 @@ fn repair_diagrams(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
+fn repair_cite_locators(paths: &[PathBuf]) -> Result<()> {
     let mut unresolved = 0;
     for path in paths {
         let deck = Deck::load(path)?;
@@ -1607,10 +1631,50 @@ fn repair_source_locators(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
+fn repair_sources(paths: &[PathBuf]) -> Result<()> {
+    for path in paths {
+        let Some(root) = workspace::root_for_deck(path) else {
+            continue;
+        };
+        let Ok(Some(deck_id)) = alix::parser::read_deck_identity(path) else {
+            continue;
+        };
+        if !workspace::WorkspaceFiles::new(&root)
+            .sources_for(&deck_id)
+            .exists()
+        {
+            continue;
+        }
+        let report = alix::sources::commands::repair(path)
+            .with_context(|| format!("cannot repair the sources of {}", path.display()))?;
+        let at = path.display();
+        for (id, source) in &report.refrozen {
+            println!("{at}: refroze {source} as {id}");
+        }
+        for (source, entry) in &report.kept_ranges {
+            println!("{at}: kept range, review it: {source} {entry}");
+        }
+        for source in &report.missing {
+            eprintln!("warning: {at}: source `{source}` is missing on this machine; kept");
+        }
+        for (source, drift) in &report.skipped {
+            eprintln!(
+                "warning: {at}: source `{source}` is {}, so it was not refrozen",
+                drift.label()
+            );
+        }
+        for name in &report.collected {
+            println!("{at}: deleted unused copy {name}");
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Default)]
 struct Repairs {
     normalize: bool,
-    source_locators: bool,
+    cite_locators: bool,
+    sources: bool,
     positions: bool,
     diagrams: bool,
     frontmatter_order: bool,
@@ -1621,7 +1685,8 @@ impl Repairs {
     fn of(args: &DoctorArgs) -> Self {
         Self {
             normalize: args.normalize,
-            source_locators: args.repair_source_locators,
+            cite_locators: args.repair_cite_locators,
+            sources: args.repair_sources,
             positions: args.repair_positions,
             diagrams: args.repair_diagrams,
             frontmatter_order: args.repair_frontmatter_order,
@@ -1631,7 +1696,8 @@ impl Repairs {
 
     fn any(self) -> bool {
         self.normalize
-            || self.source_locators
+            || self.cite_locators
+            || self.sources
             || self.positions
             || self.diagrams
             || self.frontmatter_order
@@ -1642,8 +1708,11 @@ impl Repairs {
         if self.normalize {
             normalize_decks(paths)?;
         }
-        if self.source_locators {
-            repair_source_locators(paths)?;
+        if self.cite_locators {
+            repair_cite_locators(paths)?;
+        }
+        if self.sources {
+            repair_sources(paths)?;
         }
         if self.positions {
             repair_positions(paths)?;
@@ -1759,7 +1828,10 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     use alix::doctor::{self, Status};
     let repair_after_explicit_path = repair_after_explicit_path(args.dir.as_deref());
     let repairs = Repairs::of(&args);
-    let drift = args.warn_on_source_locator_drift;
+    let drift = DriftChecks {
+        cite_locators: args.warn_on_cite_locator_drift,
+        sources: args.warn_on_source_drift,
+    };
     if let Some(path) = &args.dir {
         if path.is_file() {
             repairs.run(std::slice::from_ref(path))?;
@@ -2004,7 +2076,7 @@ mod tests {
     fn doctor_names_the_copy_of_a_topic_id_shared_by_two_decks() {
         let dir = tempfile::tempdir().unwrap();
         let (one, two) = topic_pair(dir.path());
-        let report = findings_in(dir.path(), false);
+        let report = findings_in(dir.path(), DriftChecks::default());
         let errors = topic_errors(&report);
         assert_eq!(1, errors.len(), "one error per finding: {errors:?}");
         for site in [
@@ -2042,7 +2114,7 @@ mod tests {
         let (one, _) = topic_pair(dir.path());
         let deck = Deck::load(&one).unwrap();
         let refusal = alix::topic::duplicated_topics(&deck, Some(dir.path()))[0].to_string();
-        let report = findings_in(dir.path(), false);
+        let report = findings_in(dir.path(), DriftChecks::default());
         assert_eq!(vec![&refusal], topic_errors(&report), "cross-deck");
 
         let single = tempfile::tempdir().unwrap();
@@ -2053,6 +2125,84 @@ mod tests {
         let mut report = Report::default();
         deck_findings(&path, &mut report);
         assert_eq!(vec![&refusal], topic_errors(&report), "same deck");
+    }
+
+    #[test]
+    fn every_doctor_target_reports_source_damage_residue_and_flagged_drift_at_the_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        w(ws, "alix.toml", "");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::create_dir_all(ws.join("live")).unwrap();
+        let deck = ws.join("decks").join("d.md");
+        std::fs::write(
+            &deck,
+            "---\nid: \"deck-sourced\"\n---\n# A\n<!-- id: topic-alpha -->\n## q\na\n<!-- id: card-q -->\n",
+        )
+        .unwrap();
+        w(&ws.join("live"), "a.rs", "a\n");
+        w(&ws.join("live"), "b.rs", "b\n");
+        alix::sources::commands::add(alix::sources::commands::AddRequest {
+            deck: &deck,
+            files: vec![ws.join("live").join("a.rs"), ws.join("live").join("b.rs")],
+            root: Some(("sdk".to_string(), ws.join("live"))),
+            key: None,
+            topics: vec!["topic-alpha".to_string()],
+        })
+        .unwrap();
+        let folder = workspace::WorkspaceFiles::new(ws).sources_for("deck-sourced");
+        let stray = folder.join(format!("{}.txt", alix::sources::source_id(b"stray\n")));
+        std::fs::write(&stray, "stray\n").unwrap();
+        w(&ws.join("live"), "a.rs", "a, edited\n");
+        let at = deck.display().to_string();
+        let residue = format!(
+            "{at}: `{}` belongs to no row; the next source command removes it",
+            stray.display()
+        );
+        let drifted = format!(
+            "{at}: source `sdk:a.rs` changed since it was frozen; `alix doctor --repair-sources` \
+             refreezes it"
+        );
+        let report_of = |target: &str, drift: DriftChecks| match target {
+            "workspace" => findings_in(ws, drift),
+            _ => check_report(vec![deck.clone()], drift),
+        };
+        for target in ["workspace", "deck file"] {
+            let plain = report_of(target, DriftChecks::default());
+            assert!(
+                plain.notes.contains(&residue),
+                "{target}: residue: {:?}",
+                plain.notes
+            );
+            assert!(
+                !plain.warnings.iter().any(|line| line.contains("sdk:a.rs")),
+                "{target}: no drift without the flag: {:?}",
+                plain.warnings
+            );
+            let flagged = report_of(
+                target,
+                DriftChecks {
+                    sources: true,
+                    ..Default::default()
+                },
+            );
+            assert!(
+                flagged.warnings.contains(&drifted),
+                "{target}: the drift line: {:?}",
+                flagged.warnings
+            );
+        }
+
+        let copy = folder.join(format!("{}.rs", alix::sources::source_id(b"b\n")));
+        std::fs::write(&copy, "b, tampered\n").unwrap();
+        let damaged = format!(
+            "{at}: source copy `{}` does not match its id",
+            copy.display()
+        );
+        for target in ["workspace", "deck file"] {
+            let errors = report_of(target, DriftChecks::default()).errors;
+            assert!(errors.contains(&damaged), "{target}: damage: {errors:?}");
+        }
     }
 
     #[test]
@@ -2497,7 +2647,7 @@ mod tests {
                 "---\nformat-version: 1\nid: deck-00000000000000000000000001\n---\n## q\na\n<!-- id: card-00000000000000000000000002 -->\n",
             );
 
-            if check(vec![decks.join("ready.md")], false).is_ok() {
+            if check(vec![decks.join("ready.md")], DriftChecks::default()).is_ok() {
                 missed.push(label);
             }
         }
@@ -2756,7 +2906,10 @@ mod tests {
             "notes.md",
             "a new first line\nanother\nthe cited paragraph\n",
         );
-        let mut report = Report::new(true);
+        let mut report = Report::new(DriftChecks {
+            cite_locators: true,
+            ..Default::default()
+        });
         deck_findings(&deck_path, &mut report);
         assert!(
             report
@@ -2767,7 +2920,7 @@ mod tests {
             report.warnings
         );
 
-        repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
+        repair_cite_locators(std::slice::from_ref(&deck_path)).unwrap();
 
         let repaired = at_line(&std::fs::read_to_string(&deck_path).unwrap());
         assert!(
@@ -2782,7 +2935,10 @@ mod tests {
             )),
             "step evidence: only the address moved"
         );
-        let mut report = Report::new(true);
+        let mut report = Report::new(DriftChecks {
+            cite_locators: true,
+            ..Default::default()
+        });
         deck_findings(&deck_path, &mut report);
         assert!(
             report
@@ -2889,7 +3045,10 @@ mod tests {
         ];
         for (label, (_dir, deck_path), without_flag, with_flag) in rows {
             for (flag, expected) in [(false, without_flag), (true, with_flag)] {
-                let mut report = Report::new(flag);
+                let mut report = Report::new(DriftChecks {
+                    cite_locators: flag,
+                    ..Default::default()
+                });
                 deck_findings(&deck_path, &mut report);
                 let mentions = |messages: &[String]| {
                     messages.iter().any(|message| message.contains("notes.md"))
@@ -2944,7 +3103,7 @@ mod tests {
             "notes.md",
             "prefix\nold excerpt\nmiddle\nnew excerpt\n",
         );
-        repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
+        repair_cite_locators(std::slice::from_ref(&deck_path)).unwrap();
 
         let repaired = Deck::load(&deck_path).unwrap();
         let locators: Vec<String> = repaired
@@ -2995,7 +3154,7 @@ mod tests {
             report.warnings
         );
 
-        let error = repair_source_locators(std::slice::from_ref(&deck_path)).unwrap_err();
+        let error = repair_cite_locators(std::slice::from_ref(&deck_path)).unwrap_err();
         assert!(
             format!("{error:#}").contains("names no `cite:` root"),
             "repair: {error:#}"
@@ -3014,15 +3173,15 @@ mod tests {
             return report;
         }
         if target.is_file() {
-            return check_report(vec![target.to_path_buf()], false);
+            return check_report(vec![target.to_path_buf()], DriftChecks::default());
         }
         if alix::workspace::is_workspace(target) {
-            report = check_report(vec![target.to_path_buf()], false);
+            report = check_report(vec![target.to_path_buf()], DriftChecks::default());
             if !report.errors.is_empty() {
                 return report;
             }
         }
-        let nested = workspace_findings(target, false);
+        let nested = workspace_findings(target, DriftChecks::default());
         report.errors.extend(nested.errors);
         report.warnings.extend(nested.warnings);
         report
@@ -3127,9 +3286,9 @@ mod tests {
                 },
             ),
             (
-                "repair-source-locators",
+                "repair-cite-locators",
                 Repairs {
-                    source_locators: true,
+                    cite_locators: true,
                     ..Default::default()
                 },
             ),
@@ -3259,7 +3418,7 @@ mod tests {
         store.get_or_insert("card-orphan");
         store.save().unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -3275,14 +3434,14 @@ mod tests {
     fn a_root_progress_directory_is_ignored_like_any_unknown_directory() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("unknown")).unwrap();
-        let before = workspace_findings(dir.path(), false);
+        let before = workspace_findings(dir.path(), DriftChecks::default());
 
         let path = dir.path().join("progress/deck-stray.json");
         let mut store = alix::store::Store::open_deck(&path, "deck-stray", "stray.md").unwrap();
         store.get_or_insert("card-stray");
         store.save().unwrap();
 
-        let after = workspace_findings(dir.path(), false);
+        let after = workspace_findings(dir.path(), DriftChecks::default());
         assert_eq!(before.errors, after.errors, "unknown directory errors");
         assert_eq!(
             before.warnings, after.warnings,
@@ -3306,14 +3465,14 @@ mod tests {
                 false,
             ),
         ] {
-            let before = workspace_findings(dir.path(), false);
+            let before = workspace_findings(dir.path(), DriftChecks::default());
             let path = progress.join(name);
             if directory {
                 std::fs::create_dir(&path).unwrap();
             } else {
                 std::fs::write(&path, "not json").unwrap();
             }
-            let after = workspace_findings(dir.path(), false);
+            let after = workspace_findings(dir.path(), DriftChecks::default());
             assert_eq!(before.errors, after.errors, "{pattern}: doctor errors");
             assert_eq!(
                 before.warnings, after.warnings,
@@ -3322,7 +3481,7 @@ mod tests {
             assert_eq!(before.notes, after.notes, "{pattern}: doctor notes");
         }
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
         let findings = report
             .warnings
             .iter()
@@ -3352,7 +3511,7 @@ mod tests {
         alix::assets::write_object(dir.path(), "deck-m1", b"excerpt\n", "md").unwrap();
         std::fs::create_dir_all(dir.path().join("assets/deck-zz")).unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         let orphan: Vec<&String> = report
             .warnings
@@ -3388,7 +3547,7 @@ mod tests {
             "the linked orphan blocks sharing: {share_error:#}"
         );
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
         let findings = report
             .warnings
             .iter()
@@ -3428,7 +3587,7 @@ mod tests {
             "the linked assets root blocks sharing: {share_error:#}"
         );
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
         let findings = report
             .warnings
             .iter()
@@ -3461,7 +3620,7 @@ mod tests {
         let original = std::fs::metadata(&assets).unwrap().permissions();
         std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
         let stage = tempfile::tempdir().unwrap();
         let share = alix::share::stage_path(dir.path(), stage.path());
 
@@ -3490,7 +3649,7 @@ mod tests {
             .save()
             .unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -3509,7 +3668,7 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
         w(&nested, "loose.md", "## q\na\n");
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -3525,7 +3684,7 @@ mod tests {
     fn check_rejects_a_directory_without_a_workspace_manifest() {
         let dir = tempfile::tempdir().unwrap();
 
-        assert!(check(vec![dir.path().to_path_buf()], false).is_err());
+        assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_err());
     }
 
     #[test]
@@ -3546,7 +3705,8 @@ mod tests {
             })
             .collect();
 
-        let (_, counts) = alix::profile::collect(|| check_report(decks.clone(), false));
+        let (_, counts) =
+            alix::profile::collect(|| check_report(decks.clone(), DriftChecks::default()));
 
         assert!(
             counts.canonicalize_calls <= decks.len() as u64,
@@ -3614,7 +3774,7 @@ mod tests {
                     "{name}: explicit doctor errors were {:?}",
                     explicit.errors
                 );
-                let bare = workspace_findings(root.path(), false);
+                let bare = workspace_findings(root.path(), DriftChecks::default());
                 assert!(
                     bare.errors
                         .iter()
@@ -3625,7 +3785,7 @@ mod tests {
             }
             assert_eq!(
                 rejected_key.is_some(),
-                check(vec![dir.clone()], false).is_err(),
+                check(vec![dir.clone()], DriftChecks::default()).is_err(),
                 "{name}: explicit doctor status"
             );
 
@@ -3680,7 +3840,7 @@ mod tests {
             "empty.md",
             "---\nformat-version: 1\nid: deck-empty\n---\n## q\na\n<!-- id: card-qempty -->\n",
         );
-        check(vec![declared, empty, plain], false).unwrap();
+        check(vec![declared, empty, plain], DriftChecks::default()).unwrap();
 
         let workspace = dir.path().join("workspace");
         std::fs::create_dir(&workspace).unwrap();
@@ -3689,7 +3849,7 @@ mod tests {
             alix::workspace::MANIFEST,
             "icon = \"gone.svg\"\n",
         );
-        check(vec![workspace], false).unwrap();
+        check(vec![workspace], DriftChecks::default()).unwrap();
     }
 
     #[test]
@@ -3919,7 +4079,7 @@ mod tests {
             ),
         );
 
-        let error = repair_source_locators(std::slice::from_ref(&deck)).unwrap_err();
+        let error = repair_cite_locators(std::slice::from_ref(&deck)).unwrap_err();
 
         assert!(
             error
@@ -3943,7 +4103,7 @@ mod tests {
             ),
         );
 
-        let error = repair_source_locators(std::slice::from_ref(&deck)).unwrap_err();
+        let error = repair_cite_locators(std::slice::from_ref(&deck)).unwrap_err();
 
         assert!(
             error
@@ -4054,7 +4214,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: deck-facts\ncite:\n  - src: .\n---\n## q\na\n<!-- at: src:source.txt:1 -->\n<!-- id: card-q -->\n<!-- reveal: line -->\n",
         );
         let before = std::fs::read_to_string(&deck).unwrap();
-        let args = |repair_source_locators| DoctorArgs {
+        let args = |repair_cite_locators| DoctorArgs {
             normalize: false,
             repair_positions: false,
             repair_diagrams: false,
@@ -4064,8 +4224,10 @@ printf ']}}'
             backends: false,
             all_backends: false,
             grading: false,
-            repair_source_locators,
-            warn_on_source_locator_drift: false,
+            repair_cite_locators,
+            warn_on_cite_locator_drift: false,
+            repair_sources: false,
+            warn_on_source_drift: false,
             remove_backup_files: false,
             yes: false,
             config: Some(dir.path().join("config.toml")),
@@ -4085,7 +4247,7 @@ printf ']}}'
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alix.toml"), "icon = \"assets/gone.svg\"\n").unwrap();
         std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
-        assert!(check(vec![dir.path().to_path_buf()], false).is_ok());
+        assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_ok());
     }
 
     #[test]
@@ -4098,7 +4260,7 @@ printf ']}}'
         )
         .unwrap();
         std::fs::write(dir.path().join("a.md"), "## a\n1\n").unwrap();
-        assert!(check(vec![dir.path().to_path_buf()], false).is_ok());
+        assert!(check(vec![dir.path().to_path_buf()], DriftChecks::default()).is_ok());
     }
 
     #[test]
@@ -4111,7 +4273,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: deck-misplaced\n---\n## q <!-- id: card-q1 -->\na\n",
         );
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
         assert!(
             report
                 .warnings
@@ -4136,7 +4298,7 @@ printf ']}}'
         .unwrap();
         let before = std::fs::read(&path).unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report.errors.join("\n").contains("live `at:` citation"),
@@ -4166,7 +4328,7 @@ printf ']}}'
         )
         .unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -4195,7 +4357,7 @@ printf ']}}'
         )
         .unwrap();
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -4662,7 +4824,7 @@ printf ']}}'
         store.get_or_insert("card-parent1");
         store.save().unwrap();
 
-        let report = workspace_findings(dir, false);
+        let report = workspace_findings(dir, DriftChecks::default());
         assert!(
             report.errors.is_empty(),
             "the fixture itself must be clean: {:?}",
@@ -4756,7 +4918,7 @@ printf ']}}'
         store.set_last_launch("orphan-owner", alix::depth::Launch::Recall);
         store.save().unwrap();
 
-        let report = workspace_findings(dir, false);
+        let report = workspace_findings(dir, DriftChecks::default());
         let errors = report.errors.join("\n");
         let warnings = report.warnings.join("\n");
 
@@ -4823,7 +4985,7 @@ printf ']}}'
         );
         w(dir, "notes.md", "one\n");
 
-        let report = workspace_findings(dir, false);
+        let report = workspace_findings(dir, DriftChecks::default());
 
         assert!(
             !report
@@ -4863,7 +5025,7 @@ printf ']}}'
         );
         w(dir.path(), ".alix/progress/deck-deck1.json.bak", "{}");
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
         let warnings = report.warnings.join("\n");
 
         assert!(warnings.contains("orphaned augmentation document"));
@@ -4885,7 +5047,7 @@ printf ']}}'
             r#"{"version":1,"deck_id":"mathdeck","subject":"math.md","revision":1,"cards":{},"records":{},"writer":null}"#,
         );
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -4929,7 +5091,7 @@ printf ']}}'
             ),
         );
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report
@@ -4954,7 +5116,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\n---\n## q\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
 
-        let report = workspace_findings(dir.path(), false);
+        let report = workspace_findings(dir.path(), DriftChecks::default());
 
         assert!(
             report.warnings.is_empty() && report.errors.is_empty(),
@@ -4965,7 +5127,7 @@ printf ']}}'
     }
 
     #[test]
-    fn source_locator_repair_is_explicit_and_preserves_card_identity() {
+    fn cite_locator_repair_is_explicit_and_preserves_card_identity() {
         let dir = tempfile::tempdir().unwrap();
         w(
             dir.path(),
@@ -5003,7 +5165,7 @@ printf ']}}'
         );
         assert_eq!(before, std::fs::read_to_string(&deck_path).unwrap());
 
-        repair_source_locators(std::slice::from_ref(&deck_path)).unwrap();
+        repair_cite_locators(std::slice::from_ref(&deck_path)).unwrap();
         let after = std::fs::read_to_string(&deck_path).unwrap();
         assert!(after.contains(&format!(
             "<!-- at: src:code.rs:3-4 fingerprint: {fingerprint} -->"
@@ -5130,7 +5292,7 @@ printf ']}}'
         store.get_or_insert("card-draft1");
         store.save().unwrap();
 
-        let report = workspace_findings(dir, false);
+        let report = workspace_findings(dir, DriftChecks::default());
         assert!(
             report.errors.is_empty(),
             "the fixture itself must be clean: {:?}",

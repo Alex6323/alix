@@ -1,5 +1,5 @@
 //! `alix doctor`'s checks: report-only by default; mutations exist only
-//! behind explicit CLI flags (`--repair-source-locators`,
+//! behind explicit CLI flags (`--repair-cite-locators`,
 //! `--remove-backup-files`), never in these functions.
 
 use std::{

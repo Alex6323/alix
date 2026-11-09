@@ -122,7 +122,7 @@ Source citations fail closed behind a content fingerprint. Review, trace, and
 tutor grounding reveal a cited range only when its normalized displayed text
 matches the stored xxHash64 value. A unique exact relocation may be proposed,
 but ordinary doctor remains read-only; the explicit
-`--repair-source-locators` flag may stamp a reviewed range or apply that exact
+`--repair-cite-locators` flag may stamp a reviewed range or apply that exact
 rebase. Changed and ambiguous excerpts are never substituted automatically.
 The hash detects accidental drift and does not authenticate a deck or defend
 against a malicious author who controls both content and metadata
@@ -163,6 +163,13 @@ already in place. `list` compares each live file without following a
 symbolic link at the file or out of its root, reporting it as `linked`. A file added as a source
 is read through its canonical path, which must lie inside the chosen saved
 root, so a symbolic link inside a root cannot freeze a file outside it.
+`alix doctor` reports every verified-load refusal as an error and is
+otherwise read-only on sources. `alix doctor --repair-sources` refreezes a
+changed live file through the same open, validation and commit, only from a
+saved root that is an absolute existing folder, never through a live
+symbolic link, and refuses as a whole when two rows would hold the same
+bytes; a live file that is gone never removes its row
+(`src/sources/findings.rs`, `src/sources/commands.rs`).
 
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem

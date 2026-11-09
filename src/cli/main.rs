@@ -226,16 +226,26 @@ struct DoctorArgs {
     #[arg(long)]
     normalize: bool,
 
-    /// Stamp reviewed source excerpts and rebase exact excerpts that moved
+    /// Stamp reviewed cited excerpts and rebase exact excerpts that moved
     /// uniquely within their current file.
     #[arg(long)]
-    repair_source_locators: bool,
+    repair_cite_locators: bool,
 
-    /// Warn where a frozen source excerpt no longer matches its live source
+    /// Warn where a frozen cited excerpt no longer matches its live file
     /// (file gone, text changed, moved, or ambiguous). Off by default: a
     /// frozen copy going stale is normal.
     #[arg(long)]
-    warn_on_source_locator_drift: bool,
+    warn_on_cite_locator_drift: bool,
+
+    /// Refreeze each deck source whose live file changed, keeping its
+    /// bindings; a live file that is gone is reported, never removed.
+    #[arg(long)]
+    repair_sources: bool,
+
+    /// Warn where a deck source's live file changed or is gone, and name
+    /// each key with no usable root on this machine.
+    #[arg(long)]
+    warn_on_source_drift: bool,
 
     /// Rewrite each diverged span `position:` anchor to where the span's
     /// authored occurrence binds today (the keep-authored-occurrence edit).

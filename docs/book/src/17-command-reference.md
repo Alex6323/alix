@@ -344,23 +344,35 @@ notes it.
   trailing blanks on every line it owns, opener and closer included. alix normalizes every deck it writes anyway, so this is for
   a deck an editor changed after it was initialized. A rewrite that would stop
   the deck parsing is refused.
-- `alix doctor [dir-or-deck] --warn-on-source-locator-drift`: also warn where
+- `alix doctor [dir-or-deck] --warn-on-cite-locator-drift`: also warn where
   a frozen excerpt no longer matches its live source: the root or file is
   gone, the text changed, it occurs more than once, or it moved to other
   lines. Frozen evidence going stale is normal (a shared frozen deck works
   without its sources), so without this flag doctor says nothing about it,
   and with it the finding is a warning, never an error. A live citation that
   does not resolve is an error either way.
-- `alix doctor [dir-or-deck] --repair-source-locators`: after you review the
+- `alix doctor [dir-or-deck] --repair-cite-locators`: after you review the
   reported citations, stamp fingerprints on currently addressed excerpts and
   rebase any whose lines moved while their content stayed identical, frozen
   excerpts included (it finds moved frozen excerpts itself, with or without
-  `--warn-on-source-locator-drift`). A whole-file citation is never narrowed
+  `--warn-on-cite-locator-drift`). A whole-file citation is never narrowed
   to a range. A rebase corrects the `at:` line numbers only; the frozen
   evidence and its fingerprint are never rewritten. Changed or multiply
   matching excerpts remain untouched and make the command fail, because whether
   such a card still teaches the truth is a reader's call. Deck and card IDs are
   preserved.
+- `alix doctor [dir-or-deck] --warn-on-source-drift`: also warn where a
+  deck source's live file changed, is gone, is a symbolic link, or cannot be
+  read, and name each key that has sources but no usable root on this
+  machine, with the `alix deck source root set` command that saves one
+  ([sources](12-the-ai-exam.md#sources)). Damage to a sources folder is an
+  error with or without the flag.
+- `alix doctor [dir-or-deck] --repair-sources`: refreeze each deck source
+  whose live file changed, keeping its bindings and printing each kept
+  range for review. Refused as a whole when two sources would hold the same
+  bytes or a range would lie beyond a new copy's last line. A live file that
+  is gone is reported and its source kept; a key without a usable root is
+  never read.
 - `alix doctor [dir-or-deck] --repair-diagrams`: after you review the
   reported [diagram findings](06-cloze-direction-images.md), delete stamps
   attached to no fence and re-freeze every stale or unfrozen fence
