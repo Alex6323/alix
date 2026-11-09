@@ -49,6 +49,14 @@ impl WorkspaceFiles {
         self.assets().join(deck_id)
     }
 
+    pub fn sources(&self) -> PathBuf {
+        self.root.join(crate::sources::ROOT)
+    }
+
+    pub fn sources_for(&self, deck_id: &str) -> PathBuf {
+        self.sources().join(deck_id)
+    }
+
     pub fn augment(&self) -> PathBuf {
         self.root.join("augment")
     }

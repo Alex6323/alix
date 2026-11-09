@@ -128,6 +128,17 @@ The hash detects accidental drift and does not authenticate a deck or defend
 against a malicious author who controls both content and metadata
 (`src/source.rs`, `src/cli/doctor.rs`).
 
+Frozen exam sources fail closed behind their content address. A verified
+load of a deck's `sources/<deck-id>/` folder refuses the whole set unless the
+manifest is version 1 with no unknown field, every key is a source id, every
+display path and binding parses, every bound range lies within its copy, and
+each copy is a regular file read without following links (so a link placed in
+the folder cannot point the exam or the tutor at a file outside it), carries
+the name its id and display path dictate, is non-empty, and hashes back to
+the id in its name. A copy no row names is residue: reported, never read. The
+roots file beside the manifest holds absolute local folders and is private by
+the `*.local.*` pattern, so it never travels (`src/sources/`).
+
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
 code still process content supplied to the app. The app reads and writes only
@@ -620,6 +631,10 @@ The most relevant deterministic checks currently live beside their controls:
   recursive deck discovery used by bulk exam reset;
 - `src/source.rs` and `src/cli/doctor.rs`: fail-closed citation integrity and
   explicit exact locator repair;
+- `src/sources/manifest.rs` and `src/sources/mod.rs`: fail-closed source
+  integrity over every fault from a version bump to a same-bytes symlink
+  (`load_verified_fails_closed_on_every_integrity_fault`), and the display
+  path and binding grammars as table laws;
 - `src/locator.rs` and `src/cite.rs`: locator grammar (relative, normalized
   paths only) and containment of every resolved citation inside its root;
 - `src/workspace_update.rs`: update-manifest member containment, accepting a

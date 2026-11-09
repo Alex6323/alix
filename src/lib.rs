@@ -102,6 +102,7 @@ pub mod session;
 #[cfg(feature = "full")]
 pub mod share;
 pub mod source;
+pub mod sources;
 pub mod stamp;
 pub mod state;
 pub mod store;

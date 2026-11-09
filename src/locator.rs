@@ -251,7 +251,7 @@ fn is_range_shaped(text: &str) -> bool {
     }
 }
 
-fn parse_range(text: &str) -> Result<(u32, u32), LocatorError> {
+pub(crate) fn parse_range(text: &str) -> Result<(u32, u32), LocatorError> {
     let number = |digits: &str| -> Option<u32> {
         if digits.starts_with('0') || !is_digits(digits) {
             return None;
