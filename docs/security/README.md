@@ -373,8 +373,12 @@ A folder whose path a rule cannot name literally (pattern characters, or any
 path on Windows) gets no file tools (`ask::rooted_access`,
 `src/backend/claude.rs`). Canary probes against Claude Code 2.1.303 confirmed
 that reads outside the folder, through a symlink inside it, and by `Grep`
-across another folder are denied. Gemini, Codex and Copilot do not receive
-this confinement.
+across another folder are denied. A Copilot call holding file tools gets only
+its `view` tool (`--available-tools view --allow-tool view
+--disallow-temp-dir`) and runs in the working folder; canary probes against
+Copilot CLI 1.0.107 read a file inside the folder and refused `../outside.txt`
+and a symlink pointing outside (`docs/results/2026-11-08-exam-sources-probes.md`).
+Gemini and Codex do not receive this confinement.
 
 A citation reads only inside its key's root. A locator path is relative and
 normalized (no absolute path, drive letter, `..`, `.` or empty segment), and
@@ -533,12 +537,12 @@ safe or accurate.
   testing remain open.
 - Provider sandboxes and tool flags differ, and Alix cannot independently prove
   that a provider CLI honored them.
-- Only the Claude backend bounds the available tool set. Gemini and Copilot
-  express the permission half of a grant and nothing more, so an empty grant
-  leaves their CLI default tool set in force; Copilot's unconditional
-  `shell,write` denial is the only restriction that survives it. Codex ignores
-  the grant entirely and relies on its own read-only sandbox. Neither the
-  Gemini nor the Copilot behavior has been verified by execution
+- Only the Claude and Copilot backends bound the available tool set for a
+  file grant. Gemini expresses the permission half of a grant and nothing
+  more, so an empty grant leaves its CLI default tool set in force; Copilot's
+  unconditional `shell,write` denial is the only restriction that survives an
+  empty grant. Codex ignores the grant entirely and relies on its own
+  read-only sandbox. The Gemini behavior has not been verified by execution
   (`src/backend/gemini.rs`, `src/backend/copilot.rs`,
   `src/backend/codex.rs`).
 - Alix builds every model prompt by concatenating its own labels with deck

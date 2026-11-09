@@ -763,6 +763,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   receives the prompt on stdin, where those two took it as one command-line
   argument that Linux refuses past 128 KiB.
 
+- Copilot's grounded reads now name Copilot's real file tool (`view`), so a
+  source-grounded tutor reads files instead of inventing their content, and
+  they are confined to the source folder: a path outside it, `../`, or a
+  symlink pointing out is refused.
+
 - `alix doctor`'s long-section warning gives the current reason: the exam asks
   3 questions per section and a pass credits every card in it. It used to say
   the exam asks about every idea in a section.

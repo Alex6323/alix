@@ -29,7 +29,7 @@ impl Backend for CopilotBackend {
         {
             let mut available: Vec<&str> = Vec::new();
             if files {
-                available.push("read");
+                available.push("view");
             }
             if fetch || search {
                 // `url` covers both fetch and search; Copilot has no separate search tool.
@@ -42,6 +42,11 @@ impl Backend for CopilotBackend {
                 argv.push("--available-tools".to_string());
                 argv.push(available.join(","));
             }
+            if files {
+                argv.push("--allow-tool".to_string());
+                argv.push("view".to_string());
+                argv.push("--disallow-temp-dir".to_string());
+            }
         }
 
         if let Some(model) = opts.model {
@@ -51,6 +56,9 @@ impl Backend for CopilotBackend {
         argv
     }
 
+    fn confines_file_reads(&self) -> bool {
+        true
+    }
 
     fn extract(&self, stdout: &str) -> Result<String> {
         // `-s` already strips stats/decoration; trim any surrounding whitespace.
@@ -66,6 +74,8 @@ impl Backend for CopilotBackend {
             "-s",
             "--model",
             "--deny-tool",
+            "--allow-tool",
+            "--disallow-temp-dir",
             "--available-tools",
             "--no-custom-instructions",
         ]
@@ -114,7 +124,7 @@ mod tests {
                     fetch: false,
                     search: false,
                 },
-                Some("read"),
+                Some("view"),
             ),
             (
                 Access::ReadOnly {
@@ -138,7 +148,7 @@ mod tests {
                     fetch: true,
                     search: false,
                 },
-                Some("read,url"),
+                Some("view,url"),
             ),
             (
                 Access::ReadOnly {
@@ -146,7 +156,7 @@ mod tests {
                     fetch: false,
                     search: true,
                 },
-                Some("read,url"),
+                Some("view,url"),
             ),
             (
                 Access::ReadOnly {
@@ -162,7 +172,7 @@ mod tests {
                     fetch: true,
                     search: true,
                 },
-                Some("read,url"),
+                Some("view,url"),
             ),
         ] {
             let argv = CopilotBackend.build_argv(&opts(access, &[]));
@@ -202,8 +212,8 @@ mod tests {
 
         let available = flag_value(&argv, "--available-tools");
         assert!(
-            available.contains("read"),
-            "--available-tools must include read: {available}"
+            available.contains("view"),
+            "--available-tools must include view: {available}"
         );
         assert!(
             available.contains("url"),
@@ -227,7 +237,7 @@ mod tests {
             &[],
         ));
         let available = flag_value(&argv, "--available-tools");
-        assert!(available.contains("read"));
+        assert!(available.contains("view"));
         assert!(
             !available.contains("url"),
             "url should be absent: {available}"
@@ -247,8 +257,8 @@ mod tests {
         let available = flag_value(&argv, "--available-tools");
         assert!(available.contains("url"));
         assert!(
-            !available.contains("read"),
-            "read should be absent: {available}"
+            !available.contains("view"),
+            "view should be absent: {available}"
         );
     }
 
@@ -262,6 +272,8 @@ mod tests {
         let denied = flag_value(&argv, "--deny-tool");
         assert!(denied.contains("shell"));
         assert!(denied.contains("write"));
+        assert!(!argv.iter().any(|a| a == "--allow-tool"), "{argv:?}");
+        assert!(!argv.iter().any(|a| a == "--disallow-temp-dir"), "{argv:?}");
     }
 
     #[test]
@@ -299,6 +311,22 @@ mod tests {
         assert!(flags.contains(&"--model"));
         assert!(flags.contains(&"--deny-tool"));
         assert!(flags.contains(&"--available-tools"));
+    }
+
+    #[test]
+    fn copilot_file_grants_confine_reads_to_view_and_exclude_the_temp_dir() {
+        assert!(CopilotBackend.confines_file_reads());
+        let argv = CopilotBackend.build_argv(&opts(
+            Access::ReadOnly {
+                files: true,
+                fetch: false,
+                search: false,
+            },
+            &[],
+        ));
+        assert_eq!("view", flag_value(&argv, "--available-tools"), "{argv:?}");
+        assert_eq!("view", flag_value(&argv, "--allow-tool"), "{argv:?}");
+        assert!(argv.iter().any(|a| a == "--disallow-temp-dir"), "{argv:?}");
     }
 
     #[test]

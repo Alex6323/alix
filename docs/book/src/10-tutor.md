@@ -119,8 +119,9 @@ With the Claude backend, the tutor reads only inside that root: its file tools
 are allowed under the root's resolved path alone, and the call loads none of
 your Claude settings files, whose own allow rules would otherwise widen it. A
 root whose path contains `(`, `)`, `*`, `?`, `[`, `]`, `{` or `}`, or any
-root on Windows, gets no file tools. Gemini, Codex and Copilot do not confine
-reads to the root this way.
+root on Windows, gets no file tools. Copilot's file tool is confined to the
+root too: a path outside it, or a symlink pointing out of it, is refused.
+Gemini and Codex do not confine reads to the root.
 
 When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current
