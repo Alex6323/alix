@@ -253,6 +253,7 @@ abstract class RustLibApi extends BaseApi {
   int crateApiExamApplyExamRemediation({
     required String deckPath,
     required String rootDir,
+    required String topicId,
     required String cardsText,
     String? device,
   });
@@ -1563,6 +1564,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int crateApiExamApplyExamRemediation({
     required String deckPath,
     required String rootDir,
+    required String topicId,
     required String cardsText,
     String? device,
   }) {
@@ -1572,6 +1574,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
+          sse_encode_String(topicId, serializer);
           sse_encode_String(cardsText, serializer);
           sse_encode_opt_String(device, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
@@ -1581,7 +1584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamApplyExamRemediationConstMeta,
-        argValues: [deckPath, rootDir, cardsText, device],
+        argValues: [deckPath, rootDir, topicId, cardsText, device],
         apiImpl: this,
       ),
     );
@@ -1590,7 +1593,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiExamApplyExamRemediationConstMeta =>
       const TaskConstMeta(
         debugName: "apply_exam_remediation",
-        argNames: ["deckPath", "rootDir", "cardsText", "device"],
+        argNames: ["deckPath", "rootDir", "topicId", "cardsText", "device"],
       );
 
   @override

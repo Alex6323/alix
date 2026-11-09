@@ -215,6 +215,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Breaking: every card in a personal file (`<deck>.local.md`) needs a
+  `<!-- topic: <topic-id> -->` line directly before its `<!-- id: -->` line,
+  naming the deck topic it belongs to (the deck id for the leading topic).
+  A card without one is skipped alone, with a load warning and an `alix
+  doctor` error; a card naming a topic the deck lacks counts in the leading
+  topic and doctor warns. In a deck file the line is a parse error. Exam
+  remediation runs once per failed topic and binds each card to it, and a
+  tutor card joins the topic of the card it was drafted on; both refuse a
+  topic id two topics share. Wire: `RemoteExamDto.cards` is replaced by
+  `cards_by_topic` (`[{topic_id, cards}]`), and `RemoteCreateCardReq`
+  requires `card_id`, the card the draft was made on (an id the deck lacks
+  is a 400).
+
 - Breaking: the AI exam reads a workspace deck's frozen sources, one topic
   at a time: each topic's calls carry only its own copies, whole (a ranged
   binding only its lines), so nothing is fetched or truncated. A topic with

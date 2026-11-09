@@ -213,6 +213,7 @@ pub fn apply_exam_result(
 pub fn apply_exam_remediation(
     deck_path: String,
     root_dir: String,
+    topic_id: String,
     cards_text: String,
     device: Option<String>,
 ) -> Result<u32> {
@@ -229,6 +230,7 @@ pub fn apply_exam_remediation(
         &mut store,
         Some(&path),
         &deck_token,
+        &topic_id,
         &fingerprints,
         &cards_text,
         None,
@@ -510,10 +512,22 @@ mod tests {
         let deck_path = path.to_string_lossy().into_owned();
         let remediation = "## a1\nx\n\n## why b?\nbecause\n".to_string();
 
-        let created =
-            apply_exam_remediation(deck_path.clone(), root_arg(root), remediation.clone(), None)
-                .unwrap();
-        let again = apply_exam_remediation(deck_path, root_arg(root), remediation, None).unwrap();
+        let created = apply_exam_remediation(
+            deck_path.clone(),
+            root_arg(root),
+            "topic-a".to_string(),
+            remediation.clone(),
+            None,
+        )
+        .unwrap();
+        let again = apply_exam_remediation(
+            deck_path,
+            root_arg(root),
+            "topic-a".to_string(),
+            remediation,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(
             (1, 0),
@@ -540,6 +554,7 @@ mod tests {
         let created = apply_exam_remediation(
             path.to_string_lossy().into_owned(),
             root_arg(root),
+            "deck-d".to_string(),
             block.to_string(),
             None,
         )

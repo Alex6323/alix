@@ -607,7 +607,7 @@ fn deck_due(
             retire,
         )
         || session::has_eligible(
-            &crate::personal::read(&deck.path, &deck.subject).cards,
+            &crate::assemble::personal_cards(deck).cards,
             store,
             &scheduler,
             Depth::Recall,
@@ -702,7 +702,7 @@ pub fn deck_status(
         .count();
     // The selected session appends the deck's personal cards, so read the
     // sidecar once and share it between recall due-ness and crammability.
-    let personal = crate::personal::read(&deck.path, &deck.subject).cards;
+    let personal = crate::assemble::personal_cards(deck).cards;
     // "mastered" is reserved for passing the exam; a deck without exam
     // grounding that's merely fully drilled stays "done".
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
@@ -1261,7 +1261,7 @@ mod tests {
         crate::personal::append_cards(
             &deck_path,
             "deck-rust",
-            "## personal\nanswer\n<!-- id: card-personal -->\n",
+            "## personal\nanswer\n<!-- topic: deck-rust -->\n<!-- id: card-personal -->\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();
@@ -1278,7 +1278,7 @@ mod tests {
         });
         store.get_or_insert("card-personal").introduced_ms = Some(now);
 
-        let personal = crate::personal::read(&deck_path, &deck.subject).cards;
+        let personal = crate::assemble::personal_cards(&deck).cards;
         let cram = session::Session::new(
             personal,
             &mut store,
@@ -2399,7 +2399,12 @@ mod tests {
         let id = crate::parser::parse_str(deck_id, block).unwrap()[0]
             .id()
             .unwrap();
-        crate::personal::append_cards(deck, deck_id, block).unwrap();
+        crate::personal::append_cards(
+            deck,
+            deck_id,
+            &block.replace("<!-- id:", &format!("<!-- topic: {deck_id} -->\n<!-- id:")),
+        )
+        .unwrap();
         store.get_or_insert(&id).introduced_ms = Some(0);
     }
 
@@ -2991,7 +2996,7 @@ mod tests {
         crate::personal::append_cards(
             &deck_path,
             "deck-r1",
-            "## mine\nmy answer\n<!-- id: card-mine1 -->\n",
+            "## mine\nmy answer\n<!-- topic: deck-r1 -->\n<!-- id: card-mine1 -->\n",
         )
         .unwrap();
         let deck = Deck::load(&deck_path).unwrap();

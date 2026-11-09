@@ -1747,6 +1747,7 @@ fn wire__crate__api__exam__apply_exam_remediation_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_topic_id = <String>::sse_decode(&mut deserializer);
             let api_cards_text = <String>::sse_decode(&mut deserializer);
             let api_device = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -1755,6 +1756,7 @@ fn wire__crate__api__exam__apply_exam_remediation_impl(
                     let output_ok = crate::api::exam::apply_exam_remediation(
                         api_deck_path,
                         api_root_dir,
+                        api_topic_id,
                         api_cards_text,
                         api_device,
                     )?;

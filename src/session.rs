@@ -24,6 +24,7 @@ pub struct DeckInfo {
     pub source_access: bool,
     pub source_base: CitationRoots,
     pub load_warnings: Vec<String>,
+    pub topic_ids: Vec<Option<String>>,
 }
 
 impl DeckInfo {

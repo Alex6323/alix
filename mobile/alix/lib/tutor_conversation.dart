@@ -441,7 +441,7 @@ class TutorConversation extends ChangeNotifier {
     }
     final AddCardReply reply;
     try {
-      reply = await client.postCard(card.deckId, front, back);
+      reply = await client.postCard(card.deckId, card.cardId, front, back);
     } on PairingExpired {
       if (_disposed) return false;
       _draftLocked = false;

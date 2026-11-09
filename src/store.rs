@@ -1503,6 +1503,8 @@ pub enum MintError {
     Duplicate,
     #[error("cannot mint an identity token: {0}")]
     Mint(String),
+    #[error("{0}")]
+    DuplicatedTopic(String),
 }
 
 pub struct MintedCard {
@@ -1517,11 +1519,13 @@ pub fn mint_tutor_card(
     store: &mut Store,
     deck_path: &Path,
     deck_id: &str,
+    topic_id: &str,
     front: &str,
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<String, MintError> {
-    let minted = mint_personal_card(deck_path, deck_id, front, back, deck_fingerprints)?;
+    refuse_duplicated_topic(deck_path, topic_id).map_err(MintError::DuplicatedTopic)?;
+    let minted = mint_personal_card(deck_path, deck_id, topic_id, front, back, deck_fingerprints)?;
     store.get_or_insert(&minted.id);
     Ok(minted.id)
 }
@@ -1530,6 +1534,7 @@ pub fn mint_tutor_card(
 pub fn mint_personal_card(
     deck_path: &Path,
     deck_id: &str,
+    topic_id: &str,
     front: &str,
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
@@ -1543,7 +1548,7 @@ pub fn mint_personal_card(
     append_checked_card(
         deck_path,
         deck_id,
-        plain_block(&front, &back, &token),
+        plain_block(&front, &back, topic_id, &token),
         deck_fingerprints,
     )
 }
@@ -1551,34 +1556,59 @@ pub fn mint_personal_card(
 pub fn mint_or_return_kept_card(
     deck_path: &Path,
     deck_id: &str,
+    topic_id: &str,
     front: &str,
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<MintedCard, MintError> {
-    match mint_personal_card(deck_path, deck_id, front, back, deck_fingerprints) {
-        Err(MintError::Duplicate) => kept_card(deck_path, deck_id, front, back, deck_fingerprints)
-            .ok_or(MintError::Duplicate),
+    refuse_duplicated_topic(deck_path, topic_id).map_err(MintError::DuplicatedTopic)?;
+    match mint_personal_card(deck_path, deck_id, topic_id, front, back, deck_fingerprints) {
+        Err(MintError::Duplicate) => {
+            kept_card(deck_path, deck_id, topic_id, front, back, deck_fingerprints)
+                .ok_or(MintError::Duplicate)
+        }
         minted => minted,
     }
+}
+
+/// A deck that does not load has no topic to refuse.
+fn refuse_duplicated_topic(deck_path: &Path, topic_id: &str) -> Result<(), String> {
+    let Ok(deck) = Deck::load(deck_path) else {
+        return Ok(());
+    };
+    let root = crate::workspace::root_for_deck(deck_path);
+    match crate::topic::duplicated_topics(&deck, root.as_deref())
+        .into_iter()
+        .find(|finding| finding.id == topic_id)
+    {
+        Some(finding) => Err(finding.to_string()),
+        None => Ok(()),
+    }
+}
+
+fn sidecar_cards(deck_id: &str, text: &str) -> Option<Vec<Card>> {
+    let parsed = crate::parser::parse_sidecar(deck_id, text).ok()?;
+    Some(parsed.cards.into_iter().map(|parsed| parsed.card).collect())
 }
 
 fn kept_card(
     deck_path: &Path,
     deck_id: &str,
+    topic_id: &str,
     front: &str,
     back: &[String],
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Option<MintedCard> {
     let (front, back) = plain_sides(front, back).ok()?;
     let text = std::fs::read_to_string(crate::personal::sidecar_path(deck_path)).ok()?;
-    let cards = crate::parser::parse_str(deck_id, &text).ok()?;
+    let cards = sidecar_cards(deck_id, &text)?;
     cards
         .iter()
         .filter(|card| card.front == front && card.back == back)
         .filter(|card| !deck_fingerprints.contains(&card.block_fingerprint))
         .find_map(|card| {
             let id = card.id()?;
-            let block = plain_block(&front, &back, &id);
+            let block = plain_block(&front, &back, topic_id, &id);
             let verbatim = text.starts_with(&block) || text.contains(&format!("\n{block}"));
             verbatim.then_some(MintedCard { block, id })
         })
@@ -1604,14 +1634,19 @@ fn plain_sides(front: &str, back: &[String]) -> Result<(String, Vec<String>), Mi
     Ok((front.to_string(), back))
 }
 
-fn plain_block(front: &str, back: &[String], id: &str) -> String {
+fn plain_block(front: &str, back: &[String], topic_id: &str, id: &str) -> String {
     let mut text = format!("## {front}\n");
     for line in back {
         text.push_str(line);
         text.push('\n');
     }
+    text.push_str(&topic_line(topic_id));
     text.push_str(&format!("<!-- id: {id} -->\n"));
     text
+}
+
+fn topic_line(topic_id: &str) -> String {
+    format!("<!-- topic: {topic_id} -->\n")
 }
 
 /// Appends a block another device already minted, keeping its id.
@@ -1633,9 +1668,14 @@ fn append_checked_card(
     text: String,
     deck_fingerprints: &std::collections::HashSet<u64>,
 ) -> Result<MintedCard, MintError> {
-    let cards = crate::parser::parse_str(deck_id, &text)
+    let parsed = crate::parser::parse_sidecar(deck_id, &text)
         .map_err(|e| MintError::Malformed(e.to_string()))?;
-    let [card] = cards.as_slice() else {
+    if !parsed.missing_topic.is_empty() {
+        return Err(MintError::Malformed(
+            "the card has no topic line".to_string(),
+        ));
+    }
+    let [crate::parser::ParsedSidecarCard { card, .. }] = parsed.cards.as_slice() else {
         return Err(MintError::Malformed(
             "expected exactly one card".to_string(),
         ));
@@ -1732,6 +1772,7 @@ pub fn store_remediation_cards(
     store: &mut Store,
     deck_path: Option<&Path>,
     deck_id: &str,
+    topic_id: &str,
     deck_fingerprints: &std::collections::HashSet<u64>,
     cards_text: &str,
     retire_after_days: Option<u32>,
@@ -1739,6 +1780,9 @@ pub fn store_remediation_cards(
     let Some(deck_path) = deck_path else {
         bail!("this sitting has no deck file to write personal cards beside");
     };
+    if let Err(finding) = refuse_duplicated_topic(deck_path, topic_id) {
+        bail!(finding);
+    }
     let blocks = split_card_blocks(cards_text);
     if blocks.is_empty() {
         bail!("remediation produced no cards to store");
@@ -1770,6 +1814,9 @@ pub fn store_remediation_cards(
         }
         let existing = personal_ids_with_content(deck_path, deck_id, fingerprint);
         if existing.is_empty() {
+            let Some(block) = bind_block_to_topic(&block, &token, topic_id) else {
+                bail!("the stamped remediation block lost its id line `{token}`");
+            };
             crate::personal::append_cards(deck_path, deck_id, &block)?;
             for card in &cards {
                 let Some(id) = card.id() else {
@@ -1799,7 +1846,7 @@ fn personal_ids_with_content(deck_path: &Path, deck_id: &str, fingerprint: u64) 
     let Ok(text) = std::fs::read_to_string(crate::personal::sidecar_path(deck_path)) else {
         return Vec::new();
     };
-    let Ok(cards) = crate::parser::parse_str(deck_id, &text) else {
+    let Some(cards) = sidecar_cards(deck_id, &text) else {
         return Vec::new();
     };
     cards
@@ -1823,6 +1870,17 @@ fn stamp_generated_regions(block: &str) -> AnyResult<String> {
         .strip_prefix(&head)
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("the stamper rewrote the scratch header"))
+}
+
+fn bind_block_to_topic(block: &str, token: &str, topic_id: &str) -> Option<String> {
+    let id_line = format!("<!-- id: {token} -->");
+    let at = block.find(&id_line)?;
+    Some(format!(
+        "{}{}{}",
+        &block[..at],
+        topic_line(topic_id),
+        &block[at..]
+    ))
 }
 
 fn stamp_block(block: &str, token: &str) -> String {
@@ -2849,6 +2907,127 @@ mod tests {
     }
 
     #[test]
+    fn remediation_and_tutor_drafts_refuse_a_duplicated_topic_id() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("d.md");
+        std::fs::write(
+            &deck,
+            "---\nid: \"deck-d\"\n---\n# A\n<!-- id: topic-a -->\n## q\na\n<!-- id: card-q1 -->\n\
+             # B\n<!-- id: topic-a -->\n## r\nb\n<!-- id: card-r1 -->\n",
+        )
+        .unwrap();
+        let sidecar = crate::personal::sidecar_path(&deck);
+        let before = "---\nfor: deck-d\n---\n";
+        std::fs::write(&sidecar, before).unwrap();
+        let finding = crate::topic::duplicated_topics(&Deck::load(&deck).unwrap(), None)
+            .into_iter()
+            .find(|finding| finding.id == "topic-a")
+            .expect("the fixture repeats topic-a")
+            .to_string();
+        assert!(
+            finding.contains(&format!("{}:", deck.display())),
+            "the finding names the copy: {finding}"
+        );
+
+        let tutor = mint_tutor_card(
+            &mut store,
+            &deck,
+            "deck-d",
+            "topic-a",
+            "capital?",
+            &["Paris".to_string()],
+            &HashSet::new(),
+        )
+        .unwrap_err();
+        assert_eq!(finding, tutor.to_string(), "tutor draft");
+        let remediation = store_remediation_cards(
+            &mut store,
+            Some(&deck),
+            "deck-d",
+            "topic-a",
+            &HashSet::new(),
+            "## Why?\nbecause\n",
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(finding, remediation.to_string(), "remediation");
+        assert_eq!(
+            before,
+            std::fs::read_to_string(&sidecar).unwrap(),
+            "nothing is written"
+        );
+    }
+
+    #[test]
+    fn an_existing_sidecar_card_with_a_topic_line_is_still_found_by_every_sidecar_reader() {
+        use std::collections::HashSet;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = dir.path().join("geo.md");
+        let sidecar = crate::personal::sidecar_path(&deck);
+        let text = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n\
+                    <!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n\n\
+                    <!-- note: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n> [!NOTE]\n> mine\n";
+        std::fs::write(&sidecar, text).unwrap();
+        let spain = || ["Madrid".to_string()];
+
+        let minted = mint_tutor_card(
+            &mut store,
+            &deck,
+            "geo.md",
+            "topic-t",
+            "capital of spain?",
+            &spain(),
+            &HashSet::new(),
+        );
+        assert!(
+            matches!(minted, Err(MintError::Duplicate)),
+            "tutor dedup: {minted:?}"
+        );
+        let kept = mint_or_return_kept_card(
+            &deck,
+            "geo.md",
+            "topic-t",
+            "capital of spain?",
+            &spain(),
+            &HashSet::new(),
+        )
+        .map(|kept| kept.id);
+        assert_eq!(
+            "card-6v3c7x4k1m8q3z5t0b2n4d8f9w",
+            kept.unwrap_or_default(),
+            "kept card"
+        );
+        let recorded = record_minted_card(
+            &mut store,
+            &deck,
+            "geo.md",
+            "## capital of spain?\nMadrid\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n",
+            &HashSet::new(),
+        );
+        assert!(
+            matches!(recorded, Err(MintError::Duplicate)),
+            "recorded dedup: {recorded:?}"
+        );
+        let stored = store_remediation(
+            &mut store,
+            &deck,
+            "geo.md",
+            "## capital of spain?\nMadrid\n",
+            None,
+        )
+        .unwrap();
+        assert_eq!(0, stored, "remediation dedup");
+        assert_eq!(
+            text,
+            std::fs::read_to_string(&sidecar).unwrap(),
+            "nothing written"
+        );
+    }
+
+    #[test]
     fn mint_tutor_card_writes_the_card_into_the_sidecar() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
@@ -2858,6 +3037,7 @@ mod tests {
             &mut store,
             &deck,
             "geo.md",
+            "topic-t",
             "capital of france",
             &["Paris".to_string()],
             &HashSet::new(),
@@ -2889,6 +3069,7 @@ mod tests {
             &mut store,
             &geo,
             "geo.md",
+            "topic-t",
             "capital of italy?",
             &["Rome".to_string()],
             &HashSet::new(),
@@ -2920,6 +3101,7 @@ mod tests {
             &mut store,
             &deck,
             "geo.md",
+            "topic-t",
             "capital of spain?",
             &["Madrid".to_string()],
             &empty,
@@ -2929,6 +3111,7 @@ mod tests {
             &mut store,
             &deck,
             "geo.md",
+            "topic-t",
             "capital of spain?",
             &["Madrid".to_string()],
             &empty,
@@ -2954,6 +3137,7 @@ mod tests {
             &mut store,
             &deck,
             "geo.md",
+            "topic-t",
             "capital of france?",
             &["Paris".to_string()],
             &deck_fingerprints,
@@ -2977,8 +3161,16 @@ mod tests {
             ("  ", vec!["Paris".to_string()]),
             ("capital?", vec!["  ".to_string()]),
         ] {
-            let err = mint_tutor_card(&mut store, &deck, "geo.md", front, &back, &HashSet::new())
-                .unwrap_err();
+            let err = mint_tutor_card(
+                &mut store,
+                &deck,
+                "geo.md",
+                "topic-t",
+                front,
+                &back,
+                &HashSet::new(),
+            )
+            .unwrap_err();
             let MintError::Malformed(message) = err else {
                 panic!("an empty side must be malformed: {err:?}");
             };
@@ -2996,6 +3188,7 @@ mod tests {
             &mut store,
             &deck,
             "geo.md",
+            "topic-t",
             "capital?",
             &["Paris\n% direction: reverse".to_string()],
             &HashSet::new(),
@@ -3012,13 +3205,17 @@ mod tests {
         let minted = mint_personal_card(
             &deck,
             "geo.md",
+            "topic-t",
             "capital of spain?",
             &["Madrid".to_string()],
             &HashSet::new(),
         )
         .unwrap();
         assert_eq!(
-            format!("## capital of spain?\nMadrid\n<!-- id: {} -->\n", minted.id),
+            format!(
+                "## capital of spain?\nMadrid\n<!-- topic: topic-t -->\n<!-- id: {} -->\n",
+                minted.id
+            ),
             minted.block,
             "the block is the stamped card text"
         );
@@ -3045,6 +3242,7 @@ mod tests {
             mint_or_return_kept_card(
                 &deck,
                 "geo.md",
+                "topic-t",
                 front,
                 &[back.to_string()],
                 &deck_fingerprints,
@@ -3087,12 +3285,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = dir.path().join("geo.md");
         let sidecar = crate::personal::sidecar_path(&deck);
-        let kept = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- input: draw -->\n<!-- id: card-spain -->\n";
+        let kept = "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- input: draw -->\n<!-- topic: topic-t -->\n<!-- id: card-spain -->\n";
         std::fs::write(&sidecar, kept).unwrap();
 
         let retried = mint_or_return_kept_card(
             &deck,
             "geo.md",
+            "topic-t",
             "capital of spain?",
             &["Madrid".to_string()],
             &HashSet::new(),
@@ -3117,13 +3316,14 @@ mod tests {
         .unwrap();
         std::fs::write(
             crate::personal::sidecar_path(&deck),
-            "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- id: card-personal -->\n",
+            "---\nfor: geo.md\n---\n\n## capital of spain?\nMadrid\n<!-- topic: topic-t -->\n<!-- id: card-personal -->\n",
         )
         .unwrap();
 
         let retried = mint_or_return_kept_card(
             &deck,
             "geo.md",
+            "topic-t",
             "capital of spain?",
             &["Madrid".to_string()],
             &HashSet::from([authored[0].block_fingerprint]),
@@ -3147,7 +3347,7 @@ mod tests {
         )
         .unwrap();
         let deck_fingerprints = HashSet::from([authored[0].block_fingerprint]);
-        let block = "## capital of spain?\nMadrid\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
+        let block = "## capital of spain?\nMadrid\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
 
         let id =
             record_minted_card(&mut store, &deck, "geo.md", block, &deck_fingerprints).unwrap();
@@ -3175,7 +3375,7 @@ mod tests {
             &mut store,
             &deck,
             "geo.md",
-            "## capital of france?\nParis\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n",
+            "## capital of france?\nParis\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n",
             &deck_fingerprints,
         )
         .unwrap_err();
@@ -3260,7 +3460,9 @@ mod tests {
 
     fn sidecar_cards(deck: &Path, deck_id: &str) -> Vec<Card> {
         let text = std::fs::read_to_string(crate::personal::sidecar_path(deck)).unwrap_or_default();
-        crate::parser::parse_str(deck_id, &text).unwrap_or_default()
+        crate::parser::parse_sidecar(deck_id, &text)
+            .map(|parsed| parsed.cards.into_iter().map(|parsed| parsed.card).collect())
+            .unwrap_or_default()
     }
 
     fn sidecar_ids(deck: &Path, deck_id: &str) -> Vec<String> {
@@ -3281,6 +3483,7 @@ mod tests {
             store,
             Some(deck),
             subject,
+            "topic-t",
             &std::collections::HashSet::new(),
             cards_text,
             retire_after_days,
@@ -3373,6 +3576,7 @@ mod tests {
             &mut store,
             Some(&deck),
             "d.md",
+            "topic-t",
             &deck_fingerprints,
             "## Capital of France?\nParis\n",
             None,
@@ -3475,6 +3679,7 @@ mod tests {
             &mut store,
             Some(&deck),
             "d.md",
+            "topic-t",
             &deck_fingerprints,
             cloze,
             None,

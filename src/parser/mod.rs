@@ -1,4 +1,9 @@
-use std::{collections::HashSet, ops::Range, path::PathBuf, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use thiserror::Error;
 
@@ -33,7 +38,9 @@ pub use frontmatter::{
 };
 use frontmatter::{MappableBlock, bad_value, parse_frontmatter, parse_reveal};
 pub use normalize::normalize;
-pub use sidecar::{SidecarNote, UnbadgedNote, notes, unbadged_notes, without_notes};
+pub use sidecar::{
+    SidecarNote, UnbadgedNote, notes, unbadged_notes, without_notes, without_notes_mapped,
+};
 
 // Deliberately not Unicode whitespace; anything outside this set is content.
 pub(crate) const WHITESPACE: [char; 6] = ['\t', '\n', '\x0B', '\x0C', '\r', ' '];
@@ -326,6 +333,10 @@ pub enum ParseError {
         "line {0}: quotes do not nest; keep the note one `>` deep, or put literal `>` text in a ``` fence"
     )]
     NestedQuote(usize),
+    #[error(
+        "line {0}: a `<!-- topic: -->` line binds a personal card and belongs in a `.local.md` file, not a deck; delete it"
+    )]
+    TopicLineOutsideSidecar(usize),
 }
 
 /// What a region directive sits under instead of the block it would bind to.
@@ -414,6 +425,7 @@ impl ParseError {
             Self::TagShape { .. } => "tag_shape",
             Self::IndentedCode(_) => "indented_code",
             Self::NestedQuote(_) => "nested_quote",
+            Self::TopicLineOutsideSidecar(_) => "topic_line_outside_sidecar",
         }
     }
 
@@ -448,7 +460,8 @@ impl ParseError {
             | Self::IndentedCode(line)
             | Self::LeadingIgnore(line)
             | Self::OrphanIgnore(line)
-            | Self::NestedQuote(line) => *line,
+            | Self::NestedQuote(line)
+            | Self::TopicLineOutsideSidecar(line) => *line,
             Self::InvalidTitle { line, .. }
             | Self::FrontmatterSyntax { line, .. }
             | Self::NonStringId { line, .. }
@@ -479,6 +492,26 @@ impl ParseError {
 }
 
 pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
+    parse_bound(subject, text).map(|(deck, _)| deck)
+}
+
+struct BlockBinding {
+    block_line: usize,
+    token_line: Option<usize>,
+    topic: Option<(String, usize)>,
+}
+
+impl BlockBinding {
+    fn of(block_line: usize, directives: &CardDirectives) -> Self {
+        Self {
+            block_line,
+            token_line: directives.token_line,
+            topic: directives.topic.clone(),
+        }
+    }
+}
+
+fn parse_bound(subject: &str, text: &str) -> Result<(ParsedDeck, Vec<BlockBinding>), ParseError> {
     let document = parse_document(text)?;
     // Zero `## ` fronts is a valid, loadable zero-card deck, not a parse error.
     let subject: Arc<str> = Arc::from(subject);
@@ -486,9 +519,11 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     let mut lints = document.lints;
     let mut cards = Vec::new();
     let mut tables = Vec::new();
+    let mut bindings = Vec::new();
     for block in document.blocks {
         match block {
             RawBlock::Card(raw) => {
+                bindings.push(BlockBinding::of(raw.line, &raw.directives));
                 let block_start = cards.len();
                 let prose = build_card(
                     &subject,
@@ -501,6 +536,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
                 build_region_cards(block_start, &mut cards, prose.as_ref(), &mut lints)?;
             }
             RawBlock::Table(raw) => {
+                bindings.push(BlockBinding::of(raw.line, &raw.directives));
                 tables.push(TableStamping {
                     line: raw.line,
                     rows: raw
@@ -522,7 +558,7 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
     for card in &mut cards {
         card.definitions = table.clone();
     }
-    Ok(ParsedDeck {
+    let deck = ParsedDeck {
         deck_token: document.frontmatter.id.clone(),
         title: document.frontmatter.title.clone(),
         frontmatter: document.frontmatter,
@@ -532,7 +568,8 @@ pub fn parse(subject: &str, text: &str) -> Result<ParsedDeck, ParseError> {
         lints,
         frontmatter_span: document.frontmatter_span,
         tables,
-    })
+    };
+    Ok((deck, bindings))
 }
 
 pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
@@ -543,11 +580,49 @@ pub fn parse_str(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
 /// reader labels notes with whatever depth the source card used, and that
 /// label must stay content rather than opening a sub-card that steals the
 /// stamped card's answer or orphans the whole file.
-pub fn parse_sidecar(subject: &str, text: &str) -> Result<Vec<Card>, ParseError> {
+pub fn parse_sidecar(subject: &str, text: &str) -> Result<ParsedSidecar, ParseError> {
     SIDECAR_MODE.with(|flat| flat.set(true));
-    let out = parse(subject, text).map(|deck| deck.cards);
+    let out = parse_bound(subject, text);
     SIDECAR_MODE.with(|flat| flat.set(false));
-    out
+    let (deck, bindings) = out?;
+    let mut parsed = ParsedSidecar {
+        missing_topic: bindings
+            .iter()
+            .filter(|binding| binding.topic.is_none())
+            .filter_map(|binding| binding.token_line)
+            .collect(),
+        ..ParsedSidecar::default()
+    };
+    let topics: HashMap<usize, (String, usize)> = bindings
+        .into_iter()
+        .filter_map(|binding| Some((binding.block_line, binding.topic?)))
+        .collect();
+    for card in deck.cards {
+        if let Some((topic_id, topic_line)) = topics.get(&card.block_line).cloned() {
+            parsed.cards.push(ParsedSidecarCard {
+                card,
+                topic_id,
+                topic_line,
+            });
+        }
+    }
+    Ok(parsed)
+}
+
+/// A personal card with its `<!-- topic: -->` line as written: the parser
+/// holds no deck, so the id is unresolved.
+#[derive(Debug, Clone)]
+pub struct ParsedSidecarCard {
+    pub card: Card,
+    pub topic_id: String,
+    pub topic_line: usize,
+}
+
+/// Lines are one-based lines of the text `parse_sidecar` received.
+#[derive(Debug, Clone, Default)]
+pub struct ParsedSidecar {
+    pub cards: Vec<ParsedSidecarCard>,
+    pub missing_topic: Vec<usize>,
 }
 
 thread_local! {
@@ -912,6 +987,8 @@ struct CardDirectives {
     crops: Vec<region::RawCrop>,
     sites: Vec<Site>,
     token: Option<String>,
+    token_line: Option<usize>,
+    topic: Option<(String, usize)>,
     sampling: Option<bool>,
     reveal: Option<Reveal>,
     reveal_line: Option<usize>,
@@ -1770,6 +1847,9 @@ fn scan(lines: &[&str], start: usize, lints: &mut Vec<Lint>) -> Result<ScannedBo
                         // An id names a card; with none open it would be
                         // swallowed, and the card it names would silently
                         // lose its history on the next stamping pass.
+                        None if key == "topic" && !sidecar_mode() => {
+                            return Err(ParseError::TopicLineOutsideSidecar(lineno));
+                        }
                         None if key == "id" => {
                             if !value.starts_with("topic-") {
                                 return Err(ParseError::OrphanCardId(lineno));
@@ -3146,7 +3226,10 @@ fn apply_directive(
                 return Err(ParseError::DuplicateCardId { line });
             }
             directives.token = Some(value);
+            directives.token_line = Some(line);
         }
+        "topic" if sidecar_mode() => directives.topic = Some((value, line)),
+        "topic" => return Err(ParseError::TopicLineOutsideSidecar(line)),
         // Valid `choices: single|multiple` bodies are consumed as invocations
         // before the directive split, so any value arriving here is invalid.
         "choices" => {
@@ -4107,11 +4190,11 @@ mod tests {
         let personal = parse_sidecar(
             "deck.local.md",
             &format!(
-                "#### reader label\n## personal\nanswer\n> [!NOTE]\n> context\n<!-- id: {id} -->\n"
+                "#### reader label\n## personal\nanswer\n> [!NOTE]\n> context\n<!-- topic: topic-t -->\n<!-- id: {id} -->\n"
             ),
         )
         .unwrap();
-        assert_eq!(Some(id.to_string()), personal[0].id());
+        assert_eq!(Some(id.to_string()), personal.cards[0].card.id());
 
         let fenced = parse(&format!(
             "## fence\n```text\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n```\n<!-- id: {id} -->\n"
@@ -4923,14 +5006,15 @@ mod tests {
     fn a_sidecar_never_turns_leading_headings_into_topic_context() {
         let cards = parse_sidecar(
             "deck.local.md",
-            "#### reader label\n## personal\nanswer\n<!-- id: card-personal -->\n",
+            "#### reader label\n## personal\nanswer\n<!-- topic: topic-t -->\n<!-- id: card-personal -->\n",
         )
-        .unwrap();
+        .unwrap()
+        .cards;
         assert_eq!(1, cards.len());
         assert!(
-            cards[0].topic_context.is_empty(),
+            cards[0].card.topic_context.is_empty(),
             "got {:?}",
-            cards[0].topic_context
+            cards[0].card.topic_context
         );
     }
 
@@ -6668,9 +6752,13 @@ a
 
     #[test]
     fn a_personal_sidecar_card_carries_its_hints() {
-        let cards =
-            super::parse_sidecar("deck.md", "## q\n> [!TIP]\n> h\n\n---\nanswer\n").unwrap();
-        assert_eq!(vec!["h"], cards[0].hints);
+        let cards = super::parse_sidecar(
+            "deck.md",
+            "## q\n> [!TIP]\n> h\n\n---\nanswer\n<!-- topic: topic-t -->\n",
+        )
+        .unwrap()
+        .cards;
+        assert_eq!(vec!["h"], cards[0].card.hints);
     }
 
     #[test]
@@ -9393,6 +9481,8 @@ the answer
                 crops: Vec::new(),
                 sites: Vec::new(),
                 token: Some("card-4jkya9q3m8z0tw5v9y2b4n6d8f".into()),
+                token_line: Some(36),
+                topic: None,
                 reveal: Some(Reveal::Flip),
                 reveal_line: Some(30),
                 input: Some(Input::Type),

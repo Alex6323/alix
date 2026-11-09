@@ -413,6 +413,7 @@ pub struct ReviewSession {
     // full disk mid-sitting.
     save_error: Option<String>,
     load_warnings: Vec<String>,
+    topic_ids: Vec<Option<String>>,
 }
 
 impl ReviewSession {
@@ -463,6 +464,11 @@ impl ReviewSession {
             }
         };
         let load_warnings = build.load_warnings.clone();
+        let topic_ids = build
+            .topic_ids
+            .get(&deck_token)
+            .cloned()
+            .unwrap_or_default();
         Ok(ReviewSession {
             session: build.session,
             store,
@@ -475,6 +481,7 @@ impl ReviewSession {
             has_exam,
             save_error: None,
             load_warnings,
+            topic_ids,
         })
     }
 
@@ -600,9 +607,12 @@ impl ReviewSession {
         front: String,
         back: Vec<String>,
     ) -> Result<String> {
-        if self.session.current().is_none() {
+        let Some(topic) = self.session.current().map(|card| card.topic) else {
             bail!("no card is current to mint a tutor card against");
-        }
+        };
+        let Some(topic_id) = self.topic_ids.get(topic).cloned().flatten() else {
+            bail!("the current card's topic carries no id");
+        };
         // Dedup by content, not id: a mint carries a fresh random token.
         let deck_fingerprints: HashSet<u64> = self
             .session
@@ -614,6 +624,7 @@ impl ReviewSession {
             &mut self.store,
             &self.deck_path,
             &self.deck_token,
+            &topic_id,
             &front,
             &back,
             &deck_fingerprints,
@@ -923,6 +934,7 @@ pub struct WalkSession {
     deck_token: String,
     citation_roots: alix::cite::CitationRoots,
     save_error: Option<String>,
+    topic_ids: Vec<Option<String>>,
 }
 
 impl WalkSession {
@@ -984,6 +996,7 @@ impl WalkSession {
             deck_token,
             citation_roots: build.info.source_base,
             save_error: None,
+            topic_ids: build.info.topic_ids,
         })
     }
 
@@ -1078,9 +1091,12 @@ impl WalkSession {
     #[flutter_rust_bridge::frb(sync)]
     pub fn mint_tutor_card(&mut self, front: String, back: Vec<String>) -> Result<String> {
         self.refuse_on_the_tutorial()?;
-        if self.session.current().is_none() {
+        let Some(topic) = self.session.current().map(|card| card.topic) else {
             bail!("no card is current to mint a tutor card against");
-        }
+        };
+        let Some(topic_id) = self.topic_ids.get(topic).cloned().flatten() else {
+            bail!("the current card's topic carries no id");
+        };
         let deck_fingerprints: HashSet<u64> = self
             .session
             .cards()
@@ -1091,6 +1107,7 @@ impl WalkSession {
             &mut self.store,
             &self.deck_path,
             &self.deck_token,
+            &topic_id,
             &front,
             &back,
             &deck_fingerprints,
@@ -1797,7 +1814,11 @@ mod tests {
         let personal = alix::personal::read(&root.join("d.md"), "d.md");
         assert_eq!(
             vec![Some(id.clone())],
-            personal.cards.iter().map(|c| c.id()).collect::<Vec<_>>(),
+            personal
+                .cards
+                .iter()
+                .map(|c| c.card.id())
+                .collect::<Vec<_>>(),
             "the fresh mint is retrievable from the personal file"
         );
         assert!(
@@ -1815,7 +1836,7 @@ mod tests {
             "## capital of france?\nParis\n\n## capital of germany?\nBerlin\n",
         );
         let mut s = opened_after_introduction(&root.join("d.md"), root, None);
-        let block = "## capital of spain?\nMadrid\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
+        let block = "## capital of spain?\nMadrid\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n";
 
         let id = s
             .record_minted_card(block.to_string())
@@ -1824,7 +1845,11 @@ mod tests {
         let personal = alix::personal::read(&root.join("d.md"), "d.md");
         assert_eq!(
             vec![Some(id.clone())],
-            personal.cards.iter().map(|c| c.id()).collect::<Vec<_>>(),
+            personal
+                .cards
+                .iter()
+                .map(|c| c.card.id())
+                .collect::<Vec<_>>(),
             "the personal file holds the card under that id"
         );
         assert!(
@@ -1838,7 +1863,7 @@ mod tests {
         );
         assert!(
             s.record_minted_card(
-                "## capital of france?\nParis\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n"
+                "## capital of france?\nParis\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9x -->\n"
                     .to_string()
             )
             .is_err(),
@@ -1881,7 +1906,7 @@ mod tests {
         let recorded = s.record_minted_card(
             "## Complete the quote\nTo be or not to be\n\
              <!-- blank: span hidden=\"be\" b:a1b2c3 -->\n\
-             <!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9y -->\n"
+             <!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9y -->\n"
                 .to_string(),
         );
         assert!(
@@ -1896,7 +1921,7 @@ mod tests {
         s.mint_tutor_card("capital of spain?".to_string(), vec!["Madrid".to_string()])
             .expect("mint_tutor_card: genuinely new content still mints");
         s.record_minted_card(
-            "## capital of peru?\nLima\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9z -->\n"
+            "## capital of peru?\nLima\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9z -->\n"
                 .to_string(),
         )
         .expect("record_minted_card: genuinely new content still records");
@@ -2732,7 +2757,7 @@ mod tests {
         let recorded = walk.record_minted_card(
             "## Complete the quote\nTo be or not to be\n\
              <!-- blank: span hidden=\"be\" b:a1b2c3 -->\n\
-             <!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9y -->\n"
+             <!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9y -->\n"
                 .to_string(),
         );
         assert!(
@@ -3028,7 +3053,7 @@ mod tests {
             }),
             ("record_minted_card", |walk| {
                 walk.record_minted_card(
-                    "## a new front?\na new back\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n"
+                    "## a new front?\na new back\n<!-- topic: topic-t -->\n<!-- id: card-6v3c7x4k1m8q3z5t0b2n4d8f9w -->\n"
                         .to_string(),
                 )
             }),

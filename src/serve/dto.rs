@@ -917,6 +917,7 @@ pub(super) struct RemoteNoteReq {
 #[derive(Debug, Deserialize)]
 pub(super) struct RemoteCreateCardReq {
     pub(super) deck_id: String,
+    pub(super) card_id: String,
     pub(super) front: String,
     pub(super) back: Vec<String>,
 }
@@ -958,6 +959,12 @@ pub(super) struct PreparingJobsDto {
 }
 
 #[derive(Serialize)]
+pub(super) struct TopicCardsDto {
+    pub(super) topic_id: String,
+    pub(super) cards: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct RemoteExamDto {
     pub(super) phase: &'static str,
     pub(super) deck: String,
@@ -973,7 +980,7 @@ pub(super) struct RemoteExamDto {
     pub(super) unknown_cards: Vec<String>,
     pub(super) gaps: Vec<String>,
     pub(super) can_remediate: bool,
-    pub(super) cards: Option<String>,
+    pub(super) cards_by_topic: Vec<TopicCardsDto>,
     pub(super) thinking: bool,
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,

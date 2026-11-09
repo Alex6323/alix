@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     card::Card,
     deck::{Deck, DeckError, write_deck_text},
-    parser::{PERSONAL_PARENT_KEY, SidecarNote},
+    parser::{PERSONAL_PARENT_KEY, ParsedSidecarCard, SidecarNote},
     sidecar::SidecarBlock,
 };
 
@@ -13,15 +13,16 @@ pub fn sidecar_path(deck: &Path) -> PathBuf {
 
 #[derive(Debug, Default)]
 pub struct Personal {
-    pub cards: Vec<Card>,
+    pub cards: Vec<ParsedSidecarCard>,
     pub notes: Vec<SidecarNote>,
+    pub warnings: Vec<String>,
 }
 
 impl Personal {
     /// Cards then notes; `merge` walks each kind in its own pass.
     pub fn blocks(&self) -> Vec<SidecarBlock> {
-        let cards = self.cards.iter().map(|card| SidecarBlock::Card {
-            id: card.id().unwrap_or_default(),
+        let cards = self.cards.iter().map(|parsed| SidecarBlock::Card {
+            id: parsed.card.id().unwrap_or_default(),
             notes: Vec::new(),
         });
         let notes = self.notes.iter().map(|note| SidecarBlock::Note {
@@ -38,23 +39,51 @@ impl Personal {
 /// it, so `cards` is exactly the addressable set.
 pub fn read(deck_path: &Path, subject: &str) -> Personal {
     crate::profile::hit(crate::profile::Counter::SidecarReads);
-    let Ok(text) = std::fs::read_to_string(sidecar_path(deck_path)) else {
+    let path = sidecar_path(deck_path);
+    let Ok(text) = std::fs::read_to_string(&path) else {
         return Personal::default();
     };
+    let (stripped, file_lines) = crate::parser::without_notes_mapped(&text);
+    let file_line = |line: usize| {
+        line.checked_sub(1)
+            .and_then(|index| file_lines.get(index))
+            .copied()
+            .unwrap_or(line)
+    };
+    let parsed = crate::parser::parse_sidecar(subject, &stripped).unwrap_or_default();
     Personal {
-        cards: crate::parser::parse_sidecar(subject, &crate::parser::without_notes(&text))
-            .unwrap_or_default()
+        warnings: parsed
+            .missing_topic
+            .iter()
+            .map(|&line| {
+                format!(
+                    "{}:{}: personal card has no topic line",
+                    path.display(),
+                    file_line(line)
+                )
+            })
+            .collect(),
+        cards: parsed
+            .cards
             .into_iter()
-            .filter(|card| card.id().is_some())
+            .filter(|parsed| parsed.card.id().is_some())
+            .map(|parsed| ParsedSidecarCard {
+                topic_line: file_line(parsed.topic_line),
+                ..parsed
+            })
             .collect(),
         notes: crate::parser::notes(&text),
     }
 }
 
 pub fn card_ids(deck: &Deck) -> Vec<String> {
-    let personal = read(&deck.path, &deck.subject);
-    let mut ids: Vec<String> = personal.cards.iter().filter_map(Card::id).collect();
-    ids.extend(crate::card::dormant_base_ids(&personal.cards));
+    let cards: Vec<Card> = read(&deck.path, &deck.subject)
+        .cards
+        .into_iter()
+        .map(|parsed| parsed.card)
+        .collect();
+    let mut ids: Vec<String> = cards.iter().filter_map(Card::id).collect();
+    ids.extend(crate::card::dormant_base_ids(&cards));
     ids
 }
 
@@ -186,12 +215,15 @@ mod tests {
                     answer\n\
                     ### hand-written detail\n\
                     more detail\n\
+                    <!-- topic: topic-t -->\n\
                     <!-- id: card-personal -->\n";
-        let cards = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
+        let cards = crate::parser::parse_sidecar("deck.local.md", text)
+            .unwrap()
+            .cards;
         assert_eq!(1, cards.len(), "sub-card syntax is disabled in a sidecar");
         assert_eq!(
             vec!["answer", "### hand-written detail", "more detail"],
-            cards[0].back
+            cards[0].card.back
         );
     }
 
@@ -199,8 +231,11 @@ mod tests {
     /// empty the whole file; in a sidecar it is simply content.
     #[test]
     fn a_leading_deep_heading_never_empties_a_sidecar() {
-        let text = "## personal\nanswer\n#### deep\ntail\n<!-- id: card-p2 -->\n";
-        let cards = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
+        let text =
+            "## personal\nanswer\n#### deep\ntail\n<!-- topic: topic-t -->\n<!-- id: card-p2 -->\n";
+        let cards = crate::parser::parse_sidecar("deck.local.md", text)
+            .unwrap()
+            .cards;
         assert_eq!(1, cards.len());
     }
 
@@ -217,6 +252,31 @@ mod tests {
         let personal = read(&deck, "spanish");
         assert!(personal.cards.is_empty());
         assert!(personal.blocks().is_empty());
+    }
+
+    #[test]
+    fn a_missing_topic_line_warning_names_the_file_line_past_a_note_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = deck(dir.path());
+        std::fs::write(
+            sidecar_path(&deck),
+            "---\nfor: deck-abc\n---\n\n\
+             <!-- note: card-one -->\n> [!NOTE]\n> mine\n\n\
+             ## no topic\nback\n<!-- id: card-bad -->\n",
+        )
+        .unwrap();
+
+        let personal = read(&deck, "spanish");
+
+        assert_eq!(
+            vec![format!(
+                "{}:11: personal card has no topic line",
+                sidecar_path(&deck).display()
+            )],
+            personal.warnings,
+            "the id line sits on line 11 of the file, past the dropped note block"
+        );
+        assert!(personal.cards.is_empty(), "{:?}", personal.cards);
     }
 
     #[test]
@@ -382,17 +442,18 @@ mod tests {
         append_cards(
             &deck,
             "deck-abc",
-            "## a gap the exam found\nthe answer\n<!-- id: card-two -->\n",
+            "## a gap the exam found\nthe answer\n<!-- topic: topic-t -->\n<!-- id: card-two -->\n",
         )
         .unwrap();
 
         assert_eq!(before, std::fs::read(&deck).unwrap());
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert!(text.starts_with("---\nfor: deck-abc\n---\n"), "{text}");
-        let cards =
-            crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text)).unwrap();
+        let cards = crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text))
+            .unwrap()
+            .cards;
         assert_eq!(1, cards.len());
-        assert_eq!(Some("card-two".to_string()), cards[0].id());
+        assert_eq!(Some("card-two".to_string()), cards[0].card.id());
     }
 
     #[test]
@@ -400,15 +461,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let deck = deck(dir.path());
 
-        append_cards(&deck, "deck-abc", "## one\nx\n<!-- id: card-aa -->\n").unwrap();
-        append_cards(&deck, "deck-abc", "## two\ny\n<!-- id: card-bb -->\n").unwrap();
+        append_cards(
+            &deck,
+            "deck-abc",
+            "## one\nx\n<!-- topic: topic-t -->\n<!-- id: card-aa -->\n",
+        )
+        .unwrap();
+        append_cards(
+            &deck,
+            "deck-abc",
+            "## two\ny\n<!-- topic: topic-t -->\n<!-- id: card-bb -->\n",
+        )
+        .unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
-        let cards =
-            crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text)).unwrap();
+        let cards = crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text))
+            .unwrap()
+            .cards;
         assert_eq!(
             vec![Some("card-aa".to_string()), Some("card-bb".to_string())],
-            cards.iter().map(|c| c.id()).collect::<Vec<_>>()
+            cards.iter().map(|c| c.card.id()).collect::<Vec<_>>()
         );
     }
 
@@ -418,7 +490,12 @@ mod tests {
         let deck = deck(dir.path());
 
         append_note(&deck, "deck-abc", "card-one", &note("a note")).unwrap();
-        append_cards(&deck, "deck-abc", "## mine\nback\n<!-- id: card-zz -->\n").unwrap();
+        append_cards(
+            &deck,
+            "deck-abc",
+            "## mine\nback\n<!-- topic: topic-t -->\n<!-- id: card-zz -->\n",
+        )
+        .unwrap();
 
         let text = std::fs::read_to_string(sidecar_path(&deck)).unwrap();
         assert_eq!(1, crate::parser::notes(&text).len());
@@ -426,6 +503,7 @@ mod tests {
             1,
             crate::parser::parse_sidecar("sidecar", &crate::parser::without_notes(&text))
                 .unwrap()
+                .cards
                 .len()
         );
     }
@@ -437,7 +515,7 @@ mod tests {
         std::fs::write(
             sidecar_path(&deck),
             "---\nfor: deck-abc\n---\n\n\
-             ## mine\nback\n<!-- id: card-zz -->\n\n\
+             ## mine\nback\n<!-- topic: topic-t -->\n<!-- id: card-zz -->\n\n\
              <!-- note: card-one -->\n> [!NOTE]\n> a note\n",
         )
         .unwrap();
@@ -445,8 +523,8 @@ mod tests {
         let personal = read(&deck, "spanish");
 
         assert_eq!(1, personal.cards.len());
-        assert_eq!(vec!["back"], personal.cards[0].back);
-        assert!(personal.cards[0].notes.is_empty());
+        assert_eq!(vec!["back"], personal.cards[0].card.back);
+        assert!(personal.cards[0].card.notes.is_empty());
         assert_eq!(1, personal.notes.len());
     }
 

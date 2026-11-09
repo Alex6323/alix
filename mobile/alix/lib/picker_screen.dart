@@ -640,9 +640,10 @@ class _PickerScreenState extends State<PickerScreen> {
             nowMs: nowMs,
             device: widget.device,
           ),
-          applyRemediation: (cardsText) => exam_bridge.applyExamRemediation(
+          applyRemediation: (topicId, cardsText) => exam_bridge.applyExamRemediation(
             deckPath: entry.path,
             rootDir: root,
+            topicId: topicId,
             cardsText: cardsText,
             device: widget.device,
           ),

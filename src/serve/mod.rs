@@ -1982,6 +1982,9 @@ pub fn run_review(
                 match jobs.remote_create_card(req) {
                     None => respond_status(request, 503),
                     Some(RemoteCreateOutcome::Missing) => respond_status(request, 404),
+                    Some(RemoteCreateOutcome::UnknownCard(error)) => {
+                        respond_error(request, 400, &error);
+                    }
                     Some(RemoteCreateOutcome::Invalid) => respond_status(request, 422),
                     Some(RemoteCreateOutcome::MintFailed) => respond_status(request, 500),
                     Some(RemoteCreateOutcome::Ok(resp)) => respond_json(request, &resp),

@@ -94,6 +94,8 @@ pub struct SessionBuild {
     /// Deck-load diagnostics for the whole selection, surfaced by the
     /// session so a silent fallback cannot pass for a successful freeze.
     pub load_warnings: Vec<String>,
+    /// `Deck::topic_ids()` per deck id.
+    pub topic_ids: HashMap<String, Vec<Option<String>>>,
     pub links: HashMap<String, Vec<String>>,
     pub exam_layers: HashMap<String, ExamLayers>,
     pub browsable: std::collections::HashSet<String>,
@@ -193,14 +195,66 @@ fn resolve<T: Copy + PartialEq>(
 /// collides with a deck card's.
 pub const PERSONAL_LINE_BASE: usize = 1_000_000;
 
+pub struct BoundPersonal {
+    pub cards: Vec<Card>,
+    pub warnings: Vec<String>,
+}
+
 /// Personal cards are addressed to the deck they sit beside, not to the
-/// sidecar, which carries no `id:` of its own.
-pub fn bind_personal(cards: &mut [Card], subject: &Arc<str>, deck_id: &Arc<str>) {
-    for (k, card) in cards.iter_mut().enumerate() {
+/// sidecar, which carries no `id:` of its own. `topic_ids` is
+/// `Deck::topic_ids()`.
+pub fn bind_personal(
+    parsed: Vec<crate::parser::ParsedSidecarCard>,
+    subject: &Arc<str>,
+    deck_id: &Arc<str>,
+    topic_ids: &[Option<String>],
+) -> BoundPersonal {
+    let mut warnings = Vec::new();
+    let mut warned_line = None;
+    let mut cards = Vec::with_capacity(parsed.len());
+    for (k, parsed) in parsed.into_iter().enumerate() {
+        let mut card = parsed.card;
         card.line = PERSONAL_LINE_BASE + k;
         card.subject = Arc::clone(subject);
         card.deck_id = Arc::clone(deck_id);
+        let named = parsed.topic_id.as_str();
+        card.topic = match topic_ids.iter().position(|id| id.as_deref() == Some(named)) {
+            Some(index) => index,
+            None => {
+                if warned_line != Some(parsed.topic_line) {
+                    warned_line = Some(parsed.topic_line);
+                    warnings.push(format!(
+                        "line {}: sidecar card `{}` names topic `{named}`, which is not in the deck; it counts in the leading topic",
+                        parsed.topic_line,
+                        card.token.as_deref().unwrap_or_default(),
+                    ));
+                }
+                0
+            }
+        };
+        cards.push(card);
     }
+    BoundPersonal { cards, warnings }
+}
+
+pub fn personal_cards(deck: &crate::deck::Deck) -> BoundPersonal {
+    let personal = crate::personal::read(&deck.path, &deck.subject);
+    let subject: Arc<str> = Arc::from(deck.subject.as_str());
+    let deck_id: Arc<str> = Arc::from(deck.deck_token.as_deref().unwrap_or_default());
+    let mut bound = bind_personal(personal.cards, &subject, &deck_id, &deck.topic_ids());
+    bound.warnings = sidecar_warnings(&deck.path, personal.warnings, bound.warnings);
+    bound
+}
+
+fn sidecar_warnings(deck_path: &Path, read: Vec<String>, bound: Vec<String>) -> Vec<String> {
+    let sidecar = crate::personal::sidecar_path(deck_path);
+    read.into_iter()
+        .chain(
+            bound
+                .into_iter()
+                .map(|warning| format!("{}: {warning}", sidecar.display())),
+        )
+        .collect()
 }
 
 pub type LoadedDecks = (
@@ -238,6 +292,7 @@ pub fn load_decks(
                 source_access: false,
                 source_base: CitationRoots::for_deck(&deck),
                 load_warnings: deck.load_warnings.clone(),
+                topic_ids: deck.topic_ids(),
             },
         );
         settings.push(deck.settings);
@@ -418,9 +473,10 @@ pub fn tutor_deck(path: &Path, cfg: &AssembleConfig) -> Result<TutorDeck> {
         })
         .collect();
     let (roster, _orphans) = crate::sidecar::merge(&deck_blocks, &personal.blocks());
-    let mut personal_cards = personal.cards;
-    bind_personal(&mut personal_cards, &subject, &deck_id);
-    for mut card in personal_cards {
+    let bound = bind_personal(personal.cards, &subject, &deck_id, &info.topic_ids);
+    info.load_warnings
+        .extend(sidecar_warnings(path, personal.warnings, bound.warnings));
+    for mut card in bound.cards {
         augment.apply_format(&mut card);
         if let Some(note) = card
             .id()
@@ -661,11 +717,16 @@ pub fn select(
         .flat_map(|info| info.load_warnings.iter().cloned())
         .collect();
     load_warnings.sort();
+    let topic_ids = decks
+        .iter()
+        .map(|(deck_id, info)| (deck_id.clone(), info.topic_ids.clone()))
+        .collect();
     Ok(Selected::Review(SessionBuild {
         session,
         label,
         decks: deck_id_paths(decks),
         load_warnings,
+        topic_ids,
         links,
         exam_layers,
         browsable,
@@ -1997,7 +2058,8 @@ it reads line two\n\
         id: &str,
         front: &str,
     ) {
-        let block = format!("## {front}\npersonal back\n<!-- id: {id} -->\n");
+        let block =
+            format!("## {front}\npersonal back\n<!-- topic: {deck_id} -->\n<!-- id: {id} -->\n");
         crate::personal::append_cards(deck, deck_id, &block).unwrap();
         store.get_or_insert(id).introduced_ms = Some(0);
     }
@@ -2236,7 +2298,7 @@ it reads line two\n\
         crate::personal::append_cards(
             &path,
             "deck-rust",
-            "## personal front\npersonal back\n<!-- id: card-vq1 -->\n",
+            "## personal front\npersonal back\n<!-- topic: deck-rust -->\n<!-- id: card-vq1 -->\n",
         )
         .unwrap();
         crate::personal::append_note(&path, "deck-rust", "card-q1", &["sidecar note".to_string()])
@@ -2436,11 +2498,48 @@ it reads line two\n\
     }
 
     #[test]
+    fn a_sidecar_card_joins_the_topic_its_line_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("d.md");
+        std::fs::write(
+            &path,
+            "---\nid: \"deck-d\"\n---\n## lead\nx\n<!-- id: card-l1 -->\n\n\
+             # A\n<!-- id: topic-a -->\n\n## a\nx\n<!-- id: card-a1 -->\n\n\
+             # B\n<!-- id: topic-b -->\n\n## b\nx\n<!-- id: card-b1 -->\n",
+        )
+        .unwrap();
+        let deck = Deck::load(&path).unwrap();
+        let sidecar = "## in b\nx\n<!-- topic: topic-b -->\n<!-- id: card-p1 -->\n\n\
+                       ## in a\nx\n<!-- topic: topic-a -->\n<!-- id: card-p2 -->\n\n\
+                       ## leading\nx\n<!-- topic: deck-d -->\n<!-- id: card-p3 -->\n";
+        let parsed = crate::parser::parse_sidecar("d.md", sidecar).unwrap().cards;
+        let subject: Arc<str> = Arc::from("d.md");
+        let bound = bind_personal(parsed, &subject, &subject, &deck.topic_ids());
+
+        let joined: Vec<(Option<String>, Option<String>)> = bound
+            .cards
+            .iter()
+            .map(|card| (card.id(), deck.topic_ids()[card.topic].clone()))
+            .collect();
+        assert_eq!(
+            vec![
+                (Some("card-p1".to_string()), Some("topic-b".to_string())),
+                (Some("card-p2".to_string()), Some("topic-a".to_string())),
+                (Some("card-p3".to_string()), Some("deck-d".to_string())),
+            ],
+            joined,
+            "each card joins the topic its line names"
+        );
+        assert!(bound.warnings.is_empty(), "{:?}", bound.warnings);
+    }
+
+    #[test]
     fn a_format_cache_entry_applies_to_a_bound_personal_card() {
         let subject: Arc<str> = Arc::from("rust.md");
-        let text = "## List the parts\nA, B, C\n<!-- id: card-vlist -->\n";
-        let mut cards = crate::parser::parse_str(&subject, text).unwrap();
-        bind_personal(&mut cards, &subject, &subject);
+        let text = "## List the parts\nA, B, C\n<!-- topic: rust.md -->\n<!-- id: card-vlist -->\n";
+        let parsed = crate::parser::parse_sidecar(&subject, text).unwrap().cards;
+        let mut cards =
+            bind_personal(parsed, &subject, &subject, &[Some("rust.md".to_string())]).cards;
         let mut synth = cards.remove(0);
         let id = synth.id().unwrap();
 

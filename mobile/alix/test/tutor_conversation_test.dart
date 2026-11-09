@@ -206,6 +206,7 @@ void main() {
 
     final call = client.postCardCalls.single;
     expect(call.deckId, 'deck-rust', reason: 'the create names the served deck');
+    expect(call.cardId, 'card-a', reason: 'the create names the tutored card');
     expect(call.front, 'f edited', reason: 'the edited front goes to the desktop');
     expect(call.back, ['b']);
     expect(recorded, [block], reason: 'the phone records the desktop block unchanged');

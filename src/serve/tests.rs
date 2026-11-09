@@ -1816,10 +1816,15 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
     let augment = crate::augment::AugmentCache::open(deck.with_extension("generated.json"));
     // Routed by the deck's own id (empty for a fixture with no
     // frontmatter), matching what its parsed cards carry as `deck_id`.
-    let deck_id = crate::deck::Deck::load(&deck)
-        .ok()
-        .and_then(|d| d.deck_token)
+    let loaded = crate::deck::Deck::load(&deck).ok();
+    let deck_id = loaded
+        .as_ref()
+        .and_then(|d| d.deck_token.clone())
         .unwrap_or_default();
+    let topic_ids = HashMap::from([(
+        deck_id.clone(),
+        loaded.map(|d| d.topic_ids()).unwrap_or_default(),
+    )]);
     let mut decks = HashMap::new();
     decks.insert(deck_id, deck);
     Reviewing::new(SessionBuild {
@@ -1827,6 +1832,7 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
         label: "d.md".to_string(),
         decks,
         load_warnings: Vec::new(),
+        topic_ids,
         links: HashMap::new(),
         exam_layers: HashMap::new(),
         browsable: std::collections::HashSet::new(),
@@ -2068,6 +2074,7 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         label: "d.md".to_string(),
         decks,
         load_warnings: Vec::new(),
+        topic_ids: HashMap::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
         browsable: std::collections::HashSet::new(),
@@ -2351,6 +2358,7 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         label: "d.md".to_string(),
         decks,
         load_warnings: Vec::new(),
+        topic_ids: HashMap::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
         browsable,
@@ -2429,6 +2437,7 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
         label: "d.md".to_string(),
         decks,
         load_warnings: Vec::new(),
+        topic_ids: HashMap::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
         browsable,
@@ -3048,6 +3057,7 @@ fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
         label: "d.md".to_string(),
         decks,
         load_warnings: Vec::new(),
+        topic_ids: HashMap::new(),
         links: HashMap::new(),
         exam_layers: HashMap::new(),
         browsable: std::collections::HashSet::new(),

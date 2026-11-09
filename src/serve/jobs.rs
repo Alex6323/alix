@@ -93,6 +93,7 @@ pub(super) struct Reviewing {
     pub(super) session: Session,
     pub(super) label: String,
     pub(super) load_warnings: Vec<String>,
+    pub(super) topic_ids: HashMap<String, Vec<Option<String>>>,
     pub(super) files: DeckFiles,
     pub(super) images: HashMap<String, PathBuf>,
     pub(super) ask: Ask,
@@ -414,6 +415,7 @@ fn remote_deck_path(catalog: &CatalogHandle, deck_id: &str) -> Result<PathBuf, S
 pub(super) enum RemoteCreateOutcome {
     Ok(RemoteCreateCardResp),
     Missing,
+    UnknownCard(String),
     Invalid,
     MintFailed,
 }
@@ -442,6 +444,17 @@ pub(super) fn remote_create_card(
     let Some(deck_id) = deck.info.deck_token.clone() else {
         return missing(&"the served deck carries no id");
     };
+    let Some(topic_id) = deck
+        .cards
+        .iter()
+        .find(|card| card.id().as_deref() == Some(req.card_id.as_str()))
+        .and_then(|card| deck.info.topic_ids.get(card.topic).cloned().flatten())
+    else {
+        return RemoteCreateOutcome::UnknownCard(format!(
+            "card `{}` is not in deck `{}`",
+            req.card_id, req.deck_id
+        ));
+    };
     let deck_fingerprints: HashSet<u64> = deck
         .authored_cards()
         .iter()
@@ -450,6 +463,7 @@ pub(super) fn remote_create_card(
     match crate::store::mint_or_return_kept_card(
         &path,
         &deck_id,
+        &topic_id,
         &req.front,
         &req.back,
         &deck_fingerprints,
@@ -458,9 +472,11 @@ pub(super) fn remote_create_card(
             id: minted.id,
             block: minted.block,
         }),
-        Err(crate::store::MintError::Duplicate | crate::store::MintError::Malformed(_)) => {
-            RemoteCreateOutcome::Invalid
-        }
+        Err(
+            crate::store::MintError::Duplicate
+            | crate::store::MintError::Malformed(_)
+            | crate::store::MintError::DuplicatedTopic(_),
+        ) => RemoteCreateOutcome::Invalid,
         Err(crate::store::MintError::Mint(_)) => RemoteCreateOutcome::MintFailed,
     }
 }
@@ -842,6 +858,7 @@ impl Reviewing {
             session: build.session,
             label: build.label,
             load_warnings: build.load_warnings,
+            topic_ids: build.topic_ids,
             files: DeckFiles::new(build.decks),
             images,
             ask: Ask::new(),
@@ -1043,14 +1060,14 @@ impl Preparing {
 pub(super) struct RemoteExamining {
     pub(super) sitting: exam::Sitting,
     pub(super) estimate: Option<&'static str>,
-    pub(super) cards: Option<String>,
+    pub(super) cards_by_topic: Vec<exam::TopicCards>,
     pub(super) unknown_cards: Vec<String>,
 }
 
 impl RemoteExamining {
     pub(super) fn advance(&mut self) {
         match self.sitting.advance(now_ms()) {
-            Some(exam::Effect::RemediationCards(text)) => self.cards = Some(text),
+            Some(exam::Effect::RemediationCards(by_topic)) => self.cards_by_topic = by_topic,
             Some(exam::Effect::Graded) | None => {}
         }
     }
@@ -1089,7 +1106,14 @@ impl RemoteExamining {
             unknown_cards: self.unknown_cards.clone(),
             gaps: s.gaps(),
             can_remediate: s.can_remediate(),
-            cards: self.cards.clone(),
+            cards_by_topic: self
+                .cards_by_topic
+                .iter()
+                .map(|topic| TopicCardsDto {
+                    topic_id: topic.topic_id.clone(),
+                    cards: topic.cards.clone(),
+                })
+                .collect(),
             thinking: s.thinking(),
             elapsed: s.elapsed_secs(),
             error: s.error().map(str::to_string),
@@ -1116,7 +1140,7 @@ pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
         unknown_cards: Vec::new(),
         gaps: Vec::new(),
         can_remediate: false,
-        cards: None,
+        cards_by_topic: Vec::new(),
         thinking: false,
         elapsed: None,
         error: None,

@@ -688,7 +688,8 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
         decks.join("spanish.local.md"),
         "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
          <!-- note: card-gonegonegonegonegonegonego -->\n> [!NOTE]\n> addressed to nothing\n\n\
-         ## a copy\nmine\n<!-- id: card-onetwothreefourfivesixsev -->\n",
+         ## a copy\nmine\n<!-- topic: deck-spanishspanishspanishspa -->\n\
+         <!-- id: card-onetwothreefourfivesixsev -->\n",
     )
     .unwrap();
     // Names a deck that is not here at all.
@@ -717,6 +718,114 @@ fn doctor_reports_every_way_a_personal_file_can_be_wrong() {
     assert!(
         err.contains("german.local.md"),
         "the file naming an absent deck is reported: {err}"
+    );
+}
+
+fn spanish_workspace(sidecar: &str) -> (TempDir, std::path::PathBuf) {
+    let dir = TempDir::new().unwrap();
+    let ws = dir.path();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    std::fs::create_dir(ws.join("decks")).unwrap();
+    let deck = ws.join("decks").join("spanish.md");
+    std::fs::write(
+        &deck,
+        "---\nformat-version: 1\nid: deck-spanishspanishspanishspa\n---\n\
+         ## darse cuenta\nto realise\n<!-- id: card-onetwothreefourfivesixsev -->\n",
+    )
+    .unwrap();
+    std::fs::write(alix::personal::sidecar_path(&deck), sidecar).unwrap();
+    (dir, deck)
+}
+
+#[test]
+fn a_sidecar_card_without_a_topic_line_is_skipped_alone_with_a_load_warning_and_a_doctor_error() {
+    let sidecar = "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+                   ## one\nx\n<!-- topic: deck-spanishspanishspanishspa -->\n\
+                   <!-- id: card-aaaaaaaaaaaaaaaaaaaaaaaaaa -->\n\n\
+                   ## two\nx\n<!-- id: card-bbbbbbbbbbbbbbbbbbbbbbbbbb -->\n\n\
+                   ## three\nx\n<!-- topic: deck-spanishspanishspanishspa -->\n\
+                   <!-- id: card-cccccccccccccccccccccccccc -->\n";
+    let (dir, deck) = spanish_workspace(sidecar);
+    let bad_line = 1 + sidecar
+        .lines()
+        .position(|line| line.contains("card-bbbb"))
+        .unwrap();
+    let expected = format!(
+        "{}:{bad_line}: personal card has no topic line",
+        alix::personal::sidecar_path(&deck).display()
+    );
+
+    let personal = alix::personal::read(&deck, "spanish.md");
+    assert_eq!(
+        vec![
+            Some("card-aaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+            Some("card-cccccccccccccccccccccccccc".to_string()),
+        ],
+        personal
+            .cards
+            .iter()
+            .map(|parsed| parsed.card.id())
+            .collect::<Vec<_>>(),
+        "load: the two cards with a topic line still load"
+    );
+    assert_eq!(
+        vec![expected.clone()],
+        personal.warnings,
+        "load: the warning names the card's id line"
+    );
+
+    let out = alix(&["doctor", dir.path().to_str().unwrap()]);
+    let err = stderr(&out);
+    assert!(
+        !out.status.success(),
+        "doctor: an error fails the check: {err}"
+    );
+    assert_eq!(
+        1,
+        err.lines()
+            .filter(|line| *line == format!("error: {expected}"))
+            .count(),
+        "doctor: one error names the line: {err}"
+    );
+    assert!(err.contains("1 error(s)"), "doctor: only that error: {err}");
+}
+
+#[test]
+fn a_sidecar_card_naming_an_unknown_topic_joins_the_leading_topic_and_doctor_warns() {
+    let (dir, deck) = spanish_workspace(
+        "---\nformat-version: 1\nfor: deck-spanishspanishspanishspa\n---\n\n\
+         ## mine\nx\n<!-- topic: topic-zzz -->\n<!-- id: card-aaaaaaaaaaaaaaaaaaaaaaaaaa -->\n",
+    );
+    let loaded = alix::deck::Deck::load(&deck).unwrap();
+
+    let bound = alix::assemble::personal_cards(&loaded);
+    assert_eq!(
+        vec![(Some("card-aaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()), 0)],
+        bound
+            .cards
+            .iter()
+            .map(|card| (card.id(), card.topic))
+            .collect::<Vec<_>>(),
+        "bind: the card counts in the leading topic"
+    );
+    let [warning] = bound.warnings.as_slice() else {
+        panic!("bind: one warning: {:?}", bound.warnings);
+    };
+    assert!(
+        warning.ends_with(
+            "line 8: sidecar card `card-aaaaaaaaaaaaaaaaaaaaaaaaaa` names topic `topic-zzz`, \
+             which is not in the deck; it counts in the leading topic"
+        ),
+        "bind: {warning}"
+    );
+
+    let out = alix(&["doctor", dir.path().to_str().unwrap()]);
+    let err = stderr(&out);
+    assert!(out.status.success(), "doctor: a warning never fails: {err}");
+    assert!(
+        err.lines()
+            .any(|line| line == format!("warning: {warning}")),
+        "doctor prints the same line: {err}"
     );
 }
 
@@ -1958,7 +2067,7 @@ fn stats_aggregates_authored_and_personal_due_windows_and_review_totals() {
         alix::personal::append_cards(
             Path::new(&deck),
             "deck-statsall",
-            &format!("## personal\nanswer\n<!-- id: {id} -->\n"),
+            &format!("## personal\nanswer\n<!-- topic: deck-statsall -->\n<!-- id: {id} -->\n"),
         )
         .unwrap();
         store.get_or_insert(id).recall = Some(alix::store::FsrsState {
@@ -1999,7 +2108,7 @@ fn stats_never_counts_an_introduced_or_walked_but_ungraded_card_as_due() {
         alix::personal::append_cards(
             Path::new(&deck),
             "deck-statsengaged",
-            &format!("## personal\nanswer\n<!-- id: {id} -->\n"),
+            &format!("## personal\nanswer\n<!-- topic: deck-statsengaged -->\n<!-- id: {id} -->\n"),
         )
         .unwrap();
         let state = store.get_or_insert(id);
@@ -2307,7 +2416,12 @@ fn sample_personal_card(deck: &str, deck_id: &str) -> String {
     let id = alix::parser::parse_str(deck_id, &block).unwrap()[0]
         .id()
         .unwrap();
-    alix::personal::append_cards(Path::new(deck), deck_id, &block).unwrap();
+    alix::personal::append_cards(
+        Path::new(deck),
+        deck_id,
+        &block.replace("<!-- id:", &format!("<!-- topic: {deck_id} -->\n<!-- id:")),
+    )
+    .unwrap();
     id
 }
 
@@ -2550,7 +2664,7 @@ fn a_personal_templates_dormant_base_id_survives_reset_orphans() {
     write(
         dir.path(),
         "regions.local.md",
-        "---\nformat-version: 1\nfor: deck-regiondoc\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- id: card-personalbase -->\n",
+        "---\nformat-version: 1\nfor: deck-regiondoc\n---\n## anatomy\nthe lunate is carpal\n<!-- blank: span hidden=\"lunate\" b:a1b2c3 -->\n<!-- topic: deck-regiondoc -->\n<!-- id: card-personalbase -->\n",
     );
     let mut store = deck_store(&deck);
     store.get_or_insert("card-personalbase");

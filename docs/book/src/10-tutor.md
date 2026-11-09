@@ -163,7 +163,7 @@ It works the same during a walk; the new card joins the deck's next walk.
 
 The card goes into the deck's [personal file](03-the-deck-format.md#your-personal-file)
 (`<deck>.local.md`), not the deck itself, so the authored `.md` is left
-byte-identical. It joins your sessions from then on as a new card: the drill
+byte-identical. It joins the topic of the card you were asking about. It joins your sessions from then on as a new card: the drill
 introduces it, then grades and schedules it like any other card. It is a plain
 Markdown block in a file you can open and edit.
 

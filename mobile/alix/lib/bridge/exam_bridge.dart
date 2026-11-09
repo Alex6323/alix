@@ -80,11 +80,13 @@ String? applyExamResult({
 int applyExamRemediation({
   required String deckPath,
   required String rootDir,
+  required String topicId,
   required String cardsText,
   String? device,
 }) => bridge.applyExamRemediation(
   deckPath: deckPath,
   rootDir: rootDir,
+  topicId: topicId,
   cardsText: cardsText,
   device: device,
 );

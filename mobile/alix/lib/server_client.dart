@@ -522,7 +522,7 @@ class RemoteExam {
     required this.grades,
     required this.gaps,
     required this.canRemediate,
-    this.cards,
+    this.cardsByTopic = const [],
     required this.thinking,
     this.elapsed,
     this.error,
@@ -548,9 +548,10 @@ class RemoteExam {
   final List<String> gaps;
   final bool canRemediate;
 
-  /// Deck-format text set only in the `remediated` phase: the client parses
-  /// and stores these cards, the server never keeps them (the iron rule).
-  final String? cards;
+  /// One entry per failed topic, set only in the `remediated` phase: the
+  /// client parses and stores each topic's cards, the server never keeps them
+  /// (the iron rule).
+  final List<RemoteTopicCards> cardsByTopic;
 
   final bool thinking;
   final int? elapsed;
@@ -575,13 +576,35 @@ class RemoteExam {
             : const [],
         gaps: _asStringList(json['gaps']),
         canRemediate: _asBool(json['can_remediate']),
-        cards: _asString(json['cards']),
+        cardsByTopic: json['cards_by_topic'] is List
+            ? (json['cards_by_topic'] as List)
+                .map(RemoteTopicCards.fromJson)
+                .whereType<RemoteTopicCards>()
+                .toList()
+            : const [],
         thinking: _asBool(json['thinking']),
         elapsed: _asInt(json['elapsed']),
         error: _asString(json['error']),
         estimate: _asString(json['estimate']),
         ideas: _asJsonObject(json['ideas']),
       );
+}
+
+/// One failed topic's remediation in a [RemoteExam]: its topic id and its
+/// deck-format card text. Mirrors `TopicCardsDto`.
+class RemoteTopicCards {
+  const RemoteTopicCards({required this.topicId, required this.cards});
+
+  final String topicId;
+  final String cards;
+
+  static RemoteTopicCards? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final topicId = _asString(json['topic_id']);
+    final cards = _asString(json['cards']);
+    if (topicId == null || cards == null) return null;
+    return RemoteTopicCards(topicId: topicId, cards: cards);
+  }
 }
 
 /// A paired desktop's deck generation from a URL (`POST`/`GET
@@ -664,7 +687,7 @@ abstract class ServerClient {
 
   /// `POST /api/remote/ask/card`: mints the learner's edited draft on the
   /// desktop, into the served deck's own sidecar.
-  Future<AddCardReply> postCard(String deckId, String front, List<String> back);
+  Future<AddCardReply> postCard(String deckId, String cardId, String front, List<String> back);
 
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
@@ -810,12 +833,13 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
-  Future<AddCardReply> postCard(String deckId, String front, List<String> back) async {
+  Future<AddCardReply> postCard(String deckId, String cardId, String front, List<String> back) async {
     final int status;
     final Map<String, dynamic>? json;
     try {
       (status, json) = await _exchange('POST', '/api/remote/ask/card', {
         'deck_id': deckId,
+        'card_id': cardId,
         'front': front,
         'back': back,
       }).timeout(_requestTimeout);

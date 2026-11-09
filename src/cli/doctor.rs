@@ -889,11 +889,7 @@ fn sidecar_findings(dir: &Path, report: &mut Report) {
             name: name.to_string(),
             deck_id: alix::parser::deck_identity(&text).ok().flatten(),
             personal_for: alix::parser::personal_parent(&text).ok().flatten(),
-            card_ids: alix::parser::parse_str(name, &alix::parser::without_notes(&text))
-                .unwrap_or_default()
-                .iter()
-                .filter_map(alix::card::Card::id)
-                .collect(),
+            card_ids: file_card_ids(name, &text),
         });
     }
 
@@ -934,6 +930,21 @@ fn sidecar_findings(dir: &Path, report: &mut Report) {
     }
 }
 
+fn file_card_ids(name: &str, text: &str) -> Vec<String> {
+    let text = alix::parser::without_notes(text);
+    let cards = if alix::workspace::is_sidecar_name(name) {
+        alix::parser::parse_sidecar(name, &text)
+            .map(|parsed| parsed.cards.into_iter().map(|parsed| parsed.card).collect())
+    } else {
+        alix::parser::parse_str(name, &text)
+    };
+    cards
+        .unwrap_or_default()
+        .iter()
+        .filter_map(alix::card::Card::id)
+        .collect()
+}
+
 fn unbadged_note_findings(sidecar: &Path, report: &mut Report) {
     let Ok(text) = std::fs::read_to_string(sidecar) else {
         return;
@@ -961,6 +972,18 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
         return;
     };
     let personal = alix::personal::read(&deck_path, &deck.subject);
+    for warning in &personal.warnings {
+        report.error(warning.clone());
+    }
+    let bound = alix::assemble::bind_personal(
+        personal.cards.clone(),
+        &std::sync::Arc::from(deck.subject.as_str()),
+        &std::sync::Arc::from(deck.deck_token.as_deref().unwrap_or_default()),
+        &deck.topic_ids(),
+    );
+    for warning in bound.warnings {
+        report.warn(format!("{}: {warning}", sidecar.display()));
+    }
     let deck_blocks: Vec<alix::DeckCard> = deck
         .cards
         .iter()

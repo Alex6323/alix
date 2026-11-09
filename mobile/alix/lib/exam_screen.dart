@@ -105,10 +105,10 @@ class ExamScreen extends StatefulWidget {
 
   final void Function(Map<String, dynamic> ideas)? saveIdeas;
 
-  /// Turns a failed sitting's remediation deck-text into phone-store
-  /// personal cards (a closure over `applyRemediation`), returning how many
-  /// were created or revived.
-  final int Function(String cardsText) applyRemediation;
+  /// Turns one failed topic's remediation deck-text into phone-store
+  /// personal cards bound to that topic (a closure over
+  /// `applyRemediation`), returning how many were created or revived.
+  final int Function(String topicId, String cardsText) applyRemediation;
 
   /// The wall clock, injected so tests can fake it.
   final BigInt Function() nowMs;
@@ -256,9 +256,10 @@ class _ExamScreenState extends State<ExamScreen> {
     }
     if (dto.phase == 'remediated' && !_remediationApplied) {
       _remediationApplied = true;
-      // `cards` is non-null per the `remediated`-phase contract; an empty
-      // fallback only guards the nullable type, never a real reply.
-      final count = widget.applyRemediation(dto.cards ?? '');
+      var count = 0;
+      for (final topic in dto.cardsByTopic) {
+        count += widget.applyRemediation(topic.topicId, topic.cards);
+      }
       _snack('$count new cards to drill.');
     }
     setState(() {

@@ -151,6 +151,37 @@ impl ExamResult {
         }
         gaps
     }
+
+    pub fn gaps_by_topic(
+        &self,
+        questions: &[ExamQuestion],
+        topics: &[ExamTopic],
+    ) -> Vec<(String, Vec<String>)> {
+        let mut gaps: Vec<Vec<String>> = vec![Vec::new(); topics.len()];
+        for (question, grade) in questions.iter().zip(&self.grades) {
+            let Some(topic_gaps) = gaps.get_mut(question.topic) else {
+                continue;
+            };
+            if grade.verdict == Verdict::Pass {
+                continue;
+            }
+            for point in &grade.missed {
+                let point = point.trim();
+                if !point.is_empty() && !topic_gaps.iter().any(|g| g == point) {
+                    topic_gaps.push(point.to_string());
+                }
+            }
+        }
+        topics
+            .iter()
+            .zip(gaps)
+            .enumerate()
+            .filter(|(index, (_, gaps))| {
+                !gaps.is_empty() && self.topics.get(*index).is_some_and(|score| !score.passed)
+            })
+            .map(|(_, (topic, gaps))| (topic.topic_id.clone(), gaps))
+            .collect()
+    }
 }
 
 pub fn generate_questions(
@@ -748,16 +779,31 @@ pub fn spawn_grade(
 }
 
 pub fn spawn_remediation(
-    gaps: Vec<String>,
+    gaps_by_topic: Vec<(String, Vec<String>)>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
-) -> Receiver<Result<String, String>> {
+) -> Receiver<Result<Vec<TopicCards>, String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
-        let r = remediation_cards(&gaps, &cfg, &ask_cfg).map_err(|e| format!("{e:#}"));
+        let r = gaps_by_topic
+            .iter()
+            .map(|(topic_id, gaps)| {
+                Ok(TopicCards {
+                    topic_id: topic_id.clone(),
+                    cards: remediation_cards(gaps, &cfg, &ask_cfg)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+            .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
     rx
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TopicCards {
+    pub topic_id: String,
+    pub cards: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -773,13 +819,13 @@ pub enum Phase {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     Graded,
-    RemediationCards(String),
+    RemediationCards(Vec<TopicCards>),
 }
 
 enum Pending {
     Questions(Receiver<Result<Generated, String>>),
     Grade(Receiver<Result<ExamResult, String>>),
-    Remediation(Receiver<Result<String, String>>),
+    Remediation(Receiver<Result<Vec<TopicCards>, String>>),
 }
 
 pub struct Sitting {
@@ -1143,7 +1189,14 @@ impl Sitting {
     }
 
     pub fn can_remediate(&self) -> bool {
-        self.phase == Phase::Results && !self.gaps().is_empty()
+        self.phase == Phase::Results && !self.gaps_by_topic().is_empty()
+    }
+
+    fn gaps_by_topic(&self) -> Vec<(String, Vec<String>)> {
+        self.result
+            .as_ref()
+            .map(|result| result.gaps_by_topic(&self.questions, &self.topics))
+            .unwrap_or_default()
     }
 
     pub fn remediated_count(&self) -> Option<usize> {
@@ -1156,7 +1209,7 @@ impl Sitting {
         }
         self.error = None;
         self.pending = Some(Pending::Remediation(spawn_remediation(
-            self.gaps(),
+            self.gaps_by_topic(),
             self.cfg.clone(),
             self.ask_cfg.clone(),
         )));
@@ -1237,16 +1290,23 @@ impl Sitting {
                 }
                 store_mutated = true;
             }
-            Some(Effect::RemediationCards(cards)) => {
+            Some(Effect::RemediationCards(by_topic)) => {
                 store_mutated = true;
-                match crate::store::store_remediation_cards(
-                    store,
-                    self.deck_path.as_deref(),
-                    &self.deck_token,
-                    &self.deck_fingerprints,
-                    &cards,
-                    retire_after_days,
-                ) {
+                let stored: Result<usize> = by_topic
+                    .iter()
+                    .map(|topic| {
+                        crate::store::store_remediation_cards(
+                            store,
+                            self.deck_path.as_deref(),
+                            &self.deck_token,
+                            &topic.topic_id,
+                            &self.deck_fingerprints,
+                            &topic.cards,
+                            retire_after_days,
+                        )
+                    })
+                    .sum();
+                match stored {
                     Ok(n) => self.remediated_count = Some(n),
                     Err(e) => {
                         self.error = Some(format!("{e}"));
@@ -1274,7 +1334,7 @@ pub struct ExamPollOutcome {
 enum Reply {
     Questions(Result<Generated, String>),
     Grade(Result<ExamResult, String>),
-    Remediation(Result<String, String>),
+    Remediation(Result<Vec<TopicCards>, String>),
 }
 
 fn thread_gone() -> String {
@@ -2316,6 +2376,52 @@ mod tests {
     }
 
     #[test]
+    fn gaps_by_topic_keeps_each_failed_topics_own_misses_in_topic_order() {
+        let grade = |verdict, missed: &[&str]| AnswerGrade {
+            verdict,
+            feedback: String::new(),
+            missed: missed.iter().map(|point| point.to_string()).collect(),
+        };
+        let question = |topic| ExamQuestion {
+            topic,
+            ..Default::default()
+        };
+        let questions = [
+            question(2),
+            question(0),
+            question(0),
+            question(1),
+            question(2),
+        ];
+        let result = ExamResult::scored(
+            &questions,
+            vec![
+                grade(Verdict::Fail, &["c1", "dup"]),
+                grade(Verdict::Partial, &["passed topic miss"]),
+                grade(Verdict::Pass, &[]),
+                grade(Verdict::Pass, &[]),
+                grade(Verdict::Partial, &["dup"]),
+            ],
+            0.5,
+        );
+        let topics: Vec<ExamTopic> = ["topic-a", "topic-b", "topic-c"]
+            .iter()
+            .map(|id| ExamTopic {
+                topic_id: id.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        assert_eq!(
+            vec![(
+                "topic-c".to_string(),
+                vec!["c1".to_string(), "dup".to_string()]
+            )],
+            result.gaps_by_topic(&questions, &topics),
+            "topic-a passes at 1 of 2, so its partial's miss is not remediated; topic-c's misses dedupe"
+        );
+    }
+
+    #[test]
     fn clean_deck_output_strips_fences() {
         let raw = "```text\n## Q\nA\n```";
         assert_eq!("## Q\nA", clean_deck_output(raw));
@@ -3219,7 +3325,9 @@ mod tests {
     fn sidecar_cards(deck_path: &std::path::Path, deck_id: &str) -> Vec<crate::card::Card> {
         let text =
             std::fs::read_to_string(crate::personal::sidecar_path(deck_path)).unwrap_or_default();
-        parser::parse_str(deck_id, &text).unwrap_or_default()
+        parser::parse_sidecar(deck_id, &text)
+            .map(|parsed| parsed.cards.into_iter().map(|parsed| parsed.card).collect())
+            .unwrap_or_default()
     }
 
     fn sourced_deck(ws: &Workspace) -> Deck {
@@ -3425,7 +3533,7 @@ mod tests {
             sidecar.contains(&format!("for: {DECK}")),
             "the sidecar names its deck: {sidecar}"
         );
-        let cards = crate::parser::parse_str(DECK, &sidecar).unwrap();
+        let cards = sidecar_cards(&deck_path, DECK);
         assert_eq!(1, cards.len(), "one remediation card: {sidecar}");
         assert!(
             cards[0].id().is_some_and(|id| store.get(&id).is_some()),
@@ -3496,6 +3604,80 @@ mod tests {
     }
 
     #[test]
+    fn remediation_runs_one_call_per_failed_topic_and_binds_each_card_to_it() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let deck = opened(&ws);
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            cli_dir.path(),
+            &["## Alpha gap?\nA\n", "## Beta gap?\nB\n"],
+        );
+        let topics = examined_topics(&deck);
+        let index = |id: &str| {
+            topics
+                .iter()
+                .position(|topic| topic.topic_id == id)
+                .unwrap_or_else(|| panic!("{id} is examined"))
+        };
+        let questions = vec![
+            ExamQuestion {
+                prompt: "qa".to_string(),
+                topic: index("topic-alpha"),
+                ..Default::default()
+            },
+            ExamQuestion {
+                prompt: "qb".to_string(),
+                topic: index("topic-beta"),
+                ..Default::default()
+            },
+        ];
+        let fail = |missed: &str| AnswerGrade {
+            verdict: Verdict::Fail,
+            feedback: String::new(),
+            missed: vec![missed.to_string()],
+        };
+        let result = ExamResult::scored(&questions, vec![fail("alpha"), fail("beta")], 1.0);
+        let mut s = test_sitting(Strictness::Balanced);
+        s.deck_path = Some(ws.deck());
+        s.deck_token = DECK.to_string();
+        s.ask_cfg = ask_config(&cli);
+        s.phase = Phase::Results;
+        s.questions = questions;
+        s.answers = vec![String::new(); 2];
+        s.locked = vec![false; 2];
+        s.result = Some(result);
+        s.topics = topics;
+        let mut store = Store::open(cli_dir.path().join("p.json")).unwrap();
+
+        s.remediate();
+        drain(&mut s, &mut store);
+
+        assert_eq!(
+            2,
+            crate::testutil::fake_reply_calls(cli_dir.path()),
+            "one call per failed topic"
+        );
+        assert_eq!(Some(2), s.remediated_count(), "error: {:?}", s.error());
+        let reloaded = Deck::load(ws.deck()).unwrap();
+        let topic_ids = reloaded.topic_ids();
+        let bound = crate::assemble::personal_cards(&reloaded);
+        assert_eq!(
+            vec![
+                ("Alpha gap?".to_string(), Some("topic-alpha".to_string())),
+                ("Beta gap?".to_string(), Some("topic-beta".to_string())),
+            ],
+            bound
+                .cards
+                .iter()
+                .map(|card| (card.front.clone(), topic_ids[card.topic].clone()))
+                .collect::<Vec<_>>(),
+            "each card binds to the topic it remediates: {:?}",
+            bound.warnings
+        );
+    }
+
+    #[test]
     fn advance_surfaces_remediation_text_without_a_store() {
         let _lock = exec_lock();
         let dir = tempfile::tempdir().unwrap();
@@ -3525,10 +3707,13 @@ mod tests {
         assert_eq!(&Phase::Remediating, s.phase());
 
         let effect = advance_until_idle(&mut s);
-        let Some(Effect::RemediationCards(text)) = effect else {
+        let Some(Effect::RemediationCards(by_topic)) = effect else {
             panic!("expected Some(Effect::RemediationCards(_)), got {effect:?}");
         };
-        let synth = parser::parse_str("d.md", &text).unwrap();
+        let [topic] = by_topic.as_slice() else {
+            panic!("one failed topic gives one entry: {by_topic:?}");
+        };
+        let synth = parser::parse_str("d.md", &topic.cards).unwrap();
         assert_eq!("Why does X?", synth[0].front);
         assert_eq!(vec!["point one".to_string()], synth[0].back);
         assert_eq!(&Phase::Remediated, s.phase());

@@ -1,6 +1,11 @@
 {
   "can_remediate": false,
-  "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed",
+  "cards_by_topic": [
+    {
+      "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed",
+      "topic_id": "topic-0wnersh1pt0p1c0000000000"
+    }
+  ],
   "deck": "rust.md",
   "elapsed": null,
   "error": null,

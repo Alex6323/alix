@@ -221,10 +221,11 @@ class FakeServerClient implements ServerClient {
   @override
   Future<AddCardReply> postCard(
     String deckId,
+    String cardId,
     String front,
     List<String> back,
   ) async {
-    postCardCalls.add(PostCardCall(deckId: deckId, front: front, back: back));
+    postCardCalls.add(PostCardCall(deckId: deckId, cardId: cardId, front: front, back: back));
     if (expireOnPostCard) throw const PairingExpired();
     if (postCardGate != null) return postCardGate!.future;
     if (postCardReplies.isEmpty) return const AddCardNoAnswer();
@@ -325,11 +326,13 @@ class FakeServerClient implements ServerClient {
 class PostCardCall {
   const PostCardCall({
     required this.deckId,
+    required this.cardId,
     required this.front,
     required this.back,
   });
 
   final String deckId;
+  final String cardId;
   final String front;
   final List<String> back;
 }

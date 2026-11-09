@@ -82,11 +82,13 @@ ExamApplied applyExamResult({
 int applyExamRemediation({
   required String deckPath,
   required String rootDir,
+  required String topicId,
   required String cardsText,
   String? device,
 }) => RustLib.instance.api.crateApiExamApplyExamRemediation(
   deckPath: deckPath,
   rootDir: rootDir,
+  topicId: topicId,
   cardsText: cardsText,
   device: device,
 );

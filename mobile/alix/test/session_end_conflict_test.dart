@@ -466,7 +466,12 @@ const _remediatedExam = RemoteExam(
   grades: [],
   gaps: ['the tested idea'],
   canRemediate: false,
-  cards: '## remediation question?\nremediation answer\n',
+  cardsByTopic: [
+    RemoteTopicCards(
+      topicId: 'deck-1',
+      cards: '## remediation question?\nremediation answer\n',
+    ),
+  ],
   thinking: false,
 );
 

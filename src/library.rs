@@ -970,7 +970,12 @@ mod tests {
         let id = crate::parser::parse_str(deck_id, &block).unwrap()[0]
             .id()
             .unwrap();
-        crate::personal::append_cards(deck, deck_id, &block).unwrap();
+        crate::personal::append_cards(
+            deck,
+            deck_id,
+            &block.replace("<!-- id:", &format!("<!-- topic: {deck_id} -->\n<!-- id:")),
+        )
+        .unwrap();
         store.get_or_insert(&id).introduced_ms = Some(0);
         id
     }

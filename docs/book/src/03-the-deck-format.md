@@ -761,6 +761,7 @@ for: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f
 
 ## a gap the exam found
 the answer
+<!-- topic: topic-7c2x9w4k1m8q3z5t0v6b2n4d8f -->
 <!-- id: card-5k1m8q3z5t0v6b2n4d8f7c2x9w -->
 ```
 
@@ -773,9 +774,15 @@ Two kinds of block live there, in any order:
   write any of the five. If you want a label above your note, write a `## `
   heading; it is yours, alix never writes or rewrites one.
 - A **card**, written exactly like a deck card and closed by its own
-  `<!-- id: -->` line. It joins the session after the deck's own cards and is
-  drilled and scheduled like any other, but it does not count toward the deck's
-  card count.
+  `<!-- id: -->` line, with one `<!-- topic: <topic-id> -->` line directly
+  before it naming the deck topic the card belongs to: a `# ` topic's id, or
+  the deck's own id for the cards before the first `# ` heading. It joins the
+  session after the deck's own cards and is drilled and scheduled like any
+  other, but it does not count toward the deck's card count. A card with no topic line is skipped on its own (the
+  other cards still load), with a warning when the deck opens and an error
+  from `alix doctor`. A card naming a topic the deck does not have counts in
+  the deck's leading topic, and `alix doctor` warns. The `<!-- topic: -->`
+  line belongs to personal files only: in a deck file it is a parse error.
 
 The two machine lines sit at opposite ends of their block on purpose. A card's
 id closes it, because the id names the card itself. A note's marker opens it,

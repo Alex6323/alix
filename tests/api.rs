@@ -2486,7 +2486,7 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-nope","front":"capital of spain?","back":["Madrid"]}"#,
+        r#"{"deck_id":"deck-nope","card_id":"card-s1","front":"capital of spain?","back":["Madrid"]}"#,
     );
     assert_eq!(
         404, response.status,
@@ -2501,16 +2501,16 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-sample","front":" capital of spain? ","back":["Madrid",""]}"#,
+        r#"{"deck_id":"deck-sample","card_id":"card-s1","front":" capital of spain? ","back":["Madrid",""]}"#,
     );
     assert_eq!(200, response.status, "body: {:?}", response.body);
     let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
     let id = body["id"].as_str().expect("an id").to_string();
     let block = body["block"].as_str().expect("a block").to_string();
     assert_eq!(
-        format!("## capital of spain?\nMadrid\n<!-- id: {id} -->\n"),
+        format!("## capital of spain?\nMadrid\n<!-- topic: deck-sample -->\n<!-- id: {id} -->\n"),
         block,
-        "the block is the trimmed card stamped with the id"
+        "the block is the trimmed card bound to the named card's topic and stamped with the id"
     );
     let text = std::fs::read_to_string(&sidecar)
         .unwrap_or_else(|e| panic!("{} unreadable: {e}", sidecar.display()));
@@ -2518,17 +2518,21 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
         text.ends_with(&block),
         "the desktop sidecar ends with that exact block:\n{text}"
     );
-    let minted = alix::parser::parse_str("deck-sample", &block).unwrap();
+    let minted = alix::parser::parse_sidecar("deck-sample", &block).unwrap();
     assert_eq!(
         vec![Some(id.clone())],
-        minted.iter().map(|card| card.id()).collect::<Vec<_>>(),
+        minted
+            .cards
+            .iter()
+            .map(|parsed| parsed.card.id())
+            .collect::<Vec<_>>(),
         "the block parses to one card under the returned id"
     );
 
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-sample","front":"capital of spain?","back":["Madrid"]}"#,
+        r#"{"deck_id":"deck-sample","card_id":"card-s1","front":"capital of spain?","back":["Madrid"]}"#,
     );
     assert_eq!(
         200, response.status,
@@ -2548,7 +2552,7 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-sample","front":"capital of **spain**?","back":["Madrid"]}"#,
+        r#"{"deck_id":"deck-sample","card_id":"card-s1","front":"capital of **spain**?","back":["Madrid"]}"#,
     );
     assert_eq!(
         422, response.status,
@@ -2557,7 +2561,7 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-sample","front":"2 + 2","back":["4"]}"#,
+        r#"{"deck_id":"deck-sample","card_id":"card-s1","front":"2 + 2","back":["4"]}"#,
     );
     assert_eq!(
         422, response.status,
@@ -2566,13 +2570,58 @@ fn a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_it
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-sample","front":"","back":["x"]}"#,
+        r#"{"deck_id":"deck-sample","card_id":"card-s1","front":"","back":["x"]}"#,
     );
     assert_eq!(422, response.status, "an empty front is malformed");
     assert_eq!(
         text,
         std::fs::read_to_string(&sidecar).unwrap(),
         "no refusal touched the sidecar"
+    );
+}
+
+#[test]
+fn a_remote_tutor_draft_binds_to_the_topic_of_the_named_card() {
+    let (base, guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            std::fs::write(
+                dir.join("topics.md"),
+                "---\nformat-version: 1\nid: \"deck-topics\"\n---\n\
+                 # A\n<!-- id: topic-a -->\n\n## qa\na\n<!-- id: card-qa -->\n\n\
+                 # B\n<!-- id: topic-b -->\n\n## qb\nb\n<!-- id: card-qb -->\n",
+            )
+            .unwrap();
+        },
+        |_opts| {},
+    );
+    let _ = sync_root_id(&base);
+    let sidecar = alix::personal::sidecar_path(&guard.dir().join("topics.md"));
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-topics","card_id":"card-nope","front":"new?","back":["yes"]}"#,
+    );
+    assert_eq!(400, response.status, "unknown card: {:?}", response.body);
+    assert!(
+        String::from_utf8_lossy(&response.body).contains("card `card-nope`"),
+        "unknown card: the message names the id: {:?}",
+        response.body
+    );
+    assert!(!sidecar.exists(), "unknown card: nothing written");
+
+    let response = post_json(
+        &base,
+        "/api/remote/ask/card",
+        r#"{"deck_id":"deck-topics","card_id":"card-qb","front":"new?","back":["yes"]}"#,
+    );
+    assert_eq!(200, response.status, "named card: {:?}", response.body);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    let block = body["block"].as_str().expect("named card: a block");
+    assert!(
+        block.contains("<!-- topic: topic-b -->\n"),
+        "named card: the draft binds to card-qb's topic: {block}"
     );
 }
 
@@ -9931,7 +9980,7 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     assert_eq!(200, resp.status);
 
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
-    let cards = body["cards"]
+    let cards = body["cards_by_topic"][0]["cards"]
         .as_str()
         .expect("cards is a deck-format string");
     assert!(cards.trim_start().starts_with('#'), "cards: {cards}");
@@ -9942,6 +9991,72 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     let resp = http(&base, "GET", "/api/remote/exam", &[], &[]);
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!("idle", body["phase"], "body: {body}");
+}
+
+#[test]
+fn a_remote_exam_returns_remediation_cards_per_failed_topic() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap a"]},{"verdict":"fail","feedback":"no","missed":["gap b"]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |dir| {
+            write_sourced_member(
+                dir,
+                "twofail.md",
+                "---\nformat-version: 1\nid: \"deck-twofail\"\n---\n\
+                 # A\n<!-- id: topic-fa -->\n\n## a\n1\n<!-- id: card-fa1 -->\n\n\
+                 # B\n<!-- id: topic-fb -->\n\n## b\n2\n<!-- id: card-fb1 -->\n",
+                &[(
+                    "examsource.txt",
+                    "a and b are concepts.\n",
+                    &["topic-fa", "topic-fb"],
+                )],
+            );
+        },
+        |_opts| {},
+    );
+
+    let resp = post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/twofail.md"}"#,
+    );
+    assert_eq!(200, resp.status, "start");
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    assert_eq!(
+        2,
+        body["questions"].as_array().unwrap().len(),
+        "answering: {body}"
+    );
+    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a","b"]}"#);
+    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
+    post_json(&base, "/api/remote/exam/remediate", "{}");
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
+
+    let entries = body["cards_by_topic"]
+        .as_array()
+        .expect("remediated: cards_by_topic is an array");
+    assert_eq!(
+        vec!["topic-fa", "topic-fb"],
+        entries
+            .iter()
+            .map(|entry| entry["topic_id"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>(),
+        "remediated: one entry per failed topic, in deck order: {body}"
+    );
+    assert!(
+        entries.iter().all(|entry| entry["cards"]
+            .as_str()
+            .is_some_and(|c| c.starts_with("## "))),
+        "remediated: each entry carries its deck-format text: {body}"
+    );
 }
 
 #[test]
@@ -10152,7 +10267,7 @@ fn remote_endpoints_never_write_the_server_store() {
     post_json(&base, "/api/remote/exam/remediate", "{}");
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
     assert!(
-        body["cards"]
+        body["cards_by_topic"][0]["cards"]
             .as_str()
             .is_some_and(|c| c.trim_start().starts_with('#')),
         "body: {body}"
@@ -10218,7 +10333,7 @@ fn remote_endpoints_never_write_the_server_store() {
     let response = post_json(
         &base,
         "/api/remote/ask/card",
-        r#"{"deck_id":"deck-examdeck","front":"term?","back":["definition"]}"#,
+        r#"{"deck_id":"deck-examdeck","card_id":"card-e1","front":"term?","back":["definition"]}"#,
     );
     assert_eq!(200, response.status, "body: {:?}", response.body);
     assert_eq!(

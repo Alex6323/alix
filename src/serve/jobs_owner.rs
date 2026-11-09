@@ -926,7 +926,7 @@ impl JobsState {
         let ex = RemoteExamining {
             sitting,
             estimate,
-            cards: None,
+            cards_by_topic: Vec::new(),
             unknown_cards: selection.unknown_cards,
         };
         let dto = ex.dto();

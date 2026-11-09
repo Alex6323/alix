@@ -62,8 +62,8 @@ void main() {
           return standingReply;
         },
         cards: cards,
-        applyRemediation: (cardsText) {
-          remediationCalls.add(cardsText);
+        applyRemediation: (topicId, cardsText) {
+          remediationCalls.add('$topicId: $cardsText');
           return remediationCountReply;
         },
         nowMs: () => BigInt.from(1000),
@@ -189,7 +189,10 @@ void main() {
     grades: [],
     gaps: ['ownership and the GC-free memory model'],
     canRemediate: false,
-    cards: '## q?\na\n',
+    cardsByTopic: [
+      RemoteTopicCards(topicId: 'topic-a', cards: '## q?\na\n'),
+      RemoteTopicCards(topicId: 'topic-b', cards: '## r?\nb\n'),
+    ],
     thinking: false,
   );
 
@@ -382,7 +385,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyResult: (_, _) => null,
-                applyRemediation: (_) => 0,
+                applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),
@@ -516,7 +519,7 @@ void main() {
                   support: tempSupport(),
                   buildClient: (_) => client,
                   applyResult: (exam, nowMs) => null,
-                  applyRemediation: (cardsText) => 0,
+                  applyRemediation: (_, _) => 0,
                   nowMs: () => BigInt.from(1000),
                   pollInterval: _pollInterval,
                 ),
@@ -568,7 +571,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyResult: (exam, nowMs) => null,
-                applyRemediation: (cardsText) => 0,
+                applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),
@@ -672,7 +675,7 @@ void main() {
     expect(client.startedIdeas, ideas);
   });
 
-  testWidgets('fail -> remediate -> cards: applyRemediation gets the cards verbatim, SnackBar shows the count',
+  testWidgets('fail -> remediate -> cards: applyRemediation gets each topic\'s cards verbatim, SnackBar shows the sum',
       (tester) async {
     final client = FakeServerClient(
       examGetReplies: [resultsFailed, remediating, remediated],
@@ -696,9 +699,8 @@ void main() {
     await tester.pump(_pollInterval);
     expect(find.text('Done.'), findsOneWidget);
 
-    expect(remediationCalls, hasLength(1));
-    expect(remediationCalls.single, '## q?\na\n');
-    expect(find.text('3 new cards to drill.'), findsOneWidget);
+    expect(remediationCalls, ['topic-a: ## q?\na\n', 'topic-b: ## r?\nb\n']);
+    expect(find.text('6 new cards to drill.'), findsOneWidget);
   });
 
   testWidgets('refused start: examStart false shows the refusal SnackBar and pops', (tester) async {
@@ -716,7 +718,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyResult: (_, _) => null,
-                applyRemediation: (_) => 0,
+                applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),
@@ -748,7 +750,7 @@ void main() {
                 support: tempSupport(),
                 buildClient: (_) => client,
                 applyResult: (_, _) => null,
-                applyRemediation: (_) => 0,
+                applyRemediation: (_, _) => 0,
                 nowMs: () => BigInt.from(1000),
                 pollInterval: _pollInterval,
               ),

@@ -255,13 +255,15 @@ personal sidecar (`<deck>.local.md`), never the authored deck, the store, or
 any phone-supplied path: a remote note whose card resolved appends its
 condensed lines, and a remote card create (`POST /api/remote/ask/card`) on a
 served deck appends one card after the local create's validation and dedup
-(ADR 0057); an identical retry of a sidecar card appends nothing and answers
+(ADR 0057), bound to the topic of the request's `card_id`, which must name a
+card of that served deck (anything else is a 400 that writes nothing); an identical retry of a sidecar card appends nothing and answers
 with that card (ADR 0060). A card-only note and a create for an unserved deck write
 nothing. A pairing-token holder can therefore append model-condensed text,
 steered by the history it sends, and cards of its own wording to a served
 deck's sidecar. Regression evidence:
 `a_grounded_remote_note_lands_in_the_desktop_sidecar_and_a_card_only_one_writes_nothing`,
-`a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_its_id`
+`a_phone_drafted_card_is_minted_in_the_desktop_sidecar_and_handed_back_with_its_id`,
+`a_remote_tutor_draft_binds_to_the_topic_of_the_named_card`
 and `remote_endpoints_never_write_the_server_store` (`tests/api.rs`).
 
 Remote exams resolve a selected desktop deck, and remote generation accepts

@@ -1,6 +1,6 @@
 {
   "can_remediate": true,
-  "cards": null,
+  "cards_by_topic": [],
   "deck": "rust.md",
   "elapsed": null,
   "error": null,

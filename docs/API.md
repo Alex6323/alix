@@ -224,7 +224,8 @@ all of them.
 learner moves on from it non-empty, and a locked answer is not changed.
 `POST /api/exam/grade {text}` submits the last answer and starts grading;
 grading uses the prepared exam up. `POST /api/exam/remediate` generates
-remediation cards when an answer missed key points; `POST /api/exam/close` →
+remediation cards for each failed topic whose answers missed key points, one
+call per topic, each card bound to its topic in the personal file; `POST /api/exam/close` →
 `StateDto`. A prepared exam is current while every topic it asks about is
 still examined over the same sources; otherwise start answers 409 and keeps
 it, and generating again rewrites only the changed or new topics, keeping the
@@ -270,7 +271,8 @@ and returns immediately, `thinking` while it's in flight; poll the shared
 (`DraftCardDto`), which persists there until the subject changes. `POST
 /api/ask/card/create {front, back}` (`CreateCardReq`) mints the learner's
 edited version of that draft into the deck's personal file
-(`<deck>.local.md`), never the authored deck; synchronous, no polling. Both endpoints are adult-only (`403` when
+(`<deck>.local.md`), never the authored deck, bound by a `<!-- topic: -->`
+line to the topic of the card the review is on; synchronous, no polling. Both endpoints are adult-only (`403` when
 `[serve] audience = "kids"`) and both require an active review (`409`);
 `/api/ask/card/create` further `409`s when the review has no current card,
 and rejects an unparseable body with `400`. Success is `200` with `{"id":
@@ -443,16 +445,19 @@ pull carries the note back to the phone instead of replacing the phone's
 sidecar without it; a card-only call writes nothing on the server. A failed
 sidecar write comes back as `error` with no `note`.
 
-`POST /api/remote/ask/card {deck_id, front, back}` (`RemoteCreateCardReq`)
+`POST /api/remote/ask/card {deck_id, card_id, front, back}` (`RemoteCreateCardReq`)
 mints the learner's edited draft on the desktop: when `deck_id` resolves
 against the served catalog, the server validates and dedups exactly as
-`/api/ask/card/create` does, appends the stamped block to that deck's
+`/api/ask/card/create` does, binds the card to the topic of `card_id` (the
+card the draft was made on), appends the stamped block to that deck's
 personal sidecar (never the authored deck, never the store) and answers
 `200` with `{id, block}` (`RemoteCreateCardResp`), where `block` is the
 exact text appended, for the phone to append unchanged to its own copy. It
 is synchronous, holds no slot, and is adult-only (`403`). A deck the desktop
 does not serve is `404` with nothing written (the phone then mints the card
-alone); a duplicate or malformed card is `422`, as on the local route,
+alone); a `card_id` the served deck does not hold is `400` with a plain-text
+message naming the id and nothing written; a duplicate or malformed card,
+or a topic whose id two topics share, is `422`, as on the local route,
 with one exception for a retry whose reply was lost: when the sidecar
 already holds exactly the plain card this (trimmed) front and back would
 make, with nothing else in its block, the answer is `200` with that card's
@@ -843,7 +848,7 @@ first, same as a double `POST`.
 | GET | `/api/remote/ask` | – | `RemoteAskDto` (poll) | – |
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
-| POST | `/api/remote/ask/card` | `{deck_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body; 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it) or malformed; 500 the id could not be minted |
+| POST | `/api/remote/ask/card` | `{deck_id, card_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body / a `card_id` the served deck does not hold (plain-text message naming it); 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it), malformed, or a topic id two topics share; 500 the id could not be minted |
 | POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
@@ -1539,7 +1544,7 @@ Example (from the pinned test):
 | `mastered` | bool | A full sitting where every answer was PASS. |
 | `standing` | string? | The deck's standing after the sitting, worded by the lib: `"mastered (4 Nov)"` or `"passed (2 Nov)"` (local date; the year only outside the current one); null before results or while the deck has neither. |
 | `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | An answer missed key points. |
+| `can_remediate` | bool | A failed topic has an answer that missed key points. |
 | `remediated_count` | number? | Null until remediation completes. |
 | `unlocks` | [string] | Deck names this sitting unlocked (it set the deck's `passed_at_ms`). |
 | `thinking` | bool | Poll while true. |
@@ -1658,9 +1663,9 @@ RemoteCard`, `history: [RemoteTurn]` (the same shape as `RemoteDraftReq`,
 kept as its own type so the name matches its own endpoint).
 
 `RemoteCreateCardReq` (`POST /api/remote/ask/card`): `deck_id: string`,
-`front: string`, `back: [string]`, the learner's edited draft for the served
-deck; no card id, since the new card belongs to the deck, not to the card
-the conversation started from.
+`card_id: string`, `front: string`, `back: [string]`, the learner's edited
+draft for the served deck; `card_id` (required) names the card the draft was
+made on, and the new card joins that card's topic.
 
 Example `RemoteAskReq` body (a real request from `tests/api.rs`'s remote
 round-trip suite):
@@ -1672,7 +1677,8 @@ The reply to `POST /api/remote/ask/card` (§4.11): `id: string`, the minted
 card's prefixed id (`card-<token>`), and `block: string`, the exact stamped
 text the desktop appended to its sidecar, or for an identical retry the kept
 card's stored bytes, which have that same form (`## front`, the back lines, the
-`<!-- id: ... -->` line, each newline-terminated). The phone appends the
+`<!-- topic: ... -->` line, the `<!-- id: ... -->` line, each
+newline-terminated). The phone appends the
 block as it is, so the next pull's copy of the sidecar is identical to what
 the phone already holds.
 
@@ -1741,8 +1747,8 @@ phone applies it to its own state).
 | `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` on its `cards` in its own store; the desktop records nothing of a phone sitting. There is no `standing`: the phone words its own from its store. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | An answer missed key points. |
-| `cards` | string? | Deck-format text, set in the `remediated` phase: the client parses and stores these; the server never does. |
+| `can_remediate` | bool | A failed topic has an answer that missed key points. |
+| `cards_by_topic` | [TopicCardsDto] | Set in the `remediated` phase, one entry per failed topic in deck order: `topic_id: string` (the topic id, or the deck id for the leading topic) and `cards: string` (that topic's deck-format text). The client parses and stores each entry's cards bound to its topic; the server never does. Empty in every other phase. |
 | `thinking` | bool | Poll while true. |
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |

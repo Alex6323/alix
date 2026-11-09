@@ -69,6 +69,11 @@ fn runs(text: &str) -> Vec<(usize, String, Vec<String>)> {
 /// The same text with every note block removed, so a card block cannot claim
 /// a note's `>` lines as its own answer.
 pub fn without_notes(text: &str) -> String {
+    without_notes_mapped(text).0
+}
+
+/// `without_notes`, plus the one-based file line of each kept line.
+pub fn without_notes_mapped(text: &str) -> (String, Vec<usize>) {
     let lines: Vec<&str> = text.lines().collect();
     let mut dropped = vec![false; lines.len()];
     for (index, line) in lines.iter().enumerate() {
@@ -85,13 +90,15 @@ pub fn without_notes(text: &str) -> String {
         }
     }
     let mut out = String::with_capacity(text.len());
-    for (line, dropped) in lines.iter().zip(dropped) {
+    let mut kept = Vec::new();
+    for (index, (line, dropped)) in lines.iter().zip(dropped).enumerate() {
         if !dropped {
             out.push_str(line);
             out.push('\n');
+            kept.push(index + 1);
         }
     }
-    out
+    (out, kept)
 }
 
 fn quoted_run_end(lines: &[&str], marker: usize) -> usize {
@@ -127,10 +134,41 @@ mod tests {
     /// or opening a card of its own.
     #[test]
     fn a_stray_deep_heading_stays_the_personal_cards_own_content() {
-        let text = "## personal\nanswer\n### stray label\ntail\n<!-- id: card-p1 -->\n";
-        let cards = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
+        let text = "## personal\nanswer\n### stray label\ntail\n<!-- topic: topic-t -->\n<!-- id: card-p1 -->\n";
+        let cards = crate::parser::parse_sidecar("deck.local.md", text)
+            .unwrap()
+            .cards;
         assert_eq!(1, cards.len());
-        assert_eq!(vec!["answer", "### stray label", "tail"], cards[0].back);
+        assert_eq!(
+            vec!["answer", "### stray label", "tail"],
+            cards[0].card.back
+        );
+    }
+
+    #[test]
+    fn parse_sidecar_keeps_the_raw_topic_id_and_its_line() {
+        let text = "## mine\nanswer\n<!-- topic: topic-zzz -->\n<!-- id: card-p1 -->\n";
+        let parsed = crate::parser::parse_sidecar("deck.local.md", text).unwrap();
+        let [card] = parsed.cards.as_slice() else {
+            panic!("an id no deck has still parses: {parsed:?}");
+        };
+        assert_eq!(
+            ("topic-zzz", 3),
+            (card.topic_id.as_str(), card.topic_line),
+            "the topic id is kept unresolved with the line of its comment"
+        );
+        assert!(parsed.missing_topic.is_empty(), "{parsed:?}");
+    }
+
+    #[test]
+    fn a_topic_line_in_a_deck_file_is_a_parse_error() {
+        let text =
+            "# A\n<!-- id: topic-a -->\n## q\na\n<!-- topic: topic-a -->\n<!-- id: card-x -->\n";
+        assert_eq!(
+            Some(crate::parser::ParseError::TopicLineOutsideSidecar(5)),
+            crate::parser::parse("d.md", text).err(),
+            "the comment on line 5 belongs to sidecars only"
+        );
     }
 
     #[test]
@@ -147,16 +185,17 @@ mod tests {
 
     #[test]
     fn a_depth_six_note_label_never_leaks_into_a_personal_cards_answer() {
-        let text = "## personal\nanswer\n<!-- id: card-p1 -->\n\n\
+        let text = "## personal\nanswer\n<!-- topic: topic-t -->\n<!-- id: card-p1 -->\n\n\
                     ###### why\n<!-- note: card-q1 -->\n> because\n";
         let stripped = without_notes(text);
         let cards = crate::parser::parse_sidecar("deck.local.md", &stripped)
-            .expect("a legal note label must not make the personal file unparseable");
+            .expect("a legal note label must not make the personal file unparseable")
+            .cards;
         assert_eq!(1, cards.len());
-        assert_eq!(Some("card-p1".to_string()), cards[0].id());
+        assert_eq!(Some("card-p1".to_string()), cards[0].card.id());
         assert_eq!(
             vec!["answer"],
-            cards[0].back,
+            cards[0].card.back,
             "the label belongs to the following note, not the preceding personal card"
         );
     }

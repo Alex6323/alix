@@ -2131,6 +2131,15 @@ impl StudyState {
         let Some(deck_path) = r.files.paths.get(&deck_id).cloned() else {
             return CreateOutcome::NoSession;
         };
+        let Some(topic_id) = r.session.current().and_then(|card| {
+            r.topic_ids
+                .get(&deck_id)
+                .and_then(|ids| ids.get(card.topic))
+                .cloned()
+                .flatten()
+        }) else {
+            return CreateOutcome::Invalid;
+        };
         // Dedup by content fingerprint, not id: a mint carries a fresh random
         // token, so identical content still collides.
         let deck_fingerprints: std::collections::HashSet<u64> = r
@@ -2139,7 +2148,7 @@ impl StudyState {
             .iter()
             .map(|c| c.block_fingerprint)
             .collect();
-        self.mint_tutor_card(&deck_path, &deck_id, req, &deck_fingerprints)
+        self.mint_tutor_card(&deck_path, &deck_id, &topic_id, req, &deck_fingerprints)
     }
 
     fn walk_ask_create(&mut self, req: CreateCardReq) -> CreateOutcome {
@@ -2149,11 +2158,14 @@ impl StudyState {
         if !w.session.allows_personal_writes() {
             return CreateOutcome::Forbidden;
         }
-        if w.session.current().is_none() {
+        let Some(topic) = w.session.current().map(|card| card.topic) else {
             return CreateOutcome::NoSession;
-        }
+        };
         let Some(deck_id) = w.info.deck_token.clone() else {
             return CreateOutcome::NoSession;
+        };
+        let Some(topic_id) = w.info.topic_ids.get(topic).cloned().flatten() else {
+            return CreateOutcome::Invalid;
         };
         let deck_path = w.info.path.clone();
         let deck_fingerprints: std::collections::HashSet<u64> = w
@@ -2162,13 +2174,14 @@ impl StudyState {
             .iter()
             .map(|c| c.block_fingerprint)
             .collect();
-        self.mint_tutor_card(&deck_path, &deck_id, req, &deck_fingerprints)
+        self.mint_tutor_card(&deck_path, &deck_id, &topic_id, req, &deck_fingerprints)
     }
 
     fn mint_tutor_card(
         &mut self,
         deck_path: &Path,
         deck_id: &str,
+        topic_id: &str,
         req: CreateCardReq,
         deck_fingerprints: &std::collections::HashSet<u64>,
     ) -> CreateOutcome {
@@ -2176,6 +2189,7 @@ impl StudyState {
             &mut self.store,
             deck_path,
             deck_id,
+            topic_id,
             &req.front,
             &req.back,
             deck_fingerprints,
@@ -2185,9 +2199,11 @@ impl StudyState {
                 self.writes = self.writes.wrapping_add(1);
                 CreateOutcome::Ok(CreateCardResp { id })
             }
-            Err(store::MintError::Duplicate | store::MintError::Malformed(_)) => {
-                CreateOutcome::Invalid
-            }
+            Err(
+                store::MintError::Duplicate
+                | store::MintError::Malformed(_)
+                | store::MintError::DuplicatedTopic(_),
+            ) => CreateOutcome::Invalid,
             Err(store::MintError::Mint(_)) => CreateOutcome::MintFailed,
         }
     }
@@ -2324,6 +2340,7 @@ mod tests {
             label: "study.md".to_string(),
             decks,
             load_warnings: Vec::new(),
+            topic_ids: HashMap::from([(deck_id.clone(), vec![Some(deck_id.clone())])]),
             links: HashMap::new(),
             exam_layers: HashMap::new(),
             browsable: std::collections::HashSet::new(),
@@ -2460,6 +2477,50 @@ mod tests {
         );
         drop(handle);
         owner.join().unwrap();
+    }
+
+    #[test]
+    fn a_tutor_draft_binds_to_the_topic_of_the_card_it_was_drafted_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, deck_id) = study_state_with_review(dir.path(), crate::depth::Depth::Recall);
+        let deck = dir.path().join("study.md");
+        std::fs::write(
+            &deck,
+            format!(
+                "---\nid: \"{deck_id}\"\n---\n# A\n<!-- id: topic-a -->\n## qa\na\n<!-- id: card-qa -->\n\
+                 # B\n<!-- id: topic-b -->\n## qb\nb\n<!-- id: card-qb -->\n"
+            ),
+        )
+        .unwrap();
+        let loaded = crate::deck::Deck::load(&deck).unwrap();
+        let drafted_on: Vec<crate::card::Card> = loaded
+            .cards
+            .iter()
+            .filter(|card| card.id().as_deref() == Some("card-qb"))
+            .cloned()
+            .collect();
+        let session = crate::session::Session::new(
+            drafted_on,
+            &mut state.store,
+            Box::new(crate::scheduler::Fsrs::default()),
+            crate::session::SessionOptions::default(),
+            now_ms(),
+        );
+        let reviewing = state.reviewing.as_mut().unwrap();
+        reviewing.session = session;
+        reviewing.topic_ids = HashMap::from([(deck_id.clone(), loaded.topic_ids())]);
+
+        let outcome = state.ask_create(CreateCardReq {
+            front: "a new front".to_string(),
+            back: vec!["a new back".to_string()],
+        });
+
+        assert!(matches!(outcome, CreateOutcome::Ok(_)), "minted");
+        let sidecar = std::fs::read_to_string(crate::personal::sidecar_path(&deck)).unwrap();
+        assert!(
+            sidecar.contains("## a new front\na new back\n<!-- topic: topic-b -->\n"),
+            "the draft binds to the drafted-on card's topic:\n{sidecar}"
+        );
     }
 
     #[test]

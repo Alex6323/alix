@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alix::{
     assemble,
     augment::{self, AugmentCache},
@@ -361,7 +359,6 @@ fn format_candidates(
     let store = store_for(paths)?;
     let mut out = Vec::new();
     for deck in decks {
-        let subject: Arc<str> = Arc::from(deck.subject.as_str());
         let deck_ids: std::collections::HashSet<String> =
             deck.cards.iter().filter_map(Card::id).collect();
         let retire_after_days = config
@@ -369,11 +366,9 @@ fn format_candidates(
             .for_workspace(&workspace::content_root(&deck.path))
             .retire_after_days;
         out.extend(deck.cards.iter().filter(|c| !c.is_blank_card()).cloned());
-        let deck_id: Arc<str> = Arc::from(deck.deck_token.as_deref().unwrap_or_default());
-        let mut personal = alix::personal::read(&deck.path, &deck.subject).cards;
-        assemble::bind_personal(&mut personal, &subject, &deck_id);
         out.extend(
-            personal
+            assemble::personal_cards(deck)
+                .cards
                 .into_iter()
                 .filter(|c| !c.is_blank_card())
                 .filter(|c| c.id().is_some_and(|id| !deck_ids.contains(&id)))

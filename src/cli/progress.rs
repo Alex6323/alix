@@ -90,7 +90,7 @@ pub(crate) fn stats(args: DeckArgs) -> Result<()> {
         let deck_id = deck.deck_token.as_deref().unwrap_or_default();
         // Personal cards count toward "due" (now and within 24h), never toward
         // the card count below: they aren't deck content.
-        let personal = alix::personal::read(&deck.path, &deck.subject).cards;
+        let personal = alix::assemble::personal_cards(&deck).cards;
         due_now += personal
             .iter()
             .filter(|card| !alix::session::is_retired(card, &store, review.retire_after_days))

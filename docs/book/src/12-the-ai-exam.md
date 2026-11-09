@@ -198,7 +198,8 @@ understanding card (a prompt plus key points) for a missed concept, with
 overlapping gaps merged. Re-drill those and re-sit. Once created, the screen
 reports how many remediation cards it added.
 
-Those remediation cards land in the deck's
+Remediation runs once per failed topic, and each card it writes is bound to
+that topic. Those remediation cards land in the deck's
 [personal file](03-the-deck-format.md#your-personal-file) (`<deck>.local.md`),
 never in the authored deck. They start as new cards: the drill introduces them,
 then FSRS schedules them like any other card. Once scheduled they count toward

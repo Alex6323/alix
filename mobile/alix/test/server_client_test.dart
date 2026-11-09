@@ -352,11 +352,11 @@ void main() {
       final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 't'));
       addTearDown(client.close);
 
-      final kept = await client.postCard('deck-d1', 'f', ['b']);
+      final kept = await client.postCard('deck-d1', 'card-d1', 'f', ['b']);
       expect(kept, isA<AddCardMinted>().having((r) => r.card.id, 'id', 'card-k'), reason: '200');
-      final refused = await client.postCard('deck-d1', 'f', ['b']);
+      final refused = await client.postCard('deck-d1', 'card-d1', 'f', ['b']);
       expect(refused, isA<AddCardRefused>().having((r) => r.status, 'status', 422), reason: '422');
-      final lost = await client.postCard('deck-d1', 'f', ['b']);
+      final lost = await client.postCard('deck-d1', 'card-d1', 'f', ['b']);
       expect(lost, isA<AddCardNoAnswer>(), reason: 'the reply never arrived');
     });
 
@@ -466,7 +466,8 @@ void main() {
       expect(exam, isNotNull);
       expect(exam!.phase, 'remediated');
       expect(exam.deck, 'rust.md');
-      expect(exam.cards, contains('Why does Rust use ownership?'));
+      expect(exam.cardsByTopic.single.topicId, 'topic-0wnersh1pt0p1c0000000000');
+      expect(exam.cardsByTopic.single.cards, contains('Why does Rust use ownership?'));
       expect(exam.grades, hasLength(1));
       expect(exam.grades.single.verdict, 'FAIL');
       expect(exam.gaps, ['ownership and the GC-free memory model']);

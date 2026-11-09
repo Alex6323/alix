@@ -186,7 +186,8 @@ pub fn after_mint() -> Effects {
         deck: DECK.to_string(),
         sidecar: Some(format!(
             "---\nfor: deck-parityparityparityparit\n---\n\n\
-             ## {MINTED_FRONT}\n{MINTED_BACK}\n<!-- id: {MINTED} -->\n"
+             ## {MINTED_FRONT}\n{MINTED_BACK}\n\
+             <!-- topic: deck-parityparityparityparit -->\n<!-- id: {MINTED} -->\n"
         )),
         scheduled: vec![MINTED.to_string()],
         reviews: vec![(MINTED.to_string(), 0, 0)],
