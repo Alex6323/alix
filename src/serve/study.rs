@@ -2114,16 +2114,11 @@ impl StudyState {
         let Some(r) = self.reviewing.as_mut() else {
             return CreateOutcome::NoSession;
         };
-        if r.session.current().is_none() {
-            return CreateOutcome::NoSession;
-        }
         let Some(deck_id) = r
-            .files
-            .paths
-            .keys()
-            .next()
+            .session
+            .current()
+            .map(|card| card.deck_id.to_string())
             .filter(|id| !id.is_empty())
-            .cloned()
         else {
             return CreateOutcome::NoSession;
         };
@@ -2529,13 +2524,82 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_tutor_draft_uses_the_current_cards_deck_and_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut state, first_id) =
+            study_state_with_review(dir.path(), crate::depth::Depth::Recall);
+        let first_path = dir.path().join("study.md");
+        let second_id = "deck-other".to_string();
+        let second_path = dir.path().join("other.md");
+        let text = |deck: &str, suffix: &str| {
+            format!(
+                "---\nid: {deck}\n---\n# A\n<!-- id: topic-{suffix}a -->\n## qa\na\n<!-- id: card-{suffix}a -->\n\
+                 # B\n<!-- id: topic-{suffix}b -->\n## qb\nb\n<!-- id: card-{suffix}b -->\n"
+            )
+        };
+        std::fs::write(&first_path, text(&first_id, "f")).unwrap();
+        std::fs::write(&second_path, text(&second_id, "s")).unwrap();
+        let first = crate::deck::Deck::load(&first_path).unwrap();
+        let second = crate::deck::Deck::load(&second_path).unwrap();
+
+        let reviewing = state.reviewing.as_mut().unwrap();
+        reviewing
+            .files
+            .paths
+            .insert(second_id.clone(), second_path.clone());
+        reviewing.topic_ids = HashMap::from([
+            (first_id.clone(), first.topic_ids()),
+            (second_id.clone(), second.topic_ids()),
+        ]);
+        let arbitrarily_selected = reviewing.files.paths.keys().next().unwrap().clone();
+        let (current_path, current) = if arbitrarily_selected == first_id {
+            (&second_path, &second)
+        } else {
+            (&first_path, &first)
+        };
+        let current_card = current
+            .cards
+            .iter()
+            .find(|card| card.topic == 1)
+            .unwrap()
+            .clone();
+        let expected_topic = current.topic_ids()[1].clone().unwrap();
+        reviewing.session = crate::session::Session::new(
+            vec![current_card],
+            &mut state.store,
+            Box::new(crate::scheduler::Fsrs::default()),
+            crate::session::SessionOptions::default(),
+            now_ms(),
+        );
+
+        let outcome = state.ask_create(CreateCardReq {
+            front: "a workspace draft".to_string(),
+            back: vec!["its answer".to_string()],
+        });
+
+        assert!(matches!(outcome, CreateOutcome::Ok(_)), "minted");
+        let current_sidecar = std::fs::read_to_string(crate::personal::sidecar_path(current_path))
+            .unwrap_or_default();
+        assert!(
+            current_sidecar.contains(&format!(
+                "## a workspace draft\nits answer\n<!-- topic: {expected_topic} -->\n"
+            )),
+            "the draft must be written beside the current card and carry its topic; selected {arbitrarily_selected}, current {}:\n{current_sidecar}",
+            current.deck_token.as_deref().unwrap_or_default()
+        );
+    }
+
+    #[test]
     fn tutor_create_rejects_an_exact_copy_of_the_current_span_block() {
         let dir = tempfile::tempdir().unwrap();
         let (mut state, deck_id) = study_state_with_review(dir.path(), crate::depth::Depth::Recall);
         let deck = dir.path().join("study.md");
         let text = "## Complete the sentence\nThe capital is Paris\n<!-- blank: span hidden=\"Paris\" b:a1b2c3 -->\n<!-- id: card-studytest -->\n";
         std::fs::write(&deck, text).unwrap();
-        let cards = crate::parser::parse_str(&deck_id, text).unwrap();
+        let mut cards = crate::parser::parse_str(&deck_id, text).unwrap();
+        for card in &mut cards {
+            card.deck_id = std::sync::Arc::from(deck_id.as_str());
+        }
         let session = crate::session::Session::new(
             cards,
             &mut state.store,
