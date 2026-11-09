@@ -81,7 +81,7 @@ fn travels_from_a_workspace_root(name: &str) -> bool {
     .contains(&name)
 }
 
-fn stays_home(name: &str) -> bool {
+pub(crate) fn stays_home(name: &str) -> bool {
     crate::workspace::is_private_name(name)
         || name.starts_with('.')
         || crate::workspace::is_conflict_name(name)

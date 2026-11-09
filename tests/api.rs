@@ -8981,6 +8981,36 @@ fn post_api_share_surfaces_an_install_hint_when_wormhole_is_not_on_path() {
 }
 
 #[test]
+fn post_api_share_reports_the_sources_it_left_out_and_carries_them_when_asked() {
+    let empty = TempDir::new().unwrap();
+    with_empty_path(empty.path(), || {
+        let (base, _guard) = spawn_test_server_fixture(None, |dir| {
+            write_frozen_workspace(dir);
+        });
+
+        let omitted = post_json(&base, "/api/share", r#"{"deck":"frozen"}"#);
+        assert_eq!(200, omitted.status);
+        let body: serde_json::Value = serde_json::from_slice(&omitted.body).unwrap();
+        assert_eq!(
+            2, body["sources_omitted"],
+            "by default both source files stay home: {body}"
+        );
+
+        let carried = post_json(
+            &base,
+            "/api/share",
+            r#"{"deck":"frozen","with_sources":true}"#,
+        );
+        assert_eq!(200, carried.status);
+        let body: serde_json::Value = serde_json::from_slice(&carried.body).unwrap();
+        assert_eq!(
+            0, body["sources_omitted"],
+            "with_sources carries them, nothing left out: {body}"
+        );
+    });
+}
+
+#[test]
 fn post_api_receive_surfaces_an_install_hint_when_wormhole_is_not_on_path() {
     let empty = TempDir::new().unwrap();
     with_empty_path(empty.path(), || {

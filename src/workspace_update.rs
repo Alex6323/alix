@@ -123,6 +123,7 @@ struct StagedDeck {
     staged: String,
     augment_baseline: Option<String>,
     augment_staged: Option<String>,
+    sources_baseline: Option<String>,
     retained_tokens: Vec<String>,
     retired_tokens: Vec<String>,
     retired_ids: Vec<String>,
@@ -239,18 +240,23 @@ struct MemberBaseline {
     live_deck: String,
     baseline: String,
     augment_baseline: Option<String>,
+    sources_baseline: Option<String>,
 }
 
 impl MemberBaseline {
     fn take(root: &Path, member: &EligibleMember) -> Result<Self> {
+        let files = WorkspaceFiles::new(root);
         Ok(MemberBaseline {
             baseline: digest_file(&member.deck.path)?,
-            augment_baseline: digest_optional(
-                &WorkspaceFiles::new(root).augment_for(deck_id(&member.deck)),
-            )?,
+            augment_baseline: digest_optional(&files.augment_for(deck_id(&member.deck)))?,
+            sources_baseline: digest_optional(&sources_manifest(&files, deck_id(&member.deck)))?,
             live_deck: live_proposal_text(&member.deck, &member.live_source)?,
         })
     }
+}
+
+fn sources_manifest(files: &WorkspaceFiles, deck_id: &str) -> PathBuf {
+    files.sources_for(deck_id).join(crate::sources::MANIFEST)
 }
 
 /// A backend reply reaches a terminal and `.alix-update-error.txt`, so a
@@ -514,6 +520,7 @@ fn stage_member(
         live_deck,
         baseline,
         augment_baseline,
+        sources_baseline,
     } = against;
     let staged_path = staging.join(relative);
 
@@ -577,6 +584,7 @@ fn stage_member(
             staged: staged_digest,
             augment_baseline,
             augment_staged,
+            sources_baseline,
             retained_tokens: identity.retained_tokens.clone(),
             retired_tokens: identity.retired_tokens.clone(),
             retired_ids,
@@ -1155,6 +1163,13 @@ fn preflight_apply(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Re
                 staged_augment.display()
             );
         }
+        let current_sources = sources_manifest(&WorkspaceFiles::new(root), &update.deck_id);
+        if digest_optional(&current_sources)? != update.sources_baseline {
+            bail!(
+                "{} changed after the proposal was staged",
+                current_sources.display()
+            );
+        }
     }
     validate_dependencies(staging)
 }
@@ -1187,13 +1202,14 @@ fn publish_assets(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Res
 
 /// Copies are content-addressed, so an existing one is verified equal and
 /// never rewritten; the manifest is replaced atomically; the live roots file
-/// is this machine's and stays untouched.
+/// is this machine's and stays untouched. `preflight_apply` has verified the
+/// staged folder.
 fn publish_sources(root: &Path, staging: &Path, manifest: &UpdateManifest) -> Result<()> {
     for update in &manifest.decks {
-        if crate::sources::load_verified(staging, &update.deck_id)?.is_none() {
+        let source = WorkspaceFiles::new(staging).sources_for(&update.deck_id);
+        if !source.is_dir() {
             continue;
         }
-        let source = WorkspaceFiles::new(staging).sources_for(&update.deck_id);
         let destination = WorkspaceFiles::new(root).sources_for(&update.deck_id);
         fs::create_dir_all(&destination)
             .with_context(|| format!("cannot create {}", destination.display()))?;
@@ -1429,6 +1445,7 @@ mod tests {
                 staged: String::new(),
                 augment_baseline: None,
                 augment_staged: None,
+                sources_baseline: None,
                 retained_tokens: Vec::new(),
                 retired_tokens: Vec::new(),
                 retired_ids: Vec::new(),
@@ -2561,7 +2578,7 @@ mod tests {
 
     #[test]
     fn a_manifest_carries_every_field_and_no_others() {
-        let staged = r#"{"path":"decks/a.md","deck_id":"deck-a","baseline":"b","staged":"s","augment_baseline":null,"augment_staged":null,"retained_tokens":[],"retired_tokens":[],"retired_ids":[],"added_tokens":[]}"#;
+        let staged = r#"{"path":"decks/a.md","deck_id":"deck-a","baseline":"b","staged":"s","augment_baseline":null,"augment_staged":null,"sources_baseline":null,"retained_tokens":[],"retired_tokens":[],"retired_ids":[],"added_tokens":[]}"#;
         let current = format!(
             r#"{{"version":1,"workspace":"/w","decks":[{staged}],"failures":[{{"path":"decks/b.md","reason":"why"}}]}}"#
         );
@@ -2736,6 +2753,7 @@ mod tests {
             staged: String::new(),
             augment_baseline: None,
             augment_staged: None,
+            sources_baseline: None,
             retained_tokens: Vec::new(),
             retired_tokens: Vec::new(),
             retired_ids: Vec::new(),
@@ -3027,6 +3045,7 @@ mod tests {
                 staged: String::new(),
                 augment_baseline: None,
                 augment_staged: None,
+                sources_baseline: None,
                 retained_tokens: Vec::new(),
                 retired_tokens: Vec::new(),
                 retired_ids: Vec::new(),

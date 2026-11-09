@@ -196,8 +196,9 @@ The rest of the AI-and-deck surface:
     machine, or a saved root that is not an absolute existing folder), and
     bindings.
 - `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
-  its owned frozen assets, its frozen exam sources (never their machine-local
-  `manifest.local.toml`), and its augmentation into another workspace. Stable
+  its owned frozen assets, its frozen exam sources with their
+  `manifest.local.toml` (the roots it names are this machine's), and its
+  augmentation into another workspace. Stable
   deck and card IDs are preserved; progress is not copied.
 - `alix deck move <deck> <workspace> [--yes]`: move the same public bundle,
   carry progress when the workspaces use different user roots, then remove the

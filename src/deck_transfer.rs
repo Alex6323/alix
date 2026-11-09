@@ -60,8 +60,8 @@ impl SourceBaseline {
             .keys()
             .filter(|path| {
                 !path
-                    .file_name()
-                    .is_some_and(|name| workspace::is_private_name(&name.to_string_lossy()))
+                    .components()
+                    .any(|part| share::stays_home(&part.as_os_str().to_string_lossy()))
             })
             .count()
     }
@@ -94,6 +94,10 @@ fn transfer_with_remove(
     transfer.verify_staged_identity(&bundle)?;
 
     if let Err(error) = share::land_deck_bundle(&bundle, &transfer.destination_files.decks()) {
+        let leftovers = transfer.rollback_destination(false);
+        return Err(with_rollback(error, &leftovers));
+    }
+    if let Err(error) = transfer.carry_roots() {
         let leftovers = transfer.rollback_destination(false);
         return Err(with_rollback(error, &leftovers));
     }
@@ -280,6 +284,24 @@ impl Transfer {
         let tmp = self.destination_progress.with_extension("json.tmp");
         crate::fsio::replace_file(&tmp, &self.destination_progress, bytes)
             .with_context(|| format!("cannot write {}", self.destination_progress.display()))
+    }
+
+    /// Copied on move too: `verify_source_unchanged` still reads the source
+    /// tree after this, and the sidecar removal deletes the original.
+    fn carry_roots(&self) -> Result<()> {
+        let roots = self
+            .source_files
+            .sources_for(&self.deck_id)
+            .join(crate::sources::ROOTS);
+        if !roots.is_file() {
+            return Ok(());
+        }
+        let destination = self.destination_files.sources_for(&self.deck_id);
+        std::fs::create_dir_all(&destination)
+            .with_context(|| format!("cannot create {}", destination.display()))?;
+        std::fs::copy(&roots, destination.join(crate::sources::ROOTS))
+            .with_context(|| format!("cannot copy {}", roots.display()))?;
+        Ok(())
     }
 
     fn verify_source_unchanged(&self) -> Result<()> {
@@ -852,6 +874,20 @@ mod tests {
         let mut progress = crate::state::open_store(&deck, &source).unwrap();
         progress.get_or_insert("card-card1");
         progress.save().unwrap();
+        let live = source.join("live");
+        std::fs::create_dir_all(&live).unwrap();
+        std::fs::write(live.join("notes.txt"), b"the source\n").unwrap();
+        crate::sources::commands::add(
+            crate::sources::commands::AddRequest {
+                deck: &deck,
+                files: vec![live.join("notes.txt")],
+                root: Some(("sdk".to_string(), live)),
+                key: None,
+                topics: Vec::new(),
+            },
+            &crate::config::ExamConfig::default(),
+        )
+        .unwrap();
 
         let error = transfer_with_remove(&deck, &destination, TransferMode::Move, |_| {
             Err(std::io::Error::new(
@@ -865,6 +901,14 @@ mod tests {
         assert!(deck.is_file());
         assert!(!destination.join("decks/facts.md").exists());
         assert!(!destination.join(".alix/progress/deck-deck1.json").exists());
+        assert!(
+            !destination.join("sources/deck-deck1").exists(),
+            "the rollback removes the landed sources folder"
+        );
+        assert!(
+            source.join("sources/deck-deck1/manifest.toml").is_file(),
+            "the source keeps its sources"
+        );
     }
 
     #[cfg(unix)]

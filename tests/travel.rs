@@ -328,12 +328,16 @@ fn every_lifecycle_operation_carries_each_per_deck_folder_with_its_deck_and_neve
         let source = workspace_at(&base, "copy-source");
         let destination = workspace_at(&base, "copy-destination");
         let member = sourced_member(&source);
+        let roots = fs::read(rel_path(&source, &member.rel(Kind::Roots))).unwrap();
+        let hidden = format!("sources/{DECK_ID}/.hidden");
+        fs::write(rel_path(&source, &hidden), b"stays\n").unwrap();
         let report =
             deck_transfer::transfer(&deck_path(&source), &destination, TransferMode::Copy).unwrap();
         if report.sources != 2 {
             FAILED_CELLS.with(|cells| {
                 cells.borrow_mut().push(format!(
-                    "{op} / report.sources: {} source files counted, expected 2",
+                    "{op} / report.sources: {} source files counted, expected 2 (the roots file \
+                     and a hidden file are not source files)",
                     report.sources
                 ))
             });
@@ -343,7 +347,18 @@ fn every_lifecycle_operation_carries_each_per_deck_folder_with_its_deck_and_neve
             "destination",
             &destination,
             &member,
-            [true, true, true, true, false, false],
+            [true, true, true, true, true, false],
+        );
+        cell(
+            fs::read(rel_path(&destination, &member.rel(Kind::Roots))).ok() == Some(roots),
+            format!(
+                "{op} / sources/<id>/manifest.local.toml / destination: the same machine's roots \
+                 file comes along, byte for byte"
+            ),
+        );
+        cell(
+            !rel_path(&destination, &hidden).exists(),
+            format!("{op} / sources/<id>/.hidden / destination: a hidden file stays home"),
         );
         check(op, "source", &source, &member, ALL);
     }
@@ -353,13 +368,15 @@ fn every_lifecycle_operation_carries_each_per_deck_folder_with_its_deck_and_neve
         let source = workspace_at(&base, "move-source");
         let destination = workspace_at(&base, "move-destination");
         let member = sourced_member(&source);
+        let roots = fs::read(rel_path(&source, &member.rel(Kind::Roots))).unwrap();
         deck_transfer::transfer(&deck_path(&source), &destination, TransferMode::Move).unwrap();
-        check(
-            op,
-            "destination",
-            &destination,
-            &member,
-            [true, true, true, true, false, true],
+        check(op, "destination", &destination, &member, ALL);
+        cell(
+            fs::read(rel_path(&destination, &member.rel(Kind::Roots))).ok() == Some(roots),
+            format!(
+                "{op} / sources/<id>/manifest.local.toml / destination: the same machine's roots \
+                 file moves along, byte for byte"
+            ),
         );
         check(op, "source", &source, &member, NONE);
         cell(
@@ -822,6 +839,15 @@ fn fake_backend(dir: &Path, reply: &str) -> PathBuf {
     path
 }
 
+#[cfg(unix)]
+fn fake_ask(dir: &Path, reply: &str) -> alix::config::AskConfig {
+    alix::config::AskConfig {
+        command: fake_backend(dir, reply).to_str().unwrap().to_string(),
+        timeout_secs: 10,
+        ..alix::config::AskConfig::default()
+    }
+}
+
 #[test]
 fn paired_sync_both_directions_keeps_each_sides_roots_file_and_crosses_neither() {
     let temp = TempDir::new().unwrap();
@@ -1071,17 +1097,27 @@ fn public_share_without_the_flag_omits_sources_and_says_so_and_with_it_carries_a
 }
 
 #[test]
-fn the_asset_collector_never_lists_a_source_copy() {
+fn the_asset_collector_reads_only_the_assets_directory_never_a_source_folder() {
     let temp = TempDir::new().unwrap();
     let base = temp.path().canonicalize().unwrap();
     let root = workspace_at(&base, "collector");
     let member = sourced_member(&root);
+    let lookalike = root
+        .join("sources")
+        .join(DECK_ID)
+        .join(format!("sha256-{}.md", "0".repeat(64)));
+    fs::write(&lookalike, b"not an asset\n").unwrap();
     let deck = Deck::load(deck_path(&root)).unwrap();
     let orphans = assets::unreferenced_objects(&deck, &root).unwrap();
     assert_eq!(
         vec![member.asset.clone()],
         orphans,
-        "the collector lists the unreferenced asset object and nothing from sources/"
+        "the collector lists the unreferenced asset object and nothing from sources/, not even \
+         an object-named file there"
+    );
+    assert!(
+        lookalike.is_file(),
+        "the object-named file under sources/ is still there to be missed"
     );
     assert!(
         root.join("sources")
@@ -1127,4 +1163,229 @@ fn copying_a_deck_whose_topic_id_the_destination_uses_is_refused() {
         "the refusal names the moving deck's id line as the copy: {text}"
     );
     assert_eq!(before, walk(&destination), "the destination is unchanged");
+}
+
+#[test]
+fn a_same_machine_copy_and_move_carry_the_roots_file_into_the_destination() {
+    let temp = TempDir::new().unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    for (mode, name) in [(TransferMode::Copy, "copy"), (TransferMode::Move, "move")] {
+        let source = workspace_at(&base, &format!("{name}-source"));
+        let destination = workspace_at(&base, &format!("{name}-destination"));
+        let member = sourced_member(&source);
+        let roots_rel = member.rel(Kind::Roots);
+        let roots = fs::read(rel_path(&source, &roots_rel)).unwrap();
+        assert!(
+            String::from_utf8_lossy(&roots).contains("sdk"),
+            "{name}: the fixture's roots file names its key"
+        );
+
+        deck_transfer::transfer(&deck_path(&source), &destination, mode).unwrap();
+
+        assert_eq!(
+            Some(roots.as_slice()),
+            fs::read(rel_path(&destination, &roots_rel)).ok().as_deref(),
+            "{name}: the destination holds the author's roots file, byte for byte"
+        );
+        assert_eq!(
+            mode == TransferMode::Copy,
+            rel_path(&source, &roots_rel).is_file(),
+            "{name}: the source keeps its roots file only on copy"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_update_refuses_to_apply_after_a_source_command_changed_the_manifest() {
+    let temp = TempDir::new().unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    let root = base.join("update");
+    let (unfrozen_text, member) = frozen_member_for_update(&root);
+    let ask = fake_ask(&base.join("backend"), &unfrozen_text);
+    let staged =
+        alix::workspace_update::stage(&root, &alix::config::GenerateDeckConfig::default(), &ask)
+            .unwrap();
+
+    let more = root.join("live").join("more.txt");
+    fs::write(&more, b"a second source\n").unwrap();
+    let report = commands::add(
+        AddRequest {
+            deck: &deck_path(&root),
+            files: vec![more],
+            root: None,
+            key: Some("sdk".to_string()),
+            topics: Vec::new(),
+        },
+        &ExamConfig::default(),
+    )
+    .unwrap();
+    let manifest_rel = member.rel(Kind::Manifest);
+    let manifest_before = fs::read(rel_path(&root, &manifest_rel)).unwrap();
+    assert!(
+        String::from_utf8_lossy(&manifest_before).contains(&report.added[0].0),
+        "the live manifest names the source added after staging"
+    );
+
+    let error = alix::workspace_update::apply(&root).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("changed after the proposal was staged"),
+        "apply refuses the stale proposal: {error:#}"
+    );
+    assert_eq!(
+        manifest_before,
+        fs::read(rel_path(&root, &manifest_rel)).unwrap(),
+        "the live manifest keeps both rows"
+    );
+    assert!(
+        staged.staging.is_dir(),
+        "the proposal stays for discard or regenerate"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_update_refuses_a_tampered_staged_copy_before_publishing_anything() {
+    let temp = TempDir::new().unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    let root = base.join("update");
+    let (unfrozen_text, member) = frozen_member_for_update(&root);
+    let ask = fake_ask(&base.join("backend"), &unfrozen_text);
+    let staged =
+        alix::workspace_update::stage(&root, &alix::config::GenerateDeckConfig::default(), &ask)
+            .unwrap();
+    let copy_rel = member.rel(Kind::Copy);
+    fs::write(rel_path(&staged.staging, &copy_rel), b"changed\n").unwrap();
+    let planted = assets::write_object(&staged.staging, DECK_ID, b"planted\n", "md").unwrap();
+    let planted_name = planted.file_name().unwrap().to_os_string();
+    let deck_before = fs::read(deck_path(&root)).unwrap();
+
+    let error = alix::workspace_update::apply(&root).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("source"),
+        "the refusal names the source copy: {error:#}"
+    );
+    assert!(
+        !root
+            .join("assets")
+            .join(DECK_ID)
+            .join(&planted_name)
+            .exists(),
+        "the refusal comes before any publishing: the asset planted in staging never went live"
+    );
+    assert_eq!(
+        SOURCE_BYTES,
+        fs::read(rel_path(&root, &copy_rel)).unwrap().as_slice(),
+        "the live copy is intact"
+    );
+    assert_eq!(
+        deck_before,
+        fs::read(deck_path(&root)).unwrap(),
+        "the live deck is intact"
+    );
+}
+
+#[test]
+fn an_explore_merge_refuses_a_tampered_source_copy_in_the_staging() {
+    let temp = TempDir::new().unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    let built = workspace_at(&base, "built");
+    let member = sourced_member(&built);
+    let (staging, _) = staged_tree(&built, &base, SourcesPolicy::Carry);
+    let copy_rel = member.rel(Kind::Copy);
+    fs::write(rel_path(&staging, &copy_rel), b"changed\n").unwrap();
+    let destination = base.join("merge-destination");
+    let mut store = Store::open(base.join("merge-store.json")).unwrap();
+
+    let error = explore::merge_built(&staging, &destination, false, &mut store).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("source"),
+        "the refusal names the source copy: {error:#}"
+    );
+    assert!(
+        !destination.join("sources").join(DECK_ID).exists(),
+        "the tampered folder did not land"
+    );
+    assert!(
+        !destination.join("decks").exists(),
+        "sources are verified before any deck lands"
+    );
+    assert!(
+        rel_path(&staging, &copy_rel).is_file(),
+        "the staging keeps the folder for the user"
+    );
+}
+
+#[test]
+fn paired_recover_restores_a_sources_folder_a_crash_left_aside() {
+    let temp = TempDir::new().unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    let desktop = workspace_at(&base, "desktop");
+    let member = sourced_member(&desktop);
+    let progress = fs::read(rel_path(&desktop, &member.rel(Kind::Progress))).unwrap();
+    let phone = fresh_phone(&base.join("phone"));
+    let (_, tree) = staged_tree(&deck_path(&desktop), &base, SourcesPolicy::Carry);
+    let unpacked = unpack_pull(&phone, DECK_FILE, KIND_DECK, &tree, DECK_FILE, &progress);
+    apply_pull(&phone, &unpacked);
+    let entry_root = phone.entry_root(KIND_DECK, DECK_FILE);
+    let live = entry_root.join("sources").join(DECK_ID);
+    let aside = entry_root.join("sources").join(format!("{DECK_ID}.old"));
+    fs::rename(&live, &aside).unwrap();
+
+    let actions = paired::recover(&phone).unwrap();
+
+    assert!(
+        actions
+            .iter()
+            .any(|action| action == &format!("restored {DECK_ID}")),
+        "recover names the restored sources folder: {actions:?}"
+    );
+    assert!(
+        live.join(sources::MANIFEST).is_file() && !aside.exists(),
+        "the folder is back under its live name"
+    );
+}
+
+#[test]
+fn tidy_renamed_tidies_an_entry_whose_only_extra_file_is_the_phones_roots_file() {
+    let temp = TempDir::new().unwrap();
+    let base = temp.path().canonicalize().unwrap();
+    let desktop = workspace_at(&base, "desktop");
+    let member = sourced_member(&desktop);
+    let progress = fs::read(rel_path(&desktop, &member.rel(Kind::Progress))).unwrap();
+    let phone = fresh_phone(&base.join("phone"));
+    let (_, tree) = staged_tree(&desktop, &base, SourcesPolicy::Carry);
+    let pull = |entry: &str| {
+        let unpacked = unpack_pull(
+            &phone,
+            entry,
+            KIND_WORKSPACE,
+            &tree,
+            "decks/facts.md",
+            &progress,
+        );
+        apply_pull(&phone, &unpacked);
+    };
+    pull("desktop");
+    let old_root = phone.entry_root(KIND_WORKSPACE, "desktop");
+    let own_roots = rel_path(&old_root, &member.rel(Kind::Roots));
+    plant_roots(&own_roots);
+    pull("desktop");
+    assert!(
+        own_roots.is_file(),
+        "the phone's roots file survived the second pull"
+    );
+    pull("renamed");
+
+    let renamed = paired::tidy_renamed(&phone, &["renamed".to_string()]).unwrap();
+
+    assert_eq!(
+        vec![("desktop".to_string(), "renamed".to_string())],
+        renamed,
+        "the roots file is the phone's settings, not a phone-born member that keeps the old entry"
+    );
+    assert!(!old_root.exists(), "the renamed entry's old folder is gone");
 }

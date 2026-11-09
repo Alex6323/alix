@@ -118,8 +118,11 @@ one command-line argument; on a Linux host with 4096-byte pages, a
 5. Where each key's live files are on this machine is recorded in
    `sources/<deck-id>/manifest.local.toml` (`version = 1`, a `[roots]`
    table of key to absolute canonical folder). It is private by the
-   existing `*.local.*` pattern (ADR 0044) and never travels; a receiving
-   machine keeps its own. Roots serve drift detection only: they never
+   existing `*.local.*` pattern (ADR 0044) and never leaves the machine:
+   share, sync and receive leave it out, and a receiving machine keeps its
+   own; a same-machine `deck copy` or `move` carries it with the folder,
+   since the roots it names are still that machine's. Roots serve drift
+   detection only: they never
    decide what the exam reads. A key without a root here has its sources
    unchecked, and doctor's drift check says so per key.
 

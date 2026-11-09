@@ -521,9 +521,11 @@ merging always carry them: the phone takes exams against its own copy. Every
 landing verifies each `sources/<deck-id>/` with `sources::load_verified`
 before the deck is written and refuses a tampered or linked copy. The
 machine-local roots file `sources/<deck-id>/manifest.local.toml` never
-travels in either direction: staging and the sync listing skip it, receive
-strips it, a receiver's own roots file survives an incoming copy, and a pull
-manifest that lists one is refused by name before anything is written
+crosses a share or sync boundary in either direction: staging and the sync
+listing skip it, receive strips it, a receiver's own roots file survives an
+incoming copy, and a pull manifest that lists one is refused by name before
+anything is written; a same-machine `alix deck copy|move` carries it with the
+folder, since the roots it names are still that machine's
 (`tests/travel.rs`; `sync_carries_sources_and_never_the_roots_file` and
 `share_zip_omits_sources_unless_asked_and_never_sends_the_roots_file`,
 `tests/api.rs`). Receive

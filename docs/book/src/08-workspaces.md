@@ -179,9 +179,10 @@ alix deck move ~/decks/spanish/decks/verbs.md ~/decks/exam
 
 Both commands preserve the filename, deck ID, and card IDs. Copy installs the
 same public bundle that wormhole sharing sends with its sources: the deck,
-`assets/deck-<token>/`, `sources/deck-<token>/` (verified on landing, without
-its machine-local `manifest.local.toml`), and `augment/deck-<token>.json`. It
-never copies progress. Move requires confirmation, installs that public
+`assets/deck-<token>/`, `sources/deck-<token>/` (verified on landing), and
+`augment/deck-<token>.json`. The folder's `manifest.local.toml` comes along
+too: the roots it names are this machine's folders, which a local copy or
+move does not change. It never copies progress. Move requires confirmation, installs that public
 bundle first, carries `.alix/progress/deck-<token>.json` to the destination
 workspace, then removes the source.
 

@@ -559,6 +559,7 @@ pub fn materialize(
 }
 
 /// A conflict keeps the user's original; the new file stays in `staging`.
+#[derive(Debug)]
 pub struct MergeReport {
     pub moved: usize,
     pub conflicts: Vec<String>,
