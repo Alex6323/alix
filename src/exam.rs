@@ -272,9 +272,6 @@ impl Prepared {
             .is_some_and(|(prepared, current)| prepared.fingerprint == *current)
     }
 
-    /// Whether every question was written from the deck's current sources
-    /// for a topic it still has, and every topic sourced now was sourced the
-    /// same way when this exam was written.
     pub fn is_current(&self, deck: &Deck) -> bool {
         let fingerprints = deck.declared().fingerprints();
         let topic_ids: BTreeSet<String> = deck.topic_ids().into_iter().flatten().collect();

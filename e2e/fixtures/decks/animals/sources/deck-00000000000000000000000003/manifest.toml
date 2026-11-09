@@ -1,0 +1,4 @@
+version = 1
+
+[sources]
+source-0w173nr4z9xmdf3frmc3zszs0twddn4m2nqmpc4pyzgdjrsjfzvv = { path = "src:source-fact.rs", bound-to = ["deck-00000000000000000000000003"] }

@@ -947,12 +947,6 @@ mod tests {
                 &["sdk:a.rs", "--repair-sources"],
             ),
             (
-                "display path with a colon",
-                |w| drop(w.write_live("a:b.rs", b"colon\n")),
-                |w| w.add(&["a:b.rs"], &[TOPIC_A]).map(drop),
-                &["contains a colon"],
-            ),
-            (
                 "no root",
                 |w| fs::write(w.root().join("outside.rs"), b"x\n").unwrap(),
                 |w| {
@@ -1159,16 +1153,27 @@ mod tests {
 
     #[cfg(unix)]
     fn platform_rows() -> Vec<Row> {
-        vec![(
-            "containment",
-            |w| {
-                fs::write(w.root().join("outside.rs"), b"outside\n").unwrap();
-                std::os::unix::fs::symlink(w.root().join("outside.rs"), w.live().join("link.rs"))
+        vec![
+            (
+                "containment",
+                |w| {
+                    fs::write(w.root().join("outside.rs"), b"outside\n").unwrap();
+                    std::os::unix::fs::symlink(
+                        w.root().join("outside.rs"),
+                        w.live().join("link.rs"),
+                    )
                     .unwrap();
-            },
-            |w| w.add(&["link.rs"], &[TOPIC_A]).map(drop),
-            &["outside root `sdk`"],
-        )]
+                },
+                |w| w.add(&["link.rs"], &[TOPIC_A]).map(drop),
+                &["outside root `sdk`"],
+            ),
+            (
+                "display path with a colon",
+                |w| drop(w.write_live("a:b.rs", b"colon\n")),
+                |w| w.add(&["a:b.rs"], &[TOPIC_A]).map(drop),
+                &["contains a colon"],
+            ),
+        ]
     }
 
     #[cfg(not(unix))]
