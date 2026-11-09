@@ -79,25 +79,64 @@ pub fn is_valid_region_stamp(stamp: &str) -> bool {
     stamp.len() == REGION_STAMP_LEN && stamp.bytes().all(|b| TOKEN_ALPHABET.contains(&b))
 }
 
+const BASE32_256_LEN: usize = 52;
+
+fn render_base32(len: usize, digit: impl Fn(usize) -> usize) -> String {
+    (0..len)
+        .rev()
+        .map(|i| TOKEN_ALPHABET[digit(i)] as char)
+        .collect()
+}
+
+fn alphabet_index(byte: u8) -> Option<usize> {
+    TOKEN_ALPHABET.iter().position(|&b| b == byte)
+}
+
+fn is_base32_with_top_digit_at_most(text: &str, len: usize, top_max: usize) -> bool {
+    let mut digits = text.bytes().map(alphabet_index);
+    text.len() == len
+        && digits.next().flatten().is_some_and(|top| top <= top_max)
+        && digits.all(|d| d.is_some())
+}
+
+/// 52 digits most-significant-first; the top digit holds the 4 spare bits.
+pub fn base32_256(digest: &[u8; 32]) -> String {
+    let bit = |k: usize| (digest[31 - k / 8] >> (k % 8)) & 1;
+    render_base32(BASE32_256_LEN, |i| {
+        (0..5)
+            .filter(|b| 5 * i + b < 256)
+            .map(|b| usize::from(bit(5 * i + b)) << b)
+            .sum()
+    })
+}
+
+/// 13 digits most-significant-first; the top digit holds 1 spare bit.
+pub fn base32_64(value: u64) -> String {
+    render_base32(GROUP_HASH_LEN, |i| ((value >> (5 * i)) & 31) as usize)
+}
+
+pub fn is_base32_256(text: &str) -> bool {
+    is_base32_with_top_digit_at_most(text, BASE32_256_LEN, 1)
+}
+
+pub fn is_base32_64(text: &str) -> bool {
+    is_base32_with_top_digit_at_most(text, GROUP_HASH_LEN, 15)
+}
+
 fn is_valid_group_hash(hash: &str) -> bool {
-    hash.len() == GROUP_HASH_LEN && hash.bytes().all(|b| TOKEN_ALPHABET.contains(&b))
+    is_base32_64(hash)
 }
 
 /// The frozen ADR 0034 group derivation: member stamps sorted ascending by
 /// their ASCII bytes, joined with one `-`, hashed with XxHash64 seed 0, and
-/// rendered as 13 digits most-significant-first (one implicit leading zero
-/// bit).
+/// rendered by `base32_64`.
 pub fn derive_group_hash(stamps: &[&str]) -> String {
     use std::hash::Hasher;
     let mut sorted: Vec<&str> = stamps.to_vec();
     sorted.sort_unstable();
     let mut hasher = twox_hash::XxHash64::default();
     hasher.write(sorted.join("-").as_bytes());
-    let n = hasher.finish();
-    (0..GROUP_HASH_LEN)
-        .rev()
-        .map(|i| TOKEN_ALPHABET[((n >> (5 * i)) & 31) as usize] as char)
-        .collect()
+    base32_64(hasher.finish())
 }
 
 pub fn format_region_card_id(token: &str, region: RegionRef<'_>) -> String {
@@ -303,6 +342,42 @@ mod tests {
             derive_group_hash(&["a1b2c3", "d4e5f6", "g7h8j9"]),
             "membership is the identity: adding a member changes the id"
         );
+    }
+
+    #[test]
+    fn base32_encoders_match_the_frozen_vectors() {
+        use sha2::Digest;
+        let abc = sha2::Sha256::digest(b"abc");
+        assert_eq!(
+            "1ekr2tzry0efx90m2g6ybpq248xg0dgt75gqfaeb847zc7s005dd",
+            base32_256(abc.as_slice().try_into().unwrap())
+        );
+        assert_eq!("0".repeat(52), base32_256(&[0u8; 32]));
+        assert_eq!(format!("1{}", "z".repeat(51)), base32_256(&[0xffu8; 32]));
+        assert_eq!("000000000007z", base32_64(0xff));
+        assert_eq!("028t5cy4tqkff", base32_64(0x0123_4567_89ab_cdef));
+        assert_eq!("fzzzzzzzzzzzz", base32_64(u64::MAX));
+        assert!(is_base32_256(
+            "1ekr2tzry0efx90m2g6ybpq248xg0dgt75gqfaeb847zc7s005dd"
+        ));
+        assert!(
+            !is_base32_256(&format!("2{}", "0".repeat(51))),
+            "first char above 1 is invalid"
+        );
+        assert!(!is_base32_256(&"0".repeat(51)));
+        assert!(is_base32_64("028t5cy4tqkff"));
+        assert!(is_base32_64("fzzzzzzzzzzzz"));
+        assert!(
+            !is_base32_64("g000000000000"),
+            "first char above f overflows 64 bits"
+        );
+        assert!(
+            !is_base32_64("z000000000000"),
+            "first char above f overflows 64 bits"
+        );
+        assert!(!is_base32_64("028t5cy4tqkf"), "twelve chars");
+        assert!(!is_base32_64("028t5cy4tqkff0"), "fourteen chars");
+        assert!(!is_base32_64("028t5cy4tqkfu"), "excluded letter");
     }
 
     #[test]
