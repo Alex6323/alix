@@ -545,19 +545,7 @@ fn deck_revision(path: &Path, expected_deck_id: &str) -> Result<u64, StoreError>
         path: path.to_path_buf(),
         source,
     })?;
-    if file.version != DECK_DOCUMENT_VERSION {
-        return Err(StoreError::Version {
-            path: path.to_path_buf(),
-            version: file.version,
-        });
-    }
-    if file.deck_id != expected_deck_id {
-        return Err(StoreError::DeckOwner {
-            path: path.to_path_buf(),
-            expected: expected_deck_id.to_string(),
-            actual: file.deck_id,
-        });
-    }
+    validate_deck_file(path, expected_deck_id, &file)?;
     Ok(file.revision)
 }
 
@@ -1332,8 +1320,7 @@ impl Store {
         if eligible && masters {
             progress.mastered_at_ms.get_or_insert(now_ms);
         }
-        let sitting_passed = record.topics.iter().all(|topic| topic.pass);
-        if eligible && sitting_passed && (all_passed || masters) {
+        if eligible && (all_passed || masters) {
             progress.exam_stamp = Some(stamp.clone());
         }
         if progress.is_empty() {
@@ -4484,6 +4471,110 @@ mod tests {
                 "{label}: exam_stamp"
             );
             assert_eq!(row.newly_passed, newly, "{label}: newly passed per sitting");
+            let standing = store.deck_passed_at("deck-rec").is_some()
+                || store.deck_mastered_at("deck-rec").is_some();
+            assert_eq!(
+                standing,
+                store.exam_stamp("deck-rec").is_some(),
+                "{label}: a standing and its stamp are written together"
+            );
+        }
+    }
+
+    #[test]
+    fn a_standing_is_never_written_without_its_stamp_and_the_document_reloads() {
+        struct Row {
+            label: &'static str,
+            record: fn(&Deck) -> SittingRecord,
+            deck_topics: bool,
+            passed: bool,
+            mastered: bool,
+        }
+        let rows = [
+            Row {
+                label: "a full sitting whose second sourced topic drew no question",
+                record: |deck| {
+                    let mut record = record(deck, &[Some(true), None], (2, 0, 2));
+                    record.full = true;
+                    record
+                },
+                deck_topics: true,
+                passed: false,
+                mastered: true,
+            },
+            Row {
+                label: "a full sitting mastering the count while a recorded topic failed",
+                record: |deck| record(deck, &[Some(true), Some(false)], (2, 0, 2)),
+                deck_topics: true,
+                passed: false,
+                mastered: true,
+            },
+            Row {
+                label: "a recorded topic id the deck lacks fails while every deck topic passes",
+                record: |deck| {
+                    let mut record = record(deck, &[Some(true), Some(true)], (2, 0, 3));
+                    record.topics.push(TopicRecord {
+                        topic_id: "topic-gone".to_string(),
+                        fingerprint: "f".to_string(),
+                        pass: false,
+                    });
+                    record
+                },
+                deck_topics: true,
+                passed: true,
+                mastered: false,
+            },
+            Row {
+                label: "a deck with no topics",
+                record: |deck| record(deck, &[Some(true), Some(true)], (3, 0, 3)),
+                deck_topics: false,
+                passed: true,
+                mastered: true,
+            },
+        ];
+        for row in rows {
+            let label = row.label;
+            let (dir, deck) = two_topic_deck();
+            let path = dir.path().join("deck-rec.json");
+            let mut store = Store::open(&path).unwrap();
+            let stamp = stamp_of(&deck, &store);
+            let topics = if row.deck_topics {
+                crate::exam_status::examined_topics(&deck)
+            } else {
+                Vec::new()
+            };
+            store.record_sitting("deck-rec", &topics, &(row.record)(&deck), 1, true, &stamp);
+            assert_eq!(
+                row.passed,
+                store.deck_passed_at("deck-rec").is_some(),
+                "{label}: passed"
+            );
+            assert_eq!(
+                row.mastered,
+                store.deck_mastered_at("deck-rec").is_some(),
+                "{label}: mastered"
+            );
+            assert_eq!(
+                Some(&stamp),
+                store.exam_stamp("deck-rec"),
+                "{label}: the standing carries this sitting's stamp"
+            );
+            store.save().unwrap();
+            let reopened = Store::open(&path);
+            let reopened = match reopened {
+                Ok(store) => store,
+                Err(error) => panic!("{label}: the saved document must load again: {error}"),
+            };
+            assert_eq!(
+                row.passed,
+                reopened.deck_passed_at("deck-rec").is_some(),
+                "{label}: passed survives the reload"
+            );
+            assert_eq!(
+                row.mastered,
+                reopened.deck_mastered_at("deck-rec").is_some(),
+                "{label}: mastered survives the reload"
+            );
         }
     }
 
@@ -4655,6 +4746,7 @@ mod tests {
                 "read_deck_data",
                 read_deck_data(&path, "deck-s", None).err(),
             ),
+            ("deck_revision", deck_revision(&path, "deck-s").err()),
             #[cfg(feature = "full")]
             (
                 "ValidatedDeckDocument::parse",

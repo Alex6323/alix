@@ -212,7 +212,7 @@ than the last one it applied. The finished exam is kept in the deck's store, so 
 leaving the page and restarting the server; the deck row's `exam_prepared`
 says a current one is there. Questions are written one topic at a time, each
 from that topic's frozen source copies alone. With `needs_work_only: true` the exam covers only the
-topics that have not passed (needs work, new cards, unexamined), read from
+topics that have not passed (needs work, unexamined), read from
 the server's own store; when every topic has passed, or none has, it covers
 all of them.
 
@@ -1154,7 +1154,7 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `name` | string | The stable resolution key for this row (also used by `/api/reset`, `/api/browse`, and import's/generate's `dest`). **Only deck rows are selectable:** a group row (`is_workspace`, or a folder) is a container — `/api/select` rejects it with 400. Drill into `members` and select one of those. |
 | `selectable` | bool | **structural**: this row's `name` is the kind of thing `/api/select` accepts (a deck; false for workspace/folder rows). `reviewable*` is state, not structure. |
 | `label` | string | Display title. |
-| `meta` | string? | Badge text: for an examined deck the highest exam state with the last full sitting's points (`15 / 18`, `passed · 15.5 / 18`, `mastered 🎉 · 3d · 17 / 18`), plus how many topics need work or have new cards since the exam; otherwise a completion state (`done ✓`, `exam due`); a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
+| `meta` | string? | Badge text: for an examined deck the highest exam standing with the day it was reached and the last full sitting's day and points (`last (4 Nov) 15 / 18`, `passed (2 Nov) · last (4 Nov) 15.5 / 18`, `mastered (4 Nov) · last (4 Nov) 17 / 18`, plus ` · N to drill` on a mastered deck with unretired cards); otherwise a completion state (`done ✓`, `exam due`); a group's `N decks`, or an `error` row's generic explanation line; `null` for `new`/`started` rows, whose state chip is their only signal *(presentational: parse nothing from it)*. |
 | `state` | string | `new` \| `started` \| `finished` \| `examdue` \| `error` for decks; `workspace` \| `folder` for groups (open set). An `error` deck's own progress document cannot be read: render it red, and treat it as unstartable: every `reviewable*` flag is false and `/api/select` and `/api/browse` both reject it with 400. |
 | `locked` | bool | A `requires:` prerequisite isn't passed (exam-gating only — drilling stays allowed). |
 | `reviewable` | bool | Anything to do at any depth (or trace/exam special cases). On a **group** row this aggregates its members — it describes what's due inside, not that the group itself can be selected. |
@@ -1566,7 +1566,9 @@ over; the result is recorded under `topic_id` with it, and counts only while
 it equals the topic's current one), `label: string` (the topic's heading, or
 the deck title for cards without one), `cards: [card-id]` (the topic's member
 cards), `pass: bool` (the share of PASS reached `pass_threshold`),
-`verdicts: {pass, partial, total}`.
+`verdicts: {pass, partial, total}`. A topic that drew no question is not
+listed (nothing is recorded for it), and `ExamGradeDto.topic` indexes this
+list.
 
 ### ExamGradeDto
 

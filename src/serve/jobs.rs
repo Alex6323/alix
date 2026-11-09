@@ -1095,16 +1095,7 @@ impl RemoteExamining {
         let s = &self.sitting;
         let result = s.result();
         let parts = exam_result_parts(s);
-        let grades = result
-            .map(|r| {
-                s.questions()
-                    .iter()
-                    .zip(s.answers())
-                    .zip(&r.grades)
-                    .map(|((q, a), g)| exam_grade_dto(q, a, g))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let grades = exam_grades(s, &parts);
         RemoteExamDto {
             phase: exam_phase_name(s.phase()),
             deck: s.subject().to_string(),

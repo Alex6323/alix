@@ -405,12 +405,18 @@ This record replaces, once accepted:
   rule 14 (the exam reads `exam:`); rule 15 (the tutor browses a `cite:`
   root, replaced by rule 13 here); rule 16's facts-deck `exam:` input; rule
   17's `exam:` condition on transfer; and the Security clause on local
-  `exam:` entries.
+  `exam:` entries;
+- in ADR 0063: the card-level `CardState.exam_result` and the section
+  status derived from member records (per-topic `topic_results` with the
+  source fingerprint, rules 9 and 12, replace them) and the `--exam` reset
+  clause's "card records" (now the topic results and the evidence stamp).
 
-Both records gain an `Amended by: 0064` line naming these clauses when this
-record is accepted, and ADR 0053's Evidence markers for replaced behavior
-(the exam reading only `exam:` entries, the tutor browsing a `cite:` root,
-transfer refusing on `exam:` entries) are replaced then.
+ADR 0026 and ADR 0053 gain an `Amended by: 0064` line naming these clauses
+when this record is accepted, and ADR 0053's Evidence markers for replaced
+behavior (the exam reading only `exam:` entries, the tutor browsing a
+`cite:` root, transfer refusing on `exam:` entries) are replaced then. ADR
+0063 already carries its line and lost its `exam_result` marker, since the
+field left the code first.
 
 ## Security
 

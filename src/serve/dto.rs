@@ -741,14 +741,27 @@ pub(super) struct ExamResultParts {
     pub(super) topics: Vec<ExamTopicDto>,
     pub(super) verdicts: Option<VerdictsDto>,
     pub(super) mastered: bool,
+    kept: Vec<usize>,
 }
 
+impl ExamResultParts {
+    pub(super) fn topic_position(&self, original: usize) -> usize {
+        self.kept
+            .iter()
+            .position(|&at| at == original)
+            .unwrap_or(original)
+    }
+}
+
+/// A topic that drew no question is left out, as `Sitting` leaves it out
+/// of the record, and `ExamGradeDto.topic` is renumbered to match.
 pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
     let Some(result) = s.result() else {
         return ExamResultParts {
             topics: Vec::new(),
             verdicts: None,
             mastered: false,
+            kept: Vec::new(),
         };
     };
     let verdicts = |score: exam::TopicScore| VerdictsDto {
@@ -757,23 +770,51 @@ pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
         total: score.total,
     };
     let count = result.count();
-    ExamResultParts {
-        topics: s
-            .topics()
-            .iter()
-            .zip(&result.topics)
-            .map(|(topic, score)| ExamTopicDto {
+    let mut kept = Vec::new();
+    let topics = s
+        .topics()
+        .iter()
+        .enumerate()
+        .filter_map(|(at, topic)| {
+            let score = result
+                .topics
+                .get(at)
+                .copied()
+                .filter(|score| score.total > 0)?;
+            kept.push(at);
+            Some(ExamTopicDto {
                 topic_id: topic.topic_id.clone(),
                 fingerprint: topic.fingerprint.clone(),
                 label: topic.label.clone(),
                 cards: topic.card_ids.clone(),
                 pass: score.passed,
-                verdicts: verdicts(*score),
+                verdicts: verdicts(score),
             })
-            .collect(),
+        })
+        .collect();
+    ExamResultParts {
+        topics,
         verdicts: Some(verdicts(count)),
         mastered: s.full() && count.passed,
+        kept,
     }
+}
+
+pub(super) fn exam_grades(s: &exam::Sitting, parts: &ExamResultParts) -> Vec<ExamGradeDto> {
+    s.result()
+        .map(|r| {
+            s.questions()
+                .iter()
+                .zip(s.answers())
+                .zip(&r.grades)
+                .map(|((q, a), g)| {
+                    let mut grade = exam_grade_dto(q, a, g);
+                    grade.topic = parts.topic_position(grade.topic);
+                    grade
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[derive(Serialize)]
@@ -838,17 +879,8 @@ pub(super) fn strictness_name(s: Strictness) -> &'static str {
 pub(super) fn exam_dto(ex: &Examining, store: &crate::store::Store) -> ExamDto {
     let s = &ex.sitting;
     let result = s.result();
-    let grades = result
-        .map(|r| {
-            s.questions()
-                .iter()
-                .zip(s.answers())
-                .zip(&r.grades)
-                .map(|((q, a), g)| exam_grade_dto(q, a, g))
-                .collect()
-        })
-        .unwrap_or_default();
     let parts = exam_result_parts(s);
+    let grades = exam_grades(s, &parts);
     let unlocks = if s.unlocked() {
         deck::dependents(&ex.deck_path)
     } else {
@@ -1790,6 +1822,110 @@ mod tests {
                 .is_some_and(|line| line.starts_with("mastered (")),
             "a perfect full sitting reports the deck mastered: {:?}",
             dto.standing
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exam_result_parts_omits_topics_that_drew_no_question_and_renumbers_grades() {
+        let _lock = crate::testutil::exec_lock();
+        let (dir, decks) = crate::sources::testkit::workspace_decks();
+        let path = decks.join("three.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: deck-three\n---\n\
+             # A\n<!-- id: topic-a -->\n\n## a1\nx\n<!-- id: card-a1 -->\n\n\
+             # B\n<!-- id: topic-b -->\n\n## b1\nx\n<!-- id: card-b1 -->\n\n\
+             # C\n<!-- id: topic-c -->\n\n## c1\nx\n<!-- id: card-c1 -->\n",
+        )
+        .unwrap();
+        let path = crate::sources::testkit::sourced(path);
+        let cli = crate::testutil::fake_cli(
+            dir.path(),
+            "cat >/dev/null; printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"p\"]}]}'",
+        );
+        let deck = crate::deck::Deck::load(&path).unwrap();
+        let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();
+        let question = |topic: usize| exam::ExamQuestion {
+            prompt: format!("q{topic}"),
+            points: vec!["p".to_string()],
+            topic,
+            ..Default::default()
+        };
+        let graded = |asked: [usize; 2], store: &mut crate::store::Store| {
+            let mut sitting = exam::Sitting::from_prepared(
+                &deck,
+                crate::exam_status::examined_topics(&deck),
+                asked.into_iter().map(question).collect(),
+                vec![String::new(); 2],
+                crate::exam_ideas::IdeasDocument::parse(r#"{"version":1,"topics":{}}"#).unwrap(),
+                exam::sitting_start(&deck, store, 0, None),
+                Strictness::Balanced,
+                crate::config::ExamConfig::default(),
+                crate::testutil::ask_config(&cli),
+            );
+            for _ in 0..2 {
+                sitting.set_answer("answer".to_string());
+                sitting.submit();
+            }
+            for _ in 0..500 {
+                let _ = sitting.poll(store, 0, None);
+                if !sitting.thinking() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(
+                sitting.result().is_some(),
+                "the fixture must reach a result: phase={:?}, error={:?}",
+                sitting.phase(),
+                sitting.error()
+            );
+            sitting
+        };
+
+        let middle = graded([0, 2], &mut store);
+        let parts = exam_result_parts(&middle);
+        assert_eq!(
+            vec!["topic-a", "topic-c"],
+            parts
+                .topics
+                .iter()
+                .map(|t| t.topic_id.as_str())
+                .collect::<Vec<_>>(),
+            "the middle topic drew no question and is not listed"
+        );
+        assert_eq!(
+            vec![true, false],
+            parts.topics.iter().map(|t| t.pass).collect::<Vec<_>>(),
+            "each listed topic keeps its own verdict"
+        );
+        assert_eq!(
+            vec![0, 1],
+            exam_grades(&middle, &parts)
+                .iter()
+                .map(|g| g.topic)
+                .collect::<Vec<_>>(),
+            "grades index the listed topics"
+        );
+
+        let trailing = graded([0, 1], &mut store);
+        let parts = exam_result_parts(&trailing);
+        assert_eq!(
+            vec!["topic-a", "topic-b"],
+            parts
+                .topics
+                .iter()
+                .map(|t| t.topic_id.as_str())
+                .collect::<Vec<_>>(),
+            "a trailing topic with no score entry is not listed either"
+        );
+        assert_eq!(
+            vec![0, 1],
+            exam_grades(&trailing, &parts)
+                .iter()
+                .map(|g| g.topic)
+                .collect::<Vec<_>>()
         );
     }
 

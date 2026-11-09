@@ -348,24 +348,38 @@ fn unsourced_card_ids(deck: &Deck, personal: &[Card], sourced_by_index: &[bool])
     ids
 }
 
-pub fn current_stamp(deck: &Deck, personal: &[Card], manifest: Option<&Manifest>) -> ExamStamp {
-    let (sourced_by_index, pairs) = topic_sourcing(deck, manifest);
+fn stamp_of(pairs: &[(String, String)], unsourced_cards: Vec<String>) -> ExamStamp {
     let pairs: Vec<(&str, &str)> = pairs
         .iter()
         .map(|(id, fingerprint)| (id.as_str(), fingerprint.as_str()))
         .collect();
     ExamStamp {
         sourced: sourced_hash(&pairs),
-        unsourced_cards: unsourced_card_ids(deck, personal, &sourced_by_index),
+        unsourced_cards,
     }
 }
 
+pub fn current_stamp(deck: &Deck, personal: &[Card], manifest: Option<&Manifest>) -> ExamStamp {
+    let (sourced_by_index, pairs) = topic_sourcing(deck, manifest);
+    stamp_of(
+        &pairs,
+        unsourced_card_ids(deck, personal, &sourced_by_index),
+    )
+}
+
 pub fn exam_changed(current: &ExamStamp, recorded: &ExamStamp) -> bool {
-    current.sourced != recorded.sourced
-        || current
-            .unsourced_cards
-            .iter()
-            .any(|id| recorded.unsourced_cards.binary_search(id).is_err())
+    if current.sourced != recorded.sourced {
+        return true;
+    }
+    let recorded: BTreeSet<&str> = recorded
+        .unsourced_cards
+        .iter()
+        .map(String::as_str)
+        .collect();
+    current
+        .unsourced_cards
+        .iter()
+        .any(|id| !recorded.contains(id.as_str()))
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -383,14 +397,25 @@ pub fn review_condition(
     retire_after_days: Option<u32>,
 ) -> ReviewCondition {
     let (sourced_by_index, _) = topic_sourcing(deck, manifest);
-    let blocking: Vec<String> = unsourced_card_ids(deck, personal, &sourced_by_index)
-        .into_iter()
-        .filter(|id| !meets_review_condition(id, store, now_ms, retire_after_days))
-        .collect();
+    let unsourced = unsourced_card_ids(deck, personal, &sourced_by_index);
+    let blocking = blocking_cards(&unsourced, store, now_ms, retire_after_days);
     ReviewCondition {
         holds: blocking.is_empty(),
         blocking,
     }
+}
+
+fn blocking_cards(
+    unsourced: &[String],
+    store: &Store,
+    now_ms: u64,
+    retire_after_days: Option<u32>,
+) -> Vec<String> {
+    unsourced
+        .iter()
+        .filter(|id| !meets_review_condition(id, store, now_ms, retire_after_days))
+        .cloned()
+        .collect()
 }
 
 fn meets_review_condition(
@@ -435,12 +460,13 @@ pub fn sitting_start(
     retire_after_days: Option<u32>,
 ) -> SittingStart {
     let personal = crate::assemble::personal_cards(deck).cards;
-    let manifest = manifest_of(deck);
-    let condition = review_condition(deck, &personal, manifest, store, now_ms, retire_after_days);
+    let (sourced_by_index, pairs) = topic_sourcing(deck, manifest_of(deck));
+    let unsourced = unsourced_card_ids(deck, &personal, &sourced_by_index);
+    let blocking = blocking_cards(&unsourced, store, now_ms, retire_after_days);
     SittingStart {
-        eligible: condition.holds,
-        blocking: condition.blocking,
-        stamp: current_stamp(deck, &personal, manifest),
+        eligible: blocking.is_empty(),
+        blocking,
+        stamp: stamp_of(&pairs, unsourced),
     }
 }
 
@@ -718,6 +744,31 @@ mod tests {
         assert_eq!(
             "1rxgrh19hz0w2jdfqx68k5qvj917ns0y8s4vjd6a95cs3dw55e2n",
             sourced_hash(&[])
+        );
+    }
+
+    #[test]
+    fn an_unsorted_recorded_card_list_does_not_read_as_changed() {
+        let ids = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>();
+        let recorded = ExamStamp {
+            sourced: "s".to_string(),
+            unsourced_cards: ids(&["card-c", "card-a", "card-b"]),
+        };
+        let current = ExamStamp {
+            sourced: "s".to_string(),
+            unsourced_cards: ids(&["card-a", "card-b", "card-c"]),
+        };
+        assert!(
+            !exam_changed(&current, &recorded),
+            "the same ids in another order are the same material"
+        );
+        let added = ExamStamp {
+            sourced: "s".to_string(),
+            unsourced_cards: ids(&["card-a", "card-b", "card-c", "card-d"]),
+        };
+        assert!(
+            exam_changed(&added, &recorded),
+            "control: a new id still dots"
         );
     }
 

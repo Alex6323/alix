@@ -181,7 +181,8 @@ pub fn exam_sitting_start(
     let deck = alix::deck::Deck::load(&path)?;
     let store = open_store(&path, &root_dir, None)?;
     let cards = needs_work_only.then(|| alix::exam_status::needs_work_card_ids(&deck, &store));
-    let start = alix::exam_status::sitting_start(&deck, &store, now_ms, None);
+    let retire_after_days = alix::config::ReviewConfig::default().retire_after_days;
+    let start = alix::exam_status::sitting_start(&deck, &store, now_ms, retire_after_days);
     Ok(ExamStart {
         cards,
         eligible: start.eligible,
@@ -237,7 +238,6 @@ pub fn apply_exam_result(
     })
 }
 
-// No retire cap on the phone: no accessor reads a resolved `retire_after`.
 #[flutter_rust_bridge::frb(sync)]
 pub fn apply_exam_remediation(
     deck_path: String,
@@ -589,6 +589,52 @@ mod tests {
             Some(true),
             store.topic_result("deck-d", "topic-a").map(|r| r.pass),
             "the results are still recorded"
+        );
+    }
+
+    #[test]
+    fn a_retired_due_card_in_an_unsourced_topic_does_not_block_the_phone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            format!("{text}\n# C\n\n## c1\nretired\n<!-- id: card-c1 -->\n"),
+        )
+        .unwrap();
+        {
+            let mut store = open_store(&path, &root_arg(root), None).unwrap();
+            *store.get_or_insert("card-c1") = alix::store::CardState {
+                recall: Some(alix::store::FsrsState {
+                    state: 2,
+                    scheduled_days: 365,
+                    due_ms: NOW - 1,
+                    ..Default::default()
+                }),
+                history: vec![alix::store::Review {
+                    ts_ms: NOW - 2,
+                    grade: alix::scheduler::Grade::Pass,
+                    depth: alix::depth::Depth::Recall,
+                    propagated: false,
+                    confidence: None,
+                }],
+                ..alix::store::CardState::new()
+            };
+            store.save().unwrap();
+        }
+
+        let start =
+            exam_sitting_start(path.to_string_lossy().into_owned(), root_arg(root), false, NOW)
+                .unwrap();
+        assert_eq!(
+            vec!["card-c1".to_string()],
+            start.stamp.unsourced_cards,
+            "the retired card is unsourced material"
+        );
+        assert!(
+            start.eligible,
+            "a retired card meets the review condition on the phone as on the desktop, due or not"
         );
     }
 
