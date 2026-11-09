@@ -145,7 +145,10 @@ folder's resolved path alone, and the call loads none of
 your Claude settings files, whose own allow rules would otherwise widen it. A
 folder whose path contains `(`, `)`, `*`, `?`, `[`, `]`, `{` or `}`, or any
 folder on Windows, gets no file tools; for the sources folder the tutor then
-pastes the topic's sources as it does on Codex. Copilot's file tool is confined
+pastes the topic's sources instead. Because Claude keeps one conversation,
+they are pasted on its first question only, and a card of another topic
+starts a new conversation with that topic's sources, so the run is then one
+conversation per topic rather than one for the whole run. Copilot's file tool is confined
 to the folder too: a path outside it, or a symlink pointing out of it, is
 refused, and a folder those rules cannot name (the same characters, or Windows)
 drops Copilot's file tools as well. A call with no folder, on Claude or

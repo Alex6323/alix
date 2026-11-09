@@ -414,22 +414,24 @@ manifest override), the tutor browses at most one local `cite:` root per card:
 the root of the first locator, in card order, whose key names a local root;
 a card without one browses none. A URL root is never browsed, and an
 `exam:` entry never grants browsing (`CitationRoots::browse_root` in
-`src/cite.rs`).
+`src/cite.rs`). A root may be any local directory the deck or manifest
+declares, absolute ones included, so a received deck can name a wide root;
+inspect a received workspace's `cite:` roots before enabling source access.
 
 A deck's frozen sources are a separate grant that needs no `source_access`:
 they are verified copies inside the deck's own `sources/<deck-id>/` folder,
 loaded through the verified load above at every tutor question. On a backend
 that confines file reads (Claude, Copilot) the tutor gets file tools rooted at
-that folder alone, and the folder replaces any `cite:` root for that call;
-the parent configuration's working folder or source-access grant is never
-inherited. A folder `ask::expressible_root` rejects gets no file tools, and the
-topic's sources are pasted instead. A backend that does not confine reads
-(Codex, Gemini) never receives a folder: the card's topic's sources are pasted
-into the prompt, and a topic over the backend's prompt limit is not sent at
-all (`ask::tutor_sources_for`, `ask::tutor_run_config` in `src/ask.rs`). A
-copy that fails verification sends nothing and the answer says so. A root may be any local directory the deck or manifest
-declares, absolute ones included, so a received deck can name a wide root;
-inspect a received workspace's `cite:` roots before enabling source access.
+that folder alone, and the folder replaces any `cite:` root for that call; the
+parent configuration's working folder or source-access grant is never
+inherited. A folder `ask::expressible_root` rejects gets no file tools, and
+the topic's sources are pasted instead. A backend that does not confine reads
+(Codex, Gemini) never receives the sources folder: the card's topic's sources
+are pasted into the prompt, and a topic over the backend's prompt limit is not
+sent at all (`ask::tutor_sources_for`, `ask::tutor_run_config` in
+`src/ask.rs`). A copy that fails verification sends nothing and the answer
+says so.
+
 The exam reads only a deck's frozen sources, through the verified load
 above, and pastes each topic's copies into that topic's prompt; it never reads
 `exam:` entries, `cite:` roots or cited text, and a copy that is not UTF-8

@@ -350,7 +350,7 @@ fn question_context(
             }
             p.push('\n');
         }
-        TutorSources::Pasted(texts) => {
+        TutorSources::Pasted(texts) if first => {
             p.push_str(
                 "The deck's frozen sources for this card's topic, the primary grounding for \
                  your answer:\n",
@@ -2532,6 +2532,36 @@ mod tests {
                     "unbound line {n} is never sent: {sent}"
                 );
             }
+        }
+
+        #[test]
+        fn a_session_backend_that_pastes_does_not_repaste_on_a_resumed_turn() {
+            let outer = tempfile::tempdir().unwrap();
+            let unnameable = outer.path().join("p(aren)");
+            std::fs::create_dir(&unnameable).unwrap();
+            let w = Workspace::new_in(&unnameable);
+            w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+            w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+            let (card, topic, sources) = sourced_card(&w, "q1");
+            let cfg = backend(BackendKind::Claude, Path::new("/bin/false"));
+            let tutor = tutor_sources_for(&card, topic.as_deref(), Some(&sources), &cfg);
+            assert!(
+                matches!(tutor, TutorSources::Pasted(_)),
+                "precondition: claude on an unnameable folder pastes: {tutor:?} at {}",
+                sources.dir.display()
+            );
+            let context = context(&tutor);
+            let opening = question_prompt(&card, Audience::Adult, &context, "why?", true);
+            assert_eq!(
+                1,
+                opening.matches("fn alpha_bytes() {}").count(),
+                "the session's first turn pastes the topic once: {opening}"
+            );
+            let resumed = question_prompt(&card, Audience::Adult, &context, "and?", false);
+            assert!(
+                !resumed.contains("fn alpha_bytes() {}"),
+                "a resumed claude turn pastes the topic again into the kept session: {resumed}"
+            );
         }
 
         #[test]

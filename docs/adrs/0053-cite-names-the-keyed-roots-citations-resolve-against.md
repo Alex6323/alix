@@ -14,9 +14,9 @@
 - Evidence: fn a_transfer_is_refused_for_every_exam_entry_that_resolves_differently_in_the_destination in src/cite.rs
 - Recorded: 2026-10-17
 - Retrospective: No
-- Amended by: 0064 (rule 15's clause that a card without a local locator
-  browses the deck's only local root, replaced by 0064 rule 13: such a card
-  browses no root)
+- Amended by: 0064 (rule 15's sole-root clause: a card without a local
+  locator browses the deck's only local root; 0064 rule 13 replaces it, and
+  such a card browses no `cite:` root, while the rest of rule 15 still binds)
 - Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
 
 ## Context

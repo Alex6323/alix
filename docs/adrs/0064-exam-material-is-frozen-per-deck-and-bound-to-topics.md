@@ -307,7 +307,11 @@ one command-line argument; on a Linux host with 4096-byte pages, a
     topic's ranges as its focus. On one that is not
     confined, it receives the card's topic's bound lines in the prompt when
     they fit the backend's limit (rule 10), and otherwise answers from
-    the card alone with one visible line saying so.
+    the card alone with one visible line saying so. With `source_access`
+    on, the tutor still browses the root of a card's first local `cite:`
+    locator (ADR 0053 rule 15), except when it browses `sources/<deck-id>/`,
+    which is then its only folder; a card without a local locator browses
+    no `cite:` root.
 
 ### Content names
 
@@ -403,8 +407,10 @@ This record replaces, once accepted:
   live sources; the whole "One source concept" section (deck and
   workspace material keys, examination and `has_exam`);
 - in ADR 0053: rule 1's `exam:` key and the tutor listing `exam:` entries;
-  rule 14 (the exam reads `exam:`); rule 15 (the tutor browses a `cite:`
-  root, replaced by rule 13 here); rule 16's facts-deck `exam:` input; rule
+  rule 14 (the exam reads `exam:`); rule 15's sole-root clause (a card
+  without a local locator browses the deck's only local root; rule 13 here
+  replaces it, and such a card browses no `cite:` root, while the rest of
+  rule 15 still binds); rule 16's facts-deck `exam:` input; rule
   17's `exam:` condition on transfer; and the Security clause on local
   `exam:` entries;
 - in ADR 0063: the card-level `CardState.exam_result` and the section
@@ -414,8 +420,9 @@ This record replaces, once accepted:
 
 ADR 0026 and ADR 0053 gain an `Amended by: 0064` line naming these clauses
 when this record is accepted, and ADR 0053's Evidence markers for replaced
-behavior (the exam reading only `exam:` entries, the tutor browsing a
-`cite:` root, transfer refusing on `exam:` entries) are replaced then. ADR
+behavior (the exam reading only `exam:` entries, the tutor browsing the
+deck's only local root, transfer refusing on `exam:` entries) are replaced
+then. ADR
 0063 already carries its line and lost its `exam_result` marker, since the
 field left the code first.
 

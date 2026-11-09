@@ -157,6 +157,7 @@ pub(super) struct Ask {
     pub(super) draft: Option<ask::DraftCard>,
     pub(super) context_warning: Option<String>,
     visible_line: Option<String>,
+    session_paste: Option<Vec<crate::sources::SourceText>>,
 }
 
 impl Ask {
@@ -171,6 +172,7 @@ impl Ask {
             draft: None,
             context_warning: None,
             visible_line: None,
+            session_paste: None,
         }
     }
 
@@ -261,6 +263,14 @@ impl Ask {
             .visible_line()
             .filter(|_| self.transcript.is_empty())
             .map(str::to_string);
+        if let (ask::TutorSources::Pasted(texts), AskAction::Question(_)) =
+            (context.sources, &action)
+        {
+            if self.cli.started && self.session_paste.as_ref() != Some(texts) {
+                self.cli = CliSession::new();
+            }
+            self.session_paste = Some(texts.clone());
+        }
         let run_cfg = ask::tutor_run_config(cfg, context);
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
         let keeps_session = crate::backend::backend_for(&run_cfg)
@@ -2007,6 +2017,83 @@ mod tests {
         card.token = Some(std::sync::Arc::from("card-augmentation"));
         card.deck_id = std::sync::Arc::from("deck-augmentation");
         card
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_kept_session_gets_each_topics_pasted_sources_once_across_a_topic_switch() {
+        use crate::sources::testkit::{TOPIC_A, TOPIC_B, Workspace};
+
+        let _lock = crate::testutil::exec_lock();
+        let outer = tempfile::tempdir().unwrap();
+        let unnameable = outer.path().join("p(aren)");
+        std::fs::create_dir(&unnameable).unwrap();
+        let w = Workspace::new_in(&unnameable);
+        w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+        w.write_live("b.rs", b"fn beta_bytes() {}\n");
+        w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+        w.add(&["b.rs"], &[TOPIC_B]).unwrap();
+        let deck = crate::deck::Deck::load(w.deck()).unwrap();
+        let topic_ids = deck.topic_ids();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(dir.path(), &["answer"]);
+        let cfg = AskConfig {
+            backend: crate::config::BackendKind::Claude,
+            ..crate::testutil::ask_config(&cli)
+        };
+        let sources = deck.sources().unwrap().unwrap();
+        let mut ask = Ask::new();
+
+        for (turn, front, subject, pasted, absent) in [
+            (1, "q1", "a", Some("alpha_bytes"), "beta_bytes"),
+            (2, "q1", "a", None, "alpha_bytes"),
+            (3, "q3", "b", Some("beta_bytes"), "alpha_bytes"),
+            (4, "q3", "b", None, "beta_bytes"),
+        ] {
+            let card = deck.cards.iter().find(|c| c.front == front).unwrap();
+            let topic = topic_ids[card.topic].clone();
+            let tutor = ask::tutor_sources_for(card, topic.as_deref(), Some(&sources), &cfg);
+            assert!(
+                matches!(tutor, ask::TutorSources::Pasted(_)),
+                "turn {turn}: precondition, claude on an unnameable folder pastes: {tutor:?}"
+            );
+            let context = ask::TutorContext {
+                links: &[],
+                sources: &tutor,
+                root: None,
+                frozen: None,
+            };
+            assert!(
+                ask.start(
+                    &cfg,
+                    Audience::Adult,
+                    card,
+                    Some(subject.to_string()),
+                    &context,
+                    false,
+                    AskAction::Question("why?".to_string()),
+                ),
+                "turn {turn}: the ask starts"
+            );
+            let deadline = Instant::now() + std::time::Duration::from_secs(10);
+            while ask.pending.is_some() && Instant::now() < deadline {
+                let (_, error) = ask.poll(|_, _, _| Ok(()));
+                assert!(error.is_none(), "turn {turn}: {error:?}");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let sent = std::fs::read_to_string(dir.path().join(format!("prompt-{turn}"))).unwrap();
+            if let Some(pasted) = pasted {
+                assert_eq!(
+                    1,
+                    sent.matches(pasted).count(),
+                    "turn {turn}: the topic is pasted once: {sent}"
+                );
+            }
+            assert!(
+                !sent.contains(absent),
+                "turn {turn}: {absent} is not sent: {sent}"
+            );
+        }
     }
 
     #[test]

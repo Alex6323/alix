@@ -26,7 +26,14 @@ pub(crate) struct Workspace {
 
 impl Workspace {
     pub(crate) fn new() -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        Self::at(tempfile::tempdir().unwrap())
+    }
+
+    pub(crate) fn new_in(parent: &Path) -> Self {
+        Self::at(tempfile::tempdir_in(parent).unwrap())
+    }
+
+    fn at(temp: TempDir) -> Self {
         fs::write(temp.path().join("alix.toml"), "").unwrap();
         fs::create_dir_all(temp.path().join("decks")).unwrap();
         fs::create_dir_all(temp.path().join("live")).unwrap();
