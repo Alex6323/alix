@@ -10,7 +10,6 @@ import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
-import 'package:alix_mobile/src/rust/api/review.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/theme.dart';
@@ -82,36 +81,13 @@ void main() {
   });
 
   testWidgets(
-    'picker tree: active root, workspace, mastered, due, and exam markers',
+    'picker tree: active root, workspace, mastered, and due markers',
     (tester) async {
       final root = tempDir('alix-picker-structure-active-');
       writeTestDeck(
         '${root.path}/due.md',
         '---\ntitle: Due\n---\n## q\na\n<!-- id: card-due -->\n',
       );
-      final exam = '${root.path}/exam.md';
-      writeTestDeck(
-        exam,
-        '---\nexam: https://example.com\ntitle: Exam\n---\n## q?\na\n',
-      );
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final t0 = now - 902000;
-      ReviewSession.open(
-        deckPath: exam,
-        rootDir: root.path,
-        nowMs: BigInt.from(t0),
-      ).introduce(nowMs: BigInt.from(t0));
-      ReviewSession.open(
-        deckPath: exam,
-        rootDir: root.path,
-        nowMs: BigInt.from(t0 + 301000),
-      ).grade(grade: Grade.pass, nowMs: BigInt.from(t0 + 301000));
-      ReviewSession.open(
-        deckPath: exam,
-        rootDir: root.path,
-        nowMs: BigInt.from(t0 + 902000),
-      ).grade(grade: Grade.pass, nowMs: BigInt.from(t0 + 902000));
-
       writeTestDeck(
         '${root.path}/mastered.md',
         '---\ntitle: Mastered\n---\n## q\na\n<!-- id: card-mastered -->\n',
@@ -168,10 +144,8 @@ void main() {
     File(
       '${workspace.path}/alix.local.toml',
     ).writeAsStringSync('[review]\ndeadline = "2100-01-05"\n');
-    writeTestDeck(
-      '${decks.path}/base.md',
-      '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
-    );
+    writeTestDeck('${decks.path}/base.md', '---\ntitle: Base\n---\n## q?\na\n');
+    writeTestSources('${decks.path}/base.md');
     writeTestDeck(
       '${decks.path}/mid.md',
       '---\nrequires: base\ntitle: Mid\n---\n## q?\na\n',
@@ -324,10 +298,11 @@ void main() {
     (tester) async {
       final root = tempDir('alix-picker-exam-ahead-');
       final support = tempDir('alix-picker-exam-ahead-support-');
-      writeTestDeck(
-        '${root.path}/exam.md',
-        '---\nexam: https://example.com\ntitle: Remote exam\n---\n## q?\na\n',
-      );
+      Directory('${root.path}/ws/decks').createSync(recursive: true);
+      File('${root.path}/ws/alix.toml').writeAsStringSync('');
+      final deck = '${root.path}/ws/decks/exam.md';
+      writeTestDeck(deck, '---\ntitle: Remote exam\n---\n## q?\na\n');
+      writeTestSources(deck);
       await savePairing(
         const ServerConfig(
           host: '127.0.0.1',
@@ -339,7 +314,7 @@ void main() {
       );
       const generatingExam = RemoteExam(
         phase: 'generating',
-        deck: 'exam.md',
+        deck: 'ws/exam.md',
         strictness: 'balanced',
         questions: [],
         grades: [],
@@ -350,7 +325,7 @@ void main() {
       );
       const answeringExam = RemoteExam(
         phase: 'answering',
-        deck: 'exam.md',
+        deck: 'ws/exam.md',
         strictness: 'balanced',
         questions: ['Why?'],
         grades: [],
@@ -365,6 +340,7 @@ void main() {
       await pumpPicker(
         tester,
         root: root,
+        dir: '${root.path}/ws',
         support: support,
         buildClient: (_) => client,
         pollInterval: const Duration(seconds: 10),
@@ -389,7 +365,7 @@ void main() {
 
       await tester.pump(const Duration(seconds: 10));
       await tester.pump();
-      expect(find.text('Exam ready: exam.md.'), findsOneWidget);
+      expect(find.text('Exam ready: ws/exam.md.'), findsOneWidget);
       final pollsWhenReady = client.examGetCalls;
       await tester.pump(const Duration(seconds: 30));
       expect(

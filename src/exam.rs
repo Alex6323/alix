@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
     sync::mpsc::{Receiver, TryRecvError, channel},
 };
@@ -7,19 +7,22 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-pub use crate::exam_status::{
-    ExamFilter, ExamScope, ExamStatus, ExamTopic, TOPIC_NUDGE_CARDS, TopicStatus, TopicTally,
-    exam_status, exam_topics, oversized_topics,
-};
 use crate::{
     ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
-    deck::{self, Deck, ExamLayers},
+    deck::{self, Deck},
+    exam_ideas::{Idea, IdeaTopic, IdeasDocument},
+    sources::DeckSources,
     store::Store,
     workspace,
 };
-
-const MAX_SOURCE_BYTES: usize = 100_000;
+pub use crate::{
+    exam_status::{
+        ExamFilter, ExamScope, ExamStatus, ExamTopic, TOPIC_NUDGE_CARDS, TopicStatus, TopicTally,
+        exam_status, exam_topics, examined_topics, oversized_topics,
+    },
+    sources::SourceText,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExamQuestion {
@@ -34,7 +37,13 @@ pub struct ExamQuestion {
 #[derive(Debug)]
 pub struct Generated {
     pub questions: Vec<ExamQuestion>,
-    pub ideas: crate::exam_ideas::IdeasDocument,
+    pub ideas: IdeasDocument,
+}
+
+#[derive(Debug)]
+pub struct GeneratedTopic {
+    pub ideas: Vec<Idea>,
+    pub questions: Vec<ExamQuestion>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
@@ -149,24 +158,18 @@ pub fn generate_questions(
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<Vec<ExamQuestion>> {
-    let sources = examination_sources(deck);
-    if sources.is_empty() {
-        bail!("the deck and its workspace declare no `exam:` to examine against");
-    }
-    if let Some(error) = source_boundary_error(deck) {
-        bail!("{error}");
-    }
-    let root = workspace::content_root(&deck.path);
-    generate_questions_from(
+    let sources = deck
+        .sources()?
+        .context("the deck declares no sources to examine against")?;
+    let mut ideas = IdeasDocument::default();
+    generate_topics(
+        &examined_topics(deck),
         &sources,
-        Some(&root),
-        &exam_topics(deck),
-        None,
+        &mut ideas,
         cfg,
         ask_cfg,
         &ask::AskJob::default(),
     )
-    .map(|generated| generated.questions)
 }
 
 /// Questions written ahead of a sitting, with the answers given so far.
@@ -175,17 +178,23 @@ pub fn generate_questions(
 pub struct Prepared {
     pub version: u32,
     pub generated_at_ms: u64,
-    pub model: Option<String>,
-    pub effort: Option<String>,
-    pub material: String,
+    pub topics: BTreeMap<String, PreparedTopic>,
     pub questions: Vec<PreparedQuestion>,
     pub answers: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct PreparedTopic {
+    pub fingerprint: String,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct PreparedQuestion {
-    pub heading: String,
+    pub topic: String,
     pub idea: usize,
     pub prompt: String,
     pub points: Vec<String>,
@@ -193,33 +202,31 @@ pub struct PreparedQuestion {
     pub mental_model: String,
 }
 
-impl Prepared {
-    pub fn new(generated: &Generated, topics: &[ExamTopic], run: &AskConfig, now_ms: u64) -> Self {
-        let questions: Vec<PreparedQuestion> = generated
-            .questions
-            .iter()
-            .filter_map(|q| {
-                Some(PreparedQuestion {
-                    heading: topics.get(q.topic)?.label.clone(),
-                    idea: q.idea,
-                    prompt: q.prompt.clone(),
-                    points: q.points.clone(),
-                    shape: q.shape,
-                    mental_model: q.mental_model.clone(),
-                })
-            })
-            .collect();
-        Self {
-            version: 1,
-            generated_at_ms: now_ms,
-            model: run.model.clone(),
-            effort: run.effort.clone(),
-            material: generated.ideas.material.clone(),
-            answers: vec![String::new(); questions.len()],
-            questions,
-        }
+impl PreparedQuestion {
+    fn of(question: &ExamQuestion, topics: &[ExamTopic]) -> Option<Self> {
+        Some(Self {
+            topic: topics.get(question.topic)?.topic_id.clone(),
+            idea: question.idea,
+            prompt: question.prompt.clone(),
+            points: question.points.clone(),
+            shape: question.shape,
+            mental_model: question.mental_model.clone(),
+        })
     }
 
+    fn at(&self, topic: usize) -> ExamQuestion {
+        ExamQuestion {
+            prompt: self.prompt.clone(),
+            points: self.points.clone(),
+            topic,
+            shape: self.shape,
+            mental_model: self.mental_model.clone(),
+            idea: self.idea,
+        }
+    }
+}
+
+impl Prepared {
     pub fn load(path: &Path) -> Result<Option<Self>> {
         match std::fs::read_to_string(path) {
             Ok(text) => {
@@ -250,58 +257,48 @@ impl Prepared {
         Self {
             questions: questions
                 .iter()
-                .filter_map(|q| {
-                    Some(PreparedQuestion {
-                        heading: topics.get(q.topic)?.label.clone(),
-                        idea: q.idea,
-                        prompt: q.prompt.clone(),
-                        points: q.points.clone(),
-                        shape: q.shape,
-                        mental_model: q.mental_model.clone(),
-                    })
-                })
+                .filter_map(|q| PreparedQuestion::of(q, topics))
                 .collect(),
             answers: answers.to_vec(),
             ..self.clone()
         }
     }
 
-    /// The deck's current topics this exam still covers, and its questions
-    /// and answers re-indexed onto them; a question whose heading is gone is
-    /// dropped.
+    fn fresh(&self, topic_id: &str, fingerprints: &BTreeMap<String, String>) -> bool {
+        self.topics
+            .get(topic_id)
+            .zip(fingerprints.get(topic_id))
+            .is_some_and(|(prepared, current)| prepared.fingerprint == *current)
+    }
+
+    /// Whether every question was written from the deck's current sources
+    /// for a topic it still has.
+    pub fn is_current(&self, deck: &Deck) -> bool {
+        !self.questions.is_empty() && self.against(deck).1.len() == self.questions.len()
+    }
+
+    /// The deck's sourced topics this exam still covers, and its questions
+    /// and answers re-indexed onto them; a question whose topic is gone or
+    /// whose sources changed is dropped.
     pub fn against(&self, deck: &Deck) -> (Vec<ExamTopic>, Vec<ExamQuestion>, Vec<String>) {
-        let current = exam_topics(deck);
-        let topics: Vec<ExamTopic> = current
+        let fingerprints = deck.declared().fingerprints();
+        let topics: Vec<ExamTopic> = examined_topics(deck)
             .into_iter()
-            .filter(|s| self.questions.iter().any(|q| q.heading == s.label))
+            .filter(|topic| {
+                self.fresh(&topic.topic_id, &fingerprints)
+                    && self.questions.iter().any(|q| q.topic == topic.topic_id)
+            })
             .collect();
         let mut questions = Vec::new();
         let mut answers = Vec::new();
         for (q, answer) in self.questions.iter().zip(&self.answers) {
-            if let Some(at) = topics.iter().position(|s| s.label == q.heading) {
-                questions.push(ExamQuestion {
-                    prompt: q.prompt.clone(),
-                    points: q.points.clone(),
-                    topic: at,
-                    shape: q.shape,
-                    mental_model: q.mental_model.clone(),
-                    idea: q.idea,
-                });
+            if let Some(at) = topics.iter().position(|t| t.topic_id == q.topic) {
+                questions.push(q.at(at));
                 answers.push(answer.clone());
             }
         }
         (topics, questions, answers)
     }
-}
-
-/// The fingerprint of the exam material as the generator reads it; a prepared
-/// exam over a different fingerprint is stale.
-pub fn material_fingerprint(deck: &Deck) -> Result<String> {
-    let root = workspace::content_root(&deck.path);
-    Ok(crate::exam_ideas::material_fingerprint(&source_section(
-        &examination_sources(deck),
-        Some(&root),
-    )?))
 }
 
 pub fn open_for_exam(path: &Path) -> Result<Deck> {
@@ -311,12 +308,6 @@ pub fn open_for_exam(path: &Path) -> Result<Deck> {
     Ok(deck)
 }
 
-/// Both layers, told apart (ADR 0026): the deck's own sources are the primary
-/// grounding, the workspace source is supporting context, never shadowed.
-fn examination_sources(deck: &Deck) -> ExamLayers {
-    deck.exam_layers()
-}
-
 fn source_boundary_error(deck: &Deck) -> Option<String> {
     (workspace::root_for_deck(&deck.path).is_some() && deck.deck_token.is_some())
         .then(|| crate::assets::validate_member(deck).err())
@@ -324,77 +315,94 @@ fn source_boundary_error(deck: &Deck) -> Option<String> {
         .map(|error| format!("{error:#}"))
 }
 
-pub fn ensure_backend_can_examine(deck: &Deck, ask_cfg: &AskConfig) -> Result<()> {
-    let sources = examination_sources(deck);
-    for source in sources.own.iter().chain(&sources.workspace) {
-        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
-    }
-    Ok(())
+/// The shared findings text when a topic id of this deck is on two topics;
+/// nothing attaches to such an id, so nothing is examined.
+pub fn duplicated_topic_error(deck: &Deck) -> Option<String> {
+    let root = workspace::root_for_deck(&deck.path);
+    let findings = crate::topic::duplicated_topics(deck, root.as_deref());
+    (!findings.is_empty()).then(|| {
+        findings
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
 }
 
-pub(crate) fn generate_questions_from(
-    sources: &ExamLayers,
-    base: Option<&Path>,
-    topics: &[ExamTopic],
-    ideas: Option<crate::exam_ideas::IdeasDocument>,
+pub fn generate_topic(
+    topic: &ExamTopic,
+    sources: &[SourceText],
+    ideas: Option<&IdeaTopic>,
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
     job: &ask::AskJob,
-) -> Result<Generated> {
-    for source in sources.own.iter().chain(&sources.workspace) {
-        crate::backend::ensure_source_reachable(ask_cfg, deck::is_url(source))?;
-    }
-    if topics.is_empty() {
-        bail!("the deck has no cards to examine");
-    }
+) -> Result<GeneratedTopic> {
     let run = run_config(cfg, ask_cfg);
-    let material = crate::exam_ideas::material_fingerprint(&source_section(sources, base)?);
-    let mut doc = crate::exam_ideas::IdeasDocument::for_material(ideas, &material);
-    let headings: Vec<&str> = topics.iter().map(|s| s.label.as_str()).collect();
-    let missing = doc.missing_headings(&headings);
-    if !missing.is_empty() {
-        let unlisted: Vec<ExamTopic> = topics
-            .iter()
-            .filter(|s| missing.contains(&s.label.as_str()))
-            .cloned()
-            .collect();
-        let listed = with_one_retry(
+    let listed: Vec<Idea> = match ideas.filter(|known| !known.ideas.is_empty()) {
+        Some(known) => known.ideas.clone(),
+        None => with_one_retry(
             job,
             &run,
-            &models_prompt(sources, base, &unlisted, cfg)?,
-            |raw| checked_models(unlisted.len(), raw),
-            "the listed models",
-        )?;
-        for (topic, ideas) in unlisted.iter().zip(listed) {
-            doc.set_topic(&topic.label, ideas);
-        }
-    }
-    let chosen: Vec<Vec<usize>> = headings.iter().map(|h| doc.select(h)).collect();
-    let chosen_text: Vec<Vec<String>> = headings
-        .iter()
-        .zip(&chosen)
-        .map(|(heading, picks)| {
-            let topic = doc.topic(heading);
-            picks
-                .iter()
-                .filter_map(|&at| topic.and_then(|s| s.ideas.get(at)).map(|i| i.text.clone()))
-                .collect()
+            &ideas_prompt(topic, sources, cfg),
+            checked_ideas,
+            "the listed ideas",
+        )?
+        .into_iter()
+        .map(|text| Idea {
+            text,
+            ..Idea::default()
         })
-        .collect();
+        .collect(),
+    };
+    let chosen = crate::exam_ideas::select_ideas(&listed);
+    let chosen_text: Vec<String> = chosen.iter().map(|&at| listed[at].text.clone()).collect();
     let mut questions = with_one_retry(
         job,
         &run,
-        &questions_prompt(sources, base, topics, &chosen_text, cfg)?,
+        &questions_prompt(topic, sources, &chosen_text, cfg),
         |raw| checked_questions(&chosen_text, raw),
         "the generated questions",
     )?;
     for question in &mut questions {
-        question.idea = chosen[question.topic][question.idea];
+        question.idea = chosen[question.idea];
     }
-    Ok(Generated {
+    Ok(GeneratedTopic {
+        ideas: listed,
         questions,
-        ideas: doc,
     })
+}
+
+/// One call per topic (two when its ideas are listed first); each question's
+/// `topic` indexes `topics`.
+pub fn generate_topics(
+    topics: &[ExamTopic],
+    sources: &DeckSources,
+    ideas: &mut IdeasDocument,
+    cfg: &ExamConfig,
+    ask_cfg: &AskConfig,
+    job: &ask::AskJob,
+) -> Result<Vec<ExamQuestion>> {
+    let fingerprints = sources.manifest.fingerprints()?;
+    let mut questions = Vec::new();
+    for (at, topic) in topics.iter().enumerate() {
+        let Some(fingerprint) = fingerprints.get(&topic.topic_id) else {
+            bail!("topic `{}` has no sources to examine against", topic.label);
+        };
+        let texts = sources.texts_of(&topic.topic_id)?;
+        let entry = ideas.for_topic(&topic.topic_id, fingerprint);
+        let generated = generate_topic(topic, &texts, Some(&*entry), cfg, ask_cfg, job)?;
+        entry.ideas = generated.ideas;
+        questions.extend(
+            generated
+                .questions
+                .into_iter()
+                .map(|question| ExamQuestion {
+                    topic: at,
+                    ..question
+                }),
+        );
+    }
+    Ok(questions)
 }
 
 fn with_one_retry<T>(
@@ -418,44 +426,28 @@ fn with_one_retry<T>(
     }
 }
 
-pub(crate) fn checked_models(
-    topic_count: usize,
-    raw: &str,
-) -> std::result::Result<Vec<Vec<String>>, String> {
-    let dto: ModelsDto =
+pub(crate) fn checked_ideas(raw: &str) -> std::result::Result<Vec<String>, String> {
+    let dto: IdeasDto =
         parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
-    let mut models: Vec<Vec<String>> = vec![Vec::new(); topic_count];
-    for listed in dto.topics {
-        let Some(slot) = listed
-            .topic
-            .checked_sub(1)
-            .and_then(|at| models.get_mut(at))
-        else {
-            return Err(format!(
-                "it lists models for topic {}, but there are {topic_count} topics",
-                listed.topic
-            ));
-        };
-        for model in listed.models.iter().map(|model| model.trim()) {
-            if !model.is_empty() && !slot.iter().any(|known| known == model) {
-                slot.push(model.to_string());
-            }
+    let mut ideas: Vec<String> = Vec::new();
+    for idea in dto.ideas.iter().map(|idea| idea.trim()) {
+        if !idea.is_empty() && !ideas.iter().any(|known| known == idea) {
+            ideas.push(idea.to_string());
         }
     }
-    if let Some(at) = models.iter().position(Vec::is_empty) {
-        return Err(format!("topic {} lists no mental model", at + 1));
+    if ideas.is_empty() {
+        return Err("it lists no idea".to_string());
     }
-    Ok(models)
+    Ok(ideas)
 }
 
 pub(crate) fn checked_questions(
-    models: &[Vec<String>],
+    ideas: &[String],
     raw: &str,
 ) -> std::result::Result<Vec<ExamQuestion>, String> {
     let dto: QuestionsDto =
         parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
-    let topic_count = models.len();
-    let mut covered: Vec<Vec<bool>> = models.iter().map(|m| vec![false; m.len()]).collect();
+    let mut covered = vec![false; ideas.len()];
     let mut questions = Vec::new();
     for generated in dto.questions {
         if generated.prompt.trim().is_empty()
@@ -464,53 +456,35 @@ pub(crate) fn checked_questions(
         {
             return Err("a question has an empty prompt or no key points".to_string());
         }
-        let Some(at) = generated
-            .topic
-            .checked_sub(1)
-            .filter(|at| *at < topic_count)
-        else {
-            return Err(format!(
-                "a question names topic {}, but there are {topic_count} topics",
-                generated.topic
-            ));
-        };
         let Some(which) = generated
             .idea
             .checked_sub(1)
-            .filter(|which| *which < models[at].len())
+            .filter(|which| *which < ideas.len())
         else {
             return Err(format!(
-                "a question in topic {} names idea {}, but that topic lists {}",
-                at + 1,
+                "a question names idea {}, but the topic lists {}",
                 generated.idea,
-                models[at].len()
+                ideas.len()
             ));
         };
-        if covered[at][which] {
-            return Err(format!(
-                "topic {} asks idea {} more than once",
-                at + 1,
-                which + 1
-            ));
+        if covered[which] {
+            return Err(format!("idea {} is asked more than once", which + 1));
         }
-        covered[at][which] = true;
+        covered[which] = true;
         questions.push(ExamQuestion {
             prompt: generated.prompt,
             points: generated.points,
-            topic: at,
+            topic: 0,
             shape: generated.shape,
-            mental_model: models[at][which].clone(),
+            mental_model: ideas[which].clone(),
             idea: which,
         });
     }
-    for (at, topic) in covered.iter().enumerate() {
-        if let Some(which) = topic.iter().position(|done| !done) {
-            return Err(format!(
-                "topic {} lists the idea `{}` but asks no question about it",
-                at + 1,
-                models[at][which]
-            ));
-        }
+    if let Some(which) = covered.iter().position(|done| !done) {
+        return Err(format!(
+            "the idea `{}` is listed but no question asks about it",
+            ideas[which]
+        ));
     }
     Ok(questions)
 }
@@ -565,10 +539,9 @@ pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig)
 static GENERATION_SPAWNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub fn spawn_generation(
-    sources: ExamLayers,
-    base: Option<PathBuf>,
     topics: Vec<ExamTopic>,
-    ideas: Option<crate::exam_ideas::IdeasDocument>,
+    sources: DeckSources,
+    ideas: Option<IdeasDocument>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
 ) -> (Receiver<Result<Generated, String>>, ask::AskJob) {
@@ -578,16 +551,10 @@ pub fn spawn_generation(
     let job = ask::AskJob::default();
     let worker = job.clone();
     std::thread::spawn(move || {
-        let r = generate_questions_from(
-            &sources,
-            base.as_deref(),
-            &topics,
-            ideas,
-            &cfg,
-            &ask_cfg,
-            &worker,
-        )
-        .map_err(|e| format!("{e:#}"));
+        let mut ideas = ideas.unwrap_or_default();
+        let r = generate_topics(&topics, &sources, &mut ideas, &cfg, &ask_cfg, &worker)
+            .map(|questions| Generated { questions, ideas })
+            .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
     (rx, job)
@@ -600,9 +567,18 @@ pub fn exam_files(deck: &Deck) -> Option<(PathBuf, PathBuf)> {
     Some((files.exam_ideas_for(token), files.exam_prepared_for(token)))
 }
 
+/// Whether the deck holds a prepared exam written from its current sources.
+pub fn has_current_prepared(deck: &Deck) -> bool {
+    exam_files(deck)
+        .and_then(|(_, path)| Prepared::load(&path).ok().flatten())
+        .is_some_and(|prepared| prepared.is_current(deck))
+}
+
 /// Writes a deck's questions ahead of its sitting, in the background: the
 /// prepared exam and the updated idea list land in the deck's store before
-/// the receiver reports, so a learner who left still finds them.
+/// the receiver reports, so a learner who left still finds them. Questions of
+/// an earlier prepared exam whose topic is still asked over the same sources
+/// are kept with their answers; every other topic is written afresh.
 pub fn spawn_prepare(
     deck: &Deck,
     topics: Vec<ExamTopic>,
@@ -611,27 +587,83 @@ pub fn spawn_prepare(
 ) -> (Receiver<Result<(), String>>, ask::AskJob) {
     let (tx, rx) = channel();
     let job = ask::AskJob::default();
+    if let Some(error) = duplicated_topic_error(deck) {
+        let _ = tx.send(Err(error));
+        return (rx, job);
+    }
     let worker = job.clone();
-    let sources = examination_sources(deck);
-    let base = workspace::content_root(&deck.path);
+    let root = workspace::root_for_deck(&deck.path);
+    let deck_id = deck.deck_token.clone();
     let files = exam_files(deck);
     std::thread::spawn(move || {
         let r = (|| -> Result<()> {
             let (ideas_path, prepared_path) =
                 files.context("the deck has no id to keep its exam under")?;
-            let ideas = crate::exam_ideas::IdeasDocument::load(&ideas_path)?;
-            let generated = generate_questions_from(
-                &sources,
-                Some(&base),
-                &topics,
-                ideas,
-                &cfg,
-                &ask_cfg,
-                &worker,
-            )?;
-            generated.ideas.save(&ideas_path)?;
+            let sources = match (root, deck_id) {
+                (Some(root), Some(deck_id)) => crate::sources::load_verified(&root, &deck_id)?,
+                _ => None,
+            }
+            .context("the deck declares no sources to examine against")?;
+            let fingerprints = sources.manifest.fingerprints()?;
+            let mut ideas = IdeasDocument::load(&ideas_path)?.unwrap_or_default();
+            let earlier = Prepared::load(&prepared_path).ok().flatten();
+            let kept = |topic: &ExamTopic| {
+                earlier.as_ref().is_some_and(|prepared| {
+                    prepared.fresh(&topic.topic_id, &fingerprints)
+                        && prepared.questions.iter().any(|q| q.topic == topic.topic_id)
+                })
+            };
+            let stale: Vec<ExamTopic> = topics.iter().filter(|t| !kept(t)).cloned().collect();
+            let written = generate_topics(&stale, &sources, &mut ideas, &cfg, &ask_cfg, &worker)?;
+            ideas.save(&ideas_path)?;
             let run = run_config(&cfg, &ask_cfg);
-            Prepared::new(&generated, &topics, &run, crate::time::now_ms()).save(&prepared_path)
+            let mut prepared = Prepared {
+                version: 1,
+                generated_at_ms: crate::time::now_ms(),
+                topics: BTreeMap::new(),
+                questions: Vec::new(),
+                answers: Vec::new(),
+            };
+            for topic in &topics {
+                let (questions, answers, entry): (Vec<PreparedQuestion>, Vec<String>, _) =
+                    match earlier.as_ref().filter(|_| kept(topic)) {
+                        Some(earlier) => {
+                            let (questions, answers) = earlier
+                                .questions
+                                .iter()
+                                .zip(&earlier.answers)
+                                .filter(|(q, _)| q.topic == topic.topic_id)
+                                .map(|(q, a)| (q.clone(), a.clone()))
+                                .unzip();
+                            (questions, answers, earlier.topics[&topic.topic_id].clone())
+                        }
+                        None => {
+                            let at = stale
+                                .iter()
+                                .position(|t| t.topic_id == topic.topic_id)
+                                .context("a topic to write was skipped")?;
+                            let questions: Vec<PreparedQuestion> = written
+                                .iter()
+                                .filter(|q| q.topic == at)
+                                .filter_map(|q| PreparedQuestion::of(q, &stale))
+                                .collect();
+                            let answers = vec![String::new(); questions.len()];
+                            let entry = PreparedTopic {
+                                fingerprint: fingerprints
+                                    .get(&topic.topic_id)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                                model: run.model.clone(),
+                                effort: run.effort.clone(),
+                            };
+                            (questions, answers, entry)
+                        }
+                    };
+                prepared.topics.insert(topic.topic_id.clone(), entry);
+                prepared.questions.extend(questions);
+                prepared.answers.extend(answers);
+            }
+            prepared.save(&prepared_path)
         })()
         .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
@@ -710,7 +742,7 @@ pub struct Sitting {
     topics: Vec<ExamTopic>,
     deck_topics: Vec<ExamTopic>,
     unlocked: bool,
-    ideas: Option<crate::exam_ideas::IdeasDocument>,
+    ideas: Option<IdeasDocument>,
     locked: Vec<bool>,
     job: ask::AskJob,
 }
@@ -750,27 +782,70 @@ impl Sitting {
     }
 
     pub fn start(deck: &Deck, strictness: Strictness, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
-        Self::start_with(deck, exam_topics(deck), None, strictness, cfg, ask_cfg)
+        match deck.sources() {
+            Ok(Some(sources)) => Self::start_with(
+                deck,
+                examined_topics(deck),
+                sources,
+                None,
+                strictness,
+                cfg,
+                ask_cfg,
+            ),
+            Ok(None) => Self::refused(
+                deck,
+                "the deck declares no sources to examine against".to_string(),
+                strictness,
+                cfg,
+                ask_cfg,
+            ),
+            Err(error) => Self::refused(deck, format!("{error}"), strictness, cfg, ask_cfg),
+        }
     }
 
-    pub fn start_with(
+    fn refused(
         deck: &Deck,
-        topics: Vec<ExamTopic>,
-        ideas: Option<crate::exam_ideas::IdeasDocument>,
+        error: String,
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
     ) -> Self {
-        let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
-        sitting.error = source_boundary_error(deck);
-        if sitting.error.is_some() {
-            sitting.phase = Phase::Results;
-            return sitting;
+        let mut sitting = Self::idle(deck, Vec::new(), strictness, cfg, ask_cfg);
+        sitting.error = Some(error);
+        sitting.phase = Phase::Results;
+        sitting
+    }
+
+    /// A sitting over `topics`, written from `sources`: only topics the
+    /// sources bind are sent to the model.
+    pub fn start_with(
+        deck: &Deck,
+        topics: Vec<ExamTopic>,
+        sources: DeckSources,
+        ideas: Option<IdeasDocument>,
+        strictness: Strictness,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Self {
+        let sourced = sources.sourced_topics();
+        let topics: Vec<ExamTopic> = topics
+            .into_iter()
+            .filter(|topic| sourced.contains(&topic.topic_id))
+            .collect();
+        let refusal = duplicated_topic_error(deck)
+            .or_else(|| source_boundary_error(deck))
+            .or_else(|| {
+                topics
+                    .is_empty()
+                    .then(|| "the deck has no topic with sources to examine".to_string())
+            });
+        if let Some(error) = refusal {
+            return Self::refused(deck, error, strictness, cfg, ask_cfg);
         }
+        let mut sitting = Self::idle(deck, topics, strictness, cfg, ask_cfg);
         let (rx, job) = spawn_generation(
-            examination_sources(deck),
-            Some(workspace::content_root(&deck.path)),
             sitting.topics.clone(),
+            sources,
             ideas,
             sitting.cfg.clone(),
             sitting.ask_cfg.clone(),
@@ -807,7 +882,7 @@ impl Sitting {
             pending_since: None,
             remediated_count: None,
             topics,
-            deck_topics: exam_topics(deck),
+            deck_topics: examined_topics(deck),
             unlocked: false,
             ideas: None,
             locked: Vec::new(),
@@ -969,7 +1044,7 @@ impl Sitting {
             .zip(&result.grades)
             .filter_map(|(question, grade)| {
                 Some(crate::exam_ideas::AskedIdea {
-                    heading: self.topics.get(question.topic)?.label.clone(),
+                    topic: self.topics.get(question.topic)?.topic_id.clone(),
                     idea: question.idea,
                     passed: grade.verdict == Verdict::Pass,
                 })
@@ -1159,12 +1234,6 @@ pub(crate) fn run_config(cfg: &ExamConfig, ask_cfg: &AskConfig) -> AskConfig {
     }
 }
 
-#[derive(Default)]
-struct LayerSection {
-    urls: Vec<String>,
-    files: Vec<(String, String)>,
-}
-
 pub fn unreadable_exam_entries(deck: &Deck) -> Vec<(String, String)> {
     let root = workspace::content_root(&deck.path);
     deck.exam
@@ -1172,156 +1241,61 @@ pub fn unreadable_exam_entries(deck: &Deck) -> Vec<(String, String)> {
         .filter(|src| !deck::is_url(src))
         .filter_map(|src| {
             let path = crate::source::source_path(src, Some(&root))?;
-            read_exam_file(&path)
+            std::fs::read_to_string(&path)
+                .with_context(|| format!("cannot read `exam:` {}", path.display()))
                 .err()
                 .map(|error| (src.trim().to_string(), format!("{error:#}")))
         })
         .collect()
 }
 
-fn read_exam_file(path: &Path) -> Result<String> {
-    std::fs::read_to_string(path).with_context(|| format!("cannot read `exam:` {}", path.display()))
-}
-
-fn split_layer(sources: &[String], base: Option<&Path>) -> Result<LayerSection> {
-    let mut urls = Vec::new();
-    let mut files = Vec::new();
-    for src in sources {
-        if deck::is_url(src) {
-            urls.push(src.clone());
-            continue;
-        }
-        let Some(path) = crate::source::source_path(src, base) else {
-            continue;
-        };
-        let text = read_exam_file(&path)?;
-        let declared = src.trim();
-        let label = if Path::new(declared).has_root() {
-            path.file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| declared.to_string())
-        } else {
-            declared.to_string()
-        };
-        let (truncated_text, was_truncated) = truncate(&text);
-        if was_truncated {
-            eprintln!(
-                "note: `{}` is larger than {} KB and was truncated for the exam prompt",
-                label,
-                MAX_SOURCE_BYTES / 1_000
-            );
-        }
-        files.push((label, truncated_text));
-    }
-    Ok(LayerSection { urls, files })
-}
-
-fn source_section(sources: &ExamLayers, base: Option<&Path>) -> Result<String> {
-    let own = split_layer(&sources.own, base)?;
-    let workspace = split_layer(&sources.workspace, base)?;
-    if own.urls.is_empty()
-        && own.files.is_empty()
-        && workspace.urls.is_empty()
-        && workspace.files.is_empty()
-    {
-        bail!("none of the declared `exam:` paths could be read to examine against");
-    }
-
+fn source_section(sources: &[SourceText]) -> String {
     let mut out = String::new();
-    if !own.urls.is_empty() {
-        out.push_str(
-            "Read these source pages with the WebFetch tool (fetch each once); \
-             they are the deck's own sources, the primary grounding for this exam:\n",
-        );
-        for url in &own.urls {
-            out.push_str("  - ");
-            out.push_str(url);
+    for source in sources {
+        out.push_str(&format!("\nSource `{}`:\n<<<SOURCE\n", source.display));
+        out.push_str(&source.text);
+        if !source.text.ends_with('\n') {
             out.push('\n');
         }
+        out.push_str("SOURCE\n");
     }
-    if !workspace.urls.is_empty() {
-        out.push_str(
-            "Also read these workspace source pages (supporting context, \
-             not the primary grounding):\n",
-        );
-        for url in &workspace.urls {
-            out.push_str("  - ");
-            out.push_str(url);
-            out.push('\n');
-        }
-    }
-    for (label, text) in &own.files {
-        out.push_str(&format!(
-            "\nSource file `{label}` (a deck source, primary grounding for this exam):\n<<<SOURCE\n{text}\nSOURCE\n"
-        ));
-    }
-    for (label, text) in &workspace.files {
-        out.push_str(&format!(
-            "\nWorkspace source file `{label}` (supporting context, not the primary grounding):\n<<<SOURCE\n{text}\nSOURCE\n"
-        ));
-    }
-    Ok(out)
+    out
 }
 
-fn truncate(text: &str) -> (String, bool) {
-    if text.len() <= MAX_SOURCE_BYTES {
-        return (text.to_string(), false);
-    }
-    let end = (0..=MAX_SOURCE_BYTES)
-        .rev()
-        .find(|&end| text.is_char_boundary(end))
-        .unwrap_or_default();
-    (
-        format!("{}\n[... source truncated ...]", &text[..end]),
-        true,
-    )
-}
-
-fn topic_scope(topics: &[ExamTopic]) -> String {
-    let mut scope = String::new();
-    for (i, topic) in topics.iter().enumerate() {
-        scope.push_str(&format!("Topic {}: {}\n", i + 1, topic.label));
-        for line in topic.context.iter().skip(1) {
-            scope.push_str(line);
-            scope.push('\n');
-        }
-        scope.push_str("Cards:\n");
-        for card in &topic.cards {
-            scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
-        }
+fn topic_scope(topic: &ExamTopic) -> String {
+    let mut scope = format!("Topic: {}\n", topic.label);
+    for line in topic.context.iter().skip(1) {
+        scope.push_str(line);
         scope.push('\n');
     }
+    scope.push_str("Cards:\n");
+    for card in &topic.cards {
+        scope.push_str(&format!("- {}\n", card.replace('\n', "\n  ")));
+    }
+    scope.push('\n');
     scope
 }
 
-pub(crate) fn models_prompt(
-    sources: &ExamLayers,
-    base: Option<&Path>,
-    topics: &[ExamTopic],
-    cfg: &ExamConfig,
-) -> Result<String> {
-    let sources = source_section(sources, base)?;
-    let scope = topic_scope(topics);
+pub fn ideas_prompt(topic: &ExamTopic, sources: &[SourceText], cfg: &ExamConfig) -> String {
+    let sources = source_section(sources);
+    let scope = topic_scope(topic);
     let mut prompt = format!(
         "You are preparing an oral exam that verifies a student truly UNDERSTANDS a \
          topic.\n\n\
          {sources}\n\
-         The student drilled a flashcard deck on this material, split into the topics \
-         below. Each topic's heading, with the prose under it when there is any, marks \
-         out its topic. Its cards show only what the student has drilled so far; they do \
-         not mark the edge of the topic.\n\n\
+         The student drilled flashcards on this material. The topic below is marked out \
+         by its heading, with the prose under it when there is any. Its cards show only \
+         what the student has drilled so far; they do not mark the edge of the topic.\n\n\
          {scope}\
-         For EACH topic, in deck order, list its mental models: the distinct ideas a \
-         student must understand to master that topic's topic, as the source above \
-         teaches them. Cover everything the source teaches within that topic, whether or \
-         not a card states it, and leave out what belongs to another topic's topic. \
-         List as many as the topic really holds, at least one; name each model in a \
-         short phrase.\n\n\
+         List the topic's ideas: the distinct ideas a student must understand to master \
+         this topic, as the sources above teach them. Cover everything the sources teach \
+         within the topic, whether or not a card states it. List as many as the topic \
+         really holds, at least one; name each idea in a short phrase.\n\n\
          Output ONLY JSON in exactly this shape, no prose, no code fences:\n\
-         {{\"topics\": [{{\"topic\": 1, \"models\": [\"...\", \"...\"]}}]}}"
+         {{\"ideas\": [\"...\", \"...\"]}}"
     );
     push_extra(&mut prompt, cfg);
-    Ok(prompt)
+    prompt
 }
 
 fn push_extra(prompt: &mut String, cfg: &ExamConfig) {
@@ -1336,57 +1310,48 @@ fn push_extra(prompt: &mut String, cfg: &ExamConfig) {
     }
 }
 
-pub(crate) fn questions_prompt(
-    sources: &ExamLayers,
-    base: Option<&Path>,
-    topics: &[ExamTopic],
-    models: &[Vec<String>],
+pub fn questions_prompt(
+    topic: &ExamTopic,
+    sources: &[SourceText],
+    ideas: &[String],
     cfg: &ExamConfig,
-) -> Result<String> {
-    let sources = source_section(sources, base)?;
-    if topics.is_empty() {
-        bail!("the deck has no cards to examine");
-    }
+) -> String {
+    let sources = source_section(sources);
     let mut scope = String::from(
-        "The student drilled a flashcard deck on this material, split into the \
-         topics below. Its cards are SCOPE ONLY: they show what the deck already \
-         asks. NEVER ask what a card states, and never rephrase a card; test the \
-         mental model behind the topic instead.\n\n",
+        "The student drilled flashcards on this material. The topic's cards are SCOPE \
+         ONLY: they show what the student already drilled. NEVER ask what a card states, \
+         and never rephrase a card; test the mental model behind the topic instead.\n\n",
     );
-    scope.push_str(&topic_scope(topics));
-    scope.push_str("The ideas this exam examines, per topic, numbered:\n");
-    for (i, listed) in models.iter().enumerate() {
-        scope.push_str(&format!("Topic {}:\n", i + 1));
-        for (n, idea) in listed.iter().enumerate() {
-            scope.push_str(&format!("{}. {idea}\n", n + 1));
-        }
+    scope.push_str(&topic_scope(topic));
+    scope.push_str("The ideas this exam examines, numbered:\n");
+    for (n, idea) in ideas.iter().enumerate() {
+        scope.push_str(&format!("{}. {idea}\n", n + 1));
     }
     scope.push('\n');
     let ask = format!(
-        "{scope}For EACH topic, in deck order, write EXACTLY one question for every \
-         idea listed for it, no more. An idea a card states is still examined: ask the \
-         student to apply it, never to recite the card. Across a topic, start with an \
-         instance and then take the three shapes in turn:\n\
-         - instance: a concrete case the source supports but no card shows \
+        "{scope}Write EXACTLY one question for every idea listed, no more. An idea a \
+         card states is still examined: ask the student to apply it, never to recite the \
+         card. Start with an instance and then take the three shapes in turn:\n\
+         - instance: a concrete case the sources support but no card shows \
          (\"given this program, what does the compiler report?\");\n\
          - boundary: when does the topic's idea stop holding, or what changes \
          if a condition flips;\n\
          - fix: a short statement or snippet with exactly one seeded mistake about \
          the topic's idea; the student must find and correct it.\n\
-         Every question must be answerable from the source above and demand \
-         reasoning in the student's own words. Tag every question with its topic's \
-         number, its shape, and the number of the idea it tests within that topic.\n\n"
+         Every question must be answerable from the sources above and demand \
+         reasoning in the student's own words. Tag every question with its shape and \
+         the number of the idea it tests.\n\n"
     );
-    let shape = "{\"questions\": [{\"topic\": 1, \"shape\": \"instance|boundary|fix\", \
+    let shape = "{\"questions\": [{\"shape\": \"instance|boundary|fix\", \
                  \"idea\": 1, \"prompt\": \"...\", \
                  \"points\": [\"...\", \"...\"]}]}";
     let mut prompt = format!(
         "You are a strict examiner writing an oral exam that verifies a student \
-         truly UNDERSTANDS a topic — not whether they memorized isolated facts.\n\n\
+         truly UNDERSTANDS a topic, not whether they memorized isolated facts.\n\n\
          {sources}\n\
          {ask}\
          {QUESTION_FORM}\
-         For each question, list the key points a correct answer MUST contain — \
+         For each question, list the key points a correct answer MUST contain: \
          the specific, source-grounded facts or reasoning steps you will grade \
          against. Be concrete; these are the rubric.\n\n\
          Output ONLY JSON in exactly this shape, no prose, no code fences around \
@@ -1394,7 +1359,7 @@ pub(crate) fn questions_prompt(
          {shape}"
     );
     push_extra(&mut prompt, cfg);
-    Ok(prompt)
+    prompt
 }
 
 const QUESTION_FORM: &str = "\
@@ -1581,24 +1546,20 @@ fn clean_deck_output(raw: &str) -> String {
 }
 
 #[derive(Debug, Deserialize)]
-struct ModelsDto {
-    topics: Vec<TopicModelsDto>,
+#[serde(deny_unknown_fields)]
+struct IdeasDto {
+    ideas: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct QuestionsDto {
     questions: Vec<GeneratedQuestionDto>,
 }
 
 #[derive(Debug, Deserialize)]
-struct TopicModelsDto {
-    topic: usize,
-    models: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GeneratedQuestionDto {
-    topic: usize,
     shape: Shape,
     idea: usize,
     prompt: String,
@@ -1689,61 +1650,6 @@ mod tests {
         );
     }
 
-    const ONE_TOPIC_REPLY: &str = "{\"topics\":[{\"topic\":1,\"models\":[\"m\"]}],\
-        \"questions\":[{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\
-        \"prompt\":\"Why move?\",\"points\":[\"avoids double free\"]}]}";
-
-    fn deck_with_exam_and_card(srcs: &[&str]) -> Deck {
-        Deck {
-            cards: parser::parse_str("deck-d", "## Why move?\nownership\n").unwrap(),
-            ..deck_with_exam(srcs)
-        }
-    }
-
-    fn models_for(topics: usize) -> Vec<Vec<String>> {
-        vec![vec!["m".to_string()]; topics]
-    }
-
-    fn one_topic() -> Vec<ExamTopic> {
-        vec![ExamTopic {
-            label: "Moves".to_string(),
-            context: vec!["Moves".to_string()],
-            cards: vec!["Q: a\nA: b".to_string()],
-            ..Default::default()
-        }]
-    }
-
-    fn deck_with_exam(srcs: &[&str]) -> Deck {
-        Deck {
-            // A root that cannot exist, so no stray manifest supplies a
-            // workspace source to these fixtures.
-            path: std::path::PathBuf::from("/alix-nonexistent-test-root/d.md"),
-            subject: "d.md".to_string(),
-            deck_token: None,
-            cards: Vec::new(),
-            ignored: Vec::new(),
-            topics: Vec::new(),
-            definitions: Vec::new(),
-            links: Vec::new(),
-            requires: Vec::new(),
-            exam: srcs.iter().map(|s| s.to_string()).collect(),
-            cite: Vec::new(),
-            settings: Default::default(),
-            title: None,
-            description: None,
-            trace: None,
-            workspace_has_exam: Default::default(),
-            load_warnings: Vec::new(),
-        }
-    }
-
-    fn url_layers(own: &[&str]) -> ExamLayers {
-        ExamLayers {
-            own: own.iter().map(|s| s.to_string()).collect(),
-            workspace: Vec::new(),
-        }
-    }
-
     /// Generated cards are recognized at every card depth: a check that
     /// only knows `## ` would reject a valid generated sub-card set as
     /// empty, or keep prose above the first front.
@@ -1754,68 +1660,16 @@ mod tests {
         assert!(!has_card_fronts("# just a topic\nprose\n"));
     }
 
-    #[test]
-    fn a_workspace_source_joins_deck_sources_as_its_own_labeled_layer() {
-        let dir = tempfile::tempdir().unwrap();
-        let members = dir.path().join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&members).unwrap();
-        std::fs::write(
-            dir.path().join(crate::workspace::MANIFEST),
-            "exam = \"https://example.org/current\"\n",
-        )
-        .unwrap();
-        let path = members.join("d.md");
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: https://example.org/own\n---\n## q\na\n",
-        )
-        .unwrap();
-        let deck = Deck::load(&path).unwrap();
-
-        assert_eq!(
-            ExamLayers {
-                own: vec!["https://example.org/own".to_string()],
-                workspace: vec!["https://example.org/current".to_string()],
-            },
-            examination_sources(&deck)
-        );
-        assert!(deck.has_exam());
-    }
-
-    #[test]
-    fn a_workspace_source_duplicated_by_the_deck_is_not_layered_twice() {
-        let dir = tempfile::tempdir().unwrap();
-        let members = dir.path().join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&members).unwrap();
-        std::fs::write(
-            dir.path().join(crate::workspace::MANIFEST),
-            "exam = \"https://example.org/own\"\n",
-        )
-        .unwrap();
-        let path = members.join("d.md");
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-deck1\"\nexam: https://example.org/own\n---\n## q\na\n",
-        )
-        .unwrap();
-        let deck = Deck::load(&path).unwrap();
-
-        assert_eq!(
-            url_layers(&["https://example.org/own"]),
-            examination_sources(&deck)
-        );
-    }
-
     /// A fact-deck exam grades against the source, never a card's topic
     /// context. This is a signature-name tripwire for that boundary, not a
     /// generic ban on deck-derived values: question generation takes the
-    /// topics as scope.
+    /// topic as scope.
     #[test]
     fn exam_prompt_signatures_ban_topic_like_names() {
         let source = include_str!("exam.rs");
         let builders: [(&str, &[&str]); 4] = [
-            ("fn questions_prompt(", &["topics: &[ExamTopic]"]),
-            ("fn models_prompt(", &["topics: &[ExamTopic]"]),
+            ("fn questions_prompt(", &["topic: &ExamTopic"]),
+            ("fn ideas_prompt(", &["topic: &ExamTopic"]),
             ("fn grade_prompt(", &[]),
             ("fn remediation_prompt(", &[]),
         ];
@@ -1856,184 +1710,36 @@ mod tests {
     }
 
     #[test]
-    fn questions_prompt_labels_deck_and_workspace_layers() {
-        let sources = ExamLayers {
-            own: vec!["https://example.org/own".to_string()],
-            workspace: vec!["https://example.org/context".to_string()],
-        };
-        let p = questions_prompt(
-            &sources,
-            None,
-            &one_topic(),
-            &models_for(1),
-            &ExamConfig::default(),
-        )
-        .unwrap();
-        let own_at = p.find("https://example.org/own").unwrap();
-        let workspace_at = p.find("https://example.org/context").unwrap();
-        assert!(p.contains("primary grounding"));
-        assert!(p.contains("supporting context"));
-        assert!(own_at < workspace_at, "{p}");
-    }
-
-    #[test]
-    fn questions_prompt_distinguishes_sources_that_share_a_basename() {
-        let dir = tempfile::tempdir().unwrap();
-        for (parent, text) in [("a", "alpha source"), ("b", "beta source")] {
-            let source_dir = dir.path().join(parent);
-            std::fs::create_dir(&source_dir).unwrap();
-            std::fs::write(source_dir.join("notes.md"), text).unwrap();
-        }
-        let sources = ExamLayers {
-            own: vec!["a/notes.md".to_string(), "b/notes.md".to_string()],
-            workspace: Vec::new(),
-        };
-
-        let prompt = questions_prompt(
-            &sources,
-            Some(dir.path()),
-            &one_topic(),
-            &models_for(1),
-            &ExamConfig::default(),
-        )
-        .unwrap();
-
-        assert!(
-            prompt.contains("Source file `a/notes.md`"),
-            "the first source is not labeled by what the deck declared: {prompt}"
-        );
-        assert!(
-            prompt.contains("Source file `b/notes.md`"),
-            "the second source is not labeled by what the deck declared: {prompt}"
-        );
-    }
-
-    #[test]
-    fn an_absolute_source_is_labeled_by_its_basename_and_a_relative_one_by_its_path() {
-        let dir = tempfile::tempdir().unwrap();
-        let nested = dir.path().join("deep");
-        std::fs::create_dir(&nested).unwrap();
-        std::fs::write(nested.join("relative.md"), "relative body").unwrap();
-        std::fs::write(dir.path().join("absolute.md"), "absolute body").unwrap();
-        let absolute = dir.path().join("absolute.md");
-        let sources = ExamLayers {
-            own: vec![
-                "deep/relative.md".to_string(),
-                absolute.display().to_string(),
-            ],
-            workspace: Vec::new(),
-        };
-
-        let prompt = questions_prompt(
-            &sources,
-            Some(dir.path()),
-            &one_topic(),
-            &models_for(1),
-            &ExamConfig::default(),
-        )
-        .unwrap();
-
-        assert!(
-            prompt.contains("Source file `deep/relative.md`"),
-            "a relative declaration should reach the prompt as declared: {prompt}"
-        );
-        assert!(
-            prompt.contains("Source file `absolute.md`"),
-            "an absolute declaration should reach the prompt as its basename: {prompt}"
-        );
-        assert!(
-            !prompt.contains(&absolute.display().to_string()),
-            "the operator's directory layout reached the prompt: {prompt}"
-        );
-    }
-
-    #[test]
-    fn same_named_absolute_sources_in_different_layers_have_distinct_headings() {
-        let dir = tempfile::tempdir().unwrap();
-        let own = dir.path().join("own").join("notes.md");
-        let workspace = dir.path().join("workspace").join("notes.md");
-        std::fs::create_dir(own.parent().unwrap()).unwrap();
-        std::fs::create_dir(workspace.parent().unwrap()).unwrap();
-        std::fs::write(&own, "primary body").unwrap();
-        std::fs::write(&workspace, "supporting body").unwrap();
-        let sources = ExamLayers {
-            own: vec![own.display().to_string()],
-            workspace: vec![workspace.display().to_string()],
-        };
-
-        let prompt = questions_prompt(
-            &sources,
-            None,
-            &one_topic(),
-            &models_for(1),
-            &ExamConfig::default(),
-        )
-        .unwrap();
-
-        assert_eq!(
-            1,
-            prompt
-                .matches("Source file `notes.md` (a deck source, primary grounding")
-                .count(),
-            "deck heading: {prompt}"
-        );
-        assert_eq!(
-            1,
-            prompt
-                .matches("Workspace source file `notes.md` (supporting context")
-                .count(),
-            "workspace heading: {prompt}"
-        );
-    }
-
-    #[test]
     fn questions_prompt_carries_source_strictness_and_json_shape() {
-        let sources = url_layers(&["https://example.org/ownership"]);
         let p = questions_prompt(
-            &sources,
-            None,
             &one_topic(),
-            &models_for(1),
+            &one_source(),
+            &["m".to_string()],
             &ExamConfig::default(),
-        )
-        .unwrap();
-        assert!(p.contains("https://example.org/ownership"));
-        assert!(p.contains("WebFetch"));
+        );
+        assert!(p.contains("Source `sdk:src/lib.rs`:\n<<<SOURCE\nfn main() {}\nSOURCE\n"));
         assert!(p.contains("strict examiner"));
         assert!(p.contains("\"questions\""));
     }
 
     #[test]
-    fn questions_prompt_asks_per_topic_in_the_three_shapes_with_cards_as_scope_only() {
-        let sources = url_layers(&["https://example.org/ownership"]);
-        let topics = [
-            ExamTopic {
-                label: "# Moves".to_string(),
-                context: vec![
-                    "# Moves".to_string(),
-                    "Values move on assignment.".to_string(),
-                ],
-                cards: vec!["Q: What does `let b = a;` do to a String?\nA: Moves it".to_string()],
-                ..Default::default()
-            },
-            ExamTopic {
-                label: "# Borrows".to_string(),
-                context: vec!["# Borrows".to_string()],
-                cards: vec!["Q: How many &mut at once?\nA: One".to_string()],
-                ..Default::default()
-            },
-        ];
+    fn questions_prompt_asks_one_topic_in_the_three_shapes_with_cards_as_scope_only() {
+        let topic = ExamTopic {
+            label: "Moves".to_string(),
+            context: vec![
+                "Moves".to_string(),
+                "Values move on assignment.".to_string(),
+            ],
+            cards: vec!["Q: What does `let b = a;` do to a String?\nA: Moves it".to_string()],
+            ..one_topic()
+        };
         let p = questions_prompt(
-            &sources,
-            None,
-            &topics,
-            &models_for(topics.len()),
+            &topic,
+            &one_source(),
+            &["moves".to_string(), "drops".to_string()],
             &ExamConfig::default(),
-        )
-        .unwrap();
-        let moves = p.find("# Moves").expect("first topic heading");
-        let borrows = p.find("# Borrows").expect("second topic heading");
-        assert!(moves < borrows, "topics keep deck order: {p}");
+        );
+        assert!(p.contains("Topic: Moves\n"), "topic heading: {p}");
         assert!(p.contains("Values move on assignment."), "topic prose: {p}");
         assert!(
             p.contains("What does `let b = a;` do to a String?"),
@@ -2044,42 +1750,24 @@ mod tests {
             "scope only: {p}"
         );
         for rule in [
-            "The ideas this exam examines, per topic, numbered:",
-            "write EXACTLY one question for every \
-         idea listed for it, no more",
-            "ask the \
-         student to apply it, never to recite the card",
-            "the number of the idea it tests within that topic",
+            "The ideas this exam examines, numbered:\n1. moves\n2. drops\n",
+            "Write EXACTLY one question for every idea listed, no more",
+            "ask the student to apply it, never to recite the \
+         card",
+            "the number of the idea it tests",
         ] {
             assert!(p.contains(rule), "ideas rule {rule:?}: {p}");
         }
         for shape in ["instance:", "boundary:", "fix:"] {
             assert!(p.contains(shape), "shape {shape}: {p}");
         }
-        for tag in ["\"topic\"", "\"shape\"", "\"idea\""] {
+        for tag in ["\"shape\"", "\"idea\"", "\"prompt\"", "\"points\""] {
             assert!(p.contains(tag), "json carries {tag}: {p}");
         }
-    }
-
-    #[test]
-    fn exam_topics_group_cards_by_heading_in_deck_order_and_merge_repeated_headings() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("d.md");
-        std::fs::write(
-            &path,
-            "# A\n\nAbout a.\n\n## a1?\none\n\n# B\n\n## b1?\ntwo\n\n# A\n\n## a2?\nthree\n",
-        )
-        .unwrap();
-        let deck = Deck::load(&path).unwrap();
-        let topics = exam_topics(&deck);
-        let headings: Vec<_> = topics.iter().map(|s| s.context.first().cloned()).collect();
-        assert_eq!(
-            vec![Some("A".to_string()), Some("B".to_string())],
-            headings,
-            "same heading text merges; first appearance orders"
+        assert!(
+            !p.contains("\"topic\""),
+            "one topic per call names none: {p}"
         );
-        assert_eq!(2, topics[0].cards.len(), "a1 and a2: {:?}", topics[0].cards);
-        assert!(topics[0].cards[0].contains("a1?") && topics[0].cards[0].contains("one"));
     }
 
     #[test]
@@ -2136,17 +1824,13 @@ mod tests {
             ),
         ];
         for (label, records, expected, filter) in rows {
-            let dir = tempfile::tempdir().unwrap();
-            let path = dir.path().join("s.md");
-            std::fs::write(
-                &path,
-                "---\nformat-version: 1\nid: deck-s\nexam: source.txt\n---\n\
-                 # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n<!-- id: card-a2 -->\n\n\
-                 # B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
-            )
-            .unwrap();
-            let deck = Deck::load(&path).unwrap();
-            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let ws = workspace_with(
+                "# A\n<!-- id: topic-a -->\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n\
+                 <!-- id: card-a2 -->\n\n# B\n<!-- id: topic-b -->\n\n## b1\nx\n<!-- id: card-b1 -->\n",
+            );
+            source(&ws, "s.txt", "s\n", &["topic-a", "topic-b"]);
+            let deck = Deck::load(ws.deck()).unwrap();
+            let mut store = Store::open(ws.root().join("p.json")).unwrap();
             for (id, pass) in ["card-a1", "card-a2", "card-b1"].iter().zip(records) {
                 if let Some(pass) = pass {
                     store.get_or_insert(id).exam_result =
@@ -2176,7 +1860,7 @@ mod tests {
     }
 
     #[test]
-    fn topics_follow_headings_merge_repeats_and_label_the_leading_topic_with_the_deck_title() {
+    fn topics_follow_headings_keep_repeats_and_label_the_leading_topic_with_the_deck_title() {
         let rows = [
             (
                 "no heading",
@@ -2186,17 +1870,17 @@ mod tests {
             (
                 "two headings",
                 "# A\n\n## a1?\none\n\n# B\n\n## b1?\ntwo\n",
-                vec![("A", 1), ("B", 1)],
+                vec![("Ownership", 0), ("A", 1), ("B", 1)],
             ),
             (
                 "repeated heading",
                 "# A\n\n## a1?\none\n\n# B\n\n## b1?\ntwo\n\n# A\n\n## a2?\nthree\n",
-                vec![("A", 2), ("B", 1)],
+                vec![("Ownership", 0), ("A", 1), ("B", 1), ("A", 1)],
             ),
             (
                 "a heading with prose and no cards",
                 "## q?\na\n\n# Empty\n\nJust prose.\n\n# B\n\n## b?\nc\n",
-                vec![("Ownership", 1), ("B", 1)],
+                vec![("Ownership", 1), ("Empty", 0), ("B", 1)],
             ),
         ];
         for (label, body, expected) in rows {
@@ -2205,12 +1889,17 @@ mod tests {
             std::fs::write(&path, format!("---\ntitle: Ownership\n---\n\n{body}")).unwrap();
             crate::stamp::stamp_deck(&path).unwrap();
             let deck = Deck::load(&path).unwrap();
-            let topics = exam_topics(&deck);
+            let topics = exam_topics(&deck, None);
             let got: Vec<(&str, usize)> = topics
                 .iter()
                 .map(|s| (s.label.as_str(), s.card_ids.len()))
                 .collect();
             assert_eq!(expected, got, "{label}: (label, member ids) per topic");
+            assert_eq!(
+                deck.deck_token.as_deref(),
+                Some(topics[0].topic_id.as_str()),
+                "{label}: the leading topic is the deck id"
+            );
             let mut every_id: Vec<String> =
                 deck.cards.iter().filter_map(|card| card.id()).collect();
             let mut listed: Vec<String> = topics.iter().flat_map(|s| s.card_ids.clone()).collect();
@@ -2225,44 +1914,29 @@ mod tests {
 
     #[test]
     fn questions_prompt_asks_for_standalone_fenced_questions_that_hide_the_answer() {
-        let sources = url_layers(&["https://example.org/ownership"]);
-        for topics in [vec![ExamTopic {
-            label: "# Moves".to_string(),
-            context: vec!["# Moves".to_string()],
-            cards: vec!["Q: a\nA: b".to_string()],
-            ..Default::default()
-        }]] {
-            let p = questions_prompt(
-                &sources,
-                None,
-                &topics,
-                &models_for(topics.len()),
-                &ExamConfig::default(),
-            )
-            .unwrap();
-            for rule in [
-                "It stands alone.",
-                "Code goes in a fenced block",
-                "one statement per line",
-                "no thinking aloud and no self-correction",
-                "Never give the answer away.",
-                "a fence inside a `prompt` string is fine",
-            ] {
-                assert!(
-                    p.contains(rule),
-                    "{} topics: missing {rule:?}",
-                    topics.len()
-                );
-            }
+        let p = questions_prompt(
+            &one_topic(),
+            &one_source(),
+            &["m".to_string()],
+            &ExamConfig::default(),
+        );
+        for rule in [
+            "It stands alone.",
+            "Code goes in a fenced block",
+            "one statement per line",
+            "no thinking aloud and no self-correction",
+            "Never give the answer away.",
+            "a fence inside a `prompt` string is fine",
+        ] {
+            assert!(p.contains(rule), "missing {rule:?}");
         }
     }
 
     #[test]
-    fn models_prompt_bounds_the_topic_by_the_heading_and_shows_cards_only_as_what_is_drilled() {
-        let sources = url_layers(&["https://x"]);
-        let p = models_prompt(&sources, None, &one_topic(), &ExamConfig::default()).unwrap();
+    fn ideas_prompt_bounds_the_topic_by_the_heading_and_shows_cards_only_as_what_is_drilled() {
+        let p = ideas_prompt(&one_topic(), &one_source(), &ExamConfig::default());
         assert!(
-            p.contains("heading, with the prose under it when there is any, marks out its topic"),
+            p.contains("marked out by its heading, with the prose under it when there is any"),
             "the heading bounds the topic: {p}"
         );
         assert!(
@@ -2272,47 +1946,39 @@ mod tests {
             "the cards are not the topic's boundary: {p}"
         );
         assert!(
-            !p.contains("heading and cards mark out"),
-            "no card may narrow the topic: {p}"
+            p.contains("Source `sdk:src/lib.rs`"),
+            "the topic's sources: {p}"
         );
+        assert!(p.contains("{\"ideas\": ["), "the reply shape: {p}");
     }
 
     #[test]
     fn questions_prompt_honors_extra() {
-        let sources = url_layers(&["https://x"]);
         let cfg = ExamConfig {
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let p = questions_prompt(&sources, None, &one_topic(), &models_for(1), &cfg).unwrap();
+        let p = questions_prompt(&one_topic(), &one_source(), &["m".to_string()], &cfg);
         assert!(p.contains("Additional instructions:"));
         assert!(p.contains("Focus on lifetimes."));
     }
 
     #[test]
-    fn exam_extra_reaches_the_model_listing_call_that_decides_coverage() {
+    fn exam_extra_reaches_the_idea_listing_call_that_decides_coverage() {
         let _lock = exec_lock();
+        let ws = workspace_with("## Why move?\nownership\n");
+        source(&ws, "moves.txt", "Moves transfer ownership.\n", &[]);
         let dir = tempfile::tempdir().unwrap();
-        let cli = crate::testutil::fake_replies(
-            dir.path(),
-            &[
-                "{\"topics\":[{\"topic\":1,\"models\":[\"ownership\"]}]}",
-                "{\"questions\":[{\"topic\":1,\"shape\":\"instance\",\
-                 \"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
-            ],
-        );
+        let cli = crate::testutil::fake_replies(dir.path(), &[IDEAS, ONE_QUESTION]);
         let cfg = ExamConfig {
             extra: Some("Focus on lifetimes.".to_string()),
             ..ExamConfig::default()
         };
-        let deck = deck_with_exam_and_card(&["https://x"]);
-
-        generate_questions(&deck, &cfg, &ask_config(&cli)).unwrap();
-
+        generate_questions(&opened(&ws), &cfg, &ask_config(&cli)).unwrap();
         let first = std::fs::read_to_string(dir.path().join("prompt-1")).unwrap();
         assert!(
-            first.contains("Focus on lifetimes."),
-            "the first call fixes the allowed model list, so exam guidance must reach it: {first}"
+            first.contains("Focus on lifetimes.") && first.contains("\"ideas\""),
+            "the first call fixes the allowed idea list, so exam guidance must reach it: {first}"
         );
     }
 
@@ -2443,8 +2109,7 @@ mod tests {
 
     #[test]
     fn parse_questions_from_fenced_json() {
-        let raw = "Here you go:\n```json\n{\"topics\": [{\"topic\": 1, \"models\": [\"m\"]}], \
-                   \"questions\": [{\"topic\": 1, \"shape\": \"fix\", \"idea\": 1, \
+        let raw = "Here you go:\n```json\n{\"questions\": [{\"shape\": \"fix\", \"idea\": 1, \
                    \"prompt\": \"Q1\", \"points\": [\"a\", \"b\"]}]}\n```";
         let dto: QuestionsDto = parse_json(raw).unwrap();
         assert_eq!(1, dto.questions.len());
@@ -2602,56 +2267,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn source_truncation_is_exact_and_utf8_safe() {
-        let exact = "a".repeat(MAX_SOURCE_BYTES);
-        assert_eq!((exact.clone(), false), truncate(&exact));
-
-        let mut oversized = "a".repeat(MAX_SOURCE_BYTES - 1);
-        oversized.push('é');
-        let (truncated, did_truncate) = truncate(&oversized);
-        assert!(did_truncate);
-        assert_eq!(
-            format!(
-                "{}\n[... source truncated ...]",
-                "a".repeat(MAX_SOURCE_BYTES - 1)
-            ),
-            truncated
-        );
-    }
-
-    #[test]
-    fn questions_prompt_tells_the_examiner_when_a_source_was_truncated() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("large.md"),
-            "a".repeat(MAX_SOURCE_BYTES + 1),
-        )
-        .unwrap();
-        let sources = ExamLayers {
-            own: vec!["large.md".to_string()],
-            workspace: Vec::new(),
-        };
-
-        let prompt = questions_prompt(
-            &sources,
-            Some(dir.path()),
-            &one_topic(),
-            &models_for(1),
-            &ExamConfig::default(),
-        )
-        .unwrap();
-
-        assert!(
-            prompt.contains("[... source truncated ...]"),
-            "the pasted source carries no truncation marker, so the examiner reads a partial source as whole"
-        );
-        assert!(
-            prompt.contains("Every question must be answerable from the source"),
-            "the answerability instruction is gone, so the marker guards nothing"
-        );
-    }
-
     use crate::{
         parser,
         session::is_retired_id,
@@ -2666,48 +2281,52 @@ mod tests {
     }
 
     #[test]
-    fn generate_questions_rejects_a_deck_without_a_source() {
-        let deck = deck_with_exam(&[]);
+    fn generate_questions_rejects_a_deck_without_sources() {
+        let ws = workspace_with("## q\na\n");
         let err = generate_questions(
-            &deck,
+            &opened(&ws),
             &ExamConfig::default(),
             &ask_config(std::path::Path::new("unused")),
         )
         .unwrap_err();
-        assert!(format!("{err:#}").contains("no `exam:`"));
+        assert!(
+            format!("{err:#}").contains("declares no sources"),
+            "{err:#}"
+        );
     }
 
     #[cfg(unix)]
     #[test]
-    fn the_exam_reads_only_exam_entries_never_cite_roots_or_cited_text() {
+    fn the_exam_reads_only_frozen_sources_never_exam_entries_cite_roots_or_cited_text() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let ws = dir.path().join("ws");
-        for folder in ["decks", "code", "lib"] {
-            std::fs::create_dir_all(ws.join(folder)).unwrap();
+        let ws = Workspace::new();
+        let root = ws.root();
+        for folder in ["code", "lib"] {
+            std::fs::create_dir_all(root.join(folder)).unwrap();
         }
         std::fs::write(
-            ws.join(crate::workspace::MANIFEST),
-            "exam = \"manifest-exam.txt\"\n\n[cite]\nshared = \"lib\"\n",
+            root.join(crate::workspace::MANIFEST),
+            "[cite]\nshared = \"lib\"\n",
         )
         .unwrap();
-        std::fs::write(ws.join("manifest-exam.txt"), "MANIFEST_EXAM_MARKER\n").unwrap();
-        std::fs::write(ws.join("own-exam.txt"), "DECK_EXAM_MARKER\n").unwrap();
-        std::fs::write(ws.join("code/cited.rs"), "CITED_TEXT_MARKER\n").unwrap();
-        std::fs::write(ws.join("code/uncited.rs"), "CITE_ROOT_MARKER\n").unwrap();
-        std::fs::write(ws.join("lib/shared.rs"), "MANIFEST_CITED_MARKER\n").unwrap();
-        let deck_path = ws.join("decks/d.md");
+        std::fs::write(root.join("own-exam.txt"), "DECK_EXAM_MARKER\n").unwrap();
+        std::fs::write(root.join("code/cited.rs"), "CITED_TEXT_MARKER\n").unwrap();
+        std::fs::write(root.join("code/uncited.rs"), "CITE_ROOT_MARKER\n").unwrap();
+        std::fs::write(root.join("lib/shared.rs"), "MANIFEST_CITED_MARKER\n").unwrap();
         std::fs::write(
-            &deck_path,
-            "---\nformat-version: 1\nid: deck-examcitea1b2c3d4e5f6g7h8j9\nexam: own-exam.txt\n\
-             cite:\n  - code: code\n---\n\
-             ## q1\na\n<!-- at: code:cited.rs:1 -->\n\n\
-             ## q2\nb\n<!-- at: shared:shared.rs:1 -->\n",
+            ws.deck(),
+            format!(
+                "---\nformat-version: 1\nid: {DECK}\nexam: own-exam.txt\n\
+                 cite:\n  - code: code\n---\n\
+                 ## q1\na\n<!-- at: code:cited.rs:1 -->\n\n\
+                 ## q2\nb\n<!-- at: shared:shared.rs:1 -->\n"
+            ),
         )
         .unwrap();
-        crate::assets::freeze_member(&deck_path).unwrap();
-        crate::stamp::stamp_deck(&deck_path).unwrap();
-        let deck = Deck::load(&deck_path).unwrap();
+        crate::assets::freeze_member(&ws.deck()).unwrap();
+        crate::stamp::stamp_deck(&ws.deck()).unwrap();
+        source(&ws, "frozen.txt", "FROZEN_SOURCE_MARKER\n", &[]);
+        let deck = Deck::load(ws.deck()).unwrap();
         assert!(
             deck.cards
                 .iter()
@@ -2715,16 +2334,18 @@ mod tests {
             "setup: every citation is frozen"
         );
 
-        let prompt = dir.path().join("prompt.txt");
+        let dir = tempfile::tempdir().unwrap();
         let args = dir.path().join("args.txt");
-        std::fs::write(dir.path().join("reply.json"), ONE_TOPIC_REPLY).unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),
             &format!(
-                "cat > {}; printf '%s\\n' \"$@\" > {}; cat {}",
-                prompt.display(),
-                args.display(),
-                dir.path().join("reply.json").display()
+                "input=$(cat); printf '%s\\n' \"$input\" >> {prompt}; printf '%s\\n' \"$@\" >> {args}\n\
+                 case \"$input\" in\n\
+                 *'\"questions\"'*) printf '%s' '{ONE_QUESTION}' ;;\n\
+                 *) printf '%s' '{IDEAS}' ;;\n\
+                 esac",
+                prompt = dir.path().join("prompt.txt").display(),
+                args = args.display(),
             ),
         );
         let mut ask_cfg = ask_config(&cli);
@@ -2732,15 +2353,15 @@ mod tests {
         generate_questions(&deck, &ExamConfig::default(), &ask_cfg).unwrap();
         let seen = format!(
             "{}\n{}",
-            std::fs::read_to_string(&prompt).unwrap(),
+            std::fs::read_to_string(dir.path().join("prompt.txt")).unwrap(),
             std::fs::read_to_string(&args).unwrap()
         );
 
-        let code_root = ws.join("code").canonicalize().unwrap();
-        let lib_root = ws.join("lib").canonicalize().unwrap();
+        let code_root = root.join("code").canonicalize().unwrap();
+        let lib_root = root.join("lib").canonicalize().unwrap();
         let rows: [(&str, &str, bool); 7] = [
-            ("the deck's own exam entry", "DECK_EXAM_MARKER", true),
-            ("the manifest's exam entry", "MANIFEST_EXAM_MARKER", true),
+            ("the deck's frozen source", "FROZEN_SOURCE_MARKER", true),
+            ("the deck's `exam:` entry", "DECK_EXAM_MARKER", false),
             ("text cited from a deck root", "CITED_TEXT_MARKER", false),
             (
                 "text cited from a manifest root",
@@ -2767,59 +2388,50 @@ mod tests {
             assert_eq!(
                 expected,
                 seen.contains(needle),
-                "{label}: `{needle}` in the exam's prompt and arguments:\n{seen}"
+                "{label}: `{needle}` in the exam's prompts and arguments:\n{seen}"
             );
         }
     }
 
     #[test]
-    fn a_deck_is_exam_eligible_only_when_it_or_its_manifest_declares_exam() {
-        let rows = [
-            ("cites but declares no exam anywhere", "", "", false),
-            ("the deck declares exam", "exam: e.txt\n", "", true),
-            ("the manifest declares exam", "", "exam = \"e.txt\"\n", true),
+    fn a_deck_declares_sources_only_through_a_manifest_with_a_row() {
+        let rows: [(&str, &str, bool, bool); 4] = [
+            ("no sources folder", "", false, false),
+            ("an `exam:` entry alone", "exam: e.txt\n", false, false),
+            ("a manifest with a row", "", true, true),
             (
-                "both declare exam",
-                "exam: e.txt\n",
-                "exam = \"e.txt\"\n",
+                "a trace deck with sources",
+                "trace: how it works\n",
                 true,
+                false,
             ),
         ];
-        for (label, deck_exam, manifest_exam, expected) in rows {
-            let dir = tempfile::tempdir().unwrap();
-            std::fs::create_dir_all(dir.path().join("decks")).unwrap();
-            std::fs::create_dir_all(dir.path().join("code")).unwrap();
-            std::fs::write(dir.path().join("code/x.rs"), "x\n").unwrap();
-            std::fs::write(dir.path().join("e.txt"), "e\n").unwrap();
+        for (label, frontmatter, with_source, expected) in rows {
+            let ws = Workspace::new();
+            std::fs::write(ws.root().join("e.txt"), "e\n").unwrap();
             std::fs::write(
-                dir.path().join(crate::workspace::MANIFEST),
-                format!("{manifest_exam}\n[cite]\nshared = \"code\"\n"),
+                ws.deck(),
+                format!("---\nid: \"{DECK}\"\n{frontmatter}---\n## q\na\n"),
             )
             .unwrap();
-            let path = dir.path().join("decks/d.md");
-            std::fs::write(
-                &path,
-                format!("---\ntitle: d\n{deck_exam}---\n## q\na\n<!-- at: shared:x.rs:1 -->\n"),
-            )
-            .unwrap();
-            let deck = Deck::load(&path).unwrap();
-            assert_eq!(expected, deck.has_exam(), "{label}");
+            if with_source {
+                source(&ws, "s.txt", "s\n", &[]);
+            }
+            let deck = Deck::load(ws.deck()).unwrap();
+            assert_eq!(expected, deck.declares_sources(), "{label}");
         }
     }
 
     #[test]
     fn workspace_asset_boundary_failures_surface_through_the_sitting() {
-        let dir = tempfile::tempdir().unwrap();
-        let members = dir.path().join(crate::workspace::DECKS);
-        std::fs::create_dir(&members).unwrap();
-        std::fs::write(dir.path().join(crate::workspace::MANIFEST), "").unwrap();
-        let path = members.join("d.md");
+        let ws = Workspace::new();
         std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: deck-9w2c7x4k1m8q3z5t0v6b2n4d8f\nexam: https://example.org/source\ncite:\n  - src: https://example.org/source\n---\n## q\na\n<!-- at: src fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
+            ws.deck(),
+            format!("---\nformat-version: 1\nid: {DECK}\ncite:\n  - src: https://example.org/source\n---\n## q\na\n<!-- at: src fingerprint: xxh64-0000000000000007 asset: missing.txt -->\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n"),
         )
         .unwrap();
-        let deck = Deck::load(&path).unwrap();
+        source(&ws, "s.txt", "s\n", &[]);
+        let deck = Deck::load(ws.deck()).unwrap();
 
         let boundary = source_boundary_error(&deck).unwrap();
         assert!(boundary.contains("missing.txt"), "{boundary}");
@@ -2913,7 +2525,7 @@ mod tests {
         let deck = crate::deck::Deck::load(&path).unwrap();
         let resumed = Sitting::from_prepared(
             &deck,
-            exam_topics(&deck),
+            exam_topics(&deck, None),
             vec![ExamQuestion::default(); 3],
             vec!["one".to_string(), String::new(), String::new()],
             crate::exam_ideas::IdeasDocument::default(),
@@ -2935,13 +2547,13 @@ mod tests {
     #[test]
     fn opening_a_prepared_exam_does_not_start_question_generation() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
         let before = GENERATION_SPAWNS.load(std::sync::atomic::Ordering::SeqCst);
 
         let sitting = Sitting::from_prepared(
             &deck,
-            exam_topics(&deck),
+            exam_topics(&deck, None),
             vec![ExamQuestion::default()],
             vec![String::new()],
             crate::exam_ideas::IdeasDocument::default(),
@@ -2961,78 +2573,77 @@ mod tests {
     #[test]
     fn preparing_writes_the_exam_and_its_ideas_into_the_decks_store() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("src.md"), "Moves transfer ownership.\n").unwrap();
-        let path = dir.path().join("deck.md");
-        std::fs::write(&path, "---\nformat-version: 1\nid: \"deck-prep\"\nexam: src.md\n---\n\n# Moves\n\n## Why move?\nownership\n")
-            .unwrap();
-        let deck = open_for_exam(&path).unwrap();
+        let ws = workspace_with("# Moves\n<!-- id: topic-moves -->\n\n## Why move?\nownership\n");
+        source(
+            &ws,
+            "src.md",
+            "Moves transfer ownership.\n",
+            &["topic-moves"],
+        );
+        let deck = opened(&ws);
+        let cli_dir = tempfile::tempdir().unwrap();
         let cli = crate::testutil::fake_replies(
-            dir.path(),
+            cli_dir.path(),
             &[
-                "{\"topics\":[{\"topic\":1,\"models\":[\"m\",\"n\"]}]}",
-                "{\"questions\":[{\"topic\":1,\"shape\":\"instance\",\"idea\":2,\
-                 \"prompt\":\"Q1\",\"points\":[\"p\"]},{\"topic\":1,\"shape\":\"fix\",\
+                "{\"ideas\":[\"m\",\"n\"]}",
+                "{\"questions\":[{\"shape\":\"instance\",\"idea\":2,\
+                 \"prompt\":\"Q1\",\"points\":[\"p\"]},{\"shape\":\"fix\",\
                  \"idea\":1,\"prompt\":\"Q2\",\"points\":[\"p\"]}]}",
             ],
         );
-        let (rx, _job) = spawn_prepare(
-            &deck,
-            exam_topics(&deck),
-            ExamConfig::default(),
-            ask_config(&cli),
-        );
+        let exam_cfg = ExamConfig {
+            model: Some("exam-model".to_string()),
+            effort: Some("max".to_string()),
+            ..ExamConfig::default()
+        };
+        let (rx, _job) = spawn_prepare(&deck, examined_topics(&deck), exam_cfg, ask_config(&cli));
         rx.recv().unwrap().unwrap();
         let (ideas_path, prepared_path) = exam_files(&deck).unwrap();
         let prepared = Prepared::load(&prepared_path).unwrap().unwrap();
-        let ideas = crate::exam_ideas::IdeasDocument::load(&ideas_path)
-            .unwrap()
-            .unwrap();
+        let ideas = IdeasDocument::load(&ideas_path).unwrap().unwrap();
         assert_eq!(
-            vec![("Moves", 1, "n"), ("Moves", 0, "m")],
+            vec![("topic-moves", 1, "n"), ("topic-moves", 0, "m")],
             prepared
                 .questions
                 .iter()
-                .map(|q| (q.heading.as_str(), q.idea, q.mental_model.as_str()))
+                .map(|q| (q.topic.as_str(), q.idea, q.mental_model.as_str()))
                 .collect::<Vec<_>>(),
-            "step 1: questions keyed by heading and idea"
+            "step 1: questions keyed by topic id and idea"
         );
         assert_eq!(
             vec![String::new(); 2],
             prepared.answers,
             "step 1: no answers yet"
         );
+        let fingerprint = deck.declared().fingerprints()["topic-moves"].clone();
         assert_eq!(
-            material_fingerprint(&deck).unwrap(),
-            prepared.material,
-            "step 1"
+            Some(&PreparedTopic {
+                fingerprint: fingerprint.clone(),
+                model: Some("exam-model".to_string()),
+                effort: Some("max".to_string()),
+            }),
+            prepared.topics.get("topic-moves"),
+            "step 1: the topic's fingerprint, model and effort"
         );
-        assert_eq!(prepared.material, ideas.material, "step 1: same material");
         assert_eq!(
-            2,
-            ideas.topic("Moves").unwrap().ideas.len(),
-            "step 1: ideas kept"
+            (fingerprint.as_str(), 2),
+            (
+                ideas.topics["topic-moves"].fingerprint.as_str(),
+                ideas.topics["topic-moves"].ideas.len()
+            ),
+            "step 1: ideas kept under the same fingerprint"
         );
 
-        std::fs::write(dir.path().join("src.md"), "Moves transfer ownership!\n").unwrap();
-        assert_ne!(
-            prepared.material,
-            material_fingerprint(&deck).unwrap(),
-            "step 2: a changed material file changes the fingerprint"
+        source(&ws, "more.md", "Borrows lend.\n", &["topic-moves"]);
+        let changed = opened(&ws);
+        assert!(
+            !prepared.is_current(&changed),
+            "step 2: a new source makes the topic's questions stale"
         );
-
-        std::fs::write(
-            &path,
-            std::fs::read_to_string(&path)
-                .unwrap()
-                .replace("# Moves", "# Drops"),
-        )
-        .unwrap();
-        let renamed = open_for_exam(&path).unwrap();
-        let (topics, questions, answers) = prepared.against(&renamed);
+        let (topics, questions, answers) = prepared.against(&changed);
         assert!(
             topics.is_empty() && questions.is_empty() && answers.is_empty(),
-            "step 3: a renamed heading drops its questions"
+            "step 2: a stale topic's questions are dropped"
         );
         let (topics, questions, _) = prepared.against(&deck);
         assert_eq!(
@@ -3041,31 +2652,30 @@ mod tests {
                 topics.len(),
                 questions.iter().map(|q| q.topic).collect::<Vec<_>>()
             ),
-            "step 3: an unchanged heading keeps them, re-indexed"
+            "step 3: unchanged sources keep them, re-indexed"
         );
     }
 
     #[test]
     fn failed_idea_persistence_does_not_leave_a_prepared_exam() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("src.md"), "Moves transfer ownership.\n").unwrap();
-        let path = dir.path().join("deck.md");
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-prepfailure\"\nexam: src.md\n---\n\
-             # Moves\n\n## Why move?\nownership\n",
-        )
-        .unwrap();
-        let deck = open_for_exam(&path).unwrap();
+        let ws = workspace_with("# Moves\n<!-- id: topic-moves -->\n\n## Why move?\nownership\n");
+        source(
+            &ws,
+            "src.md",
+            "Moves transfer ownership.\n",
+            &["topic-moves"],
+        );
+        let deck = opened(&ws);
         let (ideas_path, prepared_path) = exam_files(&deck).unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let cli = fake_cli(
             dir.path(),
             &format!(
                 "input=$(cat)\n\
                  case \"$input\" in\n\
-                 *'\"models\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}]}}' ;;\n\
-                 *'\"questions\"'*) mkdir -p {}; printf '%s' '{{\"questions\":[{{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}}]}}' ;;\n\
+                 *'\"questions\"'*) mkdir -p {}; printf '%s' '{ONE_QUESTION}' ;;\n\
+                 *) printf '%s' '{IDEAS}' ;;\n\
                  esac",
                 ideas_path.display()
             ),
@@ -3073,7 +2683,7 @@ mod tests {
 
         let (rx, _job) = spawn_prepare(
             &deck,
-            exam_topics(&deck),
+            examined_topics(&deck),
             ExamConfig::default(),
             ask_config(&cli),
         );
@@ -3090,14 +2700,17 @@ mod tests {
     }
 
     #[test]
-    fn grading_records_each_asked_idea_under_its_topic_heading() {
+    fn grading_records_each_asked_idea_under_its_topic_id() {
         let mut sitting = test_sitting(Strictness::Balanced);
-        sitting.topics = vec![ExamTopic {
-            label: "H".to_string(),
-            ..Default::default()
-        }];
-        let mut ideas = crate::exam_ideas::IdeasDocument::new("m".to_string());
-        ideas.set_topic("H", vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        sitting.topics = vec![one_topic()];
+        let mut ideas = IdeasDocument::default();
+        ideas.for_topic("topic-moves", "f").ideas = ["a", "b", "c"]
+            .into_iter()
+            .map(|text| Idea {
+                text: text.to_string(),
+                ..Idea::default()
+            })
+            .collect();
         sitting.ideas = Some(ideas);
         sitting.questions = vec![
             ExamQuestion {
@@ -3118,10 +2731,10 @@ mod tests {
             grades: vec![grade(Verdict::Pass), grade(Verdict::Partial)],
             topics: Vec::new(),
         });
-        let marked: Vec<_> = sitting.ideas().unwrap().topics[0]
+        let marked: Vec<_> = sitting.ideas().unwrap().topics["topic-moves"]
             .ideas
             .iter()
-            .map(|i| (i.last_asked_ms.is_some(), i.last_passed))
+            .map(|i| (i.last_tested_ms.is_some(), i.last_test_passed))
             .collect();
         assert_eq!(
             vec![(true, Some(false)), (false, None), (true, Some(true))],
@@ -3202,141 +2815,90 @@ mod tests {
     }
 
     #[test]
-    fn generate_questions_from_rejects_url_source_on_fetch_incapable_backend() {
-        use crate::config::BackendKind;
-        let ask_cfg = AskConfig {
-            backend: BackendKind::Codex,
-            command: "/dev/null".to_string(),
-            timeout_secs: 5,
-            ..AskConfig::default()
-        };
-        // No exec_lock: the gate fires before any subprocess is forked.
-        let (rx, _job) = spawn_generation(
-            url_layers(&["https://example.org/doc"]),
-            None,
-            Vec::new(),
-            None,
-            ExamConfig::default(),
-            ask_cfg,
-        );
-        let err = rx.recv().unwrap().unwrap_err();
-        assert!(
-            err.contains("codex") && err.contains("can't fetch a url"),
-            "expected capability-refusal message, got: {err}"
-        );
-    }
-
-    #[test]
-    fn ensure_backend_can_examine_rejects_url_source_on_fetch_incapable_backend() {
-        use crate::config::BackendKind;
-        let deck = deck_with_exam(&["https://example.org/doc"]);
-        let ask_cfg = AskConfig {
-            backend: BackendKind::Codex,
-            command: "/dev/null".to_string(),
-            timeout_secs: 5,
-            ..AskConfig::default()
-        };
-        let err = ensure_backend_can_examine(&deck, &ask_cfg).unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("codex") && msg.contains("can't fetch a url"),
-            "expected capability-refusal message, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn generation_lists_models_then_questions_and_retries_each_call_once() {
+    fn generation_lists_ideas_then_questions_and_retries_each_call_once() {
         let _lock = exec_lock();
-        let models = "{\"topics\":[{\"topic\":1,\"models\":[\"m\",\"n\"]}]}".to_string();
-        let no_models = "{\"topics\":[]}".to_string();
-        let q = |topic: usize, idea: usize, prompt: &str, points: &str| {
+        let ideas = "{\"ideas\":[\"m\",\"n\"]}".to_string();
+        let no_ideas = "{\"ideas\":[]}".to_string();
+        let q = |idea: usize, prompt: &str, points: &str| {
             format!(
-                "{{\"topic\":{topic},\"shape\":\"fix\",\"idea\":{idea},\
+                "{{\"shape\":\"fix\",\"idea\":{idea},\
                  \"prompt\":\"{prompt}\",\"points\":[{points}]}}"
             )
         };
         let questions = |items: &[String]| format!("{{\"questions\":[{}]}}", items.join(","));
-        let good = questions(&[q(1, 1, "Q1", "\"p\""), q(1, 2, "Q2", "\"p\"")]);
-        let only_m = questions(&[q(1, 1, "Q", "\"p\"")]);
+        let good = questions(&[q(1, "Q1", "\"p\""), q(2, "Q2", "\"p\"")]);
+        let only_m = questions(&[q(1, "Q", "\"p\"")]);
         let rows: Vec<(&str, Vec<String>, usize, Option<&str>)> = vec![
+            ("good first time", vec![ideas.clone(), good.clone()], 2, None),
             (
-                "good first time",
-                vec![models.clone(), good.clone()],
-                2,
-                None,
-            ),
-            (
-                "models bad then good",
-                vec![no_models.clone(), models.clone(), good.clone()],
+                "ideas bad then good",
+                vec![no_ideas.clone(), ideas.clone(), good.clone()],
                 3,
                 None,
             ),
             (
                 "questions bad then good",
-                vec![models.clone(), only_m.clone(), good.clone()],
+                vec![ideas.clone(), only_m.clone(), good.clone()],
                 3,
                 None,
             ),
             (
-                "no model listed, twice",
+                "no idea listed, twice",
+                vec![no_ideas.clone(), "{\"ideas\":[\" \"]}".to_string()],
+                2,
+                Some("the listed ideas were rejected twice: it lists no idea"),
+            ),
+            (
+                "the ideas under another key, twice",
                 vec![
-                    no_models.clone(),
-                    "{\"topics\":[{\"topic\":1,\"models\":[\" \"]}]}".to_string(),
+                    "{\"topics\":[{\"topic\":1,\"models\":[\"m\"]}]}".to_string(),
+                    "{\"ideas\":[\"m\"],\"topics\":[]}".to_string(),
                 ],
                 2,
-                Some("the listed models were rejected twice: topic 1 lists no mental model"),
+                Some("the listed ideas were rejected twice: it was not the JSON asked for"),
             ),
             (
-                "models for a topic that does not exist, twice",
+                "a question naming a topic, twice",
                 vec![
-                    "{\"topics\":[{\"topic\":2,\"models\":[\"m\"]}]}".to_string(),
-                    "{\"topics\":[{\"topic\":0,\"models\":[\"m\"]}]}".to_string(),
-                ],
-                2,
-                Some("lists models for topic 0"),
-            ),
-            (
-                "a question outside every topic, twice",
-                vec![
-                    models.clone(),
-                    questions(&[q(2, 1, "Q", "\"p\"")]),
-                    questions(&[q(0, 1, "Q", "\"p\"")]),
+                    ideas.clone(),
+                    "{\"questions\":[{\"topic\":1,\"shape\":\"fix\",\"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}".to_string(),
+                    "{\"questions\":[{\"topic\":1,\"shape\":\"fix\",\"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}".to_string(),
                 ],
                 3,
-                Some("the generated questions were rejected twice: a question names topic 0"),
+                Some("the generated questions were rejected twice: it was not the JSON asked for"),
             ),
             (
-                "an unlisted model, twice",
+                "an unlisted idea, twice",
                 vec![
-                    models.clone(),
-                    questions(&[q(1, 9, "Q", "\"p\"")]),
-                    questions(&[q(1, 9, "Q", "\"p\"")]),
+                    ideas.clone(),
+                    questions(&[q(9, "Q", "\"p\"")]),
+                    questions(&[q(0, "Q", "\"p\"")]),
                 ],
                 3,
-                Some("names idea 9, but that topic lists 2"),
+                Some("names idea 0, but the topic lists 2"),
             ),
             (
                 "the same idea twice, twice",
                 vec![
-                    models.clone(),
-                    questions(&[q(1, 1, "Q1", "\"p\""), q(1, 1, "Q2", "\"p\"")]),
-                    questions(&[q(1, 1, "Q1", "\"p\""), q(1, 1, "Q2", "\"p\"")]),
+                    ideas.clone(),
+                    questions(&[q(1, "Q1", "\"p\""), q(1, "Q2", "\"p\"")]),
+                    questions(&[q(1, "Q1", "\"p\""), q(1, "Q2", "\"p\"")]),
                 ],
                 3,
-                Some("topic 1 asks idea 1 more than once"),
+                Some("idea 1 is asked more than once"),
             ),
             (
-                "an uncovered model, twice",
-                vec![models.clone(), only_m.clone(), only_m.clone()],
+                "an uncovered idea, twice",
+                vec![ideas.clone(), only_m.clone(), only_m.clone()],
                 3,
-                Some("lists the idea `n` but asks no question"),
+                Some("the idea `n` is listed but no question asks about it"),
             ),
             (
                 "an empty prompt, then no key points",
                 vec![
-                    models.clone(),
-                    questions(&[q(1, 1, " ", "\"p\""), q(1, 2, "Q", "\"p\"")]),
-                    questions(&[q(1, 1, "Q", ""), q(1, 2, "Q", "\"p\"")]),
+                    ideas.clone(),
+                    questions(&[q(1, " ", "\"p\""), q(2, "Q", "\"p\"")]),
+                    questions(&[q(1, "Q", ""), q(2, "Q", "\"p\"")]),
                 ],
                 3,
                 Some("empty prompt or no key points"),
@@ -3344,19 +2906,21 @@ mod tests {
             (
                 "a blank key point, twice",
                 vec![
-                    models.clone(),
-                    questions(&[q(1, 1, "Q", "\" \""), q(1, 2, "Q", "\"p\"")]),
-                    questions(&[q(1, 1, "Q", "\"\""), q(1, 2, "Q", "\"p\"")]),
+                    ideas.clone(),
+                    questions(&[q(1, "Q", "\" \""), q(2, "Q", "\"p\"")]),
+                    questions(&[q(1, "Q", "\"\""), q(2, "Q", "\"p\"")]),
                 ],
                 3,
                 Some("empty prompt or no key points"),
             ),
         ];
+        let ws = workspace_with("## Why move?\nownership\n");
+        source(&ws, "moves.txt", "Moves transfer ownership.\n", &[]);
+        let deck = opened(&ws);
         for (label, replies, calls, failure) in rows {
             let dir = tempfile::tempdir().unwrap();
             let replies: Vec<&str> = replies.iter().map(String::as_str).collect();
             let cli = crate::testutil::fake_replies(dir.path(), &replies);
-            let deck = deck_with_exam_and_card(&["https://x"]);
             let result = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli));
             assert_eq!(
                 calls,
@@ -3370,7 +2934,7 @@ mod tests {
                     assert_eq!(
                         vec!["m", "n"],
                         tested,
-                        "{label}: every listed model is tested"
+                        "{label}: every listed idea is tested"
                     );
                 }
                 (Some(want), Err(error)) => {
@@ -3383,51 +2947,36 @@ mod tests {
     }
 
     #[test]
-    fn the_question_call_gets_the_listed_models_and_a_retry_names_the_rejection() {
+    fn the_question_call_gets_the_listed_ideas_and_a_retry_names_the_rejection() {
         let _lock = exec_lock();
+        let ws = workspace_with("## Why move?\nownership\n");
+        source(&ws, "moves.txt", "Moves transfer ownership.\n", &[]);
         let dir = tempfile::tempdir().unwrap();
         let cli = crate::testutil::fake_replies(
             dir.path(),
             &[
-                "{\"topics\":[]}",
-                "{\"topics\":[{\"topic\":1,\"models\":[\"moves transfer ownership\"]}]}",
-                "{\"questions\":[{\"topic\":1,\"shape\":\"instance\",\
-                 \"idea\":1,\"prompt\":\"Q\",\"points\":[\"p\"]}]}",
+                "{\"ideas\":[]}",
+                "{\"ideas\":[\"moves transfer ownership\"]}",
+                ONE_QUESTION,
             ],
         );
-        let deck = deck_with_exam_and_card(&["https://x"]);
-        generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
+        generate_questions(&opened(&ws), &ExamConfig::default(), &ask_config(&cli)).unwrap();
         let read =
             |n: usize| std::fs::read_to_string(dir.path().join(format!("prompt-{n}"))).unwrap();
         assert!(
-            read(1).contains("list its mental models"),
-            "call 1 lists models: {}",
+            read(1).contains("List the topic's ideas"),
+            "call 1 lists ideas: {}",
             read(1)
         );
         assert!(
-            read(2).contains("Your previous answer was rejected: topic 1 lists no mental model"),
+            read(2).contains("Your previous answer was rejected: it lists no idea"),
             "call 2 retries the listing with the reason: {}",
             read(2)
         );
         assert!(
             read(3).contains("1. moves transfer ownership"),
-            "call 3 writes questions for the listed models: {}",
+            "call 3 writes questions for the listed ideas: {}",
             read(3)
-        );
-    }
-
-    #[test]
-    fn a_deck_without_cards_is_not_examined() {
-        let deck = deck_with_exam(&["https://x"]);
-        let error = generate_questions(
-            &deck,
-            &ExamConfig::default(),
-            &ask_config(std::path::Path::new("unused")),
-        )
-        .unwrap_err();
-        assert!(
-            format!("{error:#}").contains("no cards to examine"),
-            "{error:#}"
         );
     }
 
@@ -3501,17 +3050,19 @@ mod tests {
     #[test]
     fn generate_questions_end_to_end() {
         let _lock = exec_lock();
+        let ws = workspace_with("## Why move?\nownership\n");
+        source(&ws, "moves.txt", "Moves transfer ownership.\n", &[]);
         let dir = tempfile::tempdir().unwrap();
-        let cli = fake_reply(dir.path(), ONE_TOPIC_REPLY);
-        let deck = deck_with_exam_and_card(&["https://x"]);
-        let qs = generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
+        let cli = crate::testutil::fake_replies(dir.path(), &[IDEAS, ONE_QUESTION]);
+        let qs =
+            generate_questions(&opened(&ws), &ExamConfig::default(), &ask_config(&cli)).unwrap();
         assert_eq!(1, qs.len());
         assert_eq!("Why move?", qs[0].prompt);
         assert_eq!(vec!["avoids double free"], qs[0].points);
         assert_eq!(
             (0, Shape::Instance, "m"),
             (qs[0].topic, qs[0].shape, qs[0].mental_model.as_str()),
-            "the 1-based topic becomes an index; the shape and the idea's text are kept"
+            "the topic is an index; the shape and the idea's text are kept"
         );
     }
 
@@ -3566,38 +3117,6 @@ mod tests {
         assert!(format!("{err:#}").contains("without any cards"));
     }
 
-    #[test]
-    fn local_file_source_is_embedded() {
-        let dir = std::env::temp_dir().join(format!("alix-exam-src-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let src = dir.join("notes.md");
-        std::fs::write(&src, "the ground truth text").unwrap();
-        let deck = Deck {
-            path: dir.join("d.md"),
-            subject: "d.md".to_string(),
-            deck_token: None,
-            cards: Vec::new(),
-            ignored: Vec::new(),
-            topics: Vec::new(),
-            definitions: Vec::new(),
-            links: Vec::new(),
-            requires: Vec::new(),
-            exam: vec!["notes.md".to_string()],
-            cite: Vec::new(),
-            settings: Default::default(),
-            title: None,
-            description: None,
-            trace: None,
-            workspace_has_exam: Default::default(),
-            load_warnings: Vec::new(),
-        };
-        let section = source_section(&deck.exam_layers(), deck.path.parent()).unwrap();
-        assert!(section.contains("the ground truth text"));
-        assert!(section.contains("notes.md"));
-        assert!(section.contains("primary grounding"));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
     fn drain(s: &mut Sitting, store: &mut Store) {
         for _ in 0..500 {
             if s.poll(store, 0, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS))
@@ -3626,8 +3145,8 @@ mod tests {
             "input=$(cat)\n\
              case \"$input\" in\n\
              *'\"grades\"'*) printf '%s' '{grades}' ;;\n\
-             *'\"models\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\",\"n\"]}}]}}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"topic\":1,\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}},{{\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"Q2\",\"points\":[\"p2\"]}}]}}' ;;\n\
+             *'\"ideas\"'*) printf '%s' '{{\"ideas\":[\"m\",\"n\"]}}' ;;\n\
              *) printf '## Why does X?\\npoint one\\n' ;;\n\
              esac"
         );
@@ -3640,14 +3159,14 @@ mod tests {
         parser::parse_str(deck_id, &text).unwrap_or_default()
     }
 
-    fn sourced_deck(dir: &std::path::Path) -> Deck {
-        let path = dir.join("d.md");
+    fn sourced_deck(ws: &Workspace) -> Deck {
         std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n## c\na\n<!-- id: card-qc -->\n",
+            ws.deck(),
+            format!("---\nformat-version: 1\nid: \"{DECK}\"\n---\n## c\na\n<!-- id: card-qc -->\n"),
         )
         .unwrap();
-        Deck::load(&path).unwrap()
+        source(ws, "s.txt", "c stands for a concept.\n", &[]);
+        Deck::load(ws.deck()).unwrap()
     }
 
     #[test]
@@ -3659,7 +3178,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
         let mut s = Sitting::start(
@@ -3688,7 +3208,7 @@ mod tests {
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().count().passed);
         assert_eq!(vec!["the move rule"], s.gaps());
-        assert!(!store.deck_passed("deck-d1"));
+        assert!(!store.deck_passed(DECK));
         assert_eq!(
             Some(false),
             store
@@ -3700,13 +3220,13 @@ mod tests {
         assert!(!s.unlocked());
 
         assert!(s.can_remediate());
-        let snapshot = std::fs::read(dir.path().join("d.md")).unwrap();
+        let snapshot = std::fs::read(ws.deck()).unwrap();
         s.remediate();
         assert_eq!(&Phase::Remediating, s.phase());
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert_eq!(snapshot, std::fs::read(dir.path().join("d.md")).unwrap());
-        let personal = sidecar_cards(&dir.path().join("d.md"), "deck-d1");
+        assert_eq!(snapshot, std::fs::read(ws.deck()).unwrap());
+        let personal = sidecar_cards(&ws.deck(), DECK);
         assert_eq!(1, personal.len());
         assert_eq!("Why does X?", personal[0].front);
         assert_eq!(vec!["point one".to_string()], personal[0].back);
@@ -3721,7 +3241,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
         let mut s = Sitting::start(
@@ -3743,7 +3264,7 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
 
-        let personal = sidecar_cards(&dir.path().join("d.md"), "deck-d1");
+        let personal = sidecar_cards(&ws.deck(), DECK);
         assert_eq!(1, personal.len());
         assert_eq!(Some(personal.len()), s.remediated_count());
     }
@@ -3757,7 +3278,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
         let mut s = Sitting::start(
@@ -3774,12 +3296,9 @@ mod tests {
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Results, s.phase());
         assert!(s.result().unwrap().count().passed);
+        assert!(store.deck_passed(DECK), "every topic passed: passed_at_ms");
         assert!(
-            store.deck_passed("deck-d1"),
-            "every topic passed: passed_at_ms"
-        );
-        assert!(
-            store.deck_mastered("deck-d1"),
+            store.deck_mastered(DECK),
             "a full sitting at 100%: mastered_at_ms"
         );
         assert!(s.unlocked(), "this sitting set passed_at_ms");
@@ -3794,7 +3313,7 @@ mod tests {
         assert_eq!(
             Some((2, 0, 2)),
             store
-                .full_exam_result("deck-d1")
+                .full_exam_result(DECK)
                 .map(|f| (f.pass, f.partial, f.total)),
             "the full count"
         );
@@ -3810,8 +3329,9 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
-        let deck_path = dir.path().join("d.md");
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
+        let deck_path = ws.deck();
         let before = std::fs::read(&deck_path).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
@@ -3839,10 +3359,10 @@ mod tests {
         let sidecar = std::fs::read_to_string(crate::personal::sidecar_path(&deck_path))
             .expect("remediation wrote a sidecar beside the deck");
         assert!(
-            sidecar.contains("for: deck-d1"),
+            sidecar.contains(&format!("for: {DECK}")),
             "the sidecar names its deck: {sidecar}"
         );
-        let cards = crate::parser::parse_str("deck-d1", &sidecar).unwrap();
+        let cards = crate::parser::parse_str(DECK, &sidecar).unwrap();
         assert_eq!(1, cards.len(), "one remediation card: {sidecar}");
         assert!(
             cards[0].id().is_some_and(|id| store.get(&id).is_some()),
@@ -3860,7 +3380,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
         let mut s = Sitting::start(
@@ -3879,7 +3400,7 @@ mod tests {
         s.remediate();
         drain(&mut s, &mut store);
         assert_eq!(&Phase::Remediated, s.phase());
-        assert!(!sidecar_cards(&dir.path().join("d.md"), "deck-d1").is_empty());
+        assert!(!sidecar_cards(&ws.deck(), DECK).is_empty());
 
         let cli_dir2 = tempfile::tempdir().unwrap();
         let cli2 = branching_cli(
@@ -3900,9 +3421,9 @@ mod tests {
         s2.submit();
         drain(&mut s2, &mut store);
         assert!(s2.result().unwrap().count().passed);
-        assert!(store.deck_passed("deck-d1"));
+        assert!(store.deck_passed(DECK));
 
-        for card in sidecar_cards(&dir.path().join("d.md"), "deck-d1") {
+        for card in sidecar_cards(&ws.deck(), DECK) {
             let id = card.id().expect("a personal card carries its id");
             assert!(
                 !is_retired_id(&id, &store, Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS)),
@@ -3920,7 +3441,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
         let mut s = Sitting::start(
@@ -3959,7 +3481,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"the move rule\"]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
 
         let mut s = Sitting::start(
             &deck,
@@ -3989,7 +3512,8 @@ mod tests {
             "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
              {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
         );
-        let deck = sourced_deck(dir.path());
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
 
         let mut s = Sitting::start(
             &deck,
@@ -4011,48 +3535,606 @@ mod tests {
         assert!(s.set_answers(vec!["a1".to_string(), "a2".to_string()]));
         assert_eq!(vec!["a1".to_string(), "a2".to_string()], s.answers());
     }
-}
 
-#[cfg(all(test, windows))]
-mod windows_tests {
-    use super::*;
+    use crate::sources::{
+        self,
+        testkit::{DECK, Workspace},
+    };
 
-    #[test]
-    fn a_windows_root_relative_source_does_not_send_its_directory_layout() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("private").join("notes.md");
-        std::fs::create_dir(source.parent().unwrap()).unwrap();
-        std::fs::write(&source, "private body").unwrap();
-        let prefix_len = source.components().next().unwrap().as_os_str().len();
-        let declared = source.to_string_lossy()[prefix_len..].to_string();
-        assert!(Path::new(&declared).has_root(), "{declared}");
-        assert!(!Path::new(&declared).is_absolute(), "{declared}");
-        let sources = ExamLayers {
-            own: vec![declared.clone()],
-            workspace: Vec::new(),
-        };
+    const TWO_TOPICS: &str = "# Alpha\n\nAlpha prose.\n<!-- id: topic-alpha -->\n\n## a1?\none\n\n\
+                              # Beta\n<!-- id: topic-beta -->\n\n## b1?\ntwo\n";
 
-        let topic = ExamTopic {
-            label: "Moves".to_string(),
-            context: vec!["Moves".to_string()],
-            ..Default::default()
-        };
-        let prompt = questions_prompt(
-            &sources,
-            Some(dir.path()),
-            &[topic],
-            &[vec!["m".to_string()]],
-            &ExamConfig::default(),
+    fn workspace_with(body: &str) -> Workspace {
+        let ws = Workspace::new();
+        std::fs::write(
+            ws.deck(),
+            format!("---\nid: \"{DECK}\"\ntitle: Ownership\n---\n{body}"),
         )
         .unwrap();
+        ws
+    }
 
+    fn source(ws: &Workspace, name: &str, text: &str, topics: &[&str]) {
+        ws.write_live(name, text.as_bytes());
+        ws.add(&[name], topics).unwrap();
+    }
+
+    fn two_sourced_topics() -> Workspace {
+        let ws = workspace_with(TWO_TOPICS);
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
+        source(&ws, "beta.txt", "BETA_SOURCE\n", &["topic-beta"]);
+        ws
+    }
+
+    fn opened(ws: &Workspace) -> Deck {
+        open_for_exam(&ws.deck()).unwrap()
+    }
+
+    fn prompts(dir: &std::path::Path) -> Vec<String> {
+        (1..=crate::testutil::fake_reply_calls(dir))
+            .map(|n| std::fs::read_to_string(dir.join(format!("prompt-{n}"))).unwrap())
+            .collect()
+    }
+
+    const IDEAS: &str = "{\"ideas\":[\"m\"]}";
+    const ONE_QUESTION: &str = "{\"questions\":[{\"shape\":\"instance\",\"idea\":1,\
+                                \"prompt\":\"Why move?\",\"points\":[\"avoids double free\"]}]}";
+
+    fn prepare(deck: &Deck, replies: &[&str]) -> (tempfile::TempDir, Vec<String>) {
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), replies);
+        let (rx, _job) = spawn_prepare(
+            deck,
+            examined_topics(deck),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        rx.recv().unwrap().unwrap();
+        let seen = prompts(cli_dir.path());
+        (cli_dir, seen)
+    }
+
+    fn one_topic() -> ExamTopic {
+        ExamTopic {
+            topic_id: "topic-moves".to_string(),
+            label: "Moves".to_string(),
+            context: vec!["Moves".to_string()],
+            cards: vec!["Q: a\nA: b".to_string()],
+            sourced: true,
+            ..Default::default()
+        }
+    }
+
+    fn one_source() -> Vec<SourceText> {
+        vec![SourceText {
+            display: "sdk:src/lib.rs".to_string(),
+            text: "fn main() {}\n".to_string(),
+        }]
+    }
+
+    #[test]
+    fn adding_a_source_to_one_topic_regenerates_only_that_topics_ideas() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let (_first, seen) = prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
+        let listing_calls = |seen: &[String], label: &str| {
+            seen.iter()
+                .filter(|p| p.contains("\"ideas\"") && p.contains(&format!("Topic: {label}\n")))
+                .count()
+        };
+        let question_calls = |seen: &[String], label: &str| {
+            seen.iter()
+                .filter(|p| p.contains("\"questions\"") && p.contains(&format!("Topic: {label}\n")))
+                .count()
+        };
+        assert_eq!(
+            (1, 1, 1, 1),
+            (
+                listing_calls(&seen, "Alpha"),
+                question_calls(&seen, "Alpha"),
+                listing_calls(&seen, "Beta"),
+                question_calls(&seen, "Beta")
+            ),
+            "step 1: one listing and one question call per topic"
+        );
+
+        source(&ws, "beta-more.txt", "BETA_MORE\n", &["topic-beta"]);
+        let deck = opened(&ws);
         assert!(
-            prompt.contains("Source file `notes.md`"),
-            "a drive-rooted declaration should reach the prompt as its basename: {prompt}"
+            !has_current_prepared(&deck),
+            "step 2: Beta's questions are stale"
+        );
+        let (_second, seen) = prepare(&deck, &[IDEAS, ONE_QUESTION]);
+        assert_eq!(
+            (0, 0, 1, 1, 2),
+            (
+                listing_calls(&seen, "Alpha"),
+                question_calls(&seen, "Alpha"),
+                listing_calls(&seen, "Beta"),
+                question_calls(&seen, "Beta"),
+                seen.len()
+            ),
+            "step 2: only Beta is listed and asked again"
+        );
+        assert!(has_current_prepared(&deck), "step 2: current again");
+        let (_, prepared_path) = exam_files(&deck).unwrap();
+        let prepared = Prepared::load(&prepared_path).unwrap().unwrap();
+        assert_eq!(
+            vec!["topic-alpha", "topic-beta"],
+            prepared
+                .questions
+                .iter()
+                .map(|q| q.topic.as_str())
+                .collect::<Vec<_>>(),
+            "step 2: Alpha's question is kept beside Beta's new one"
+        );
+    }
+
+    #[test]
+    fn each_topic_prompt_holds_only_its_own_sources_sorted_by_display_path() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let mut n = 0;
+        let (dl_text, sdk_text) = loop {
+            let dl = format!("DL_SOURCE {n}\n");
+            if sources::source_id(dl.as_bytes()) > sources::source_id(b"SDK_SOURCE\n") {
+                break (dl, "SDK_SOURCE\n");
+            }
+            n += 1;
+        };
+        let other = ws.root().join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("dl.txt"), &dl_text).unwrap();
+        sources::commands::add(sources::commands::AddRequest {
+            deck: &ws.deck(),
+            files: vec![other.join("dl.txt")],
+            root: Some(("dl".to_string(), other.clone())),
+            key: None,
+            topics: vec!["topic-alpha".to_string()],
+        })
+        .unwrap();
+        source(&ws, "sdk.txt", sdk_text, &["topic-alpha"]);
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            cli_dir.path(),
+            &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION],
+        );
+        generate_questions(&opened(&ws), &ExamConfig::default(), &ask_config(&cli)).unwrap();
+        let seen = prompts(cli_dir.path());
+        let alpha = &seen[0];
+        let beta = &seen[2];
+        assert!(
+            alpha.contains("ALPHA_SOURCE") && !alpha.contains("BETA_SOURCE"),
+            "Alpha's prompt holds Alpha's bytes only: {alpha}"
         );
         assert!(
-            !prompt.contains(&declared),
-            "the operator's root-relative directory layout reached the prompt: {prompt}"
+            beta.contains("BETA_SOURCE") && !beta.contains("ALPHA_SOURCE"),
+            "Beta's prompt holds Beta's bytes only: {beta}"
+        );
+        let at = |needle: &str| alpha.find(needle).unwrap_or(usize::MAX);
+        assert!(
+            at("Source `dl:dl.txt`") < at("Source `sdk:alpha.txt`")
+                && at("Source `sdk:alpha.txt`") < at("Source `sdk:sdk.txt`"),
+            "sources enter by display path, not by id: {alpha}"
+        );
+    }
+
+    #[test]
+    fn a_renamed_heading_keeps_its_bindings_ideas_and_prepared_questions() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
+        let text = std::fs::read_to_string(ws.deck()).unwrap();
+        std::fs::write(ws.deck(), text.replace("# Alpha", "# Alpha renamed")).unwrap();
+        let renamed = opened(&ws);
+        assert!(
+            renamed.sources().unwrap().is_some(),
+            "the bindings still name the topic id"
+        );
+        let (_, prepared_path) = exam_files(&renamed).unwrap();
+        let prepared = Prepared::load(&prepared_path).unwrap().unwrap();
+        let (topics, questions, _) = prepared.against(&renamed);
+        assert_eq!(
+            vec![("topic-alpha", "Alpha renamed"), ("topic-beta", "Beta")],
+            topics
+                .iter()
+                .map(|t| (t.topic_id.as_str(), t.label.as_str()))
+                .collect::<Vec<_>>(),
+            "the prepared questions follow the topic id under its new heading"
+        );
+        assert_eq!(2, questions.len());
+        assert!(has_current_prepared(&renamed));
+        let (ideas_path, _) = exam_files(&renamed).unwrap();
+        let ideas = IdeasDocument::load(&ideas_path).unwrap().unwrap();
+        assert_eq!(
+            vec!["m".to_string()],
+            ideas.topics["topic-alpha"]
+                .ideas
+                .iter()
+                .map(|i| i.text.clone())
+                .collect::<Vec<_>>(),
+            "the idea cache is keyed by the topic id"
+        );
+    }
+
+    #[test]
+    fn same_text_headings_are_examined_as_two_topics() {
+        let ws = workspace_with(
+            "# A\n<!-- id: topic-first -->\n\n## a1?\none\n\n# B\n<!-- id: topic-b -->\n\n## \
+             b1?\ntwo\n\n# A\n<!-- id: topic-second -->\n\n## a2?\nthree\n",
+        );
+        let deck = opened(&ws);
+        let topics = exam_topics(&deck, None);
+        assert_eq!(
+            vec![
+                (DECK, "Ownership", 0),
+                ("topic-first", "A", 1),
+                ("topic-b", "B", 1),
+                ("topic-second", "A", 1)
+            ],
+            topics
+                .iter()
+                .map(|t| (t.topic_id.as_str(), t.label.as_str(), t.cards.len()))
+                .collect::<Vec<_>>(),
+            "one entry per topic in deck order, the leading topic first, never merged"
+        );
+        assert!(topics[1].cards[0].contains("a1?") && topics[3].cards[0].contains("a2?"));
+    }
+
+    #[test]
+    fn a_deck_copied_to_a_machine_without_the_live_files_builds_byte_identical_topic_prompts() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let run = |deck_path: &std::path::Path| {
+            let cli_dir = tempfile::tempdir().unwrap();
+            let cli = crate::testutil::fake_replies(
+                cli_dir.path(),
+                &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION],
+            );
+            let deck = open_for_exam(deck_path).unwrap();
+            generate_questions(&deck, &ExamConfig::default(), &ask_config(&cli)).unwrap();
+            prompts(cli_dir.path())
+        };
+        let here = run(&ws.deck());
+        let there = tempfile::tempdir().unwrap();
+        std::fs::write(there.path().join("alix.toml"), "").unwrap();
+        for folder in ["decks", "sources"] {
+            let from = ws.root().join(folder);
+            for entry in walk(&from) {
+                let to = there
+                    .path()
+                    .join(folder)
+                    .join(entry.strip_prefix(&from).unwrap());
+                std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+                std::fs::copy(&entry, &to).unwrap();
+            }
+        }
+        let roots = there.path().join("sources").join(DECK).join(sources::ROOTS);
+        std::fs::remove_file(roots).unwrap();
+        std::fs::remove_dir_all(ws.live()).unwrap();
+        let away = run(&there.path().join("decks").join("d.md"));
+        assert_eq!(2 * 2, here.len(), "two calls per topic");
+        assert_eq!(
+            here, away,
+            "the prompts are byte-identical without the live files"
+        );
+    }
+
+    fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files.extend(walk(&path));
+            } else {
+                files.push(path);
+            }
+        }
+        files
+    }
+
+    #[test]
+    fn an_unsourced_topic_is_never_sent_to_the_model_and_a_deck_with_no_sourced_topic_sits_no_exam()
+    {
+        let _lock = exec_lock();
+        let ws = workspace_with(TWO_TOPICS);
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
+        let deck = opened(&ws);
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+        let mut sitting = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        assert_eq!(None, advance_until_idle(&mut sitting));
+        assert_eq!(None, sitting.error(), "the sourced topic is examined");
+        let seen = prompts(cli_dir.path());
+        assert_eq!(2, seen.len(), "one topic, two calls");
+        assert!(
+            seen.iter()
+                .all(|p| !p.contains("Beta") && !p.contains("b1?")),
+            "the unsourced topic never reaches the model: {seen:?}"
+        );
+        assert_eq!(
+            vec!["topic-alpha"],
+            sitting
+                .topics()
+                .iter()
+                .map(|t| t.topic_id.as_str())
+                .collect::<Vec<_>>()
+        );
+
+        let bare = workspace_with(TWO_TOPICS);
+        let deck = opened(&bare);
+        assert!(!deck.declares_sources(), "no manifest, no exam");
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS]);
+        let sitting = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        assert_eq!(
+            Some("the deck declares no sources to examine against"),
+            sitting.error()
+        );
+        assert_eq!(0, crate::testutil::fake_reply_calls(cli_dir.path()));
+    }
+
+    #[test]
+    fn a_malformed_sources_manifest_is_a_loud_error_never_cached_as_no_exam() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let manifest = ws.dir().join(sources::MANIFEST);
+        let valid = std::fs::read_to_string(&manifest).unwrap();
+        std::fs::write(&manifest, "version = 1\n[sources\n").unwrap();
+
+        let deck = Deck::load(ws.deck()).unwrap();
+        assert!(
+            deck.load_warnings
+                .iter()
+                .any(|w| w.contains(&manifest.display().to_string())),
+            "the parse failure is a load warning naming the manifest: {:?}",
+            deck.load_warnings
+        );
+        assert!(
+            deck.declares_sources(),
+            "a broken manifest is never `no exam`"
+        );
+        let sitting = Sitting::start(
+            &deck,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            AskConfig::default(),
+        );
+        assert!(
+            sitting
+                .error()
+                .is_some_and(|e| e.contains(&manifest.display().to_string())),
+            "the sitting fails naming the manifest: {:?}",
+            sitting.error()
+        );
+
+        let mut cache = crate::cache::DeckCache::default();
+        assert!(cache.load(&ws.deck()).unwrap().declares_sources());
+        assert!(
+            cache.load(&ws.deck()).unwrap().declared().manifest.is_err(),
+            "the cache keeps the error, not an empty answer"
+        );
+        std::fs::write(&manifest, &valid).unwrap();
+        assert!(
+            cache.load(&ws.deck()).unwrap().declared().manifest.is_ok(),
+            "a repaired manifest is read again"
+        );
+    }
+
+    #[test]
+    fn a_ranged_binding_sends_only_its_lines_under_a_range_header() {
+        let _lock = exec_lock();
+        let ws = workspace_with(TWO_TOPICS);
+        let nine: String = (1..=9).map(|n| format!("line-{n}-marker\n")).collect();
+        source(&ws, "nine.txt", &nine, &["2-3,7|topic-alpha"]);
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+        generate_questions(&opened(&ws), &ExamConfig::default(), &ask_config(&cli)).unwrap();
+        for prompt in prompts(cli_dir.path()) {
+            assert!(
+                prompt.contains(
+                    "Source `sdk:nine.txt:2-3`:\n<<<SOURCE\nline-2-marker\nline-3-marker\nSOURCE\n"
+                ) && prompt
+                    .contains("Source `sdk:nine.txt:7`:\n<<<SOURCE\nline-7-marker\nSOURCE\n"),
+                "each range under its own header, lines verbatim: {prompt}"
+            );
+            for absent in [1, 4, 5, 6, 8, 9] {
+                assert!(
+                    !prompt.contains(&format!("line-{absent}-marker")),
+                    "line {absent} is outside the ranges: {prompt}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn changing_one_topics_ranges_regenerates_only_that_topic() {
+        let _lock = exec_lock();
+        let ws = workspace_with(TWO_TOPICS);
+        let nine: String = (1..=9).map(|n| format!("line-{n}\n")).collect();
+        source(&ws, "nine.txt", &nine, &["2-3|topic-alpha", "topic-beta"]);
+        prepare(&opened(&ws), &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION]);
+        let id = sources::source_id(nine.as_bytes());
+        sources::commands::bind(&ws.deck(), &id, &["5-6|topic-alpha".to_string()]).unwrap();
+        let (_cli, seen) = prepare(&opened(&ws), &[IDEAS, ONE_QUESTION]);
+        assert_eq!(2, seen.len(), "one listing and one question call: {seen:?}");
+        assert!(
+            seen.iter()
+                .all(|p| p.contains("Topic: Alpha\n") && p.contains("sdk:nine.txt:5-6")),
+            "both calls are Alpha's, over its new range: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn a_cardless_sourced_topic_is_examined_through_start_with() {
+        let _lock = exec_lock();
+        let ws = workspace_with("# Empty\n\nOnly prose.\n<!-- id: topic-empty -->\n");
+        source(&ws, "empty.txt", "EMPTY_SOURCE\n", &["topic-empty"]);
+        let deck = opened(&ws);
+        assert_eq!(
+            vec!["topic-empty"],
+            crate::exam_status::examined_topics(&deck)
+                .iter()
+                .map(|topic| topic.topic_id.as_str())
+                .collect::<Vec<_>>(),
+            "the prepared exam's topic list keeps the topic without cards"
+        );
+        let sources = deck.sources().unwrap().unwrap();
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+        let mut sitting = Sitting::start_with(
+            &deck,
+            exam_topics(&deck, Some(&sources.manifest)),
+            sources,
+            None,
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        advance_until_idle(&mut sitting);
+        assert_eq!(None, sitting.error());
+        assert_eq!(
+            vec![("topic-empty", 0)],
+            sitting
+                .questions()
+                .iter()
+                .map(|q| (sitting.topics()[q.topic].topic_id.as_str(), q.topic))
+                .collect::<Vec<_>>(),
+            "the topic without cards is asked about"
+        );
+    }
+
+    #[test]
+    fn a_sitting_refuses_a_deck_whose_topic_id_is_duplicated() {
+        let _lock = exec_lock();
+        let in_deck = two_sourced_topics();
+        let text = std::fs::read_to_string(in_deck.deck()).unwrap();
+        std::fs::write(
+            in_deck.deck(),
+            format!("{text}\n# Gamma\n<!-- id: topic-beta -->\n\n## g?\nthree\n"),
+        )
+        .unwrap();
+        let across = two_sourced_topics();
+        std::fs::write(
+            across.root().join("decks").join("other.md"),
+            "---\nid: \"deck-other\"\n---\n# Copy\n<!-- id: topic-alpha -->\n\n## c?\nx\n",
+        )
+        .unwrap();
+        for (label, ws, copy) in [
+            ("in one deck", &in_deck, "d.md"),
+            ("across member decks", &across, "other.md"),
+        ] {
+            let deck = Deck::load(ws.deck()).unwrap();
+            let sources = sources::load_verified(ws.root(), DECK).unwrap().unwrap();
+            let cli_dir = tempfile::tempdir().unwrap();
+            let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+            let sitting = Sitting::start_with(
+                &deck,
+                examined_topics(&deck),
+                sources,
+                None,
+                Strictness::Balanced,
+                ExamConfig::default(),
+                ask_config(&cli),
+            );
+            let findings = crate::topic::duplicated_topics(&deck, Some(ws.root()))
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                !findings.is_empty() && findings.contains(copy),
+                "{label}: setup names the copy: {findings}"
+            );
+            assert_eq!(Some(findings.as_str()), sitting.error(), "{label}: sitting");
+            let (rx, _job) = spawn_prepare(
+                &deck,
+                examined_topics(&deck),
+                ExamConfig::default(),
+                ask_config(&cli),
+            );
+            assert_eq!(
+                Err(findings.clone()),
+                rx.recv().unwrap(),
+                "{label}: prepare"
+            );
+            assert_eq!(
+                0,
+                crate::testutil::fake_reply_calls(cli_dir.path()),
+                "{label}: the model is never called"
+            );
+        }
+    }
+
+    #[test]
+    fn narrowing_a_prepared_exam_keeps_only_the_questions_a_sitting_kept() {
+        let topics = vec![one_topic()];
+        let question = |prompt: &str| ExamQuestion {
+            prompt: prompt.to_string(),
+            points: vec!["p".to_string()],
+            ..Default::default()
+        };
+        let all = [question("Q1"), question("Q2")];
+        let prepared = Prepared {
+            version: 1,
+            generated_at_ms: 7,
+            topics: BTreeMap::new(),
+            questions: all
+                .iter()
+                .filter_map(|q| PreparedQuestion::of(q, &topics))
+                .collect(),
+            answers: vec![String::new(); 2],
+        };
+        let narrowed = prepared.narrowed(&topics, &all[1..], &["kept".to_string()]);
+        assert_eq!(
+            vec![("topic-moves", "Q2")],
+            narrowed
+                .questions
+                .iter()
+                .map(|q| (q.topic.as_str(), q.prompt.as_str()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(vec!["kept".to_string()], narrowed.answers);
+        assert_eq!(7, narrowed.generated_at_ms, "the rest is kept");
+    }
+
+    #[test]
+    fn a_sitting_records_only_the_topics_it_asked_about() {
+        let topic = |id: &str, card: &str| ExamTopic {
+            topic_id: id.to_string(),
+            card_ids: vec![card.to_string()],
+            ..Default::default()
+        };
+        let topics = [topic("topic-a", "card-a"), topic("topic-b", "card-b")];
+        let score = |total, pass| TopicScore {
+            pass,
+            partial: 0,
+            total,
+            passed: total > 0 && pass == total,
+        };
+        let result = ExamResult {
+            grades: Vec::new(),
+            topics: vec![score(1, 1), score(0, 0)],
+        };
+        let record = sitting_record(&topics, false, &result);
+        assert_eq!(
+            vec![(vec!["card-a".to_string()], true)],
+            record
+                .topics
+                .iter()
+                .map(|t| (t.card_ids.clone(), t.pass))
+                .collect::<Vec<_>>(),
+            "a topic without a question records nothing"
         );
     }
 }

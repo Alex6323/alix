@@ -7,8 +7,9 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Binding, DisplayPath, MANIFEST, MANIFEST_VERSION, SourceError, copy_name, io_error,
+    Binding, DisplayPath, MANIFEST, MANIFEST_VERSION, SourceError, SourceText, copy_name, io_error,
     is_copy_name, is_source_id, line_count, parse_binding, read_versioned, source_id,
+    topic_fingerprint,
 };
 use crate::{deck::Deck, token, workspace::WorkspaceFiles};
 
@@ -305,6 +306,53 @@ impl DeckSources {
         Ok(())
     }
 
+    pub fn texts_of(&self, topic_id: &str) -> Result<Vec<SourceText>, SourceError> {
+        let mut texts = Vec::new();
+        for (id, row) in self.sources_of(topic_id) {
+            let bytes = self
+                .copies
+                .get(id)
+                .ok_or_else(|| SourceError::MissingCopy(id.to_string()))?;
+            let text =
+                std::str::from_utf8(bytes).map_err(|_| SourceError::NotText(row.path.clone()))?;
+            let Some(entry) = row
+                .bound_to
+                .iter()
+                .find(|entry| topic_of(entry) == topic_id)
+            else {
+                continue;
+            };
+            let binding = parse_binding(id, entry)?;
+            if binding.ranges.is_empty() {
+                texts.push(SourceText {
+                    display: row.path.clone(),
+                    text: text.to_string(),
+                });
+                continue;
+            }
+            let lines: Vec<&str> = text.split_inclusive('\n').collect();
+            for &(start, end) in &binding.ranges {
+                let display = if start == end {
+                    format!("{}:{start}", row.path)
+                } else {
+                    format!("{}:{start}-{end}", row.path)
+                };
+                let picked = lines
+                    .get((start as usize).saturating_sub(1)..end as usize)
+                    .ok_or_else(|| SourceError::RangeOutOfBounds {
+                        id: id.to_string(),
+                        entry: entry.clone(),
+                        lines: lines.len(),
+                    })?;
+                texts.push(SourceText {
+                    display,
+                    text: picked.concat(),
+                });
+            }
+        }
+        Ok(texts)
+    }
+
     pub fn sources_of(&self, topic_id: &str) -> Vec<(&str, &Row)> {
         let mut rows: Vec<(&str, &Row)> = self
             .manifest
@@ -318,11 +366,35 @@ impl DeckSources {
     }
 
     pub fn sourced_topics(&self) -> BTreeSet<String> {
-        self.manifest
-            .sources
+        self.manifest.sourced_topics()
+    }
+}
+
+impl Manifest {
+    pub fn sourced_topics(&self) -> BTreeSet<String> {
+        self.sources
             .values()
             .flat_map(|row| row.bound_to.iter().map(|entry| topic_of(entry).to_string()))
             .collect()
+    }
+
+    pub fn fingerprints(&self) -> Result<BTreeMap<String, String>, SourceError> {
+        let mut entries: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for valid in self.validate()? {
+            for binding in &valid.bindings {
+                entries
+                    .entry(binding.topic.clone())
+                    .or_default()
+                    .push(binding.fingerprint_entry(valid.id));
+            }
+        }
+        Ok(entries
+            .into_iter()
+            .map(|(topic, lines)| {
+                let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+                (topic, topic_fingerprint(&lines))
+            })
+            .collect())
     }
 }
 
@@ -822,6 +894,73 @@ pub(super) mod tests {
                 .map(str::to_string)
                 .collect::<BTreeSet<String>>(),
             sources.sourced_topics()
+        );
+    }
+
+    #[test]
+    fn a_topics_texts_follow_display_order_and_cut_ranges_under_their_own_headers() {
+        let nine = b"l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\n".to_vec();
+        let whole = b"whole file\n".to_vec();
+        let (n, w) = (source_id(&nine), source_id(&whole));
+        let mut sources = sources_with(&[
+            (&n, "sdk:nine.txt", &["2-3,7|topic-aaaa", "topic-bbbb"]),
+            (&w, "dl:whole.txt", &["topic-aaaa"]),
+        ]);
+        sources.copies = BTreeMap::from([(n.clone(), nine), (w.clone(), whole)]);
+        let texts = |topic: &str| -> Vec<(String, String)> {
+            sources
+                .texts_of(topic)
+                .unwrap()
+                .into_iter()
+                .map(|text| (text.display, text.text))
+                .collect()
+        };
+        assert_eq!(
+            vec![
+                ("dl:whole.txt".to_string(), "whole file\n".to_string()),
+                ("sdk:nine.txt:2-3".to_string(), "l2\nl3\n".to_string()),
+                ("sdk:nine.txt:7".to_string(), "l7\n".to_string()),
+            ],
+            texts("topic-aaaa"),
+            "display order, then one block per range"
+        );
+        assert_eq!(
+            vec![(
+                "sdk:nine.txt".to_string(),
+                "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\n".to_string()
+            )],
+            texts("topic-bbbb"),
+            "an unranged binding enters whole"
+        );
+        sources.copies.insert(w.clone(), vec![0xff, b'\n']);
+        assert!(
+            matches!(
+                sources.texts_of("topic-aaaa"),
+                Err(SourceError::NotText(path)) if path == "dl:whole.txt"
+            ),
+            "a copy that is not UTF-8 is refused by its display path"
+        );
+    }
+
+    #[test]
+    fn fingerprints_hash_each_topics_bindings_with_their_ranges() {
+        let (x, y) = (source_id(b"x"), source_id(b"y"));
+        let manifest = manifest_with(&[
+            (&x, "sdk:x.txt", &["topic-aaaa", "1-2|topic-bbbb"]),
+            (&y, "sdk:y.txt", &["topic-aaaa"]),
+        ]);
+        assert_eq!(
+            BTreeMap::from([
+                (
+                    "topic-aaaa".to_string(),
+                    topic_fingerprint(&[y.as_str(), x.as_str()])
+                ),
+                (
+                    "topic-bbbb".to_string(),
+                    topic_fingerprint(&[format!("{x}:1-2").as_str()])
+                ),
+            ]),
+            manifest.fingerprints().unwrap()
         );
     }
 

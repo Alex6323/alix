@@ -5924,8 +5924,8 @@ fn exam_grade_on_a_fact_deck_walks_from_answering_to_a_passing_result_via_the_fa
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
 
     let resp = post_json(&base, "/api/exam/grade", r#"{"text":"a1"}"#);
@@ -6168,8 +6168,8 @@ fn exam_answer_sets_the_text_the_grade_submits() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
 
     let resp = post_json(&base, "/api/exam/answer", r#"{"text":"my answer"}"#);
@@ -6214,15 +6214,15 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    let exam_dir = private_state_root(guard.dir()).join("exam");
-    let start = || post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    let exam_dir = private_state_root(&guard.dir().join(EXAM_WS)).join("exam");
+    let start = || post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
 
     assert_eq!(
         409,
         start().status,
         "step 1: nothing to take before generating"
     );
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
     assert!(
         exam_dir.join("deck-examdeck.prepared.json").exists()
             && exam_dir.join("deck-examdeck.json").exists(),
@@ -6230,10 +6230,14 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     );
     assert_eq!(
         Some(true),
-        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        deck_row_flag(&base, "examws/examdeck.md", "exam_prepared"),
         "step 2: the deck row offers the exam to take"
     );
-    let again = post_json(&base, "/api/exam/generate", r#"{"deck":"examdeck.md"}"#);
+    let again = post_json(
+        &base,
+        "/api/exam/generate",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     assert_eq!(
         409, again.status,
         "step 2: a ready exam is taken, not generated again"
@@ -6241,7 +6245,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     let left = post_json(
         &base,
         "/api/exam/generate/cancel",
-        r#"{"deck":"examdeck.md"}"#,
+        r#"{"deck":"examws/examdeck.md"}"#,
     );
     assert_eq!(
         (200, serde_json::json!([])),
@@ -6287,7 +6291,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     );
     assert_eq!(
         Some(false),
-        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        deck_row_flag(&base, "examws/examdeck.md", "exam_prepared"),
         "step 5: the deck row no longer offers it"
     );
     let ideas: serde_json::Value = serde_json::from_str(
@@ -6295,8 +6299,8 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     )
     .unwrap();
     assert_eq!(
-        false, ideas["topics"][0]["ideas"][0]["last_passed"],
-        "step 5: the asked idea is recorded as failed: {ideas}"
+        false, ideas["topics"]["deck-examdeck"]["ideas"][0]["last_test_passed"],
+        "step 5: the asked idea is recorded as failed under its topic id: {ideas}"
     );
     post_json(&base, "/api/exam/close", "{}");
     assert_eq!(
@@ -6305,16 +6309,78 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         "step 5: a graded exam cannot be taken twice"
     );
 
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    std::fs::write(guard.dir().join("examsource.txt"), "c changed.\n").unwrap();
+    let deck_path = guard.dir().join("examws/decks/examdeck.md");
+    let text = std::fs::read_to_string(&deck_path).unwrap();
+    std::fs::write(
+        &deck_path,
+        format!("{text}\n# B\n<!-- id: topic-sb -->\n\n## b\n2\n<!-- id: card-e2 -->\n"),
+    )
+    .unwrap();
+    let live = guard.dir().join("examlive");
+    std::fs::write(live.join("bsource.txt"), "b is a concept.\n").unwrap();
+    alix::sources::commands::add(alix::sources::commands::AddRequest {
+        deck: &deck_path,
+        files: vec![live.join("bsource.txt")],
+        root: None,
+        key: Some("src".to_string()),
+        topics: vec!["topic-sb".to_string()],
+    })
+    .unwrap();
+    std::fs::write(&grades_path, r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["p1"]},{"verdict":"fail","feedback":"no","missed":["p1"]}]}"#).unwrap();
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    let prepared_topics = || -> Vec<String> {
+        let prepared: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(exam_dir.join("deck-examdeck.prepared.json")).unwrap(),
+        )
+        .unwrap();
+        prepared["questions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|q| q["topic"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(
+        vec!["deck-examdeck", "topic-sb"],
+        prepared_topics(),
+        "step 6: one question per sourced topic"
+    );
+    let calls_before = std::fs::read_to_string(scripts.path().join("topics.log")).unwrap();
+
+    std::fs::write(live.join("bsource.txt"), "b changed.\n").unwrap();
+    alix::sources::commands::update(
+        &deck_path,
+        &alix::sources::source_id(b"b is a concept.\n"),
+        &live.join("bsource.txt"),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         409,
         start().status,
-        "step 6: a changed material makes it stale"
+        "step 6: re-freezing one topic's source makes the prepared exam stale"
     );
-    assert!(
-        !exam_dir.join("deck-examdeck.prepared.json").exists(),
-        "step 6: the stale exam is removed"
+    assert_eq!(
+        vec!["deck-examdeck", "topic-sb"],
+        prepared_topics(),
+        "step 6: the stale exam is kept, with the other topic's question"
+    );
+    assert_eq!(
+        Some(false),
+        deck_row_flag(&base, "examws/examdeck.md", "exam_prepared"),
+        "step 6: the deck row offers Generate again"
+    );
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    let calls_after = std::fs::read_to_string(scripts.path().join("topics.log")).unwrap();
+    assert_eq!(
+        "Topic: B\nTopic: B\n",
+        &calls_after[calls_before.len()..],
+        "step 6: only the re-frozen topic is listed and asked again"
+    );
+    assert_eq!(
+        Some(true),
+        deck_row_flag(&base, "examws/examdeck.md", "exam_prepared"),
+        "step 6: the regenerated exam is current"
     );
 
     std::fs::write(exam_dir.join("deck-examdeck.prepared.json"), "{").unwrap();
@@ -6325,7 +6391,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     );
     assert_eq!(
         Some(false),
-        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        deck_row_flag(&base, "examws/examdeck.md", "exam_prepared"),
         "step 7: the unreadable exam is removed, so Generate exam is offered again"
     );
 
@@ -6338,10 +6404,14 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
     );
     assert_eq!(
         Some(false),
-        deck_row_flag(&base, "examdeck.md", "exam_prepared"),
+        deck_row_flag(&base, "examws/examdeck.md", "exam_prepared"),
         "step 8: the picker offers Generate for a non-file prepared path"
     );
-    let retry = post_json(&base, "/api/exam/generate", r#"{"deck":"examdeck.md"}"#);
+    let retry = post_json(
+        &base,
+        "/api/exam/generate",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     assert_eq!(
         200, retry.status,
         "step 8: cleanup must not leave an unreadable path blocking regeneration"
@@ -6356,7 +6426,7 @@ fn every_preparing_reply_carries_the_full_job_list_and_a_sequence_above_the_repl
     std::fs::write(&grades_path, r#"{"grades":[]}"#).unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, _guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    let deck = r#"{"deck":"examdeck.md"}"#;
+    let deck = r#"{"deck":"examws/examdeck.md"}"#;
     let replies = [
         ("generate", post_json(&base, "/api/exam/generate", deck)),
         ("list", http(&base, "GET", "/api/exam/preparing", &[], &[])),
@@ -6392,12 +6462,12 @@ fn a_prepared_exam_is_not_consumed_when_its_idea_history_cannot_be_saved() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    let exam_dir = private_state_root(guard.dir()).join("exam");
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    let exam_dir = private_state_root(&guard.dir().join(EXAM_WS)).join("exam");
     let ideas = exam_dir.join("deck-examdeck.json");
     let prepared = exam_dir.join("deck-examdeck.prepared.json");
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
     assert_eq!(200, resp.status);
     let resp = post_json(&base, "/api/exam/grade", r#"{"text":"answer"}"#);
     assert_eq!(200, resp.status);
@@ -6424,12 +6494,12 @@ fn closing_results_retries_a_repaired_idea_save_and_consumes_the_prepared_exam()
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    let exam_dir = private_state_root(guard.dir()).join("exam");
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    let exam_dir = private_state_root(&guard.dir().join(EXAM_WS)).join("exam");
     let ideas = exam_dir.join("deck-examdeck.json");
     let prepared = exam_dir.join("deck-examdeck.prepared.json");
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
     assert_eq!(200, resp.status);
     let resp = post_json(&base, "/api/exam/grade", r#"{"text":"answer"}"#);
     assert_eq!(200, resp.status);
@@ -6463,12 +6533,12 @@ fn starting_a_review_retries_a_repaired_idea_save_and_consumes_the_prepared_exam
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    let exam_dir = private_state_root(guard.dir()).join("exam");
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    let exam_dir = private_state_root(&guard.dir().join(EXAM_WS)).join("exam");
     let ideas = exam_dir.join("deck-examdeck.json");
     let prepared = exam_dir.join("deck-examdeck.prepared.json");
 
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
     assert_eq!(200, resp.status);
     let resp = post_json(&base, "/api/exam/grade", r#"{"text":"answer"}"#);
     assert_eq!(200, resp.status);
@@ -6518,13 +6588,13 @@ fn starting_trace_browse_and_walk_retry_a_repaired_idea_save() {
             },
             |_| {},
         );
-        prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-        let exam_dir = private_state_root(guard.dir()).join("exam");
+        prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+        let exam_dir = private_state_root(&guard.dir().join(EXAM_WS)).join("exam");
         let ideas = exam_dir.join("deck-examdeck.json");
         let prepared = exam_dir.join("deck-examdeck.prepared.json");
         assert_eq!(
             200,
-            post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#).status
+            post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#).status
         );
         assert_eq!(
             200,
@@ -7611,10 +7681,10 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
-    post_json(&base, "/api/exam/start", r#"{"deck":"examdeck.md"}"#);
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
+    post_json(&base, "/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#);
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
-    let state_dir = private_state_root(guard.dir());
+    let state_dir = private_state_root(&guard.dir().join(EXAM_WS));
     break_state_dir(&state_dir);
 
     post_json(&base, "/api/exam/grade", r#"{"text":"a1"}"#);
@@ -7632,18 +7702,10 @@ fn a_mastery_save_failure_surfaces_and_the_mastery_survives_repair() {
     let resp = post_json(&base, "/api/exam/close", "{}");
     assert_eq!(200, resp.status);
 
-    let resp = http(&base, "GET", "/api/decks", &[], &[]);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let mastered = body["recent"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|d| d["name"] == "examdeck.md")
-        .map(|d| d["mastered"].clone());
     assert_eq!(
-        Some(serde_json::Value::Bool(true)),
-        mastered,
-        "the mastery must survive the repaired flush: {body}"
+        Some(true),
+        deck_row_flag(&base, "examws/examdeck.md", "mastered"),
+        "the mastery must survive the repaired flush"
     );
 }
 
@@ -8524,13 +8586,13 @@ fn law_every_other_session_transition_ends_a_running_walk() {
         },
         |_| {},
     );
-    prepare_exam(&base, r#"{"deck":"examdeck.md"}"#);
+    prepare_exam(&base, r#"{"deck":"examws/examdeck.md"}"#);
     let transitions = [
         ("/api/select", r#"{"deck":"sample.md"}"#),
         ("/api/select", r#"{"deck":"trace.md"}"#),
         ("/api/browse", r#"{"deck":"sample.md"}"#),
         ("/api/deselect", "{}"),
-        ("/api/exam/start", r#"{"deck":"examdeck.md"}"#),
+        ("/api/exam/start", r#"{"deck":"examws/examdeck.md"}"#),
         ("/api/exam/close", "{}"),
         ("/api/augment/open", r#"{"deck":"sample.md"}"#),
         ("/api/trace/leave", "{}"),
@@ -9162,25 +9224,60 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 /// `spawn_full_server`'s other fixtures: enough for the AI exam's
 /// generate → answer → grade → remediate walk. One card is enough; the exam
 /// grades the source, never the deck's own cards.
+const EXAM_WS: &str = "examws";
+
+/// A member of the `examws` workspace, with each `(file, text, topics)` frozen
+/// as one of its sources.
+fn write_sourced_member(
+    dir: &Path,
+    file: &str,
+    text: &str,
+    sources: &[(&str, &str, &[&str])],
+) -> PathBuf {
+    let ws = dir.join(EXAM_WS);
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let deck = ws.join("decks").join(file);
+    std::fs::write(&deck, text).unwrap();
+    let live = dir.join("examlive");
+    std::fs::create_dir_all(&live).unwrap();
+    for (name, content, topics) in sources {
+        std::fs::write(live.join(name), content).unwrap();
+        alix::sources::commands::add(alix::sources::commands::AddRequest {
+            deck: &deck,
+            files: vec![live.join(name)],
+            root: Some(("src".to_string(), live.clone())),
+            key: None,
+            topics: topics.iter().map(|topic| topic.to_string()).collect(),
+        })
+        .unwrap();
+    }
+    deck
+}
+
 fn write_exam_deck_fixture(dir: &Path) {
-    std::fs::write(
-        dir.join("examdeck.md"),
-        "---\nformat-version: 1\nid: \"deck-examdeck\"\nexam: examsource.txt\n---\n## c\na\n<!-- id: card-e1 -->\n",
-    )
-    .unwrap();
-    std::fs::write(dir.join("examsource.txt"), "c stands for a concept.\n").unwrap();
+    write_sourced_member(
+        dir,
+        "examdeck.md",
+        "---\nformat-version: 1\nid: \"deck-examdeck\"\n---\n## c\na\n<!-- id: card-e1 -->\n",
+        &[("examsource.txt", "c stands for a concept.\n", &[])],
+    );
 }
 
 fn write_two_topic_exam_deck_with_a_passed(dir: &Path) {
-    let deck = dir.join("twosect.md");
-    std::fs::write(
-        &deck,
-        "---\nformat-version: 1\nid: \"deck-twosect\"\nexam: examsource.txt\n---\n\
-         # A\n\n## a\n1\n<!-- id: card-sa1 -->\n\n# B\n\n## b\n2\n<!-- id: card-sb1 -->\n",
-    )
-    .unwrap();
-    std::fs::write(dir.join("examsource.txt"), "a and b are concepts.\n").unwrap();
-    let mut store = alix::state::open_store(&deck, &state_root(dir)).unwrap();
+    let deck = write_sourced_member(
+        dir,
+        "twosect.md",
+        "---\nformat-version: 1\nid: \"deck-twosect\"\n---\n\
+         # A\n<!-- id: topic-sa -->\n\n## a\n1\n<!-- id: card-sa1 -->\n\n\
+         # B\n<!-- id: topic-sb -->\n\n## b\n2\n<!-- id: card-sb1 -->\n",
+        &[(
+            "examsource.txt",
+            "a and b are concepts.\n",
+            &["topic-sa", "topic-sb"],
+        )],
+    );
+    let mut store = alix::state::open_store(&deck, &dir.join(EXAM_WS)).unwrap();
     store.get_or_insert("card-sa1").exam_result = Some(alix::store::ExamRecord {
         at_ms: 1,
         pass: true,
@@ -9202,8 +9299,11 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_topic_results() {
     let (base, guard) =
         spawn_full_server_fixture(Some(&fake), write_two_topic_exam_deck_with_a_passed, |_| {});
 
-    prepare_exam(&base, r#"{"deck":"twosect.md","needs_work_only":true}"#);
-    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"twosect.md"}"#);
+    prepare_exam(
+        &base,
+        r#"{"deck":"examws/twosect.md","needs_work_only":true}"#,
+    );
+    let resp = post_json(&base, "/api/exam/start", r#"{"deck":"examws/twosect.md"}"#);
     assert_eq!(200, resp.status, "start");
     poll_until(&base, "/api/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/exam/grade", r#"{"text":"b"}"#);
@@ -9234,8 +9334,11 @@ fn exam_start_honours_the_needs_work_filter_and_reports_per_topic_results() {
     assert_eq!(0, body["grades"][0]["topic"], "{body}");
 
     post_json(&base, "/api/exam/close", "{}");
-    let store =
-        alix::state::open_store(&guard.dir().join("twosect.md"), &state_root(guard.dir())).unwrap();
+    let store = alix::state::open_store(
+        &guard.dir().join("examws/decks/twosect.md"),
+        &guard.dir().join(EXAM_WS),
+    )
+    .unwrap();
     assert_eq!(
         Some(true),
         store
@@ -9271,7 +9374,7 @@ fn remote_exam_start_examines_topics_of_the_named_cards_reports_unknown_ids_and_
     let resp = post_json(
         &base,
         "/api/remote/exam/start",
-        r#"{"deck":"twosect.md","cards":["card-sb1","card-gone"]}"#,
+        r#"{"deck":"examws/twosect.md","cards":["card-sb1","card-gone"]}"#,
     );
     assert_eq!(200, resp.status, "start");
     let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
@@ -9294,8 +9397,11 @@ fn remote_exam_start_examines_topics_of_the_named_cards_reports_unknown_ids_and_
     assert_eq!(false, body["full"], "{body}");
 
     post_json(&base, "/api/remote/exam/close", "{}");
-    let store =
-        alix::state::open_store(&guard.dir().join("twosect.md"), &state_root(guard.dir())).unwrap();
+    let store = alix::state::open_store(
+        &guard.dir().join("examws/decks/twosect.md"),
+        &guard.dir().join(EXAM_WS),
+    )
+    .unwrap();
     assert_eq!(
         None,
         store.get("card-sb1").and_then(|c| c.exam_result),
@@ -9317,13 +9423,16 @@ fn branching_exam_cli(dir: &Path, grades_path: &Path) -> PathBuf {
     std::fs::write(
         &path,
         format!(
-            "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\ncase \"$input\" in\n\
+            "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\n\
+             printf '%s\\n' \"$input\" | grep -m1 '^Topic: ' >> {log}\n\
+             case \"$input\" in\n\
              *'\"grades\"'*) cat {grades} ;;\n\
-             *'\"models\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}]}}' ;;\n\
-             *'\"questions\"'*) printf '%s' '{{\"topics\":[{{\"topic\":1,\"models\":[\"m\"]}}],\"questions\":[{{\"topic\":1,\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
+             *'\"questions\"'*) printf '%s' '{{\"questions\":[{{\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Q1\",\"points\":[\"p1\"]}}]}}' ;;\n\
+             *'\"ideas\"'*) printf '%s' '{{\"ideas\":[\"m\"]}}' ;;\n\
              *) printf '## term?\\ndefinition\\n' ;;\n\
              esac\n",
             grades = grades_path.display(),
+            log = dir.join("topics.log").display(),
         ),
     )
     .unwrap();
@@ -9343,11 +9452,15 @@ fn remote_exam_start_stamps_a_card_added_after_initialization() {
     .unwrap();
     let fake = branching_exam_cli(scripts.path(), &grades_path);
     let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
-    let path = guard.dir().join("examdeck.md");
+    let path = guard.dir().join("examws/decks/examdeck.md");
     let initialized = std::fs::read_to_string(&path).unwrap();
     std::fs::write(&path, format!("{initialized}\n## new card\nnew answer\n")).unwrap();
 
-    let response = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
+    let response = post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     assert_eq!(200, response.status);
 
     let deck = alix::deck::Deck::load(&path).unwrap();
@@ -9791,7 +9904,11 @@ fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
     let (base, _guard) =
         spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
 
-    let resp = post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
+    let resp = post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     assert_eq!(200, resp.status);
 
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
@@ -9841,7 +9958,11 @@ fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
     let (base, _guard) =
         spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
 
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
+    post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     assert_eq!(
         1,
@@ -10002,7 +10123,11 @@ fn remote_endpoints_never_write_the_server_store() {
     let decks_before = snapshot_dir(guard.dir());
 
     // (a) a full remote exam that PASSES.
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
+    post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
@@ -10015,7 +10140,11 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
     )
     .unwrap();
-    post_json(&base, "/api/remote/exam/start", r#"{"deck":"examdeck.md"}"#);
+    post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
@@ -10097,7 +10226,7 @@ fn remote_endpoints_never_write_the_server_store() {
         snapshot_dir(&fixture_state),
         "a remote card create never writes the server's own store"
     );
-    let sidecar = alix::personal::sidecar_path(&guard.dir().join("examdeck.md"));
+    let sidecar = alix::personal::sidecar_path(&guard.dir().join("examws/decks/examdeck.md"));
     let mut decks_now = snapshot_dir(guard.dir());
     assert!(
         decks_now

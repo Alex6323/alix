@@ -210,7 +210,8 @@ Requests in flight together may be handled in a different order than they
 were sent, so a client applies a reply only when its `sequence` is higher
 than the last one it applied. The finished exam is kept in the deck's store, so it survives
 leaving the page and restarting the server; the deck row's `exam_prepared`
-says it is there. With `needs_work_only: true` the exam covers only the
+says a current one is there. Questions are written one topic at a time, each
+from that topic's frozen source copies alone. With `needs_work_only: true` the exam covers only the
 topics that have not passed (needs work, new cards, unexamined), read from
 the server's own store; when every topic has passed, or none has, it covers
 all of them.
@@ -224,8 +225,10 @@ learner moves on from it non-empty, and a locked answer is not changed.
 `POST /api/exam/grade {text}` submits the last answer and starts grading;
 grading uses the prepared exam up. `POST /api/exam/remediate` generates
 remediation cards when an answer missed key points; `POST /api/exam/close` →
-`StateDto`. A prepared exam whose exam material changed since it was written
-is removed at start (409). The result is recorded on the examined cards when
+`StateDto`. A prepared exam is current while every topic it asks about is
+still examined over the same sources; otherwise start answers 409 and keeps
+it, and generating again rewrites only the changed or new topics, keeping the
+other topics' questions and answers. The result is recorded on the examined cards when
 grading settles.
 
 ### 4.4 Augment
@@ -459,8 +462,9 @@ the authored deck stays `422`, even when the sidecar holds the same card.
 A remote exam sitting starts with `POST /api/remote/exam/start {deck, cards?, ideas?}`: the
 server resolves **its own copy** of the named deck, by the same resolution
 `/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
-deck with no `exam:` at either level (deck or workspace) is refused outright
-(409): there is nothing to examine. The browser's `requires:` deck lock is
+deck that declares no sources (no row in its workspace's
+`sources/<deck-id>/manifest.toml`) is refused outright (409): there is nothing
+to examine. The browser's `requires:` deck lock is
 read from the server's own store, which is not the phone's truth, so a remote
 sitting skips that check and the phone applies its own gate. Unlike the browser's page-at-a-time
 `/api/exam/answer` + `/api/exam/grade`, a remote client answers every
@@ -473,8 +477,8 @@ sitting stays in the server's slot while the phone is away; the phone polls
 `GET /api/remote/exam` when it returns and closes the slot explicitly
 (closing cancels a running generation). Each exam asks three questions per
 topic, aimed at ideas the phone's `ideas` document picks (never asked, then
-last failed, then oldest); without one, or when the exam material changed,
-the server lists the ideas first. The updated document comes back on
+last failed, then oldest); for a topic the document lacks, or whose sources
+changed, the server lists the ideas first. The updated document comes back on
 `RemoteExamDto.ideas` after grading for the phone to keep; the server keeps
 no copy.
 
@@ -774,10 +778,10 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
-| POST | `/api/exam/generate` | `{deck, needs_work_only?}` | `PreparingJobsDto` (an already running job is kept) | 400 unknown deck; 409 not examable / locked / already prepared / backend can't reach the deck's source |
+| POST | `/api/exam/generate` | `{deck, needs_work_only?}` | `PreparingJobsDto` (an already running job is kept) | 400 unknown deck; 409 declares no sources / locked / a current exam is already prepared |
 | GET | `/api/exam/preparing` | – | `PreparingJobsDto` | – |
 | POST | `/api/exam/generate/cancel` | `{deck}` | `PreparingJobsDto` (the jobs left) | 400 unknown deck |
-| POST | `/api/exam/start` | `{deck}` | `ExamDto` | 400 unknown deck; 409 nothing prepared / prepared exam stale / not examable / locked / backend can't reach the deck's source |
+| POST | `/api/exam/start` | `{deck}` | `ExamDto` | 400 unknown deck; 409 nothing prepared / prepared exam stale (kept for regeneration) / declares no sources / locked |
 | GET | `/api/exam` | – | `ExamDto` (poll) | 409 |
 | POST | `/api/exam/answer` | `{text, goto?}` | `ExamDto` | 409 |
 | POST | `/api/exam/grade` | `{text}` | `ExamDto` | 409 |
@@ -840,7 +844,7 @@ first, same as a double `POST`.
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/ask/card` | `{deck_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body; 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it) or malformed; 500 the id could not be minted |
-| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck has no exam or the backend cannot reach its grounding / `cards` names no card of the deck |
+| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
 | POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
 | POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
@@ -1152,8 +1156,8 @@ per region; the same `Cell` shape as `DeckDrawerDto.heatmap`)
 | `exam_filter` | string | What "only topics needing work" would select: `none` (every topic passed) \| `partial` \| `all` (no topic passed) *(closed)*. `none` for a deck without an exam. |
 | `is_trace` | bool | Selecting it traces instead of reviewing. |
 | `examable` | bool | Its exam can be sat right now. |
-| `has_exam` | bool | Has an exam at all (even if locked). |
-| `exam_prepared` | bool | An exam was written ahead and waits to be taken (`POST /api/exam/start`). |
+| `has_exam` | bool | Declares sources, so has an exam at all (even if locked). |
+| `exam_prepared` | bool | An exam was written ahead over the deck's current sources and waits to be taken (`POST /api/exam/start`). |
 | `recent` | bool | Belongs in a recents view. |
 | `is_workspace` | bool | Group flavor. |
 | `description` | string? | Workspace goal line. |
@@ -1743,7 +1747,7 @@ phone applies it to its own state).
 | `elapsed` | number? | Seconds the in-flight call has run. |
 | `error` | string? | |
 | `estimate` | string? | A rough wait for the generation, set only while `generating` (for example `usually 10 to 20 minutes`); `null` when the backend has no measured range. Never a commitment. |
-| `ideas` | object? | The exam ideas document after grading, set in `results`/`remediated`: the phone stores it whole as its `.alix/exam/<deck-id>.json` and sends it back in the next `start`. Shape: `{"version": 1, "material": "xxh64-…", "topics": [{"heading", "ideas": [{"text", "last_asked_ms", "last_passed"}]}]}`, unknown fields rejected. |
+| `ideas` | object? | The exam ideas document after grading, set in `results`/`remediated`: the phone stores it whole as its `.alix/exam/<deck-id>.json` and sends it back in the next `start`. Shape: `{"version": 1, "topics": {"<topic-id>": {"fingerprint", "ideas": [{"text", "last_tested_ms", "last_test_passed"}]}}}`, unknown fields rejected. |
 
 Example, remediated: `tests/contracts/RemoteExamDto.remediated.json` (written by the pinned test).
 

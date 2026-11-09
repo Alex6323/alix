@@ -16,7 +16,7 @@ mod findings;
 mod manifest;
 mod roots;
 #[cfg(test)]
-mod testkit;
+pub(crate) mod testkit;
 mod transaction;
 
 pub use findings::{Findings, deck_findings};
@@ -66,6 +66,8 @@ pub enum SourceError {
     EmptyCopy(PathBuf),
     #[error("the copy of source `{0}` is missing")]
     MissingCopy(String),
+    #[error("source `{0}` is not UTF-8 text")]
+    NotText(String),
     #[error("source `{id}` binding `{entry}` {problem}")]
     BadBinding {
         id: String,
@@ -154,6 +156,12 @@ pub fn topic_fingerprint(bindings: &[&str]) -> String {
     }
     let digest: [u8; 32] = hasher.finalize().into();
     token::base32_256(&digest)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceText {
+    pub display: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

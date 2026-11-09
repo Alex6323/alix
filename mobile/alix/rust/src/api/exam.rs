@@ -243,15 +243,13 @@ mod tests {
     const NOW: u64 = 1_700_000_000_000;
 
     fn two_topic_deck(root: &Path) -> PathBuf {
-        let path = root.join("d.md");
-        std::fs::write(
-            &path,
-            "---\nformat-version: 1\nid: deck-d\nexam: source.txt\n---\n\
-             # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n\
-             # B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
+        crate::api::testkit::sourced_member(
+            root,
+            "d.md",
+            "---\nformat-version: 1\nid: deck-d\n---\n\
+             # A\nprose\n<!-- id: topic-a -->\n\n## a1\nx\n<!-- id: card-a1 -->\n\n\
+             # B\nprose\n<!-- id: topic-b -->\n\n## b1\nx\n<!-- id: card-b1 -->\n",
         )
-        .unwrap();
-        path
     }
 
     fn reopened(path: &Path, root: &Path) -> alix::store::Store {
@@ -271,7 +269,7 @@ mod tests {
             exam_ideas_load(deck_path.clone(), root_dir.clone()).unwrap()
         );
 
-        let first = r#"{"version":1,"material":"xxh64-first","topics":[]}"#;
+        let first = r#"{"version":1,"topics":{}}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), first.to_string()).unwrap();
         assert_eq!(
             Some(
@@ -285,7 +283,7 @@ mod tests {
         assert!(root.join(".alix/exam/deck-d.json").is_file());
         assert!(!root.join(".alix/exam/deck-d.json.tmp").exists());
 
-        let second = r#"{"version":1,"material":"xxh64-second","topics":[]}"#;
+        let second = r#"{"version":1,"topics":{"topic-a":{"fingerprint":"f","ideas":[]}}}"#;
         exam_ideas_save(deck_path.clone(), root_dir.clone(), second.to_string()).unwrap();
         assert_eq!(
             Some(

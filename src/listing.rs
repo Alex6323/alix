@@ -210,17 +210,16 @@ fn member_rows(
     let (store, health) = member_store(root, dir);
     let augment = AugmentCache::open_for_workspace(dir).ok();
     let mut table = deck::LoadedDecks::for_workspace(ws);
-    let known_sources = workspace::has_manifest(dir).then_some(!ws.exam.is_empty());
+    let in_workspace = workspace::has_manifest(dir);
     let members: LoadedMembers = ws
         .members
         .iter()
         .map(|m| {
-            let deck = match known_sources {
-                Some(known) => cache.load_with(m, &ws.settings, known).ok(),
-                None => {
-                    profile::hit(Counter::DecksLoaded);
-                    Deck::load(m).ok().map(Arc::new)
-                }
+            let deck = if in_workspace {
+                cache.load_with(m, &ws.settings).ok()
+            } else {
+                profile::hit(Counter::DecksLoaded);
+                Deck::load(m).ok().map(Arc::new)
             };
             table.insert_member(m, deck.clone());
             (m.clone(), deck)
@@ -493,7 +492,7 @@ fn deck_summary(
     let loaded = deck.is_some();
     let title = deck.map(|d| d.display_name()).unwrap_or_default();
     let is_trace = deck.is_some_and(|d| d.is_trace());
-    let has_exam = deck.is_some_and(|d| d.has_exam());
+    let has_exam = deck.is_some_and(|d| d.declares_sources());
     let exam_prepared = deck.is_some_and(exam_prepared);
     // `augment` is `Some` exactly when `store` is, so gating on all three
     // preserves that invariant for `deck_due`.
@@ -617,13 +616,14 @@ fn deck_due(
         )
 }
 
+#[cfg(feature = "full")]
 fn exam_prepared(deck: &Deck) -> bool {
-    deck.has_exam()
-        && deck.deck_token.as_deref().is_some_and(|token| {
-            crate::state::UserFiles::new(workspace::content_root(&deck.path))
-                .exam_prepared_for(token)
-                .is_file()
-        })
+    deck.declares_sources() && crate::exam::has_current_prepared(deck)
+}
+
+#[cfg(not(feature = "full"))]
+fn exam_prepared(_deck: &Deck) -> bool {
+    false
 }
 
 pub fn deadline_ready(passed: bool, finished: bool, has_exam: bool) -> bool {
@@ -726,7 +726,7 @@ pub fn deck_status(
     let locked = enforce_locks && actually_locked;
     // examable doesn't require drilling first: you can test out early. The
     // exam re-sit cooldown is enforced at the launch sites, not here.
-    let has_exam = deck.has_exam();
+    let has_exam = deck.declares_sources();
     let examable = has_exam && !actually_locked;
     let scheduler = crate::scheduler::Fsrs::new(review.retention, review.introduction_cooldown_ms);
     let now = session::now_ms();
@@ -1161,13 +1161,18 @@ mod tests {
     fn a_listed_row_carries_the_exam_unlock_badge_and_filter() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        write(&ws.join("alix.toml"), "");
+        let path = ws.join("decks/d.md");
         write(
-            &root.join("d.md"),
-            "---\nformat-version: 1\nid: deck-d\nexam: source.txt\n---\n\
+            &path,
+            "---\nformat-version: 1\nid: deck-d\n---\n\
              # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n# B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
         );
-        let deck = Deck::load(root.join("d.md")).unwrap();
-        let mut store = crate::state::open_store(&root.join("d.md"), root).unwrap();
+        crate::sources::testkit::sourced(path.clone());
+        let deck = Deck::load(&path).unwrap();
+        let mut store = crate::state::open_store(&path, &workspace::store_path(&ws)).unwrap();
         let topic = |id: &str, pass| crate::store::TopicRecord {
             card_ids: vec![id.to_string()],
             pass,
@@ -1185,7 +1190,7 @@ mod tests {
         );
         store.save().unwrap();
 
-        let rows = list_root(root, &ReviewConfig::default(), T0);
+        let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         let row = rows.iter().find(|r| r.title == "d").unwrap();
 
         assert!(!row.passed, "one topic still needs work");
@@ -1356,12 +1361,13 @@ mod tests {
             .retire_after_days
             .expect("the default retirement cap");
 
-        let badge_path = dir.path().join("badge.md");
+        let (_badge_root, badge_decks) = crate::sources::testkit::workspace_decks();
+        let badge_path = badge_decks.join("badge.md");
         write(
             &badge_path,
-            "---\nformat-version: 1\nid: deck-badge\nexam: source.txt\n---\n## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
+            "---\nformat-version: 1\nid: deck-badge\n---\n## one\na\n<!-- id: card-one -->\n## two\nb\n<!-- id: card-two -->\n",
         );
-        let badge_deck = Deck::load(&badge_path).unwrap();
+        let badge_deck = Deck::load(crate::sources::testkit::sourced(badge_path)).unwrap();
         let mut badge_store = Store::open(dir.path().join("badge.json")).unwrap();
         badge_store.record_full_marks(&badge_deck, now);
         badge_store.get_or_insert("card-one").recall = Some(crate::store::FsrsState {
@@ -1414,20 +1420,20 @@ mod tests {
         let trace = Deck::load(&trace_path).unwrap();
         let trace_store = Store::open(dir.path().join("trace.json")).unwrap();
 
-        let source_path = dir.path().join("source.md");
+        let source_path = badge_decks.join("source.md");
         write(
             &source_path,
-            "---\nformat-version: 1\nid: \"deck-source\"\nexam: https://example.com\n---\n",
+            "---\nformat-version: 1\nid: \"deck-source\"\n---\n",
         );
-        let source = Deck::load(&source_path).unwrap();
+        let source = Deck::load(crate::sources::testkit::sourced(source_path)).unwrap();
         let source_store = Store::open(dir.path().join("source.json")).unwrap();
 
-        let exam_path = dir.path().join("exam.md");
+        let exam_path = badge_decks.join("exam.md");
         write(
             &exam_path,
-            "---\nformat-version: 1\nid: \"deck-exam\"\nexam: https://example.com\n---\n## q\na\n<!-- id: card-exam -->\n",
+            "---\nformat-version: 1\nid: \"deck-exam\"\n---\n## q\na\n<!-- id: card-exam -->\n",
         );
-        let exam = Deck::load(&exam_path).unwrap();
+        let exam = Deck::load(crate::sources::testkit::sourced(exam_path)).unwrap();
         let mut exam_store = Store::open(dir.path().join("exam.json")).unwrap();
         exam_store.get_or_insert("card-exam").recall = Some(crate::store::FsrsState {
             state: 2,
@@ -1458,12 +1464,14 @@ mod tests {
         }
 
         let error_root = dir.path().join("error");
-        std::fs::create_dir(&error_root).unwrap();
-        let error_path = error_root.join("error.md");
+        std::fs::create_dir_all(error_root.join("decks")).unwrap();
+        write(&error_root.join("alix.toml"), "");
+        let error_path = error_root.join("decks/error.md");
         write(
             &error_path,
-            "---\nformat-version: 1\nid: \"deck-error\"\nexam: https://example.com\n---\n## q\na\n<!-- id: card-error -->\n",
+            "---\nformat-version: 1\nid: \"deck-error\"\n---\n## q\na\n<!-- id: card-error -->\n",
         );
+        let error_path = crate::sources::testkit::sourced(error_path);
         let progress = error_root.join(".alix/progress");
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::write(progress.join("deck-error.json"), "{ not json").unwrap();
@@ -1792,8 +1800,9 @@ mod tests {
         write(&ws.join("alix.toml"), "title = \"WS\"\n");
         write(
             &ws.join("decks/base.md"),
-            "---\nformat-version: 1\nid: \"deck-base1\"\nexam: https://x\n---\n## q\na\n<!-- id: card-qbase -->\n",
+            "---\nformat-version: 1\nid: \"deck-base1\"\n---\n## q\na\n<!-- id: card-qbase -->\n",
         );
+        crate::sources::testkit::sourced(ws.join("decks/base.md"));
         write(
             &ws.join("decks/advanced.md"),
             "---\nformat-version: 1\nid: \"deck-adv1\"\nrequires: base\n---\n## q2\nb\n<!-- id: card-qadv -->\n",
@@ -2032,6 +2041,18 @@ mod tests {
         shapes
     }
 
+    /// An unmastered, sourced gate deck in its own workspace under `root`;
+    /// returns the `requires:` path that names it from another workspace.
+    fn external_gate(root: &Path) -> &'static str {
+        let gate_ws = root.join("gatews");
+        std::fs::create_dir_all(gate_ws.join("decks")).unwrap();
+        write(&gate_ws.join("alix.toml"), "");
+        let path = gate_ws.join("decks/gate.md");
+        write(&path, "## q\na\n<!-- id: card-qgate -->\n");
+        crate::sources::testkit::sourced(path);
+        "gatews/decks/gate"
+    }
+
     #[test]
     fn two_members_entering_one_cycle_at_different_nodes_are_both_locked() {
         let dir = tempfile::tempdir().unwrap();
@@ -2039,10 +2060,8 @@ mod tests {
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
-        write(
-            &ws.join("decks/w.md"),
-            "---\nexam: https://x\n---\n## w\n1\n<!-- id: card-qw -->\n",
-        );
+        write(&ws.join("decks/w.md"), "## w\n1\n<!-- id: card-qw -->\n");
+        crate::sources::testkit::sourced(ws.join("decks/w.md"));
         write(
             &ws.join("decks/x.md"),
             "---\nrequires:\n  - y\n  - w\n---\n## x\n1\n<!-- id: card-qx -->\n",
@@ -2087,7 +2106,7 @@ mod tests {
                 ("candidates_classified", law.candidates),
                 ("decks_loaded", law.members),
                 ("prerequisite_loads", externals),
-                ("manifest_reads", 1 + externals),
+                ("manifest_reads", 1),
                 ("id_scans", shape.id_external as u64),
                 ("store_documents_read", law.members),
                 ("augment_documents_read", 0),
@@ -2138,12 +2157,10 @@ mod tests {
                 second.decks_loaded, 0,
                 "{shape:?}: a repeat listing over unchanged members parses none"
             );
-            let externals = (shape.external + shape.id_external) as u64;
             for (which, counts) in [("first", &first), ("second", &second)] {
                 assert_eq!(
-                    counts.manifest_reads,
-                    1 + externals,
-                    "{shape:?}: the {which} listing reads the manifest once, plus once per external prerequisite"
+                    counts.manifest_reads, 1,
+                    "{shape:?}: the {which} listing reads the workspace manifest once"
                 );
             }
         }
@@ -2273,21 +2290,19 @@ mod tests {
     fn list_members_sorts_an_exam_due_sibling_before_a_merely_locked_one() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(
-            &root.join("gate.md"),
-            "---\nexam: https://x\n---\n## q\na\n<!-- id: card-qgate -->\n",
-        );
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
+        let gate = external_gate(root);
         write(
             &ws.join("decks/aaa-locked.md"),
-            "---\nrequires: gate\n---\n## q2\nb\n<!-- id: card-qlocked -->\n",
+            &format!("---\nrequires: {gate}\n---\n## q2\nb\n<!-- id: card-qlocked -->\n"),
         );
         write(
             &ws.join("decks/zzz-examdue.md"),
-            "---\nexam: https://y\n---\n## q\na\n<!-- id: card-qexamdue -->\n",
+            "---\n---\n## q\na\n<!-- id: card-qexamdue -->\n",
         );
+        crate::sources::testkit::sourced(ws.join("decks/zzz-examdue.md"));
 
         let store_path = workspace::store_path(&ws);
         let examdue_id = Deck::load(ws.join("decks/zzz-examdue.md")).unwrap().cards[0]
@@ -2309,7 +2324,7 @@ mod tests {
         assert!(!examdue.due, "settled at every depth: nothing due");
         assert!(!examdue.locked);
         let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
-        assert!(locked.locked, "gated by the unmastered gate.md");
+        assert!(locked.locked, "gated by the unmastered gate deck");
 
         let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(
@@ -2323,23 +2338,20 @@ mod tests {
     fn list_members_sorts_a_load_failed_member_as_not_blocked() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write(
-            &root.join("gate.md"),
-            "---\nexam: https://x\n---\n## q\na\n<!-- id: card-qgate -->\n",
-        );
+        let gate = external_gate(root);
         let ws = root.join("ws");
         std::fs::create_dir_all(ws.join("decks")).unwrap();
         write(&ws.join("alix.toml"), "");
         write(&ws.join("decks/zzz-broken.md"), "## q with no answer\n");
         write(
             &ws.join("decks/aaa-locked.md"),
-            "---\nrequires: gate\n---\n## q2\nb\n<!-- id: card-qlocked -->\n",
+            &format!("---\nrequires: {gate}\n---\n## q2\nb\n<!-- id: card-qlocked -->\n"),
         );
 
         let rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
         assert_eq!(2, rows.len());
         let locked = rows.iter().find(|r| r.title == "aaa-locked").unwrap();
-        assert!(locked.locked, "gated by the unmastered gate.md");
+        assert!(locked.locked, "gated by the unmastered gate deck");
 
         let titles: Vec<&str> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(

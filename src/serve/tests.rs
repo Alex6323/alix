@@ -1325,9 +1325,10 @@ fn a_dependent_member_reads_its_prerequisites_active_owner_projection() {
     std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
     std::fs::write(
         ws.join("decks/base.md"),
-        "---\nformat-version: 1\nid: \"deck-base\"\nexam: https://example.org\n---\n## q1\na1\n<!-- id: card-qa -->\n",
+        "---\nformat-version: 1\nid: \"deck-base\"\n---\n## q1\na1\n<!-- id: card-qa -->\n",
     )
     .unwrap();
+    crate::sources::testkit::sourced(ws.join("decks/base.md"));
     std::fs::write(
         ws.join("decks/advanced.md"),
         "---\nformat-version: 1\nid: \"deck-adv\"\nrequires: base\n---\n## q2\na2\n<!-- id: card-qb -->\n",

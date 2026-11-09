@@ -388,22 +388,33 @@ mod tests {
     fn mastered_and_exam_due_cross_the_boundary_for_a_sourced_deck() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write_deck(
-            root.join("base.md"),
-            "---\nexam: \"https://x\"\n---\n## q\na\n<!-- id: card-q1 -->\n",
+        let ws = root.join("ws");
+        let base_path = crate::api::testkit::sourced_member(
+            &ws,
+            "base.md",
+            "## q\na\n<!-- id: card-q1 -->\n",
         );
-        write_deck(root.join("fresh.md"), "## q\na\n");
+        write_deck(ws.join("decks/fresh.md"), "## q\na\n");
+        let list = || {
+            list_members(
+                root.to_string_lossy().into_owned(),
+                ws.to_string_lossy().into_owned(),
+                Some(T0 + 1_000),
+                false,
+            )
+            .entries
+        };
 
-        let base_id = alix::deck::Deck::load(root.join("base.md")).unwrap().cards[0]
+        let base_id = alix::deck::Deck::load(&base_path).unwrap().cards[0]
             .id()
             .expect("the fixture stamps its own id");
-        let store_path = alix::workspace::root_store_path(root);
-        let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
+        let store_path = alix::workspace::root_store_path(&ws);
+        let mut store = alix::state::open_store(&base_path, &store_path).unwrap();
         store.get_or_insert(&base_id).recall = Some(graduated_not_due(T0));
         store.get_or_insert(&base_id).total_passes = 1;
         store.save().unwrap();
 
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000), false).entries;
+        let rows = list();
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.exam_due, "every card passed once, not yet mastered");
         assert!(base.has_exam, "sourced deck has an AI exam");
@@ -412,8 +423,8 @@ mod tests {
         assert!(!fresh.mastered);
         assert!(!fresh.has_exam);
 
-        let mut store = alix::state::open_store(&root.join("base.md"), &store_path).unwrap();
-        let base_deck = alix::deck::Deck::load(root.join("base.md")).unwrap();
+        let mut store = alix::state::open_store(&base_path, &store_path).unwrap();
+        let base_deck = alix::deck::Deck::load(&base_path).unwrap();
         let full_marks = alix::store::SittingRecord {
             topics: vec![alix::store::TopicRecord {
                 card_ids: vec![base_id.clone()],
@@ -426,7 +437,7 @@ mod tests {
         };
         store.record_exam_result(&base_deck, &full_marks, T0 + 1_000);
         store.save().unwrap();
-        let rows = list_root(root.to_string_lossy().into_owned(), Some(T0 + 1_000), false).entries;
+        let rows = list();
         let base = rows.iter().find(|r| r.title == "base").unwrap();
         assert!(base.mastered, "mastered once a full sitting scores every point");
         assert!(!base.exam_due, "no longer awaiting the exam");
@@ -436,14 +447,9 @@ mod tests {
     fn locked_and_unlocked_members_cross_the_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        write_deck(
-            root.join("gate.md"),
-            "---\nexam: \"https://x\"\n---\n## q\na\n",
-        );
         let ws = root.join("ws");
         let members = ws.join("decks");
-        std::fs::create_dir_all(&members).unwrap();
-        write(&ws.join("alix.toml"), "");
+        crate::api::testkit::sourced_member(&ws, "gate.md", "## q\na\n");
         write_deck(
             members.join("child.md"),
             "---\nrequires: gate\n---\n## q2\nb\n",

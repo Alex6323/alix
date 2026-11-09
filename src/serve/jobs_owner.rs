@@ -848,12 +848,9 @@ impl JobsState {
         ) else {
             return Started::Conflict;
         };
-        let already_prepared =
-            exam::exam_files(&deck).is_some_and(|(_, prepared)| prepared.is_file());
-        if !deck.has_exam()
-            || already_prepared
+        if !deck.declares_sources()
+            || exam::has_current_prepared(&deck)
             || crate::deck::is_locked(&deck, Some(decks_root), &store)
-            || exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err()
         {
             return Started::Conflict;
         }
@@ -904,13 +901,10 @@ impl JobsState {
         let Ok(deck) = exam::open_for_exam(&path) else {
             return Started::Conflict;
         };
-        if !deck.has_exam() {
+        let Ok(Some(sources)) = deck.sources() else {
             return Started::Conflict;
-        }
+        };
         let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
-        if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
-            return Started::Conflict;
-        }
         let scope = match &cards {
             Some(ids) => exam::ExamScope::Cards(ids),
             None => exam::ExamScope::Full,
@@ -923,6 +917,7 @@ impl JobsState {
         let sitting = exam::Sitting::start_with(
             &deck,
             selection.topics,
+            sources,
             ideas,
             strictness,
             exam_cfg,

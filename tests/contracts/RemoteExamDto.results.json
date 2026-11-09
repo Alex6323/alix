@@ -75,19 +75,18 @@
     }
   ],
   "ideas": {
-    "material": "xxh64-00000000000000ab",
-    "topics": [
-      {
-        "heading": "Ownership",
+    "topics": {
+      "topic-0wnersh1pt0p1c0000000000": {
+        "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
         "ideas": [
           {
-            "last_asked_ms": 1762300800000,
-            "last_passed": false,
+            "last_test_passed": false,
+            "last_tested_ms": 1762300800000,
             "text": "moves transfer ownership"
           }
         ]
       }
-    ],
+    },
     "version": 1
   },
   "mastered": false,

@@ -1710,22 +1710,22 @@ mod tests {
     #[test]
     fn a_passed_exam_names_every_newly_unlocked_deck() {
         let _lock = crate::testutil::exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path().join("base.md");
+        let (dir, decks) = crate::sources::testkit::workspace_decks();
+        let base = decks.join("base.md");
         std::fs::write(
             &base,
-            "---\nformat-version: 1\nid: deck-base\nexam: source.txt\n---\n## base\nanswer\n<!-- id: card-base -->\n",
+            "---\nformat-version: 1\nid: deck-base\n---\n## base\nanswer\n<!-- id: card-base -->\n",
         )
         .unwrap();
-        std::fs::write(dir.path().join("source.txt"), "ground truth\n").unwrap();
+        let base = crate::sources::testkit::sourced(base);
         std::fs::write(
-            dir.path().join("advanced.md"),
+            decks.join("advanced.md"),
             "---\nrequires: base\n---\n## advanced\nanswer\n",
         )
         .unwrap();
         let cli = crate::testutil::fake_cli(
             dir.path(),
-            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"models\"'*) printf '%s' '{\"topics\":[{\"topic\":1,\"models\":[\"m\"]}]}' ;;\n*) printf '%s' '{\"questions\":[{\"topic\":1,\"shape\":\"fix\",\"idea\":1,\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\nesac",
+            "input=$(cat)\ncase \"$input\" in\n*'\"grades\"'*) printf '%s' '{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}' ;;\n*'\"questions\"'*) printf '%s' '{\"questions\":[{\"shape\":\"fix\",\"idea\":1,\"prompt\":\"why\",\"points\":[\"ground truth\"]}]}' ;;\n*) printf '%s' '{\"ideas\":[\"m\"]}' ;;\nesac",
         );
         let deck = crate::deck::Deck::load(&base).unwrap();
         let mut store = crate::store::Store::open(dir.path().join("p.json")).unwrap();

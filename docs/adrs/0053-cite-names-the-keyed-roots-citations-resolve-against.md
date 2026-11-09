@@ -7,7 +7,6 @@
 - Evidence: fn every_rule_11_locator_violation_is_an_error_in_every_doctor_mode_and_target in src/cli/doctor.rs
 - Evidence: fn frozen_drift_warns_only_on_request_and_a_failing_live_citation_always_errors in src/cli/doctor.rs
 - Evidence: fn freezing_two_roots_that_each_hold_x_txt_keeps_each_citations_key_and_freezes_distinct_objects in src/assets.rs
-- Evidence: fn the_exam_reads_only_exam_entries_never_cite_roots_or_cited_text in src/exam.rs
 - Evidence: fn the_tutor_browses_the_first_local_cited_root_else_the_deck_s_only_local_root in src/cite.rs
 - Evidence: fn a_generator_reuses_the_root_holding_its_input_or_declares_src_or_refuses in src/cite.rs
 - Evidence: fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root in tests/cli.rs

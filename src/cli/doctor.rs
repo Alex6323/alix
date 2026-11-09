@@ -521,7 +521,7 @@ fn deck_resource_findings(deck: &Deck, report: &mut Report) {
             ));
         }
     }
-    if deck.has_exam() && !deck.is_trace() {
+    if deck.declares_sources() {
         for (label, count) in alix::exam::oversized_topics(deck) {
             report.warn(format!(
                 "{}: {count} cards in topic `{label}`; the exam asks {} questions per \
@@ -2842,38 +2842,39 @@ mod tests {
     fn a_topic_above_the_nudge_size_is_a_warning_on_an_examined_deck_only() {
         let cards =
             |n: usize| -> String { (1..=n).map(|i| format!("## q{i}?\na{i}\n\n")).collect() };
-        let dir = tempfile::tempdir().unwrap();
-        w(dir.path(), "notes.md", "n");
-        let rows: [(&str, String, bool); 5] = [
+        let rows: [(&str, String, bool, bool); 5] = [
             (
                 "at the nudge size",
-                format!("---\nexam: notes.md\n---\n# Big\n\n{}", cards(15)),
+                format!("# Big\n\n{}", cards(15)),
+                true,
                 false,
             ),
             (
                 "one above it",
-                format!("---\nexam: notes.md\n---\n# Big\n\n{}", cards(16)),
+                format!("# Big\n\n{}", cards(16)),
+                true,
                 true,
             ),
-            (
-                "the leading topic, one above it",
-                format!("---\nexam: notes.md\n---\n{}", cards(16)),
-                true,
-            ),
+            ("the leading topic, one above it", cards(16), true, true),
             (
                 "one above it with duplicate card text",
-                format!(
-                    "---\nexam: notes.md\n---\n# Big\n\n{}",
-                    "## repeated?\na\n\n".repeat(16)
-                ),
+                format!("# Big\n\n{}", "## repeated?\na\n\n".repeat(16)),
+                true,
                 true,
             ),
-            ("no exam", format!("# Big\n\n{}", cards(16)), false),
+            ("no exam", format!("# Big\n\n{}", cards(16)), false, false),
         ];
-        for (label, text, warned) in rows {
-            w(dir.path(), "d.md", &text);
+        for (label, text, has_sources, warned) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            w(dir.path(), "alix.toml", "");
+            let decks = dir.path().join("decks");
+            std::fs::create_dir_all(&decks).unwrap();
+            w(&decks, "d.md", &text);
+            if has_sources {
+                sourced(&decks.join("d.md"));
+            }
             let mut report = Report::default();
-            deck_resource_findings(&Deck::load(dir.path().join("d.md")).unwrap(), &mut report);
+            deck_resource_findings(&Deck::load(decks.join("d.md")).unwrap(), &mut report);
             let hit = report
                 .warnings
                 .iter()
@@ -4432,6 +4433,36 @@ printf ']}}'
         std::fs::write(dir.join(name), content).unwrap();
     }
 
+    fn bind_source(deck: &Path, topics: Vec<String>) {
+        let root = alix::workspace::root_for_deck(deck).expect("a workspace member");
+        let live = root.join("live");
+        std::fs::create_dir_all(&live).unwrap();
+        let stem = deck.file_stem().unwrap().to_string_lossy().into_owned();
+        let file = live.join(format!("{stem}.txt"));
+        std::fs::write(&file, format!("the source of {stem}\n")).unwrap();
+        alix::sources::commands::add(alix::sources::commands::AddRequest {
+            deck,
+            files: vec![file],
+            root: Some(("live".to_string(), live)),
+            key: None,
+            topics,
+        })
+        .unwrap();
+    }
+
+    fn sourced(deck: &Path) {
+        alix::stamp::stamp_deck(deck).unwrap();
+        let loaded = Deck::load(deck).unwrap();
+        let topics = loaded
+            .topic_ids()
+            .into_iter()
+            .enumerate()
+            .filter(|(at, _)| loaded.cards.iter().any(|card| card.topic == *at))
+            .filter_map(|(_, id)| id)
+            .collect();
+        bind_source(deck, topics);
+    }
+
     #[test]
     fn doctor_notes_inline_emphasis_but_not_plain_text() {
         let dir = tempfile::tempdir().unwrap();
@@ -4785,17 +4816,21 @@ printf ']}}'
     #[test]
     fn a_requirement_on_a_trace_gates_no_exam_and_doctor_names_the_trace_case() {
         let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "");
+        let decks = dir.path().join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
         w(
-            dir.path(),
+            &decks,
             "trace.md",
             "---\ntrace: how the request flows\nexam: .\n---\n## enter\nrequest enters\n",
         );
-        let exam_path = dir.path().join("exam.md");
+        let exam_path = decks.join("exam.md");
         w(
-            dir.path(),
+            &decks,
             "exam.md",
-            "---\nexam: https://example.test\nrequires: trace\n---\n## explain\nanswer\n",
+            "---\nrequires: trace\n---\n## explain\nanswer\n",
         );
+        sourced(&exam_path);
         let exam = alix::deck::Deck::load(&exam_path).unwrap();
         let store = alix::store::Store::open(dir.path().join("progress.json")).unwrap();
 
@@ -4966,8 +5001,9 @@ printf ']}}'
         w(
             &decks,
             "gated.md",
-            "---\nexam: https://example.test\nrequires: sourceless\n---\n## b\n1\n<!-- id: card-gtd1 -->\n",
+            "---\nformat-version: 1\nid: deck-gated\nrequires: sourceless\n---\n## b\n1\n<!-- id: card-gtd1 -->\n",
         );
+        bind_source(&decks.join("gated.md"), vec!["deck-gated".to_string()]);
 
         let mut store = alix::store::Store::open_deck(
             dir.join(".alix/progress/orphan-owner.json"),

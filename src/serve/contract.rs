@@ -2883,15 +2883,17 @@ fn remoteexamdto_results_wire_shape() {
         estimate: None,
         ideas: Some(crate::exam_ideas::IdeasDocument {
             version: 1,
-            material: "xxh64-00000000000000ab".to_string(),
-            topics: vec![crate::exam_ideas::IdeaTopic {
-                heading: "Ownership".to_string(),
-                ideas: vec![crate::exam_ideas::Idea {
-                    text: "moves transfer ownership".to_string(),
-                    last_asked_ms: Some(1_762_300_800_000),
-                    last_passed: Some(false),
-                }],
-            }],
+            topics: std::collections::BTreeMap::from([(
+                "topic-0wnersh1pt0p1c0000000000".to_string(),
+                crate::exam_ideas::IdeaTopic {
+                    fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
+                    ideas: vec![crate::exam_ideas::Idea {
+                        text: "moves transfer ownership".to_string(),
+                        last_tested_ms: Some(1_762_300_800_000),
+                        last_test_passed: Some(false),
+                    }],
+                },
+            )]),
         }),
     };
     pin(
@@ -2935,7 +2937,7 @@ fn remoteexamdto_results_wire_shape() {
             "elapsed": null,
             "error": null,
             "estimate": null,
-            "ideas": {"version": 1, "material": "xxh64-00000000000000ab", "topics": [{"heading": "Ownership", "ideas": [{"text": "moves transfer ownership", "last_asked_ms": 1_762_300_800_000_u64, "last_passed": false}]}]}
+            "ideas": {"version": 1, "topics": {"topic-0wnersh1pt0p1c0000000000": {"fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx", "ideas": [{"text": "moves transfer ownership", "last_tested_ms": 1_762_300_800_000_u64, "last_test_passed": false}]}}}
         }),
     );
 }

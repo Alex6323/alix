@@ -1932,18 +1932,17 @@ mod tests {
             .unwrap();
         let doc = root.document_path(KIND_DECK, "physics.md", DECK_C);
         let mut phone = Store::open_deck(&doc, DECK_C, "subject").unwrap();
-        let asked = crate::exam_status::needs_work_card_ids(
-            &crate::deck::Deck::load(&phone_deck).unwrap(),
-            &phone,
-        );
-        let examined = crate::exam_status::select_topics(
-            &crate::exam::open_for_exam(&desktop_deck).unwrap(),
-            crate::exam_status::ExamScope::Cards(&asked),
-        );
+        let card_ids = |deck: &crate::deck::Deck| -> Vec<String> {
+            crate::exam_status::exam_topics(deck, None)
+                .into_iter()
+                .flat_map(|topic| topic.card_ids)
+                .collect()
+        };
+        let asked = card_ids(&crate::deck::Deck::load(&phone_deck).unwrap());
+        let known = card_ids(&crate::exam::open_for_exam(&desktop_deck).unwrap());
         assert!(
-            examined.unknown_cards.is_empty() && examined.topics.len() == 1,
-            "a phone needs-work sitting: asked {asked:?}, desktop does not know {:?}",
-            examined.unknown_cards
+            !asked.is_empty() && asked == known,
+            "a phone sitting's card scope: asked {asked:?}, desktop knows {known:?}"
         );
         phone.get_or_insert(&phone_id).total_reviews = 1;
         phone.save().unwrap();

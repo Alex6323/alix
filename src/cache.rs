@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    deck::{Deck, DeckError, DeckSettings},
+    deck::{Deck, DeckError, DeckSettings, DeclaredSources},
     listing,
     profile::{self, Counter},
     workspace::{self, Workspace},
@@ -31,26 +31,32 @@ struct Entry {
     manifest: Option<ManifestMeta>,
 }
 
-/// A member's exam state and its card list both depend on its workspace
-/// manifest, a second file the deck's own (mtime, size) cannot see.
+/// A member's card list depends on its workspace settings and its exam state
+/// on its sources manifest, files the deck's own (mtime, size) cannot see.
 #[derive(Clone)]
 struct CachedDeck {
-    workspace_has_exam: bool,
     settings: DeckSettings,
     deck: Result<Arc<Deck>, Arc<DeckError>>,
 }
 
 impl CachedDeck {
-    fn load(path: &Path, settings: DeckSettings, workspace_has_exam: bool) -> Self {
+    fn load(path: &Path, settings: DeckSettings) -> Self {
         profile::hit(Counter::DecksLoaded);
-        let deck = Deck::load_in_workspace(path, &settings, workspace_has_exam)
+        let deck = Deck::load_with_defaults(path, &settings)
             .map(Arc::new)
             .map_err(Arc::new);
-        CachedDeck {
-            workspace_has_exam,
-            settings,
-            deck,
-        }
+        CachedDeck { settings, deck }
+    }
+
+    fn sources_changed(&self) -> bool {
+        let Ok(deck) = &self.deck else {
+            return false;
+        };
+        let Some(manifest) = DeclaredSources::manifest_path(&deck.path, deck.deck_token.as_deref())
+        else {
+            return false;
+        };
+        DeclaredSources::stamp_of(&manifest) != deck.declared().stamp
     }
 }
 
@@ -114,33 +120,31 @@ impl DeckCache {
     }
 
     pub fn load(&mut self, path: &Path) -> Result<Arc<Deck>, Arc<DeckError>> {
-        let workspace_has_exam = self.workspace_has_exam(path);
         let settings = self.workspace_settings(path);
-        self.load_with(path, &settings, workspace_has_exam)
+        self.load_with(path, &settings)
     }
 
     pub fn load_with(
         &mut self,
         path: &Path,
         settings: &DeckSettings,
-        workspace_has_exam: bool,
     ) -> Result<Arc<Deck>, Arc<DeckError>> {
         match self.slot(path) {
             Some(entry) => {
-                if entry.deck.as_ref().is_some_and(|cached| {
-                    cached.workspace_has_exam != workspace_has_exam || cached.settings != *settings
-                }) {
+                if entry
+                    .deck
+                    .as_ref()
+                    .is_some_and(|cached| cached.settings != *settings || cached.sources_changed())
+                {
                     entry.deck = None;
                 }
                 entry
                     .deck
-                    .get_or_insert_with(|| {
-                        CachedDeck::load(path, settings.clone(), workspace_has_exam)
-                    })
+                    .get_or_insert_with(|| CachedDeck::load(path, settings.clone()))
                     .deck
                     .clone()
             }
-            None => CachedDeck::load(path, settings.clone(), workspace_has_exam).deck,
+            None => CachedDeck::load(path, settings.clone()).deck,
         }
     }
 
@@ -161,18 +165,6 @@ impl DeckCache {
                 .settings
                 .clone(),
             None => DeckSettings::default(),
-        }
-    }
-
-    fn workspace_has_exam(&mut self, deck: &Path) -> bool {
-        let manifest = workspace::content_root(deck).join(workspace::MANIFEST);
-        match self.slot(&manifest) {
-            Some(entry) => !entry
-                .manifest
-                .get_or_insert_with(|| read_manifest_meta(&manifest))
-                .exam
-                .is_empty(),
-            None => false,
         }
     }
 
@@ -393,86 +385,38 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_source_edit_refreshes_a_cached_decks_exam_state() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("workspace");
-        let decks = workspace.join("decks");
-        std::fs::create_dir_all(&decks).unwrap();
-        write(&workspace.join("alix.toml"), "");
-        let path = decks.join("d.md");
-        write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
-        );
+    fn a_sources_manifest_edit_refreshes_a_cached_decks_exam_state_and_nothing_else_does() {
+        let ws = crate::sources::testkit::Workspace::new();
         let mut cache = DeckCache::default();
-        let first = cache.load(&path).unwrap();
-        assert!(!first.has_exam(), "an unsourced workspace has no exam");
+        let first = cache.load(&ws.deck()).unwrap();
+        assert!(!first.declares_sources(), "step 1: no sources, no exam");
 
-        write(&workspace.join("alix.toml"), "exam = \"notes.md\"\n");
-        assert_eq!(
-            vec!["notes.md".to_string()],
-            cache.workspace(&workspace).exam,
-            "the same server cache sees the edited manifest"
-        );
+        ws.write_live("notes.md", b"notes\n");
+        ws.add(&["notes.md"], &["topic-alpha"]).unwrap();
+        let sourced = cache.load(&ws.deck()).unwrap();
         assert!(
-            cache.load(&path).unwrap().has_exam(),
-            "adding a workspace source must make its cached member exam-capable"
+            sourced.declares_sources(),
+            "step 2: adding a source must make the cached deck exam-capable"
         );
-    }
 
-    #[test]
-    fn removing_the_workspace_source_takes_the_exam_from_its_cached_member() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("workspace");
-        let decks = workspace.join("decks");
-        std::fs::create_dir_all(&decks).unwrap();
-        write(&workspace.join("alix.toml"), "exam = \"notes.md\"\n");
-        let path = decks.join("d.md");
-        write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
-        );
-        let mut cache = DeckCache::default();
-        assert!(cache.load(&path).unwrap().has_exam(), "sourced: exam");
-
-        write(&workspace.join("alix.toml"), "");
-
-        assert!(
-            !cache.load(&path).unwrap().has_exam(),
-            "removing the workspace source must take the exam from its cached member"
-        );
-    }
-
-    #[test]
-    fn a_manifest_edit_that_keeps_the_source_leaves_the_member_cached() {
-        let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("workspace");
-        let decks = workspace.join("decks");
-        std::fs::create_dir_all(&decks).unwrap();
-        write(&workspace.join("alix.toml"), "exam = \"notes.md\"\n");
-        let path = decks.join("d.md");
-        write(
-            &path,
-            "---\nformat-version: 1\nid: \"deck-d\"\n---\n## q\na\n",
-        );
-        let mut cache = DeckCache::default();
-        let first = cache.load(&path).unwrap();
-
-        write(
-            &workspace.join("alix.toml"),
-            "title = \"Renamed\"\nexam = \"notes.md\"\n",
-        );
+        write(&ws.root().join("alix.toml"), "title = \"Renamed\"\n");
         assert_eq!(
             Some("Renamed".to_string()),
-            cache.workspace(&workspace).title,
-            "the same server cache sees the edited manifest"
+            cache.workspace(ws.root()).title,
+            "step 3: the same server cache sees the edited workspace manifest"
         );
-        let second = cache.load(&path).unwrap();
+        let kept = cache.load(&ws.deck()).unwrap();
         assert!(
-            Arc::ptr_eq(&first, &second),
-            "a manifest edit that keeps the source must not re-parse the member"
+            Arc::ptr_eq(&sourced, &kept),
+            "step 3: an edit that leaves the sources alone must not re-parse the member"
         );
-        assert!(second.has_exam(), "the source is still there");
+
+        let id = crate::sources::source_id(b"notes\n");
+        crate::sources::commands::remove(&ws.deck(), &[id]).unwrap();
+        assert!(
+            !cache.load(&ws.deck()).unwrap().declares_sources(),
+            "step 4: removing the last source takes the exam from the cached deck"
+        );
     }
 
     #[test]

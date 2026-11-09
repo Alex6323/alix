@@ -1,12 +1,16 @@
-use crate::{deck::Deck, store::Store};
+use std::collections::BTreeSet;
+
+use crate::{deck::Deck, sources::Manifest, store::Store};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExamTopic {
+    pub topic_id: String,
     pub label: String,
     pub context: Vec<String>,
     pub card_ids: Vec<String>,
     pub cards: Vec<String>,
     pub size: usize,
+    pub sourced: bool,
 }
 
 pub const TOPIC_NUDGE_CARDS: usize = 15;
@@ -150,7 +154,7 @@ fn points(pass: u32, partial: u32) -> String {
 }
 
 pub fn exam_row(deck: &Deck, store: &Store) -> ExamRow {
-    if !deck.has_exam() {
+    if !deck.declares_sources() {
         return ExamRow::default();
     }
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
@@ -165,7 +169,21 @@ pub fn exam_row(deck: &Deck, store: &Store) -> ExamRow {
 }
 
 pub fn exam_status(deck: &Deck, store: &Store) -> ExamStatus {
-    status_of(&exam_topics(deck), store)
+    status_of(&examined_topics(deck), store)
+}
+
+/// The deck's sourced topics, as its sources manifest declares them.
+pub fn examined_topics(deck: &Deck) -> Vec<ExamTopic> {
+    let manifest = deck
+        .declared()
+        .manifest
+        .as_ref()
+        .ok()
+        .and_then(Option::as_ref);
+    exam_topics(deck, manifest)
+        .into_iter()
+        .filter(|topic| topic.sourced)
+        .collect()
 }
 
 pub fn status_of(topics: &[ExamTopic], store: &Store) -> ExamStatus {
@@ -199,39 +217,57 @@ fn topic_status(topic: &ExamTopic, store: &Store) -> TopicStatus {
 }
 
 pub fn oversized_topics(deck: &Deck) -> Vec<(String, usize)> {
-    exam_topics(deck)
+    examined_topics(deck)
         .into_iter()
         .filter(|topic| topic.size > TOPIC_NUDGE_CARDS)
         .map(|topic| (topic.label, topic.size))
         .collect()
 }
 
-pub fn exam_topics(deck: &Deck) -> Vec<ExamTopic> {
-    let mut topics: Vec<ExamTopic> = Vec::new();
-    for card in &deck.cards {
-        let heading = card.topic_context.first();
-        let at = match topics.iter().position(|s| s.context.first() == heading) {
-            Some(at) => at,
-            None => {
-                topics.push(ExamTopic {
-                    label: heading.cloned().unwrap_or_else(|| deck.display_name()),
-                    context: card.topic_context.clone(),
-                    ..Default::default()
-                });
-                topics.len() - 1
-            }
+/// One entry per topic with an id, in deck order, never merged: the leading
+/// topic (the deck id) first and always, with or without cards.
+pub fn exam_topics(deck: &Deck, sources: Option<&Manifest>) -> Vec<ExamTopic> {
+    let sourced: BTreeSet<String> = sources.map(Manifest::sourced_topics).unwrap_or_default();
+    let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+    let mut topics: Vec<ExamTopic> = Vec::with_capacity(deck.topics.len().max(1));
+    let mut slots: Vec<Option<usize>> = Vec::with_capacity(deck.topics.len());
+    for topic in &deck.topics {
+        let Some(topic_id) = topic.id(deck_id) else {
+            slots.push(None);
+            continue;
         };
-        topics[at].size += 1;
+        let label = topic.heading.clone().unwrap_or_else(|| deck.display_name());
+        let context = topic
+            .heading
+            .iter()
+            .cloned()
+            .chain(topic.prose.iter().cloned())
+            .collect();
+        slots.push(Some(topics.len()));
+        topics.push(ExamTopic {
+            sourced: sourced.contains(&topic_id),
+            topic_id,
+            label,
+            context,
+            ..Default::default()
+        });
+    }
+    for card in &deck.cards {
+        let Some(at) = slots.get(card.topic).copied().flatten() else {
+            continue;
+        };
+        let topic = &mut topics[at];
+        topic.size += 1;
         if let Some(id) = card.id() {
-            topics[at].card_ids.push(id);
+            topic.card_ids.push(id);
         }
         let scope = format!(
             "Q: {}\nA: {}",
             card.front.trim(),
             card.back.join("\n").trim()
         );
-        if !topics[at].cards.contains(&scope) {
-            topics[at].cards.push(scope);
+        if !topic.cards.contains(&scope) {
+            topic.cards.push(scope);
         }
     }
     topics
@@ -250,7 +286,7 @@ pub struct ExamSelection {
 }
 
 pub fn select_topics(deck: &Deck, scope: ExamScope) -> ExamSelection {
-    let topics = exam_topics(deck);
+    let topics = examined_topics(deck);
     match scope {
         ExamScope::Full => ExamSelection {
             topics,
@@ -292,7 +328,7 @@ pub fn select_topics(deck: &Deck, scope: ExamScope) -> ExamSelection {
 }
 
 pub fn needs_work_card_ids(deck: &Deck, store: &Store) -> Vec<String> {
-    let topics = exam_topics(deck);
+    let topics = examined_topics(deck);
     let status = status_of(&topics, store);
     topics
         .into_iter()
@@ -400,8 +436,8 @@ mod tests {
 
     #[test]
     fn a_scope_selects_the_topics_it_names_and_reports_unknown_cards() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("s.md");
+        let (dir, decks) = crate::sources::testkit::workspace_decks();
+        let path = decks.join("s.md");
         std::fs::write(
             &path,
             "---\nformat-version: 1\nid: deck-s\n---\n\
@@ -409,7 +445,7 @@ mod tests {
              # B\n\n## b1\nx\n<!-- id: card-b1 -->\n",
         )
         .unwrap();
-        let deck = Deck::load(&path).unwrap();
+        let deck = Deck::load(crate::sources::testkit::sourced(path)).unwrap();
         let mut a_passed = Store::open(dir.path().join("a.json")).unwrap();
         for id in ["card-a1", "card-a2"] {
             a_passed.get_or_insert(id).exam_result = Some(ExamRecord {

@@ -17,8 +17,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   topics are named by unique id prefixes. Every command checks the whole
   folder first, refuses twins, URLs, empty or non-UTF-8 files and files
   outside their root, writes copies before the manifest, and deletes copies
-  no row names and temporaries an interrupted write left. The exam does not
-  read sources yet.
+  no row names and temporaries an interrupted write left.
 
 - `alix doctor` checks each workspace deck's sources folder: a damaged folder
   or a binding to a topic the deck lacks is an error, and a copy no row names
@@ -215,6 +214,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notice; decks reach the phone through the paired desktop instead.
 
 ### Changed
+
+- Breaking: the AI exam reads a workspace deck's frozen sources, one topic
+  at a time: each topic's calls carry only its own copies, whole (a ranged
+  binding only its lines), so nothing is fetched or truncated. A topic with
+  no source is not examined; a deck without sources, and every loose deck,
+  has no exam, and an `exam:` entry no longer gives one. Two headings with
+  the same text are two topics, and a duplicated topic id refuses the exam.
+  The exam ideas document is keyed by topic id
+  (`{"version", "topics": {"<topic-id>": {"fingerprint", "ideas": [{"text",
+  "last_tested_ms", "last_test_passed"}]}}}`) and the prepared exam records
+  each topic's source fingerprint, model and effort, so files written before
+  are unreadable. A prepared exam whose topic sources changed is kept: Take
+  exam answers 409, `exam_prepared` reads false, and Generate exam rewrites
+  only the changed topics. Starting an exam no longer checks that the
+  backend can reach a source.
 
 - Breaking: `alix doctor --repair-source-locators` is renamed
   `--repair-cite-locators`, and the citation drift flag is

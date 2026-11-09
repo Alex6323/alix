@@ -331,7 +331,7 @@ void main() {
   });
 
   group('item 12: exam-due badge', () {
-    /// Graduates a single-card `% exam:` deck to real FSRS Review state
+    /// Graduates a single-card sourced member deck to real FSRS Review state
     /// (never a hand-constructed `FsrsState`): two full Pass grades, each
     /// re-opened past the previous due date, graduate New -> Learning ->
     /// Review (`fsrs_two_goods_graduate_to_review`, src/scheduler.rs). The
@@ -343,11 +343,11 @@ void main() {
     /// days out) instead of overdue-since-1970.
     Directory examDueRoot() {
       final root = tempRoot('alix-picker-examdue-');
-      final deck = '${root.path}/base.md';
-      writeTestDeck(
-        deck,
-        '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
-      );
+      Directory('${root.path}/ws/decks').createSync(recursive: true);
+      File('${root.path}/ws/alix.toml').writeAsStringSync('');
+      final deck = '${root.path}/ws/decks/base.md';
+      writeTestDeck(deck, '---\ntitle: Base\n---\n## q?\na\n');
+      writeTestSources(deck);
       final t0 = DateTime.now().millisecondsSinceEpoch - 902000;
       ReviewSession.open(deckPath: deck, rootDir: root.path, nowMs: BigInt.from(t0))
           .introduce(nowMs: BigInt.from(t0));
@@ -365,7 +365,7 @@ void main() {
       final root = examDueRoot();
       await tester.pumpWidget(MaterialApp(
         theme: alixDark(),
-        home: PickerScreen(root: root.path),
+        home: PickerScreen(root: root.path, dir: '${root.path}/ws'),
       ));
       await settlePicker(tester);
 
@@ -496,10 +496,8 @@ void main() {
       final ws = Directory('${root.path}/ws')..createSync();
       final decks = Directory('${ws.path}/decks')..createSync();
       File('${ws.path}/alix.toml').writeAsStringSync('');
-      writeTestDeck(
-        '${decks.path}/base.md',
-        '---\nexam: https://example.com\ntitle: Base\n---\n## q?\na\n',
-      );
+      writeTestDeck('${decks.path}/base.md', '---\ntitle: Base\n---\n## q?\na\n');
+      writeTestSources('${decks.path}/base.md');
       writeTestDeck(
         '${decks.path}/mid.md',
         '---\nrequires: base\ntitle: Mid\n---\n## q?\na\n',

@@ -111,3 +111,40 @@ pub(crate) struct Snapshot {
     pub(crate) roots: Option<Vec<u8>>,
     pub(crate) names: BTreeSet<String>,
 }
+
+/// A fresh workspace root and its `decks/` folder.
+pub(crate) fn workspace_decks() -> (TempDir, PathBuf) {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("alix.toml"), "").unwrap();
+    let decks = temp.path().join("decks");
+    fs::create_dir_all(&decks).unwrap();
+    (temp, decks)
+}
+
+/// Stamps the member deck at `path` and binds one fresh source to every one of
+/// its topics that holds a card, so it has an exam.
+pub(crate) fn sourced(path: PathBuf) -> PathBuf {
+    crate::stamp::stamp_deck(&path).unwrap();
+    let deck = crate::deck::Deck::load(&path).unwrap();
+    let root = crate::workspace::root_for_deck(&path).expect("a workspace member");
+    let live = root.join("live");
+    fs::create_dir_all(&live).unwrap();
+    let stem = path.file_stem().unwrap().to_str().unwrap().to_string();
+    let file = live.join(format!("{stem}.txt"));
+    fs::write(&file, format!("the source of {stem}\n")).unwrap();
+    commands::add(AddRequest {
+        deck: &path,
+        files: vec![file],
+        root: Some(("live".to_string(), live)),
+        key: None,
+        topics: deck
+            .topic_ids()
+            .into_iter()
+            .enumerate()
+            .filter(|(at, _)| deck.cards.iter().any(|card| card.topic == *at))
+            .filter_map(|(_, id)| id)
+            .collect(),
+    })
+    .unwrap();
+    path
+}

@@ -2219,18 +2219,13 @@ impl StudyState {
         };
         match exam::open_for_exam(&path) {
             Ok(deck)
-                if deck.has_exam()
+                if deck.declares_sources()
                     && !deck::is_locked(&deck, Some(decks_root.as_path()), &candidate) =>
             {
                 let strictness = deck
                     .settings
                     .exam_strictness
                     .unwrap_or(self.config.exam_cfg.strictness);
-                // Check backend capability before starting, so a gap is a
-                // clean refusal, not a mid-exam poll error.
-                if exam::ensure_backend_can_examine(&deck, &ask_cfg).is_err() {
-                    return Transition::Rejected;
-                }
                 let Some((ideas_path, prepared_path)) = exam::exam_files(&deck) else {
                     return Transition::Rejected;
                 };
@@ -2243,21 +2238,14 @@ impl StudyState {
                         return Transition::Rejected;
                     }
                 };
-                if exam::material_fingerprint(&deck).ok().as_deref() != Some(&prepared.material) {
-                    let _ = std::fs::remove_file(&prepared_path);
+                if !prepared.is_current(&deck) {
                     return Transition::Rejected;
                 }
                 let (topics, questions, answers) = prepared.against(&deck);
-                if questions.is_empty() {
-                    let _ = std::fs::remove_file(&prepared_path);
-                    return Transition::Rejected;
-                }
-                let ideas = crate::exam_ideas::IdeasDocument::for_material(
-                    crate::exam_ideas::IdeasDocument::load(&ideas_path)
-                        .ok()
-                        .flatten(),
-                    &prepared.material,
-                );
+                let ideas = crate::exam_ideas::IdeasDocument::load(&ideas_path)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
                 let prepared = prepared.narrowed(&topics, &questions, &answers);
                 let sitting = exam::Sitting::from_prepared(
                     &deck,

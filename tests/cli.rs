@@ -1391,16 +1391,36 @@ fn reset_on_a_workspace_clears_every_member_in_its_own_store() {
 #[test]
 fn reset_exam_clears_exam_state_only_and_lists_never_examined_dependents() {
     let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("alix.toml"), "").unwrap();
+    let members = dir.path().join("decks");
+    std::fs::create_dir_all(&members).unwrap();
     let a = write(
-        dir.path(),
+        &members,
         "a.md",
-        "---\nformat-version: 1\nid: deck-exa\ntitle: Alpha\nexam: https://x\n---\n## qa\nans-a\n<!-- id: card-exa1 -->\n",
+        "---\nformat-version: 1\nid: deck-exa\ntitle: Alpha\n---\n## qa\nans-a\n<!-- id: card-exa1 -->\n",
     );
     let b = write(
-        dir.path(),
+        &members,
         "b.md",
-        "---\nformat-version: 1\nid: deck-exb\ntitle: Beta\nexam: https://x\nrequires: a\n---\n## qb\nans-b\n<!-- id: card-exb1 -->\n",
+        "---\nformat-version: 1\nid: deck-exb\ntitle: Beta\nrequires: a\n---\n## qb\nans-b\n<!-- id: card-exb1 -->\n",
     );
+    for deck in [&a, &b] {
+        let live = dir.path().join("live");
+        std::fs::create_dir_all(&live).unwrap();
+        let file = live.join(format!(
+            "{}.txt",
+            Path::new(deck).file_stem().unwrap().to_str().unwrap()
+        ));
+        std::fs::write(&file, deck.as_bytes()).unwrap();
+        alix::sources::commands::add(alix::sources::commands::AddRequest {
+            deck: Path::new(deck),
+            files: vec![file],
+            root: Some(("live".to_string(), live)),
+            key: None,
+            topics: Vec::new(),
+        })
+        .unwrap();
+    }
     let mut store = decks_store(&[&a, &b]);
     store.get_or_insert("card-exa1").total_reviews = 3;
     store.get_or_insert("card-exa1").exam_result = Some(alix::store::ExamRecord {
@@ -2016,13 +2036,14 @@ fn stats_says_passed_for_a_pass_and_reserves_mastered_for_full_marks() {
         let mut store = deck_store(&deck);
         if full_marks {
             let loaded = alix::deck::Deck::load(&deck).unwrap();
-            let topics: Vec<alix::store::TopicRecord> = alix::exam_status::exam_topics(&loaded)
-                .into_iter()
-                .map(|topic| alix::store::TopicRecord {
-                    card_ids: topic.card_ids,
-                    pass: true,
-                })
-                .collect();
+            let topics: Vec<alix::store::TopicRecord> =
+                alix::exam_status::exam_topics(&loaded, None)
+                    .into_iter()
+                    .map(|topic| alix::store::TopicRecord {
+                        card_ids: topic.card_ids,
+                        pass: true,
+                    })
+                    .collect();
             let total = topics.len() as u32;
             let record = alix::store::SittingRecord {
                 topics,

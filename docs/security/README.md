@@ -405,7 +405,10 @@ declare exactly one; otherwise none. A URL root is never browsed, and an
 `src/cite.rs`). A root may be any local directory the deck or manifest
 declares, absolute ones included, so a received deck can name a wide root;
 inspect a received workspace's `cite:` roots before enabling source access.
-The exam reads only `exam:` entries, never `cite:` roots or cited text.
+The exam reads only a deck's frozen sources, through the verified load
+above, and pastes each topic's copies into that topic's prompt; it never reads
+`exam:` entries, `cite:` roots or cited text, and a copy that is not UTF-8
+fails the exam (`DeckSources::texts_of` in `src/sources/manifest.rs`).
 
 With the Claude backend, a call holding file tools and a working folder (the
 grounded tutor, a trace build) reads only under that folder's canonical path:

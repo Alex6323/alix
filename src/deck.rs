@@ -112,7 +112,7 @@ pub struct Deck {
     pub title: Option<String>,
     pub description: Option<String>,
     pub trace: Option<String>,
-    pub workspace_has_exam: std::sync::OnceLock<bool>,
+    pub declared_sources: std::sync::OnceLock<DeclaredSources>,
     /// Generic load diagnostics (a stamped diagram that did not resolve):
     /// the session surfaces these so a silent fallback cannot be mistaken
     /// for a successful freeze.
@@ -154,22 +154,10 @@ impl Deck {
         path: impl AsRef<Path>,
         defaults: &DeckSettings,
     ) -> Result<Self, DeckError> {
-        Self::load_inner(path.as_ref(), defaults, None)
+        Self::load_inner(path.as_ref(), defaults)
     }
 
-    pub fn load_in_workspace(
-        path: impl AsRef<Path>,
-        defaults: &DeckSettings,
-        workspace_has_exam: bool,
-    ) -> Result<Self, DeckError> {
-        Self::load_inner(path.as_ref(), defaults, Some(workspace_has_exam))
-    }
-
-    fn load_inner(
-        path: &Path,
-        defaults: &DeckSettings,
-        workspace_has_exam: Option<bool>,
-    ) -> Result<Self, DeckError> {
+    fn load_inner(path: &Path, defaults: &DeckSettings) -> Result<Self, DeckError> {
         let path = path.to_path_buf();
         let subject = path
             .file_name()
@@ -251,11 +239,12 @@ impl Deck {
             }
         }
         let cards = expanded;
-        let known_workspace_exam = workspace_has_exam;
-        let workspace_has_exam = std::sync::OnceLock::new();
-        if let Some(known) = known_workspace_exam {
-            let _ = workspace_has_exam.set(known);
+        let mut load_warnings = load_warnings;
+        let declared = DeclaredSources::read(&path, deck_token.as_deref());
+        if let Err(error) = &declared.manifest {
+            load_warnings.push(format!("{}: {error}", path.display()));
         }
+        let declared_sources = std::sync::OnceLock::from(declared);
         Ok(Self {
             path,
             subject,
@@ -272,7 +261,7 @@ impl Deck {
             title,
             description,
             trace,
-            workspace_has_exam,
+            declared_sources,
             load_warnings,
         })
     }
@@ -290,12 +279,31 @@ impl Deck {
         crate::exam_status::exam_status(self, store)
     }
 
-    pub fn has_exam(&self) -> bool {
+    pub fn declares_sources(&self) -> bool {
         !self.is_trace()
-            && (!self.exam.is_empty()
-                || *self
-                    .workspace_has_exam
-                    .get_or_init(|| !self.workspace_exam().is_empty()))
+            && match &self.declared().manifest {
+                Ok(manifest) => manifest
+                    .as_ref()
+                    .is_some_and(|manifest| !manifest.sources.is_empty()),
+                Err(_) => true,
+            }
+    }
+
+    pub fn declared(&self) -> &DeclaredSources {
+        self.declared_sources
+            .get_or_init(|| DeclaredSources::read(&self.path, self.deck_token.as_deref()))
+    }
+
+    pub fn sources(
+        &self,
+    ) -> Result<Option<crate::sources::DeckSources>, crate::sources::SourceError> {
+        match (
+            crate::workspace::root_for_deck(&self.path),
+            self.deck_token.as_deref(),
+        ) {
+            (Some(root), Some(deck_id)) => crate::sources::load_verified(&root, deck_id),
+            _ => Ok(None),
+        }
     }
 
     /// `title:` else the condensed `trace:` else the filename stem (D10).
@@ -318,7 +326,7 @@ impl Deck {
         if total == 0 {
             return DeckState::NotStarted;
         }
-        if self.has_exam() {
+        if self.declares_sources() {
             if store.deck_mastered(self.deck_token.as_deref().unwrap_or_default()) {
                 return DeckState::Finished;
             }
@@ -406,6 +414,64 @@ impl Deck {
                 card.id().into_iter().chain(reversed)
             })
             .chain(crate::card::dormant_base_ids(&self.ignored))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeclaredSources {
+    pub stamp: Option<(std::time::SystemTime, u64)>,
+    pub manifest: Result<Option<crate::sources::Manifest>, Arc<crate::sources::SourceError>>,
+}
+
+impl Default for DeclaredSources {
+    fn default() -> Self {
+        Self {
+            stamp: None,
+            manifest: Ok(None),
+        }
+    }
+}
+
+impl DeclaredSources {
+    pub fn manifest_path(deck_path: &Path, deck_id: Option<&str>) -> Option<PathBuf> {
+        let root = crate::workspace::root_for_deck(deck_path)?;
+        Some(
+            crate::workspace::WorkspaceFiles::new(root)
+                .sources_for(deck_id?)
+                .join(crate::sources::MANIFEST),
+        )
+    }
+
+    pub fn stamp_of(path: &Path) -> Option<(std::time::SystemTime, u64)> {
+        let meta = std::fs::metadata(path).ok()?;
+        Some((meta.modified().ok()?, meta.len()))
+    }
+
+    fn read(deck_path: &Path, deck_id: Option<&str>) -> Self {
+        let Some(path) = Self::manifest_path(deck_path, deck_id) else {
+            return Self::default();
+        };
+        let stamp = Self::stamp_of(&path);
+        let manifest = path
+            .parent()
+            .map_or(Ok(None), crate::sources::Manifest::load)
+            .and_then(|manifest| {
+                if let Some(manifest) = &manifest {
+                    manifest.validate()?;
+                }
+                Ok(manifest)
+            })
+            .map_err(Arc::new);
+        Self { stamp, manifest }
+    }
+
+    pub fn fingerprints(&self) -> std::collections::BTreeMap<String, String> {
+        self.manifest
+            .as_ref()
+            .ok()
+            .and_then(Option::as_ref)
+            .and_then(|manifest| manifest.fingerprints().ok())
+            .unwrap_or_default()
     }
 }
 
@@ -618,7 +684,9 @@ impl LoadedDecks {
         self.satisfied.insert(key.clone(), Satisfied::Pending);
         let mut satisfied = true;
         let mut provisional = false;
-        if deck.has_exam() && !store.deck_passed(deck.deck_token.as_deref().unwrap_or_default()) {
+        if deck.declares_sources()
+            && !store.deck_passed(deck.deck_token.as_deref().unwrap_or_default())
+        {
             satisfied = false;
         } else {
             for req in &deck.requires {
@@ -671,7 +739,7 @@ pub struct NongatingPrerequisite {
 }
 
 pub fn nongating_prerequisites(deck: &Deck) -> Vec<NongatingPrerequisite> {
-    if !deck.has_exam() {
+    if !deck.declares_sources() {
         return Vec::new();
     }
     let dir = deck.path.parent();
@@ -679,7 +747,7 @@ pub fn nongating_prerequisites(deck: &Deck) -> Vec<NongatingPrerequisite> {
     for req in &deck.requires {
         let nongating = resolve_require(req, dir, dir)
             .and_then(|path| Deck::load(&path).ok())
-            .filter(|prereq| !prereq.has_exam())
+            .filter(|prereq| !prereq.declares_sources())
             .map(|prereq| NongatingPrerequisite {
                 requirement: req.clone(),
                 is_trace: prereq.is_trace(),
@@ -1351,13 +1419,13 @@ mod tests {
     #[test]
     fn an_exam_deck_is_due_once_every_card_passed_somewhere_and_stays_due_until_mastered() {
         use crate::{depth::Depth, scheduler::Grade};
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        let path = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n\
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n\
              ## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
-        );
+        ));
         let deck = Deck::load(&path).unwrap();
         let a = deck.cards[0].id().unwrap();
         let b = deck.cards[1].id().unwrap();
@@ -1444,7 +1512,7 @@ mod tests {
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
 
-        assert!(!deck.has_exam());
+        assert!(!deck.declares_sources());
         for card in &deck.cards {
             graduate(&mut store, &card.id().unwrap());
         }
@@ -1474,14 +1542,18 @@ mod tests {
 
     #[test]
     fn nongating_prerequisites_flags_a_sourceless_required_deck() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.md", "## a\n1\n");
-        write_deck(dir.path(), "c.md", "---\nexam: https://x\n---\n## c\n1\n");
-        let b_path = write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        write_deck(decks.as_path(), "a.md", "## a\n1\n");
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
+            "c.md",
+            "---\n---\n## c\n1\n",
+        ));
+        let b_path = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "b.md",
-            "---\nexam: https://x\nrequires:\n  - a\n  - c\n---\n## b\n1\n",
-        );
+            "---\nrequires:\n  - a\n  - c\n---\n## b\n1\n",
+        ));
         let b = Deck::load(&b_path).unwrap();
         assert_eq!(
             vec![NongatingPrerequisite {
@@ -1494,26 +1566,26 @@ mod tests {
 
     #[test]
     fn nongating_prerequisites_empty_when_no_exam_or_prereq_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.md", "## a\n1\n");
-        let b = write_deck(dir.path(), "b.md", "---\nrequires: a\n---\n## b\n1\n");
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        write_deck(decks.as_path(), "a.md", "## a\n1\n");
+        let b = write_deck(decks.as_path(), "b.md", "---\nrequires: a\n---\n## b\n1\n");
         assert!(nongating_prerequisites(&Deck::load(&b).unwrap()).is_empty());
-        let c = write_deck(
-            dir.path(),
+        let c = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "c.md",
-            "---\nexam: https://x\nrequires: nope\n---\n## c\n1\n",
-        );
+            "---\nrequires: nope\n---\n## c\n1\n",
+        ));
         assert!(nongating_prerequisites(&Deck::load(&c).unwrap()).is_empty());
     }
 
     #[test]
     fn an_undrilled_deck_that_passed_its_exam_finishes_only_when_mastered() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        let path = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "d.md",
-            "---\nformat-version: 1\nid: \"deck-d1\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
-        );
+            "---\nformat-version: 1\nid: \"deck-d1\"\n---\n## a\n1\n<!-- id: card-q1 -->\n## b\n2\n<!-- id: card-q2 -->\n",
+        ));
         let deck = Deck::load(&path).unwrap();
         let (mut store, _s) = empty_store();
         assert_eq!(DeckState::NotStarted, deck.state(&store));
@@ -1541,21 +1613,21 @@ mod tests {
 
     #[test]
     fn dependent_stays_locked_until_sourced_prereq_mastered() {
-        let dir = tempfile::tempdir().unwrap();
-        let basics = write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        let basics = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "basics.md",
-            "---\nformat-version: 1\nid: \"deck-basics1\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
-        );
+            "---\nformat-version: 1\nid: \"deck-basics1\"\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+        ));
         let adv = write_deck(
-            dir.path(),
+            decks.as_path(),
             "advanced.md",
             "---\nrequires: basics\n---\n## x\ny\n",
         );
         let advanced = Deck::load(&adv).unwrap();
         let basics = Deck::load(&basics).unwrap();
         let (mut store, _s) = empty_store();
-        let dd = Some(dir.path());
+        let dd = Some(decks.as_path());
 
         store
             .get_or_insert(&basics.cards[0].id().unwrap())
@@ -1723,27 +1795,27 @@ mod tests {
 
     #[test]
     fn lock_sees_through_a_source_less_prereq_to_a_sourced_ancestor() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "a.md",
-            "---\nformat-version: 1\nid: \"deck-a1\"\nexam: https://x\n---\n## a\n1\n",
-        );
+            "---\nformat-version: 1\nid: \"deck-a1\"\n---\n## a\n1\n",
+        ));
         write_deck(
-            dir.path(),
+            decks.as_path(),
             "b.md",
             "---\nrequires: a\n---\n## b\n2\n<!-- id: card-q1 -->\n",
         );
-        let cpath = write_deck(
-            dir.path(),
+        let cpath = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "c.md",
-            "---\nexam: https://y\nrequires: b\n---\n## c\n3\n",
-        );
+            "---\nrequires: b\n---\n## c\n3\n",
+        ));
         let c = Deck::load(&cpath).unwrap();
-        let a = Deck::load(dir.path().join("a.md")).unwrap();
-        let b = Deck::load(dir.path().join("b.md")).unwrap();
+        let a = Deck::load(decks.as_path().join("a.md")).unwrap();
+        let b = Deck::load(decks.as_path().join("b.md")).unwrap();
         let (mut store, _s) = empty_store();
-        let dd = Some(dir.path());
+        let dd = Some(decks.as_path());
 
         assert!(is_locked(&c, dd, &store));
         retire(&mut store, &b.cards[0].id().unwrap());
@@ -1792,26 +1864,26 @@ mod tests {
 
     #[test]
     fn an_id_mode_prerequisite_gates_and_survives_a_rename() {
-        let dir = tempfile::tempdir().unwrap();
-        let basics_path = write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        let basics_path = crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "basics.md",
             &format!(
-                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n"
+                "---\nformat-version: 1\nid: \"{CANONICAL_DECK_ID}\"\n---\n## a\n1\n<!-- id: card-q1 -->\n"
             ),
-        );
+        ));
         let adv = write_deck(
-            dir.path(),
+            decks.as_path(),
             "advanced.md",
             &format!("---\nrequires: {CANONICAL_DECK_ID}\n---\n## x\ny\n"),
         );
         let advanced = Deck::load(&adv).unwrap();
         let (mut store, _s) = empty_store();
-        let dd = Some(dir.path());
+        let dd = Some(decks.as_path());
 
         assert!(is_locked(&advanced, dd, &store));
 
-        let renamed = dir.path().join("fundamentals.md");
+        let renamed = decks.as_path().join("fundamentals.md");
         std::fs::rename(&basics_path, &renamed).unwrap();
         assert!(
             is_locked(&advanced, dd, &store),
@@ -1874,42 +1946,42 @@ mod tests {
 
     #[test]
     fn a_dot_slash_require_reaches_the_file_named_like_an_id() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             &format!("{CANONICAL_DECK_ID}.md"),
-            "---\nexam: https://x\n---\n## a\n1\n<!-- id: card-q1 -->\n",
-        );
+            "---\n---\n## a\n1\n<!-- id: card-q1 -->\n",
+        ));
         let adv = write_deck(
-            dir.path(),
+            decks.as_path(),
             "advanced.md",
             &format!("---\nrequires: ./{CANONICAL_DECK_ID}\n---\n## x\ny\n"),
         );
         let advanced = Deck::load(&adv).unwrap();
         let (store, _s) = empty_store();
 
-        assert!(is_locked(&advanced, Some(dir.path()), &store));
+        assert!(is_locked(&advanced, Some(decks.as_path()), &store));
     }
 
     #[test]
     fn a_chains_middle_member_with_an_unfinished_exam_locks_the_top_but_not_itself() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(dir.path(), "a.md", "## a\n1\n");
-        write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        write_deck(decks.as_path(), "a.md", "## a\n1\n");
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "b.md",
-            "---\nexam: https://x\nrequires: a\n---\n## b\n1\n",
-        );
-        write_deck(dir.path(), "c.md", "---\nrequires: b\n---\n## c\n1\n");
-        let b = Deck::load(dir.path().join("b.md")).unwrap();
-        let c = Deck::load(dir.path().join("c.md")).unwrap();
+            "---\nrequires: a\n---\n## b\n1\n",
+        ));
+        write_deck(decks.as_path(), "c.md", "---\nrequires: b\n---\n## c\n1\n");
+        let b = Deck::load(decks.as_path().join("b.md")).unwrap();
+        let c = Deck::load(decks.as_path().join("c.md")).unwrap();
         let (store, _s) = empty_store();
         assert!(
-            !is_locked(&b, Some(dir.path()), &store),
+            !is_locked(&b, Some(decks.as_path()), &store),
             "b's only prerequisite has no exam, so b's own unfinished exam does not lock b"
         );
         assert!(
-            is_locked(&c, Some(dir.path()), &store),
+            is_locked(&c, Some(decks.as_path()), &store),
             "c is locked by b's unfinished exam, not by whether b itself is locked"
         );
     }
@@ -1946,15 +2018,15 @@ mod tests {
             ),
         ];
         for (label, passed, sat, [b_locked, c_locked]) in rows {
-            let dir = tempfile::tempdir().unwrap();
+            let (_root, decks) = crate::sources::testkit::workspace_decks();
             for (name, requires) in [("a", ""), ("b", "requires: a\n"), ("c", "requires: b\n")] {
-                write_deck(
-                    dir.path(),
+                crate::sources::testkit::sourced(write_deck(
+                    decks.as_path(),
                     &format!("{name}.md"),
                     &format!(
-                        "---\nformat-version: 1\nid: deck-{name}\nexam: https://x\n{requires}---\n## {name}\n1\n<!-- id: card-{name}1 -->\n"
+                        "---\nformat-version: 1\nid: deck-{name}\n{requires}---\n## {name}\n1\n<!-- id: card-{name}1 -->\n"
                     ),
-                );
+                ));
             }
             let (mut store, _s) = empty_store();
             for name in passed {
@@ -1967,16 +2039,16 @@ mod tests {
                         pass: false,
                     });
             }
-            let b = Deck::load(dir.path().join("b.md")).unwrap();
-            let c = Deck::load(dir.path().join("c.md")).unwrap();
+            let b = Deck::load(decks.as_path().join("b.md")).unwrap();
+            let c = Deck::load(decks.as_path().join("c.md")).unwrap();
             assert_eq!(
                 b_locked,
-                is_locked(&b, Some(dir.path()), &store),
+                is_locked(&b, Some(decks.as_path()), &store),
                 "{label}: b locked"
             );
             assert_eq!(
                 c_locked,
-                is_locked(&c, Some(dir.path()), &store),
+                is_locked(&c, Some(decks.as_path()), &store),
                 "{label}: c locked"
             );
         }
@@ -1984,22 +2056,22 @@ mod tests {
 
     #[test]
     fn a_cycle_through_the_root_lets_the_roots_own_exam_lock_it() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "a.md",
-            "---\nexam: https://x\nrequires: b\n---\n## a\n1\n",
-        );
-        write_deck(dir.path(), "b.md", "---\nrequires: a\n---\n## b\n2\n");
-        let a = Deck::load(dir.path().join("a.md")).unwrap();
-        let b = Deck::load(dir.path().join("b.md")).unwrap();
+            "---\nrequires: b\n---\n## a\n1\n",
+        ));
+        write_deck(decks.as_path(), "b.md", "---\nrequires: a\n---\n## b\n2\n");
+        let a = Deck::load(decks.as_path().join("a.md")).unwrap();
+        let b = Deck::load(decks.as_path().join("b.md")).unwrap();
         let (store, _s) = empty_store();
         assert!(
-            is_locked(&a, Some(dir.path()), &store),
+            is_locked(&a, Some(decks.as_path()), &store),
             "a reaches itself through b and its own unfinished exam blocks it"
         );
         assert!(
-            is_locked(&b, Some(dir.path()), &store),
+            is_locked(&b, Some(decks.as_path()), &store),
             "b is locked by a's unfinished exam"
         );
     }
@@ -2020,20 +2092,20 @@ mod tests {
 
     #[test]
     fn a_prerequisite_cycle_resolves_locked_instead_of_hanging() {
-        let dir = tempfile::tempdir().unwrap();
-        write_deck(
-            dir.path(),
+        let (_root, decks) = crate::sources::testkit::workspace_decks();
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "a.md",
-            "---\nexam: https://x\nrequires: b\n---\n## a\n1\n",
-        );
-        write_deck(
-            dir.path(),
+            "---\nrequires: b\n---\n## a\n1\n",
+        ));
+        crate::sources::testkit::sourced(write_deck(
+            decks.as_path(),
             "b.md",
-            "---\nexam: https://y\nrequires: a\n---\n## b\n2\n",
-        );
-        let a = Deck::load(dir.path().join("a.md")).unwrap();
+            "---\nrequires: a\n---\n## b\n2\n",
+        ));
+        let a = Deck::load(decks.as_path().join("a.md")).unwrap();
         let (store, _s) = empty_store();
-        assert!(is_locked(&a, Some(dir.path()), &store));
+        assert!(is_locked(&a, Some(decks.as_path()), &store));
     }
 
     #[test]
@@ -2200,32 +2272,32 @@ mod tests {
             },
             deck.exam_layers()
         );
-        assert!(deck.has_exam());
+        assert!(
+            !deck.declares_sources(),
+            "`exam:` entries no longer give a deck an exam"
+        );
     }
 
     #[test]
-    fn a_workspace_source_alone_confers_an_exam() {
-        let dir = tempfile::tempdir().unwrap();
-        let members = dir.path().join(crate::workspace::DECKS);
-        std::fs::create_dir_all(&members).unwrap();
-        std::fs::write(
-            dir.path().join(crate::workspace::MANIFEST),
-            "exam = \"notes.md\"\n",
-        )
-        .unwrap();
-        let path = write_deck(&members, "d.md", "## f\nb\n");
-        assert!(Deck::load(&path).unwrap().has_exam());
+    fn only_a_sources_manifest_with_a_row_confers_an_exam() {
+        let ws = crate::sources::testkit::Workspace::new();
+        assert!(
+            !Deck::load(ws.deck()).unwrap().declares_sources(),
+            "a member without sources"
+        );
+        ws.write_live("notes.md", b"notes\n");
+        ws.add(&["notes.md"], &["topic-alpha"]).unwrap();
+        assert!(
+            Deck::load(ws.deck()).unwrap().declares_sources(),
+            "a sourced member"
+        );
 
         let bare = tempfile::tempdir().unwrap();
-        let alone = write_deck(bare.path(), "d.md", "## f\nb\n");
-        assert!(!Deck::load(&alone).unwrap().has_exam());
-    }
-
-    #[test]
-    fn a_local_source_confers_an_exam() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = write_deck(dir.path(), "d.md", "---\nexam: notes.md\n---\n## f\nb\n");
-        assert!(Deck::load(&path).unwrap().has_exam());
+        let alone = write_deck(bare.path(), "d.md", "---\nexam: notes.md\n---\n## f\nb\n");
+        assert!(
+            !Deck::load(&alone).unwrap().declares_sources(),
+            "a loose deck has no sources"
+        );
     }
 
     #[test]

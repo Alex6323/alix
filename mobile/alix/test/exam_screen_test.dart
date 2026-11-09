@@ -639,8 +639,7 @@ void main() {
           thinking: false,
           ideas: {
             'version': 1,
-            'material': 'xxh64-current',
-            'topics': <Object>[],
+            'topics': <String, Object>{},
           },
         ),
       ],
@@ -664,8 +663,7 @@ void main() {
   testWidgets('a new sitting sends the saved ideas document', (tester) async {
     const ideas = {
       'version': 1,
-      'material': 'xxh64-current',
-      'topics': <Object>[],
+      'topics': <String, Object>{},
     };
     final client = FakeServerClient(examGetReplies: const [generating]);
     await pumpExam(tester, client: client, ideas: ideas);

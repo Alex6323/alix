@@ -1270,7 +1270,7 @@ impl Store {
 
     pub fn record_exam_result(&mut self, deck: &Deck, record: &SittingRecord, now_ms: u64) -> bool {
         let deck_id = deck.deck_token.clone().unwrap_or_default();
-        let topics = crate::exam_status::exam_topics(deck);
+        let topics = crate::exam_status::examined_topics(deck);
         self.record_sitting(&deck_id, &topics, record, now_ms)
     }
 
@@ -1319,7 +1319,7 @@ impl Store {
 
     #[cfg(test)]
     pub(crate) fn record_full_marks(&mut self, deck: &Deck, now_ms: u64) {
-        let topics: Vec<TopicRecord> = crate::exam_status::exam_topics(deck)
+        let topics: Vec<TopicRecord> = crate::exam_status::examined_topics(deck)
             .into_iter()
             .map(|topic| TopicRecord {
                 card_ids: topic.card_ids,
@@ -3852,12 +3852,12 @@ mod tests {
         assert!(store.progress("card-a").is_none());
     }
 
-    const TWO_TOPIC_DECK: &str = "---\nformat-version: 1\nid: deck-rec\nexam: source.txt\n---\n\
+    const TWO_TOPIC_DECK: &str = "---\nformat-version: 1\nid: deck-rec\n---\n\
         # A\n\n## a1\nx\n<!-- id: card-a1 -->\n\n## a2\nx\n<!-- id: card-a2 -->\n\n\
         # B\n\n## b1\nx\n<!-- id: card-b1 -->\n";
 
     fn record(deck: &Deck, examined: &[Option<bool>], counts: (u32, u32, u32)) -> SittingRecord {
-        let topics = crate::exam_status::exam_topics(deck);
+        let topics = crate::exam_status::examined_topics(deck);
         SittingRecord {
             topics: topics
                 .iter()
@@ -3954,10 +3954,10 @@ mod tests {
             },
         ];
         for row in rows {
-            let dir = tempfile::tempdir().unwrap();
-            let deck_path = dir.path().join("rec.md");
+            let (dir, decks) = crate::sources::testkit::workspace_decks();
+            let deck_path = decks.join("rec.md");
             std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
-            let deck = Deck::load(&deck_path).unwrap();
+            let deck = Deck::load(crate::sources::testkit::sourced(deck_path)).unwrap();
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
             let mut newly = [false; 2];
             for (at, (examined, counts)) in row.sittings.iter().enumerate() {
@@ -3996,10 +3996,10 @@ mod tests {
 
     #[test]
     fn clearing_a_decks_exam_keeps_drilling_and_the_rest_of_its_progress() {
-        let dir = tempfile::tempdir().unwrap();
-        let deck_path = dir.path().join("rec.md");
+        let (dir, decks) = crate::sources::testkit::workspace_decks();
+        let deck_path = decks.join("rec.md");
         std::fs::write(&deck_path, TWO_TOPIC_DECK).unwrap();
-        let deck = Deck::load(&deck_path).unwrap();
+        let deck = Deck::load(crate::sources::testkit::sourced(deck_path)).unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
         store.record_exam_result(
             &deck,
@@ -4009,6 +4009,10 @@ mod tests {
         store.get_or_insert("card-a1").total_reviews = 4;
         store.set_last_launch("deck-rec", Launch::Recall);
         assert!(store.ever_examined(&deck), "examined before the clear");
+        assert!(
+            store.get("card-a1").unwrap().exam_result.is_some(),
+            "setup: the sitting recorded on the cards"
+        );
 
         store.clear_deck_exam(&deck);
 

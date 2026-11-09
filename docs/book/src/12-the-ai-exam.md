@@ -9,36 +9,25 @@ The reasoning: recall isn't understanding. You can drill every card and still no
 see how the ideas connect. So a deck can name a ground-truth **source** and require
 you to pass an exam *against that source* before it counts.
 
-## Declaring the exam material: `exam:`
+## What the exam reads
 
-Name one or more sources in the deck's frontmatter, each a URL or a file. A
-directory is not exam material: the exam refuses to start on one, and
-`alix doctor` reports any `exam:` file it cannot read:
+The exam reads a workspace deck's **sources** (below): frozen copies of
+local text files, each bound to the topics it grounds. Each topic with a
+source is examined against its own sources alone; a topic with no source is
+never sent to the model and is not examined. A deck whose sources manifest
+lists no source, and any loose deck outside a workspace, has no exam.
 
-```
----
-exam:
-  - https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html
-  - notes/ownership.md
----
-```
+The `exam:` frontmatter key does not give a deck an exam, and the exam never
+reads it, nor `cite:` roots or the text your cards cite: to examine a file,
+add it as a source.
 
-A URL `exam:` doubles as a [tutor](10-tutor.md) reference, so you
-needn't repeat it as a `link:`. The reverse doesn't hold: a `link:` stays
-tutor-only and never becomes exam ground truth: keep supplementary reading (a
-blog post, an SO answer) as `link:` so the exam ignores it.
-
-The exam reads only `exam:` entries (the deck's own and its workspace
-manifest's). It never reads `cite:` roots or the text your cards cite: to
-examine a cited file, list it under `exam:` as well.
-
-Once every card in an exam-grounded deck has been answered right at least
+Once every card in a deck with sources has been answered right at least
 once (a passing review at any depth, Recognize included, or a walk graded
 **Got it** or **Partly**) the deck is **exam due**. It stays exam due, also
 after passing, until a full sitting masters it, so retaking stays one tap
-away; passing alone already unlocks its dependents. A deck with no `exam:` at all (in the deck or its
-workspace manifest) simply becomes *finished* when all its cards graduate,
-unlocking its dependents directly, even when it declares `cite:` roots.
+away; passing alone already unlocks its dependents. A deck without sources
+simply becomes *finished* when all its cards graduate, unlocking its
+dependents directly, even when it declares `cite:` roots.
 
 ## Sources
 
@@ -46,8 +35,7 @@ A workspace deck can also hold **sources**: frozen copies of local text
 files, each bound to the topics (the deck's `#` heading blocks) it grounds.
 They live in `sources/<deck-id>/` at the workspace root, beside a
 `manifest.toml` that lists every copy by its id (`source-` plus the file's
-SHA-256), its display path (`<key>:<path>`), and its bindings. The exam does
-not read sources yet: until it does, `exam:` above names its material.
+SHA-256), its display path (`<key>:<path>`), and its bindings.
 
 ```
 alix deck source add decks/rust.md ../sdk/src/lib.rs --root sdk=../sdk --topic topic-3whz
@@ -129,29 +117,36 @@ phone saves each answer as you move on from it; a restarted desktop loses
 the phone's prepared exam, and **End exam** discards it. Either way, an
 answer locks once you move on from it, and leaving returns you to the first
 unanswered question next time. Grading uses the exam up. In the browser,
-editing cards or topic prose leaves a prepared exam valid, a topic whose
-heading was renamed or removed since is dropped from it, and changing the
-exam material discards it, so the next Generate exam writes a new one.
+editing cards, topic prose or a topic's heading leaves a prepared exam
+valid. Changing a topic's sources (adding, updating, removing or rebinding
+one, or changing its ranges), or removing a topic, makes it stale: Take
+exam is refused, the prepared exam is kept, and the next Generate exam
+rewrites only the changed or new topics, keeping the other topics'
+questions and your answers to them.
 
 Writing the exam gives ids to cards added since the deck was last opened,
 the way opening a review does, so their results can be recorded.
 
-`alix` asks the model to read the source (URLs via `WebFetch`, local files
-embedded) and write **fresh understanding questions** for each of the deck's
-`#` topics (cards before the first heading form one topic, named after
-the deck). Each topic keeps a list of its **ideas**, the distinct mental
-models its topic holds in the source, whether or not a card states them. A
-first call writes that list for every topic that has none yet, or for all
-of them when the exam material changed. Each exam then picks **three ideas
-per topic**: ideas never asked first, then ideas last failed, then ideas
+`alix` writes **fresh understanding questions** one topic at a time (cards
+before the first `#` heading form one topic, named after the deck; two
+headings with the same text are two topics; a deck where two topics share an
+id is refused until `alix doctor`'s finding is fixed). Each topic's calls carry that
+topic's frozen copies whole, in display-path order, each under its display
+path; a ranged binding carries only its lines, under a `path:a-b` header.
+Nothing is fetched or cut short, so the same deck and sources give the same
+prompt on any machine. A copy that is not UTF-8 text fails the exam, naming
+the source. Each topic keeps a list of its **ideas**, the distinct mental
+models its topic holds in its sources, whether or not a card states them. A
+first call writes that list for a topic that has none yet, or whose sources
+changed. Each exam then picks **three ideas per topic**: ideas never asked first, then ideas last failed, then ideas
 asked longest ago, so repeated exams work through the whole list. A second
 call writes exactly one question per picked idea and asks the student to
 apply an idea a card states rather than recite the card. A reply that skips
-a picked idea, asks one twice, or names an idea or topic that was not
-listed is rejected and generated once more. Grading records each asked idea
+a picked idea, asks one twice, or names an idea that was not listed is
+rejected and generated once more. Grading records each asked idea
 as passed or failed, which steers the next pick. The browser keeps the idea
-lists in `.alix/exam/<deck-id>.json`; the phone keeps its own and sends them
-with each exam.
+lists in `.alix/exam/<deck-id>.json`, one entry per topic id; the phone
+keeps its own and sends them with each exam.
 
 Within a topic the questions cycle through three shapes: a concrete
 **instance** no card shows, a **boundary** (when does the idea stop

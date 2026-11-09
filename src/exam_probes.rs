@@ -11,7 +11,7 @@ const DECKS_VAR: &str = "ALIX_EXAM_PROBE_DECKS";
 
 fn probe_decks() -> Vec<Deck> {
     let listed = std::env::var(DECKS_VAR).unwrap_or_else(|_| {
-        panic!("set {DECKS_VAR} to a colon-separated list of initialized decks with `exam:` files")
+        panic!("set {DECKS_VAR} to a colon-separated list of initialized decks with sources")
     });
     listed
         .split(':')
@@ -54,18 +54,17 @@ fn answerability_is_within_bar(answerable: usize, total: usize) -> bool {
 }
 
 fn independent_source(deck: &Deck) -> String {
-    let root = crate::workspace::content_root(&deck.path);
-    let layers = deck.exam_layers();
-    layers
-        .own
+    let sources = deck.sources().unwrap().unwrap();
+    sources
+        .manifest
+        .sources
         .iter()
-        .chain(&layers.workspace)
-        .filter(|entry| !crate::deck::is_url(entry))
-        .map(|entry| {
-            let text = crate::source::source_path(entry, Some(&root))
-                .and_then(|path| std::fs::read_to_string(path).ok())
-                .unwrap_or_default();
-            format!("=== {entry} ===\n{text}\n")
+        .map(|(id, row)| {
+            format!(
+                "=== {} ===\n{}\n",
+                row.path,
+                String::from_utf8_lossy(&sources.copies[id])
+            )
         })
         .collect()
 }
@@ -86,7 +85,7 @@ fn per_topic_questions_are_not_answerable_from_an_existing_card() {
     let mut yes = 0;
     let mut total = 0;
     for deck in probe_decks() {
-        let topics = exam::exam_topics(&deck);
+        let topics = exam::examined_topics(&deck);
         let started = std::time::Instant::now();
         let questions = probe_questions(&deck, &exam_cfg, &ask);
         println!(
@@ -171,7 +170,7 @@ fn an_independent_model_list_finds_few_models_no_question_covers() {
     let mut topics_with_gaps = 0;
     let mut topics_seen = 0;
     for deck in probe_decks() {
-        let topics = exam::exam_topics(&deck);
+        let topics = exam::examined_topics(&deck);
         let started = std::time::Instant::now();
         let questions = probe_questions(&deck, &exam_cfg, &ask);
         println!(
@@ -312,28 +311,28 @@ fn the_answerability_bar_allows_exactly_one_question_in_five() {
 }
 
 #[test]
-fn the_independent_model_probe_reads_workspace_exam_sources() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("alix.toml"),
-        "exam = \"sources/workspace.md\"\n",
-    )
-    .unwrap();
-    std::fs::create_dir_all(dir.path().join("sources")).unwrap();
-    std::fs::write(
-        dir.path().join("sources/workspace.md"),
-        "workspace-only model",
-    )
-    .unwrap();
-    std::fs::create_dir_all(dir.path().join("decks")).unwrap();
-    let deck_path = dir.path().join("decks/d.md");
-    std::fs::write(&deck_path, "## q\na\n").unwrap();
-    let deck = Deck::load(&deck_path).unwrap();
+fn the_independent_model_probe_reads_every_frozen_source() {
+    let ws = crate::sources::testkit::Workspace::new();
+    ws.write_live("a.md", b"alpha-only model\n");
+    ws.write_live("b.md", b"beta-only model\n");
+    ws.add(&["a.md"], &["topic-alpha"]).unwrap();
+    ws.add(&["b.md"], &["topic-beta"]).unwrap();
+    let deck = Deck::load(ws.deck()).unwrap();
 
     let source = independent_source(&deck);
 
     assert!(
-        source.contains("workspace-only model"),
+        source.contains("=== sdk:a.md ===\nalpha-only model")
+            && source.contains("=== sdk:b.md ===\nbeta-only model"),
         "the independent list must inspect every source generation inspects: {source:?}"
     );
+}
+
+#[test]
+fn the_judge_sees_every_card_as_one_indented_bullet() {
+    let topic = ExamTopic {
+        cards: vec!["Q: a\nA: b".to_string(), "Q: c\nA: d".to_string()],
+        ..ExamTopic::default()
+    };
+    assert_eq!("- Q: a\n  A: b\n- Q: c\n  A: d\n", card_list(&topic));
 }

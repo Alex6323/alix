@@ -429,7 +429,7 @@ impl ReviewSession {
         let deck = PathBuf::from(deck_path);
         let loaded = alix::deck::Deck::load(&deck)?;
         let deck_token = loaded.deck_token.clone().unwrap_or_default();
-        let has_exam = loaded.has_exam();
+        let has_exam = loaded.declares_sources();
         // Captured before `deck` moves into `assemble::select` below.
         let deck_path = deck.clone();
 

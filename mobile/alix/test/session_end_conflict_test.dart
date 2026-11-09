@@ -36,8 +36,9 @@ void main() {
     File('${workspace.path}/alix.toml').writeAsStringSync('title = "Ws"\n');
     writeTestDeck(
       '${workspace.path}/decks/deck.md',
-      '---\ntitle: Deck\nexam: source.txt\n---\n## q\na\n',
+      '---\ntitle: Deck\n---\n## q\na\n',
     );
+    writeTestSources('${workspace.path}/decks/deck.md');
     File(
       '${workspace.path}/decks/source.txt',
     ).writeAsStringSync('alpha\nbeta\n');

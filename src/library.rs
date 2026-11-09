@@ -2040,21 +2040,23 @@ mod tests {
             ),
         ];
         for (label, passed, sat, expected) in rows {
-            let dir = tempfile::tempdir().unwrap();
+            let (_root, dir) = crate::sources::testkit::workspace_decks();
             for (name, requires) in [("a", ""), ("b", "requires: a\n"), ("c", "requires: b\n")] {
+                let path = dir.join(format!("{name}.md"));
                 std::fs::write(
-                    dir.path().join(format!("{name}.md")),
+                    &path,
                     format!(
-                        "---\nformat-version: 1\nid: deck-{name}\ntitle: {name}\nexam: https://x\n{requires}---\n## {name}\n1\n<!-- id: card-{name}1 -->\n"
+                        "---\nformat-version: 1\nid: deck-{name}\ntitle: {name}\n{requires}---\n## {name}\n1\n<!-- id: card-{name}1 -->\n"
                     ),
                 )
                 .unwrap();
+                crate::sources::testkit::sourced(path);
             }
             let decks: Vec<Deck> = ["a", "b", "c"]
                 .iter()
-                .map(|name| Deck::load(dir.path().join(format!("{name}.md"))).unwrap())
+                .map(|name| Deck::load(dir.join(format!("{name}.md"))).unwrap())
                 .collect();
-            let mut store = Store::open(dir.path().join("p.json")).unwrap();
+            let mut store = Store::open(dir.join("p.json")).unwrap();
             for name in passed {
                 store.set_deck_passed(&format!("deck-{name}"), 1);
             }
@@ -2066,7 +2068,7 @@ mod tests {
                     });
             }
 
-            let locked = decks_an_exam_reset_locks(&decks, &decks[..1], &store, Some(dir.path()));
+            let locked = decks_an_exam_reset_locks(&decks, &decks[..1], &store, Some(&dir));
 
             assert_eq!(expected, locked, "{label}");
         }

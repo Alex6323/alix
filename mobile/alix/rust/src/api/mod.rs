@@ -4,3 +4,5 @@ pub mod listing;
 pub mod review;
 pub mod simple;
 pub mod sync;
+#[cfg(test)]
+mod testkit;

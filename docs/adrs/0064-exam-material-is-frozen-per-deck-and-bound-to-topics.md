@@ -1,6 +1,7 @@
 # 0064: Exam material is frozen per deck and bound to topics
 
 - Status: Proposed
+- Evidence: fn the_exam_reads_only_frozen_sources_never_exam_entries_cite_roots_or_cited_text in src/exam.rs
 - Recorded: 2026-11-08
 - Retrospective: No
 - Amends: [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md)
