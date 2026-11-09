@@ -242,6 +242,12 @@ struct DoctorArgs {
     #[arg(long)]
     repair_sources: bool,
 
+    /// With `--repair-sources`: declare that each refrozen file keeps its
+    /// meaning, so a result of a topic it grounds stays current unless it
+    /// already was stale.
+    #[arg(long, requires = "repair_sources")]
+    keep_results: bool,
+
     /// Warn where a deck source's live file changed or is gone, and name
     /// each key with no usable root on this machine.
     #[arg(long)]

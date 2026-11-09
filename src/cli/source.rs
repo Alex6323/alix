@@ -81,6 +81,10 @@ pub(crate) struct UpdateArgs {
     /// The saved root the file is under, when more than one holds it.
     #[arg(long)]
     key: Option<String>,
+    /// Declare that the new bytes keep the meaning: a result of a topic the
+    /// source grounds stays current, unless it already was stale.
+    #[arg(long)]
+    keep_results: bool,
 }
 
 #[derive(Args)]
@@ -179,7 +183,13 @@ pub(crate) fn run(action: SourceAction) -> Result<()> {
         }
         SourceAction::Update(args) => {
             let deck = resolve(&args.deck)?;
-            let report = commands::update(&deck, &args.source, &args.file, args.key.as_deref())?;
+            let report = commands::update(
+                &deck,
+                &args.source,
+                &args.file,
+                args.key.as_deref(),
+                args.keep_results,
+            )?;
             println!(
                 "updated {} -> {} {}",
                 report.old_id, report.new_id, report.path

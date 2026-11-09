@@ -84,7 +84,15 @@ pub fn deck_id_from_document(path: &Path) -> Option<&str> {
 
 pub fn open_store(deck_path: &Path, user_root: &Path) -> Result<Store, StateError> {
     let (files, deck, deck_id) = prepare(deck_path, user_root)?;
-    let mut store = Store::open_deck(files.progress_for(&deck_id), deck_id, deck.subject)?;
+    Ok(open_deck_store(&files, &deck_id, &deck.subject)?)
+}
+
+pub fn open_deck_store(
+    files: &UserFiles,
+    deck_id: &str,
+    subject: &str,
+) -> Result<Store, StoreError> {
+    let mut store = Store::open_deck(files.progress_for(deck_id), deck_id, subject)?;
     store.device = store::device_label();
     Ok(store)
 }

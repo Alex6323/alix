@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
+use thiserror::Error;
 
 use super::{
     Binding, DeckSources, DisplayPath, MANIFEST_VERSION, Manifest, ROOTS_VERSION, Roots, Row,
@@ -17,9 +18,19 @@ use super::{
 use crate::{
     config::BackendKind,
     deck::{self, Deck},
-    locator, parser, topic,
+    exam_status, locator, parser, state,
+    store::StoreError,
+    topic,
     workspace::{self, WorkspaceFiles},
 };
+
+#[derive(Debug, Error)]
+#[error("results not kept for {}: {source}", .topics.join(", "))]
+pub struct KeepResultsNotSaved {
+    pub topics: Vec<String>,
+    #[source]
+    pub source: StoreError,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddRequest<'a> {
@@ -117,6 +128,7 @@ impl Drift {
 struct Opened {
     deck: Deck,
     deck_id: String,
+    root: PathBuf,
     dir: PathBuf,
     manifest: Manifest,
     copies: BTreeMap<String, Vec<u8>>,
@@ -164,11 +176,52 @@ fn open(deck_path: &Path) -> Result<Opened> {
     Ok(Opened {
         deck,
         deck_id,
+        root,
         dir,
         manifest,
         copies,
         roots,
     })
+}
+
+fn fingerprints(manifest: &Manifest) -> Result<BTreeMap<String, String>> {
+    Ok(manifest.fingerprints()?)
+}
+
+fn keep_topic_results(
+    opened: &Opened,
+    manifest: &Manifest,
+    before: &BTreeMap<String, String>,
+) -> Result<()> {
+    let after = fingerprints(manifest)?;
+    let personal = crate::assemble::personal_cards(&opened.deck).cards;
+    let current = exam_status::current_stamp(&opened.deck, &personal, Some(manifest));
+    let mut store = state::open_deck_store(
+        &state::UserFiles::new(&opened.root),
+        &opened.deck_id,
+        &opened.deck.subject,
+    )?;
+    let stamp_before = store.exam_stamp(&opened.deck_id).cloned();
+    let rekeyed = store.keep_results(&opened.deck_id, before, &after, &current);
+    if rekeyed.is_empty() && store.exam_stamp(&opened.deck_id) == stamp_before.as_ref() {
+        return Ok(());
+    }
+    store.save().map_err(|source| KeepResultsNotSaved {
+        topics: topic_labels(&opened.deck, manifest, rekeyed),
+        source,
+    })?;
+    Ok(())
+}
+
+fn topic_labels(deck: &Deck, manifest: &Manifest, topics: Vec<String>) -> Vec<String> {
+    let labels: BTreeMap<String, String> = exam_status::exam_topics(deck, Some(manifest))
+        .into_iter()
+        .map(|topic| (topic.topic_id, topic.label))
+        .collect();
+    topics
+        .into_iter()
+        .map(|id| labels.get(&id).cloned().unwrap_or(id))
+        .collect()
 }
 
 fn finish(
@@ -537,8 +590,17 @@ pub fn remove(deck: &Path, sources: &[String]) -> Result<RemoveReport> {
     })
 }
 
-pub fn update(deck: &Path, source: &str, file: &Path, key: Option<&str>) -> Result<UpdateReport> {
+pub fn update(
+    deck: &Path,
+    source: &str,
+    file: &Path,
+    key: Option<&str>,
+    keep_results: bool,
+) -> Result<UpdateReport> {
     let opened = open(deck)?;
+    let before = keep_results
+        .then(|| fingerprints(&opened.manifest))
+        .transpose()?;
     let old_id = resolve_source_prefix(&opened.manifest, source)?.to_string();
     let mut manifest = opened.manifest.clone();
     let old_row = manifest
@@ -577,7 +639,10 @@ pub fn update(deck: &Path, source: &str, file: &Path, key: Option<&str>) -> Resu
         },
     );
     let new_copies = vec![(copy_name(&new_id, &placed.display), placed.bytes)];
-    let report = finish(&opened, manifest, new_copies, None)?;
+    let report = finish(&opened, manifest.clone(), new_copies, None)?;
+    if let Some(before) = &before {
+        keep_topic_results(&opened, &manifest, before)?;
+    }
     Ok(UpdateReport {
         old_id,
         new_id,
@@ -751,8 +816,11 @@ pub(super) fn live_state(id: &str, display: &DisplayPath, dir: &Path) -> (Drift,
     }
 }
 
-pub fn repair(deck: &Path) -> Result<RepairReport> {
+pub fn repair(deck: &Path, keep_results: bool) -> Result<RepairReport> {
     let opened = open(deck)?;
+    let before = keep_results
+        .then(|| fingerprints(&opened.manifest))
+        .transpose()?;
     let mut report = RepairReport::default();
     let mut rows: Vec<(String, Row)> = Vec::with_capacity(opened.manifest.sources.len());
     let mut new_copies = Vec::new();
@@ -822,7 +890,12 @@ pub fn repair(deck: &Path) -> Result<RepairReport> {
         version: MANIFEST_VERSION,
         sources: rows.into_iter().collect(),
     };
-    report.collected = finish(&opened, manifest, new_copies, None)?.collected;
+    report.collected = finish(&opened, manifest.clone(), new_copies, None)?.collected;
+    if let Some(before) = &before
+        && !report.refrozen.is_empty()
+    {
+        keep_topic_results(&opened, &manifest, before)?;
+    }
     Ok(report)
 }
 
@@ -831,10 +904,25 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::sources::testkit::{DECK, TOPIC_A, TOPIC_B, Workspace};
+    use crate::{
+        exam_status::{self, TopicStatus},
+        sources::{
+            CommitError,
+            testkit::{DECK, TOPIC_A, TOPIC_B, Workspace},
+        },
+        state,
+        store::Store,
+    };
 
     const A: &[u8] = b"one\ntwo\nthree\nfour\nfive\n";
     const C: &[u8] = b"1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n";
+    const EDITED: &[u8] = b"one\ntwo\nthree\nfour\nfive, edited\n";
+    const NOW: u64 = 1_000_000;
+
+    const EXAMINED_DECK: &str = "---\nid: \"deck-fixture\"\n---\n# Alpha\n<!-- id: topic-alpha \
+                                 -->\n\n## q1\na1\n<!-- id: card-q1 -->\n\n# Beta\n<!-- id: \
+                                 topic-beta -->\n\n## q3\na3\n<!-- id: card-q3 -->\n\n## \
+                                 q4\na4\n<!-- id: card-q4 -->\n";
 
     fn first(_: &Workspace) -> String {
         source_id(A)
@@ -925,7 +1013,7 @@ mod tests {
                     bind(&w.deck(), &first(w), &strings(&["2-5|topic-beta"])).unwrap();
                     w.write_live("a.rs", b"one\ntwo\n");
                 },
-                |w| update(&w.deck(), &first(w), &w.live().join("a.rs"), None).map(drop),
+                |w| update(&w.deck(), &first(w), &w.live().join("a.rs"), None, false).map(drop),
                 &["range 2-5 lies beyond line 2 of the new copy"],
             ),
             (
@@ -937,7 +1025,7 @@ mod tests {
             (
                 "empty file on update",
                 |w| drop(w.write_live("a.rs", b"")),
-                |w| update(&w.deck(), &first(w), &w.live().join("a.rs"), None).map(drop),
+                |w| update(&w.deck(), &first(w), &w.live().join("a.rs"), None, false).map(drop),
                 &["the file is empty"],
             ),
             (
@@ -1223,6 +1311,7 @@ mod tests {
             "source-",
             &workspace.live().join("a.rs"),
             None,
+            false,
         )
         .unwrap_or_else(|error| panic!("update: {error:#}"));
 
@@ -1501,7 +1590,7 @@ mod tests {
             let before = workspace.snapshot();
             let error = format!(
                 "{:#}",
-                repair(&workspace.deck()).expect_err("a convergence refuses the repair")
+                repair(&workspace.deck(), false).expect_err("a convergence refuses the repair")
             );
             for path in ["`sdk:a.rs`", "`sdk:c.rs`"] {
                 assert!(error.contains(path), "{label}: names {path}: {error}");
@@ -1515,7 +1604,8 @@ mod tests {
 
         let edited = b"one\ntwo\nthree\nfour\nfive, edited\n";
         workspace.write_live("a.rs", edited);
-        let report = repair(&workspace.deck()).unwrap_or_else(|error| panic!("repair: {error:#}"));
+        let report =
+            repair(&workspace.deck(), false).unwrap_or_else(|error| panic!("repair: {error:#}"));
         assert_eq!(
             vec![(source_id(edited), "sdk:a.rs".to_string())],
             report.refrozen,
@@ -1542,7 +1632,7 @@ mod tests {
         );
         assert_eq!(
             RepairReport::default(),
-            repair(&workspace.deck()).unwrap(),
+            repair(&workspace.deck(), false).unwrap(),
             "a second repair finds nothing to do"
         );
     }
@@ -1559,7 +1649,7 @@ mod tests {
         .unwrap();
         workspace.write_live("c.rs", b"1\n2\n");
         let before = workspace.snapshot();
-        let error = format!("{:#}", repair(&workspace.deck()).unwrap_err());
+        let error = format!("{:#}", repair(&workspace.deck(), false).unwrap_err());
         assert!(
             error.contains("range 20-21 lies beyond line 2 of the live `sdk:c.rs`"),
             "range: {error}"
@@ -1567,7 +1657,7 @@ mod tests {
         assert_eq!(before, workspace.snapshot(), "range: nothing written");
 
         workspace.write_live("c.rs", b"");
-        let error = format!("{:#}", repair(&workspace.deck()).unwrap_err());
+        let error = format!("{:#}", repair(&workspace.deck(), false).unwrap_err());
         assert!(
             error.contains("`sdk:c.rs`: the file is empty"),
             "empty: {error}"
@@ -1576,7 +1666,7 @@ mod tests {
 
         workspace.write_live("c.rs", C);
         fs::remove_file(workspace.live().join("a.rs")).unwrap();
-        let report = repair(&workspace.deck()).unwrap();
+        let report = repair(&workspace.deck(), false).unwrap();
         assert_eq!(
             (vec!["sdk:a.rs".to_string()], Vec::new()),
             (report.missing, report.refrozen),
@@ -1593,7 +1683,7 @@ mod tests {
         roots.roots.insert("sdk".to_string(), PathBuf::from("src"));
         roots.save(&workspace.dir()).unwrap();
         let before = workspace.snapshot();
-        let report = repair(&workspace.deck()).unwrap();
+        let report = repair(&workspace.deck(), false).unwrap();
         assert_eq!(
             ["sdk:a.rs", "sdk:c.rs"]
                 .map(|path| {
@@ -1626,6 +1716,370 @@ mod tests {
             listed,
             "list: a relative root never resolves against the cwd"
         );
+    }
+
+    /// A deck whose cards carry ids, with the named live files frozen as one
+    /// source each and bound to `topics`; every sourced topic passed in a full
+    /// sitting, the standing stamped, and the progress document saved.
+    fn examined(files: &[&str], topics: &[&str]) -> Workspace {
+        let workspace = Workspace::new();
+        fs::write(workspace.deck(), EXAMINED_DECK).unwrap();
+        workspace.write_live("a.rs", A);
+        workspace.write_live("c.rs", C);
+        workspace.add(files, topics).unwrap();
+        let deck = Deck::load(workspace.deck()).unwrap();
+        let mut store = state::open_store(&workspace.deck(), workspace.root()).unwrap();
+        store.record_full_marks(&deck, NOW);
+        assert!(
+            store.deck_passed(DECK),
+            "setup: the sitting passed the deck"
+        );
+        store.save().unwrap();
+        workspace
+    }
+
+    fn progress_path(workspace: &Workspace) -> PathBuf {
+        state::UserFiles::new(workspace.root()).progress_for(DECK)
+    }
+
+    fn reopen(workspace: &Workspace) -> (Deck, Store) {
+        let deck = Deck::load(workspace.deck()).unwrap();
+        let store = state::open_store(&workspace.deck(), workspace.root()).unwrap();
+        (deck, store)
+    }
+
+    fn statuses(deck: &Deck, store: &Store) -> Vec<TopicStatus> {
+        exam_status::exam_status(deck, store).topics
+    }
+
+    fn exam_changed(deck: &Deck, store: &Store) -> bool {
+        exam_status::exam_row(deck, store, None).exam_changed
+    }
+
+    fn current_fingerprint(deck: &Deck, topic: &str) -> String {
+        exam_status::examined_topics(deck)
+            .into_iter()
+            .find(|examined| examined.topic_id == topic)
+            .map(|examined| examined.fingerprint)
+            .unwrap_or_else(|| panic!("{topic} is sourced"))
+    }
+
+    fn results_of(workspace: &Workspace) -> BTreeMap<String, String> {
+        reopen(workspace)
+            .1
+            .topic_results(DECK)
+            .map(|results| {
+                results
+                    .iter()
+                    .map(|(topic, result)| (topic.clone(), result.fingerprint.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn manifest_of(workspace: &Workspace) -> Manifest {
+        load_verified(workspace.root(), DECK)
+            .unwrap()
+            .expect("a manifest survives")
+            .manifest
+    }
+
+    fn rewrite_deck(workspace: &Workspace, from: &str, to: &str) {
+        let text = fs::read_to_string(workspace.deck()).unwrap();
+        assert!(text.contains(from), "deck holds {from:?}: {text}");
+        fs::write(workspace.deck(), text.replacen(from, to, 1)).unwrap();
+    }
+
+    fn update_a(workspace: &Workspace, keep_results: bool) -> Result<UpdateReport> {
+        update(
+            &workspace.deck(),
+            &source_id(A),
+            &workspace.live().join("a.rs"),
+            None,
+            keep_results,
+        )
+    }
+
+    #[test]
+    fn keep_results_rekeys_and_keeps_the_standing_solid() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        let before = results_of(&workspace)[TOPIC_A].clone();
+        workspace.write_live("a.rs", EDITED);
+
+        update_a(&workspace, true).unwrap_or_else(|error| panic!("update: {error:#}"));
+
+        let (deck, store) = reopen(&workspace);
+        let current = current_fingerprint(&deck, TOPIC_A);
+        assert_ne!(
+            before, current,
+            "control: the refreeze changed the fingerprint"
+        );
+        assert_eq!(
+            Some(&current),
+            results_of(&workspace).get(TOPIC_A),
+            "the result is re-keyed to the new fingerprint"
+        );
+        assert_eq!(
+            vec![TopicStatus::Passed],
+            statuses(&deck, &store),
+            "the topic stays passed"
+        );
+        assert!(
+            !exam_changed(&deck, &store),
+            "the stamp is rewritten, so the standing is solid"
+        );
+    }
+
+    #[test]
+    fn keep_results_never_revives_a_result_already_stale_before_the_command() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        let f0 = results_of(&workspace)[TOPIC_A].clone();
+        bind(
+            &workspace.deck(),
+            &source_id(A),
+            &strings(&["2-4|topic-alpha"]),
+        )
+        .unwrap();
+        let f1 = current_fingerprint(&Deck::load(workspace.deck()).unwrap(), TOPIC_A);
+        assert_ne!(f0, f1, "setup: the ranged binding changed the fingerprint");
+        workspace.write_live("a.rs", EDITED);
+
+        update_a(&workspace, true).unwrap_or_else(|error| panic!("update: {error:#}"));
+
+        let (deck, store) = reopen(&workspace);
+        let f2 = current_fingerprint(&deck, TOPIC_A);
+        assert_ne!(
+            f1, f2,
+            "control: the refreeze changed the fingerprint again"
+        );
+        assert_eq!(
+            Some(&f0),
+            results_of(&workspace).get(TOPIC_A),
+            "the result stale at F0 is left at F0"
+        );
+        assert_eq!(
+            vec![TopicStatus::Unexamined],
+            statuses(&deck, &store),
+            "a stale result is never revived"
+        );
+        assert!(
+            exam_changed(&deck, &store),
+            "the standing was not solid before the command, so it stays dotted"
+        );
+    }
+
+    #[test]
+    fn keep_results_with_another_pending_change_rekeys_but_keeps_exam_changed() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        rewrite_deck(
+            &workspace,
+            "## q4\na4\n<!-- id: card-q4 -->\n",
+            "## q4\na4\n<!-- id: card-q4 -->\n\n## q5\na5\n<!-- id: card-q5 -->\n",
+        );
+        workspace.write_live("a.rs", EDITED);
+
+        update_a(&workspace, true).unwrap_or_else(|error| panic!("update: {error:#}"));
+
+        let (deck, store) = reopen(&workspace);
+        assert_eq!(
+            vec![TopicStatus::Passed],
+            statuses(&deck, &store),
+            "the result is re-keyed"
+        );
+        assert!(
+            exam_changed(&deck, &store),
+            "a card added to an unsourced topic after the sitting keeps the standing dotted"
+        );
+    }
+
+    #[test]
+    fn keep_results_keeps_a_standing_solid_after_an_unsourced_card_was_removed() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        rewrite_deck(&workspace, "## q4\na4\n<!-- id: card-q4 -->\n", "");
+        workspace.write_live("a.rs", EDITED);
+
+        update_a(&workspace, true).unwrap_or_else(|error| panic!("update: {error:#}"));
+
+        let (deck, store) = reopen(&workspace);
+        assert_eq!(
+            vec![TopicStatus::Passed],
+            statuses(&deck, &store),
+            "the result is re-keyed"
+        );
+        assert!(
+            !exam_changed(&deck, &store),
+            "the current unsourced cards are a subset of the recorded ones, so the stamp is \
+             rewritten"
+        );
+    }
+
+    #[test]
+    fn update_without_keep_results_leaves_the_topic_unexamined() {
+        let workspace = examined(&["a.rs"], &[TOPIC_A]);
+        let f0 = results_of(&workspace)[TOPIC_A].clone();
+        let store_bytes = fs::read(progress_path(&workspace)).unwrap();
+        workspace.write_live("a.rs", EDITED);
+
+        update_a(&workspace, false).unwrap_or_else(|error| panic!("update: {error:#}"));
+
+        let (deck, store) = reopen(&workspace);
+        assert_eq!(
+            Some(&f0),
+            results_of(&workspace).get(TOPIC_A),
+            "the result keeps its old fingerprint"
+        );
+        assert_eq!(
+            vec![TopicStatus::Unexamined],
+            statuses(&deck, &store),
+            "the topic reads unexamined"
+        );
+        assert!(exam_changed(&deck, &store), "the standing is dotted");
+        assert_eq!(
+            store_bytes,
+            fs::read(progress_path(&workspace)).unwrap(),
+            "no store write at all"
+        );
+    }
+
+    #[test]
+    fn repair_keep_results_rekeys_from_whole_command_snapshots() {
+        let workspace = examined(&["a.rs", "c.rs"], &[TOPIC_A]);
+        let before = results_of(&workspace)[TOPIC_A].clone();
+        workspace.write_live("a.rs", EDITED);
+        workspace.write_live("c.rs", b"1\n2\n3, edited\n");
+
+        let report =
+            repair(&workspace.deck(), true).unwrap_or_else(|error| panic!("repair: {error:#}"));
+
+        assert_eq!(
+            2,
+            report.refrozen.len(),
+            "both drifted rows refrozen in one repair"
+        );
+        let (deck, store) = reopen(&workspace);
+        let current = current_fingerprint(&deck, TOPIC_A);
+        assert_ne!(
+            before, current,
+            "control: the repair changed the fingerprint"
+        );
+        assert_eq!(
+            Some(&current),
+            results_of(&workspace).get(TOPIC_A),
+            "the result is re-keyed from the pre-command fingerprint to the post-command one"
+        );
+        assert_eq!(
+            vec![TopicStatus::Passed],
+            statuses(&deck, &store),
+            "the topic stays passed"
+        );
+        assert!(!exam_changed(&deck, &store), "the standing is solid");
+    }
+
+    #[test]
+    fn keep_results_names_the_topics_it_could_not_keep_when_the_store_write_fails() {
+        let scenario = || {
+            let workspace = examined(&["a.rs"], &[TOPIC_A, TOPIC_B]);
+            workspace.write_live("a.rs", EDITED);
+            workspace
+        };
+        let reference = scenario();
+        let manifest_before = manifest_of(&reference);
+        let results_before = results_of(&reference);
+        update_a(&reference, true).unwrap_or_else(|error| panic!("reference: {error:#}"));
+        let manifest_after = manifest_of(&reference);
+        let results_after = results_of(&reference);
+        assert_ne!(
+            manifest_before, manifest_after,
+            "setup: the update changes the manifest"
+        );
+        assert_ne!(
+            results_before, results_after,
+            "setup: the update re-keys both results"
+        );
+
+        let mut rows = [false; 4];
+        for n in 1.. {
+            let workspace = scenario();
+            let store_bytes = fs::read(progress_path(&workspace)).unwrap();
+            let fault = crate::fsio::fault::fail_on_nth_operation(n);
+            let result = update_a(&workspace, true);
+            let triggered = fault.triggered_operation();
+            drop(fault);
+            let Some(operation) = triggered else {
+                result.unwrap_or_else(|error| panic!("uninjected run {n}: {error:#}"));
+                assert_eq!(
+                    (&manifest_after, &results_after),
+                    (&manifest_of(&workspace), &results_of(&workspace)),
+                    "uninjected run: manifest new, results re-keyed"
+                );
+                break;
+            };
+            let step = format!("fault {n} ({operation:?})");
+            let error = match result {
+                Ok(_) => panic!("{step}: the fault was swallowed"),
+                Err(error) => error,
+            };
+            let manifest = manifest_of(&workspace);
+            let manifest_new = if manifest == manifest_before {
+                false
+            } else if manifest == manifest_after {
+                true
+            } else {
+                panic!("{step}: the manifest is neither old nor new");
+            };
+            let results = results_of(&workspace);
+            let results_new = if results == results_before {
+                false
+            } else if results == results_after {
+                true
+            } else {
+                panic!("{step}: the results are neither old nor new: {results:?}");
+            };
+            let row = match (
+                manifest_new,
+                results_new,
+                error.downcast_ref::<CommitError>(),
+                error.downcast_ref::<KeepResultsNotSaved>(),
+            ) {
+                (false, false, Some(commit), None) if !commit.manifest_replaced => 1,
+                (true, false, Some(commit), None) if commit.manifest_replaced => {
+                    assert_eq!(
+                        store_bytes,
+                        fs::read(progress_path(&workspace)).unwrap(),
+                        "{step}: row 2 never touches the store file"
+                    );
+                    2
+                }
+                (true, false, None, Some(not_saved)) => {
+                    assert_eq!(
+                        strings(&["Alpha", "Beta"]),
+                        not_saved.topics,
+                        "{step}: row 3 names both topics"
+                    );
+                    assert!(
+                        format!("{error:#}").starts_with("results not kept for Alpha, Beta: "),
+                        "{step}: {error:#}"
+                    );
+                    3
+                }
+                (true, true, None, Some(_)) => 4,
+                (manifest_new, results_new, commit, not_saved) => panic!(
+                    "{step}: fits no row: manifest_new={manifest_new} results_new={results_new} \
+                     commit={commit:?} not_saved={not_saved:?}: {error:#}"
+                ),
+            };
+            rows[row - 1] = true;
+        }
+        assert!(
+            rows[2],
+            "some fault lands in row 3 (store write failed, results unchanged): {rows:?}"
+        );
+        if cfg!(unix) {
+            assert!(
+                rows[1],
+                "some fault lands in row 2 (manifest durability after its rename): {rows:?}"
+            );
+        }
     }
 
     #[test]

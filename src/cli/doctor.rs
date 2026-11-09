@@ -1667,7 +1667,7 @@ fn repair_cite_locators(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn repair_sources(paths: &[PathBuf]) -> Result<()> {
+fn repair_sources(paths: &[PathBuf], keep_results: bool) -> Result<()> {
     for path in paths {
         let Some(root) = workspace::root_for_deck(path) else {
             continue;
@@ -1681,7 +1681,7 @@ fn repair_sources(paths: &[PathBuf]) -> Result<()> {
         {
             continue;
         }
-        let report = alix::sources::commands::repair(path)
+        let report = alix::sources::commands::repair(path, keep_results)
             .with_context(|| format!("cannot repair the sources of {}", path.display()))?;
         let at = path.display();
         for (id, source) in &report.refrozen {
@@ -1708,6 +1708,7 @@ struct Repairs {
     normalize: bool,
     cite_locators: bool,
     sources: bool,
+    keep_results: bool,
     positions: bool,
     diagrams: bool,
     frontmatter_order: bool,
@@ -1720,6 +1721,7 @@ impl Repairs {
             normalize: args.normalize,
             cite_locators: args.repair_cite_locators,
             sources: args.repair_sources,
+            keep_results: args.keep_results,
             positions: args.repair_positions,
             diagrams: args.repair_diagrams,
             frontmatter_order: args.repair_frontmatter_order,
@@ -1745,7 +1747,7 @@ impl Repairs {
             repair_cite_locators(paths)?;
         }
         if self.sources {
-            repair_sources(paths)?;
+            repair_sources(paths, self.keep_results)?;
         }
         if self.positions {
             repair_positions(paths)?;
@@ -4325,6 +4327,7 @@ printf ']}}'
             repair_cite_locators,
             warn_on_cite_locator_drift: false,
             repair_sources: false,
+            keep_results: false,
             warn_on_source_drift: false,
             remove_backup_files: false,
             yes: false,

@@ -1329,6 +1329,48 @@ impl Store {
         newly_passed
     }
 
+    /// Returns the re-keyed topic ids.
+    pub fn keep_results(
+        &mut self,
+        deck_id: &str,
+        before: &BTreeMap<String, String>,
+        after: &BTreeMap<String, String>,
+        current: &ExamStamp,
+    ) -> Vec<String> {
+        let Some(progress) = self.decks.get_mut(deck_id) else {
+            return Vec::new();
+        };
+        let mut rekeyed = Vec::new();
+        for (topic, old) in before {
+            let Some(new) = after.get(topic) else {
+                continue;
+            };
+            if new == old {
+                continue;
+            }
+            if let Some(result) = progress.topic_results.get_mut(topic)
+                && result.fingerprint == *old
+            {
+                result.fingerprint = new.clone();
+                rekeyed.push(topic.clone());
+            }
+        }
+        if let Some(stamp) = progress.exam_stamp.as_mut() {
+            let pairs: Vec<(&str, &str)> = before
+                .iter()
+                .map(|(topic, fingerprint)| (topic.as_str(), fingerprint.as_str()))
+                .collect();
+            let at_before = ExamStamp {
+                sourced: crate::exam_status::sourced_hash(&pairs),
+                unsourced_cards: current.unsourced_cards.clone(),
+            };
+            if !crate::exam_status::exam_changed(&at_before, stamp) {
+                *stamp = current.clone();
+            }
+        }
+        rekeyed
+    }
+
     #[cfg(test)]
     pub(crate) fn record_full_marks(&mut self, deck: &Deck, now_ms: u64) {
         let topics: Vec<TopicRecord> = crate::exam_status::examined_topics(deck)

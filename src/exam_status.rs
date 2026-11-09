@@ -911,7 +911,7 @@ mod tests {
                 "source re-frozen (update)",
                 Box::new(|ws, source, _| {
                     let file = ws.write_live("a.txt", b"alpha source, revised\n");
-                    commands::update(&ws.deck(), source, &file, None).unwrap();
+                    commands::update(&ws.deck(), source, &file, None, false).unwrap();
                 }),
                 true,
             ),

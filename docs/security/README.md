@@ -174,7 +174,13 @@ changed live file through the same open, validation and commit, only from a
 saved root that is an absolute existing folder, never through a live
 symbolic link, and refuses as a whole when two rows would hold the same
 bytes; a live file that is gone never removes its row
-(`src/sources/findings.rs`, `src/sources/commands.rs`).
+(`src/sources/findings.rs`, `src/sources/commands.rs`). `--keep-results` on
+`update` and on the repair is the only source command that writes the deck's
+progress document, and it does so after the manifest is in place: it re-keys
+only a topic result whose fingerprint was current before the command and
+rewrites the standing's stamp only when the standing was solid with the old
+material; a failed store write names the topics left stale
+(`src/store.rs`, `src/sources/commands.rs`).
 
 The mobile build excludes desktop server listeners, sharing, and provider
 subprocesses, but the embedded core is not a sandbox. Parsers and filesystem
@@ -687,6 +693,11 @@ The most relevant deterministic checks currently live beside their controls:
   including a symbolic link out of a root); a linked deck folder is refused
   and nothing behind it is collected
   (`a_linked_deck_folder_is_refused_and_nothing_behind_the_link_is_collected`);
+  a fault at every step of `update --keep-results` lands in one of four
+  states (manifest old; manifest new with stale results and a commit error;
+  store write failed, the error naming both topics; store written) and no
+  fault re-keys a result before the manifest is in place
+  (`keep_results_names_the_topics_it_could_not_keep_when_the_store_write_fails`);
 - `src/locator.rs` and `src/cite.rs`: locator grammar (relative, normalized
   paths only) and containment of every resolved citation inside its root;
 - `src/workspace_update.rs`: update-manifest member containment, accepting a

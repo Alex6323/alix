@@ -9624,6 +9624,33 @@ fn doctor_repair_sources_refreezes_a_drifted_source_only_when_asked() {
 }
 
 #[test]
+fn doctor_keep_results_requires_repair_sources() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let run = |args: &[&str]| alix_in(root.path(), home.path(), args);
+    let ws = root.path().to_str().unwrap();
+
+    let out = run(&["doctor", ws, "--keep-results"]);
+    assert!(
+        !out.status.success(),
+        "--keep-results alone is refused: {}",
+        stderr(&out)
+    );
+    assert!(
+        stderr(&out).contains("--repair-sources"),
+        "the refusal names --repair-sources: {}",
+        stderr(&out)
+    );
+
+    let out = run(&["doctor", ws, "--repair-sources", "--keep-results"]);
+    assert!(
+        out.status.success(),
+        "beside --repair-sources it is accepted: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn deck_source_add_refuses_a_url_and_points_at_saving_the_page() {
     let root = source_workspace();
     let home = TempDir::new().unwrap();

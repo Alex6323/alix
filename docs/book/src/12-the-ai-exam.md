@@ -53,6 +53,18 @@ alix deck source list decks/rust.md
 - `update` refreezes a source from its file and keeps every binding,
   refusing when a range would lie beyond the new copy's last line;
   `list` shows whether each live file still matches its copy.
+- `--keep-results`, on `update` and on `alix doctor --repair-sources`,
+  declares that the new bytes keep the meaning. Each affected topic's
+  result then moves to the topic's new material, so the topic stays passed
+  and the deck's standing stays solid. It never revives a result that was
+  already stale (the topic's material had changed since that result was
+  earned), and it keeps a standing solid only if it was solid before the
+  command; a change still pending elsewhere, such as a card added to a
+  topic without sources, keeps the standing marked as changed. Without the
+  flag, every topic the source grounds reads unexamined until it is sat
+  again. The manifest is written first; if the progress store then cannot
+  be written, the command fails naming the topics whose results were not
+  kept, and those results stay stale.
 
 A source is refused when it is a URL (save the page as a file), empty, not
 UTF-8, outside its root (a symbolic link out of the root included), already
@@ -72,7 +84,9 @@ row names is a note. A live file changing is normal, so drift is opt-in:
 changed, is gone, or cannot be read, and names each key with no usable root
 on this machine together with the `root set` command that saves one.
 `alix doctor --repair-sources` refreezes every source whose live file
-changed, keeping its bindings and printing each kept range for review. It
+changed, keeping its bindings and printing each kept range for review; with
+`--keep-results` it also keeps each refrozen topic's result and the
+standing, under the rules above. It
 refuses the whole repair when two sources would end up with the same bytes,
 naming both, or when a range would lie beyond a new copy's last line. A live
 file that is gone is reported and its source kept; a source under a key

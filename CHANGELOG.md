@@ -31,6 +31,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   saved root is not an absolute existing folder as `unchecked`, with the
   reason.
 
+- `alix deck source update --keep-results` and
+  `alix doctor --repair-sources --keep-results` declare that a refrozen file
+  keeps its meaning: each affected topic's result moves to the topic's new
+  material and the deck's standing stays solid. A result already stale
+  before the command is never revived, and a standing is kept solid only if
+  it was solid with the old material. The manifest is written first; when
+  the progress store cannot be written afterwards, the command fails naming
+  the topics whose results were not kept.
+
 - Topics carry permanent IDs: `alix deck init` and opening a deck write one
   `<!-- id: topic-<token> -->` line closing each `#` heading block (after its
   prose, before its first card). The cards above the first `#` are the

@@ -6420,6 +6420,7 @@ fn a_prepared_exam_resumes_after_leaving_is_used_up_by_grading_and_goes_stale_wi
         &alix::sources::source_id(b"b is a concept.\n"),
         &live.join("bsource.txt"),
         None,
+        false,
     )
     .unwrap();
     assert_eq!(

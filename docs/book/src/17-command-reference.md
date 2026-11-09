@@ -166,9 +166,12 @@ The rest of the AI-and-deck surface:
     hold a file. `--topic` may be left out only on a deck without `#`
     topics, which binds the deck id.
   - `remove <deck> <source>...`: drop sources and delete their copies.
-  - `update <deck> <source> <file> [--key <key>]`: refreeze a source from a
-    file, keeping its bindings and their ranges; prints each kept range for
-    review.
+  - `update <deck> <source> <file> [--key <key>] [--keep-results]`: refreeze
+    a source from a file, keeping its bindings and their ranges; prints each
+    kept range for review. `--keep-results` declares that the new bytes keep
+    the meaning: a result of a topic the source grounds moves to the new
+    material unless it already was stale, and the standing stays solid if it
+    was solid before ([sources](12-the-ai-exam.md#sources)).
   - `bind <deck> <source> <topic>...`: add a topic's entry, or replace it
     when the topic is already bound.
   - `unbind <deck> <source> <topic>...`: drop topics, named without ranges;
@@ -369,13 +372,16 @@ notes it.
   machine, with the `alix deck source root set` command that saves one
   ([sources](12-the-ai-exam.md#sources)). Damage to a sources folder is an
   error with or without the flag.
-- `alix doctor [dir-or-deck] --repair-sources`: refreeze each deck source
-  whose live file changed, keeping its bindings and printing each kept
-  range for review. Refused as a whole when two sources would hold the same
-  bytes or a range would lie beyond a new copy's last line. A live file that
-  is gone is reported and its source kept; a key without a usable root is
-  never read, and the warning names why with the `alix deck source root set`
-  command that fixes it. Copies no row names are deleted.
+- `alix doctor [dir-or-deck] --repair-sources [--keep-results]`: refreeze
+  each deck source whose live file changed, keeping its bindings and
+  printing each kept range for review. Refused as a whole when two sources
+  would hold the same bytes or a range would lie beyond a new copy's last
+  line. A live file that is gone is reported and its source kept; a key
+  without a usable root is never read, and the warning names why with the
+  `alix deck source root set` command that fixes it. Copies no row names
+  are deleted. `--keep-results` (only beside `--repair-sources`) keeps each
+  refrozen topic's result and the standing, as
+  `alix deck source update --keep-results` does.
 - `alix doctor [dir-or-deck] --repair-diagrams`: after you review the
   reported [diagram findings](06-cloze-direction-images.md), delete stamps
   attached to no fence and re-freeze every stale or unfrozen fence
