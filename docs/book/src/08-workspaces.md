@@ -22,7 +22,11 @@ Reach for a workspace when one of these becomes true:
   between members: it decides which decks are unlocked yet, and draws the
   [dependency tree](09-dependencies.md) in the picker.
 - **The material has a source you want to keep.** Only a workspace member can
-  **freeze** its evidence: initializing one copies each cited source excerpt
+  **freeze** its evidence: a card can cite lines of a file through an
+  `<!-- at: -->` locator that names a `cite:` root (a folder or URL the deck
+  or workspace declares; see [Source
+  citations](06-cloze-direction-images.md#source-citations)), and
+  initializing a member copies each cited excerpt
   and each local image into `assets/deck-<token>/`, and renders each
   [mermaid fence](06-cloze-direction-images.md) into a frozen diagram
   there, so the deck still shows
@@ -31,8 +35,11 @@ Reach for a workspace when one of these becomes true:
   beside it and its citations live, so if the cited file moves or changes, the
   card shows a warning in place of the quoted lines.
 - **You want to hand the whole cluster to someone else.** Sharing a workspace
-  carries its members with their frozen assets and generated augmentation, and
-  strips your progress. A loose deck has nothing frozen to carry, so what
+  carries its members with their frozen assets and generated augmentation
+  (AI-made extras alix keeps per card, such as multiple-choice options and
+  notes; see [Augmenting a deck from the
+  picker](15-the-web-app.md#augmenting-a-deck-from-the-picker)), and strips
+  your progress. A loose deck has nothing frozen to carry, so what
   arrives is the file itself and whatever the recipient can still resolve.
 - **There is a date you are working toward.** A `deadline` and the pacing ramp
   it drives are read only inside a real workspace; see [Personal
@@ -70,9 +77,10 @@ reveal = "line"
 Besides `title`, `description`, `icon`, a shared `link` (one URL or a
 list, read by the tutor after each member's own `link:` entries), and a `[cite]`
 table of [citation roots](06-cloze-direction-images.md#source-citations)
-every member sees, the manifest may set a top-level `source_access`, which overrides the global
+every member sees, the manifest may set a top-level `source_access`, which lets the tutor read
+the live files under a card's local `cite:` root, and overrides the global
 `[ask] source_access` for this workspace's decks in either direction (see
-[the tutor](10-tutor.md)). The manifest travels with the folder when
+[the tutor](10-tutor.md#grounding-a-frozen-card-cite)). The manifest travels with the folder when
 shared, so review a received workspace's `alix.toml` before an AI call.
 An `alix.toml` that does not parse (bad TOML, or a key alix does not know) is
 an error, never a fallback to defaults: the picker lists the workspace as an
@@ -101,9 +109,18 @@ spanish/
 │       └── manifest.local.toml
 ├── .alix/
 │   ├── progress/deck-<token>.json
+│   ├── exam/deck-<token>.json
+│   ├── exam/deck-<token>.prepared.json
 │   └── recent.json
 └── augment/
 ```
+
+`sources/` holds each deck's **exam sources**: frozen copies of local files
+the [AI exam](12-the-ai-exam.md#sources) examines a deck against. They are
+not citations: `alix deck source add` creates them, and
+`alix deck generate` or `alix workspace generate` from a local file or
+folder creates them for the decks it writes. `alix workspace init` creates
+no `sources/` folder.
 
 Grow the workspace with
 [`alix deck generate … --into <dir>`](11-generating-decks.md) or
@@ -117,9 +134,11 @@ ignored by discovery. Root-level Markdown is never a workspace member, so
 README-style prose and notes can live beside `alix.toml` without becoming picker
 entries or being stamped.
 
-Initialization also makes the member portable. Cited excerpts are copied from
-explicit source files and source directories alike (never a whole file or
-repository), and local card images are copied into `assets/deck-<token>/`. Every managed filename is the
+Initialization also makes the member portable. Cited excerpts are copied
+from the live files under the deck's `cite:` roots: only what each
+citation names, its lines, or the whole file for a citation that names no
+lines, never a whole root. Local card images are copied into
+`assets/deck-<token>/`. Every managed filename is the
 SHA-256 address of its exact bytes. The deck is not initialized successfully if
 required evidence or an image cannot be copied. After a successful freeze,
 initialization deletes every file in `assets/deck-<token>/` that the deck no
@@ -135,9 +154,11 @@ alix workspace update ~/decks/spanish
 ```
 
 The command gives its AI backend read-only access to each member's first
-local `cite:` root, then writes one exact proposal into a dot-prefixed sibling workspace.
-The original workspace remains untouched. Inspect the proposed decks and
-evidence there, then publish those exact bytes without another model call:
+local `cite:` root, then writes one exact proposal into a staging copy of
+the workspace beside it, named after the workspace with a leading dot
+(`~/decks/.spanish.updating` here), and prints that path. The original
+workspace remains untouched. Inspect the proposed decks and evidence there,
+then publish those exact bytes without another model call:
 
 ```sh
 alix workspace update ~/decks/spanish --apply
@@ -146,8 +167,11 @@ alix workspace update ~/decks/spanish --apply
 Use `--discard` instead to remove the proposal. Apply refuses if an original
 deck changed after staging.
 
-Every member is checked for frozen evidence before the first model call, so an
-unfrozen deck stops the command immediately and costs nothing. After that, a
+Every member is checked before the first model call, so these cost nothing:
+a member without any `cite:` root is skipped, a member whose only roots are
+URLs stops the command, a member whose cards cite nothing is left as is and
+named in the report, and a member whose citations are not yet frozen stops
+the command. After that, a
 member whose proposal comes back unusable is reported as that member and left
 exactly as the proposal found it, while the other members still stage. The
 command exits non-zero and names each one, the reasons are recorded in the
@@ -155,23 +179,25 @@ proposal so `--apply` reprints them, and applying touches only the members that
 did update. If every member fails there is no proposal to apply, and the
 staging directory is left for inspection.
 
-A card ID belongs to one learning proposition. An unchanged question and
-answer may keep its ID while its note or source locator improves. If the
-question, answer, cloze, or learning image changes, the old card and ID retire
-together and the replacement receives a fresh ID during staging. Obsolete
-cards are removed rather than rewritten in place under their old learning
-history.
+A [card ID](03-the-deck-format.md#why-editing-a-deck-is-safe) belongs to
+one thing to learn. An unchanged question and answer may keep its ID while
+its note or source locator improves. If the question, answer, cloze, an
+image or the authored choices change, the proposal must drop the old card
+with its ID, and the replacement receives a fresh ID during staging; a
+proposal that keeps an ID on changed content is refused for that member.
+Obsolete cards are removed rather than rewritten in place under their old
+learning history.
 
-A topic ID stays with its topic. A proposal may remove an obsolete topic
+A [topic ID](03-the-deck-format.md#topic-ids) (the permanent id of a `#`
+topic, written as a line in the deck file) stays with its topic. A proposal may remove an obsolete topic
 whole, its ID with it, but a proposal that copies a topic ID onto a second
 topic or invents one is refused. A new `#` topic in the proposal receives a
 fresh ID during staging. A deck that already repeats a topic ID is refused
 before the update asks the backend, with the duplicate named; fix it first.
 
 Update reads each member's first local `cite:` root (the workspace `[cite]`
-table first, then the deck's own `cite:`); a member without roots is skipped.
-A member whose only roots are URLs is refused: a remote root remains review
-and tutor context, but cannot yet be captured as a new portable snapshot.
+table first, then the deck's own `cite:`). A remote root remains review and
+tutor context, but cannot yet be captured as a new portable snapshot.
 
 ## Moving decks between workspaces
 
@@ -184,7 +210,7 @@ alix deck move ~/decks/spanish/decks/verbs.md ~/decks/exam
 ```
 
 Both commands preserve the filename, deck ID, and card IDs. Copy installs the
-same public bundle that wormhole sharing sends with its sources: the deck,
+same public bundle that sharing sends with `--with-sources`: the deck,
 `assets/deck-<token>/`, `sources/deck-<token>/` (verified on landing), and
 `augment/deck-<token>.json`. The folder's `manifest.local.toml` comes along
 too: the roots it names are this machine's folders, which a local copy or
@@ -220,7 +246,8 @@ The `[defaults]` keys are the deck-directive names `reveal`, `input`,
 [the deck format](03-the-deck-format.md),
 plus `strictness`: the learner-side [exam](12-the-ai-exam.md) rigor, which
 a deck itself cannot declare. They fill in only what a deck *doesn't* set
-for itself, so the precedence is one level deeper than before:
+for itself, so a member deck has one more level of precedence than a loose
+deck:
 
 > card `<!-- -->` > deck frontmatter > **workspace `[defaults]`** > built-in default
 
@@ -232,9 +259,12 @@ the same directive system from chapter 3, just sourced from one more place.
 
 The `alix.toml` is shared: it travels with the workspace when you hand it to
 someone. Your **personal** review pacing doesn't belong there. Drop an
-`alix.local.toml` beside it to override the global `[review]` config (FSRS
-`retention`, `retire_after`, `introduction_cooldown`, and the pacing keys
-`max_session` / `new_cards_percent`) for this workspace's decks only:
+`alix.local.toml` beside it to override the global `[review]` config for
+this workspace's decks only: `retention` (the recall probability
+[FSRS](05-scheduling.md#fsrs), alix's scheduler, aims for), `retire_after`
+(the interval at which a card [retires](05-scheduling.md#retiring-cards)),
+`introduction_cooldown` (the gap between seeing a new card and its first
+quiz), and the pacing keys `max_session` / `new_cards_percent`:
 
 ```toml
 # ~/decks/spanish/alix.local.toml
@@ -289,7 +319,7 @@ A workspace keeps shareable material and private learning state at the
 workspace root:
 
 ```text
-augment/deck-<token>.json    # shareable generated choices, notes, and topologies
+augment/deck-<token>.json    # shareable generated choices, notes, and review orders
 assets/deck-<token>/         # shareable frozen excerpts and local images
 sources/deck-<token>/        # frozen exam sources: manifest.toml and the copies
 sources/deck-<token>/manifest.local.toml # private: where each key's folder is on this machine
@@ -321,8 +351,10 @@ initialized `decks/*.md` members appears under **Workspaces**; one without a
 manifest is a plain **Folder** whose initialized decks are direct `*.md`
 children. Opening either drills in to its decks, drawn as a **dependency tree**:
 each deck nests under the prerequisite that gates it, foundations at the roots
-(the [next chapter](09-dependencies.md)). A trace member carries a `trace`
-badge (facts decks are unbadged), and the drill-in is a single-launch list:
+(the [next chapter](09-dependencies.md)). A [trace
+deck](13-trace-decks.md), which walks a path through a source checkpoint by
+checkpoint, carries a `trace` badge; an ordinary deck of cards, a facts
+deck, is unbadged. The drill-in is a single-launch list:
 `Enter` on a facts deck
 reviews it, `Enter` on a trace **traces** it. Typing a filter flattens the tree
 to a plain search.
@@ -355,15 +387,20 @@ sources in `sources/deck-<token>/` are copies of your own files, so they stay
 home too unless you pass `--with-sources`; the receiver cannot take the exam
 without them, and the command says how many source files it left out. The
 machine-local `sources/deck-<token>/manifest.local.toml` never travels either
-way. The phone's paired sync sends the same set with the sources always
-included: the phone takes exams against its own copy.
+way. The [mobile app](18-the-mobile-app.md#syncing-with-the-desktop)'s
+sync with a [paired](19-pairing.md) desktop sends the same set with the
+sources always included: the phone reads its copy to tell which topics
+have sources and whether their results are current, while the desktop
+writes and grades the phone's exam from its own copy.
 `alix share <dir>` does that over magic-wormhole with the personal files
 (`.alix/`, `*.local.*`, backups, and conflict copies) left home; the
 other side runs `alix receive <code>` and gets it beside their own decks, ready
 to serve with `alix <dir>`. Precomputed augmentation documents matching the
 shared decks travel: the AI content comes along, unrelated augmentation and
 progress do not. A single-deck share carries the `.md` member, its complete
-`assets/deck-<token>/` directory, and its matching augmentation. Also available
+`assets/deck-<token>/` directory, and its matching augmentation, plus its
+`sources/deck-<token>/` copies (without `manifest.local.toml`) with
+`--with-sources`. Also available
 from the web UI's ☰ menu
 (**Share…** / **Add deck…** → Receive), with a `.zip` download/upload fallback
 when neither side has `wormhole` installed.
@@ -371,7 +408,8 @@ when neither side has `wormhole` installed.
 ## Titles
 
 A single deck's display name comes from its frontmatter `title:` (failing that,
-its condensed `trace:`, then its filename stem); a workspace's name comes from a
+its condensed `trace:`, the path description a trace deck declares, then
+its filename stem); a workspace's name comes from a
 `title` in its `alix.toml`. Either replaces the file
 name in the picker, the session header, `alix list`, and `alix stats`. It's
 display-only: you still refer to decks by file path on the command line, and a

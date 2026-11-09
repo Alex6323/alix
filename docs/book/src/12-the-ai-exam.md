@@ -11,30 +11,43 @@ you to pass an exam *against that source* before it counts.
 
 ## What the exam reads
 
-The exam reads a workspace deck's **sources** (below): frozen copies of
-local text files, each bound to the topics it grounds. Each topic with a
+The exam reads a [workspace](08-workspaces.md) deck's **sources** (below):
+frozen copies of local text files, each bound to the topics it grounds (a
+**topic** is a `#` heading with the prose and cards under it; see
+[Topics](03-the-deck-format.md#topics-and-sub-cards)). Each topic with a
 source is examined against its own sources alone; a topic with no source is
 never sent to the model and is not examined. A deck whose sources manifest
 lists no source, and any loose deck outside a workspace, has no exam.
 
-The exam never reads `cite:` roots or the text your cards cite: to examine a
+The exam never reads the files your cards cite through `<!-- at: -->`
+locators and `cite:` roots (see [Source
+citations](06-cloze-direction-images.md#source-citations)): to examine a
 file, add it as a source.
 
 Once every card in a deck with sources has been answered right at least
-once (a passing review at any depth, Recognize included, or a walk graded
+once (a passing review at any [session
+depth](04-review-modes.md#session-depths-recognize-recall-reconstruct),
+Recognize included, or a [walk](15-the-web-app.md#walking-a-deck) graded
 **Got it** or **Partly**) the deck is **exam due**. It stays exam due, also
 after passing, until a full sitting masters it, so retaking stays one tap
 away; passing alone already unlocks its dependents. A deck without sources
-simply becomes *finished* when all its cards graduate, unlocking its
-dependents directly, even when it declares `cite:` roots.
+simply becomes *finished* when all its cards
+[graduate](05-scheduling.md#fsrs), unlocking its dependents directly, even
+when it declares `cite:` roots.
 
 ## Sources
 
 A workspace deck can also hold **sources**: frozen copies of local text
 files, each bound to the topics (the deck's `#` heading blocks) it grounds.
-They live in `sources/<deck-id>/` at the workspace root, beside a
+They live in `sources/<deck-id>/` at the workspace root, where `<deck-id>`
+is the deck's `id: deck-<token>` frontmatter value, beside a
 `manifest.toml` that lists every copy by its id (`source-` plus the file's
-SHA-256), its display path (`<key>:<path>`), and its bindings.
+SHA-256), its display path (`<key>:<path>`), and its bindings. Each topic
+has a permanent id, a `<!-- id: topic-<token> -->` line in the deck file
+(see [Topic IDs](03-the-deck-format.md#topic-ids)), and
+`alix deck source list` prints every topic's id with its heading. A
+command takes any unique prefix of a deck, topic or source id, as
+`topic-3whz` does below.
 
 ```
 alix deck source add decks/rust.md ../sdk/src/lib.rs --root sdk=../sdk --topic topic-3whz
@@ -42,24 +55,30 @@ alix deck source list decks/rust.md
 ```
 
 - A **key** names a folder of live files on this machine. `--root
-  <key>=<dir>` saves it on first use, `root set` and `root unset` change it
+  <key>=<dir>` saves it on first use, `alix deck source root set <deck>
+  <key> <dir>` and `alix deck source root unset <deck> <key>` change it
   later, and they live in `manifest.local.toml`, which never leaves the
   machine. A file is shown as its path under the root, after the key.
 - A **binding** is a topic id, or `<ranges>|<topic>` for some lines only,
   for example `10-80,120|topic-3whz`: 1-based inclusive lines, ascending and
   disjoint. A source is always bound to at least one topic; a deck without
   `#` topics binds its deck id.
+- `alix deck source bind <deck> <source> <topic>...` binds a source to more
+  topics or replaces a topic's ranges, `unbind` removes topics from it, and
+  `remove <deck> <source>...` drops sources and deletes their copies.
 - `update` refreezes a source from its file and keeps every binding,
   refusing when a range would lie beyond the new copy's last line;
   `list` shows whether each live file still matches its copy.
 - `--keep-results`, on `update` and on `alix doctor --repair-sources`,
   declares that the new bytes keep the meaning. Each affected topic's
   result then moves to the topic's new material, so the topic stays passed
-  and the deck's standing stays solid. It never revives a result that was
-  already stale (the topic's material had changed since that result was
-  earned), and it keeps a standing solid only if it was solid before the
-  command; a change still pending elsewhere, such as a card added to a
-  topic without sources, keeps the standing marked as changed. Without the
+  and the deck's passed or mastered standing is not marked *sources
+  changed* (see [What a standing means](#what-a-standing-means)) because of
+  it. It never revives a result that was already stale (the topic's
+  material had changed since that result was earned), and a standing
+  already marked *sources changed* stays marked; a change still pending
+  elsewhere, such as a card added to a topic without sources, also keeps
+  the standing marked. Without the
   flag, every topic the source grounds reads unexamined until it is sat
   again. The manifest is written first; if the progress store then cannot
   be written, the command fails naming the topics whose results were not
@@ -79,9 +98,10 @@ listed in the [command reference](17-command-reference.md#the-ai-features).
 (a copy missing, renamed, linked or not matching its id, a malformed
 manifest) and a binding to a topic the deck lacks are errors, a copy no
 row names is a note, and a `sources/<deck-id>/` folder no member deck owns
-(left by a generated workspace deck that was not merged over a same-named
-member, or by hand edits) is a warning. A linked `sources/` folder is one
-error, whether doctor checks the workspace, its `decks/` folder, or one
+(left, for example, when `alix workspace generate` into an existing
+workspace kept your deck of the same file name instead of the generated
+one, or by hand edits) is a warning. A `sources/` folder that is a symbolic
+link is one error, whether doctor checks the workspace, its `decks/` folder, or one
 member deck. A live file changing is normal, so drift is opt-in:
 `alix doctor --warn-on-source-drift` warns for each source whose live file
 changed, is gone, or cannot be read, and names each key with no usable root
@@ -119,8 +139,9 @@ The token counts are estimates from the worst bytes-per-token ratio
 observed, not the backend's own count, so a prompt the estimate admits can
 still be refused by the backend.
 
-- **Generate exam** and a fresh sitting refuse to start when a topic's
-  prompt exceeds the configured backend's limit, naming all four facts:
+- **Generate exam**, in the browser or on the phone, refuses to start when
+  a topic's prompt exceeds the configured backend's limit, naming all four
+  facts:
   ``topic `Moves` exceeds codex's limit: 1048577 of 1048576 characters``.
   A topic whose prepared questions are kept is not measured again.
 - `alix deck source list` shows each sourced topic's measure for every
@@ -136,18 +157,22 @@ An exam is written ahead, then taken. Writing the questions is a long model
 call (several minutes at a high effort), so it runs in the background while
 you do something else, and the finished exam waits until you sit it. The
 sitting itself is a guided, one-question-at-a-time flow (answer, move
-Back/Next, then a per-question breakdown). It is one of a deck's launches,
-next to the review depths and Walk, and you can sit it at any time as
-practice, before drilling too:
+Back/Next, then a per-question breakdown). It is one of a deck's launches
+(the ways to start working on a deck), next to the review depths and Walk,
+and you can sit it at any time as practice, before drilling too:
 
-- **In the browser:** the deck drawer's **Generate exam** chip (key `x`)
+- **In the browser:** the **Generate exam** chip (key `x`) in the deck's
+  focus drawer, the panel that opens under a focused deck in the picker (see
+  [Choosing decks in the browser](15-the-web-app.md#choosing-decks-in-the-browser)),
   starts writing the exam on the server. While it runs, a **Writing exam**
   chip shows the minutes so far and a rough wait, beside a **Stop** chip; a
   short notice says when the exam is ready, and the chip then reads **Take
   exam** (key `x`). The chip is filled when the deck is exam due and its
   prerequisites are passed, and shows a lock while a prerequisite is not
   passed. Choosing an exam-due deck itself drills; it never starts the exam.
-- **On the phone:** the deck's launch sheet has an exam row below Walk that
+- **On the phone:** the deck's launch sheet, which opens when you tap a deck
+  (see [The deck list](18-the-mobile-app.md#the-deck-list)), has an exam row
+  below Walk that
   reads **Generate exam**, then **Preparing** with the rough wait, then
   **Take exam**; the picker says when the exam is ready. The phone sits the
   exam through a [paired](19-pairing.md) desktop, so the row is disabled
@@ -155,16 +180,17 @@ practice, before drilling too:
 
 **Generate exam** offers **only what needs work**, on by default: the exam
 then asks only about the topics that have not passed (those that need
-work, have new cards, or were never examined). The control is always shown
-and disabled when every topic has passed, since the exam then covers the
-whole deck either way.
+work or were never examined). The control is always shown and disabled
+when every topic has passed: with nothing left to filter, the exam covers
+every topic whether the control is on or off.
 
 A prepared exam is kept until it is graded. In the browser it lives in the
 deck's store (`.alix/exam/<deck-id>.prepared.json`), so it survives a closed
 page or a restarted server, and your answers are saved into it as you give
 them. On the phone, the desktop holds the prepared exam in memory and the
 phone saves each answer as you move on from it; a restarted desktop loses
-the phone's prepared exam, and **End exam** discards it. Either way, an
+the phone's prepared exam, and the **End exam** button under each question
+discards it. Either way, an
 answer locks once you move on from it, and leaving returns you to the first
 unanswered question next time. Grading uses the exam up. In the browser,
 editing cards, topic prose or a topic's heading leaves a prepared exam
@@ -174,8 +200,9 @@ exam is refused, the prepared exam is kept, and the next Generate exam
 rewrites only the changed or new topics, keeping the other topics'
 questions and your answers to them.
 
-Writing the exam gives ids to cards added since the deck was last opened,
-the way opening a review does, so their results can be recorded.
+Writing the exam gives [card IDs](03-the-deck-format.md#why-editing-a-deck-is-safe)
+to cards added since the deck was last opened, the way opening a review
+does.
 
 `alix` writes **fresh understanding questions** one topic at a time (cards
 before the first `#` heading form one topic, named after the deck; two
@@ -209,8 +236,8 @@ numbered lines, so an answer can name "line 3". Questions, feedback and key
 points render inline code and math. Each question comes with the key points
 a correct answer must hit, shown only with the results. You type a prose
 answer per question, and an examiner grades each **Pass / Partial / Fail
-against the source's rubric, never against your cards** (grading the cards
-would be circular). The model calls run on a background thread, so the UI
+against that question's key points, written from the sources along with the
+question, never against your cards** (grading the cards would be circular). The model calls run on a background thread, so the UI
 stays responsive while it thinks.
 
 ## Results: a count, per topic
@@ -231,9 +258,10 @@ of the sources it was examined over:
   adding a card to a passed topic keeps it passed, and a topic with no cards
   can be examined.
 - A sitting can set a standing only when it meets the **review condition**
-  at its start: every card of every topic *without* a source, retired cards
-  included, has graduated at Recall or deeper, its latest grade at that
-  depth was a pass, and it is not yet due. Those cards are the only evidence
+  at its start: every card of every topic *without* a source,
+  [retired](05-scheduling.md#retiring-cards) cards included, has graduated
+  at Recall or deeper, its latest grade at that depth was a pass, and it is
+  not yet due (scheduled for review now). Those cards are the only evidence
   that an unsourced topic was learned, so they must be learned first. A
   sitting that starts without the condition still runs and records every
   topic's result, but sets neither passed nor mastered.
@@ -258,9 +286,10 @@ outside the current year names the year (`31 Dec 2025`).
 
 A standing names the material it was earned on: the sitting that sets it
 records the sourced topics' fingerprints and the id of every card in the
-unsourced topics, sidecar cards included. When that material changes later
-(a source refrozen or rebound, a topic given or stripped of its source, a
-card or a blank added to an unsourced topic, a remediation card among them),
+unsourced topics, cards in your [personal
+file](03-the-deck-format.md#your-personal-file) included. When that
+material changes later (a source refrozen or rebound, a topic given or
+stripped of its source, a card or a cloze blank added to an unsourced topic, a remediation card among them),
 the standing reads as **sources changed**: `alix stats` prints
 `passed (sources changed)` or `mastered (sources changed)`, the web deck row's
 exam badge and the phone picker's badge turn dashed, and the exam result's
@@ -271,9 +300,11 @@ meets the review condition, and the standing is re-earned on the current
 material. Removing a card or a whole unsourced topic, editing card text or
 headings, and a card becoming due or lapsing never change a standing.
 
-The web and phone exam results list, in one line under the topics, the topics
-they left out because no source grounds them, personal cards included (the
-leading topic is named by the deck's title).
+The web and phone exam results list, in one line under the topics, the
+names of the topics they left out because no source grounds them: every
+such topic that holds a card, counting the cards in your personal file (the
+leading topic, the cards above the first `#`, is named by the deck's
+title).
 
 Whenever an answer missed key points, the results offer to turn the gaps into
 **remediation cards**: a cloze card or a plain card for a missed fact, an open
@@ -285,16 +316,18 @@ Remediation runs once per failed topic, and each card it writes is bound to
 that topic. Those remediation cards land in the deck's
 [personal file](03-the-deck-format.md#your-personal-file) (`<deck>.local.md`),
 never in the authored deck. They start as new cards: the drill introduces them,
-then FSRS schedules them like any other card. Once scheduled they count toward
+then [FSRS](05-scheduling.md#fsrs), alix's scheduler, schedules them like
+any other card. Once scheduled they count toward
 the deck's *due* total but not toward its card count. Regenerating the same gap won't
-duplicate it; once a card's interval reaches the retirement cap it's archived,
+duplicate it; once a card's interval reaches `retire_after` it
+[retires](05-scheduling.md#retiring-cards),
 and re-failing the gap brings it back. Because they are plain Markdown blocks
 in a file you own, you can read, edit, or delete them yourself.
 
 Resetting a whole deck (`alix reset <deck>`) also clears its exam state, so a
 re-drilled deck must pass again; `alix reset <deck> --exam` clears only the
-exam state (each topic's result, the material stamp, passed, mastered and the
-last count) and names the decks whose exams it will lock. Resetting only an individual card
+exam state (each topic's result, the record of the material the standing
+was earned on, passed, mastered and the last count) and names the decks whose exams it will lock. Resetting only an individual card
 (`--card`) leaves the deck's passed and mastered state intact.
 
 ## Strictness: match the rigor to the material
@@ -302,7 +335,9 @@ last count) and names the decks whose exams it will lock. Resetting only an indi
 How hard each answer is judged fits the *material*: a checklist topic (a procedure,
 exact syntax, a security drill) should fail you for omitting a step; a conceptual topic
 shouldn't. It's a learner setting, not per deck: the `[exam]` `strictness` config default,
-optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
+optionally overridden per workspace in the `[defaults]` table of its
+`alix.toml`, the shared settings file that travels with a workspace (see
+[Workspaces](08-workspaces.md)). The levels:
 
 - **strict**: completeness required: every rubric point must be present, so
   omitting one is a gap.
@@ -315,9 +350,13 @@ optionally overridden per workspace in `alix.toml`'s `[defaults]`. The levels:
 This dial (how hard each answer is judged) is independent of `pass_threshold` (the
 share of a topic's answers that must pass). Both, plus `model`, `effort`,
 `timeout_secs` (default 3600) and an `extra` guidance field, live in the
-`[exam]` config section. `effort` sets how hard the backend thinks while
-writing and grading the exam, over `[ask] effort`; a workspace may set its
-own in `alix.local.toml`'s `[exam]` section.
+`[exam]` config section (see [Configuration](16-configuration.md)).
+`effort` sets how hard the backend thinks while writing and grading the
+exam; when it is unset, the exam uses the `effort` of the `[ask]` section,
+which configures the AI backend's calls. A workspace may set its own exam
+effort in the `[exam]` section of its `alix.local.toml`, the personal
+settings file that stays on your machine (see [Personal
+pacing](08-workspaces.md#personal-pacing-alixlocaltoml)).
 
 ## Why this is the centerpiece
 

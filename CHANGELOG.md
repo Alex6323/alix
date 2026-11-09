@@ -42,9 +42,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix deck source update --keep-results` and
   `alix doctor --repair-sources --keep-results` declare that a refrozen file
   keeps its meaning: each affected topic's result moves to the topic's new
-  material and the deck's standing stays solid. A result already stale
-  before the command is never revived, and a standing is kept solid only if
-  it was solid with the old material. The manifest is written first; when
+  material, and the deck's passed or mastered standing is not marked
+  *sources changed* (see below) because of it. A result already stale before
+  the command is never revived, and a standing already marked *sources
+  changed* stays marked. The manifest is written first; when
   the progress store cannot be written afterwards, the command fails naming
   the topics whose results were not kept.
 
@@ -65,8 +66,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   over `[ask] effort`; a workspace's `alix.local.toml` may set its own.
 
 - `alix reset <target> --exam` clears only exam state (each topic's result,
-  the material stamp, the deck's passed and mastered instants, its last full
-  count) and keeps drilling progress. It names the decks whose exams it will
+  the record of the material a standing was earned on, the deck's passed and
+  mastered instants, its last full count) and keeps drilling progress. It names
+  the decks whose exams it will
   lock before asking.
 
 - Per-backend prompt limits for the exam: each sourced topic's exam prompt
@@ -97,7 +99,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `alix doctor` warns when two topics of a deck share a heading (separate
   topics that read the same) and, on a deck with an exam, when a topic holds
-  more than 15 cards.
+  more than 15 cards: the exam asks three questions per topic, so splitting a
+  long topic examines more of it.
 
 - Web: **Tutorial** in the deck picker's ☰ menu, and a **Tutorial** button
   when the picker finds no decks, open a nine-card tutorial as a walk. It
@@ -135,7 +138,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix doctor` warns when a hint spells out an answer line. `CardDto.hints`
   and `POST /api/hint` carry them to clients.
 
-- `alix doctor` warns about a section that has prose but no card before the
+- `alix doctor` warns about a topic that has prose but no card before the
   next `#` heading.
 
 - Deck frontmatter accepts `cite:`, a list of keyed roots such as
@@ -153,7 +156,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the phone's own decks and the pulled desktop copy. Deck rows no longer show
   a placeholder icon.
 
-- Walk sessions on the server: `/api/walk` reads a deck once. Each answer is
+- Walk sessions on the server: a walk reads a deck once, served under
+  `/api/walk` (the routes a trace used before; traces moved to `/api/trace`,
+  below). Each answer is
   graded as in a session (Missed it / Partly / Got it, or the pick flow on an
   authored choice), and the last walk grade is kept per item as `walk_grade`
   beside `walked_ms`; nothing is scheduled and no review history is written.
@@ -161,7 +166,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back and a left walk resumes where it stopped; once all are got, a walk is a
   full pass, least recently walked first. Authored hints open on a walk's
   front and cap a Got it at Partly, and the tutor is available on each item.
-  Walk mutations echo `X-Alix-Study-Revision`.
+  The walk's answer routes (`/api/walk/choose`, `reveal`, `grade`, `hint`,
+  `restart`) require the `X-Alix-Study-Revision` header that review
+  mutations carry: the client echoes the `study_revision` of the state it
+  last read, so a retried request cannot act on the next item.
 
 - The phone can walk a deck: **Walk** in a deck's launch sheet, set off by a
   short centered hairline because Cram and Skip introduction do not apply to
@@ -180,8 +188,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unreadable card falls back to the phone's card text and says that it was
   answered from the card alone.
 
-- A launch can skip the introduction of new cards. On the phone, the sheet a
-  long-press on a deck row opens has a **Skip introduction** switch under
+- A launch can skip the introduction of new cards. On the phone, the launch
+  sheet (below) has a **Skip introduction** switch under
   Cram: switched on, that one session grades every fresh card on first sight
   instead of showing it, waiting out the settle gap, and only then asking.
   The first grade is the card's first learning event; nothing is introduced
@@ -189,10 +197,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on `/api/select`. For a pass over material you already know; a first
   encounter with a deck still wants the introduction.
 
-- The phone can cram. The sheet a long-press on a deck row opens now starts
-  with a **Cram** switch above the three depths: switch it on, then pick a
-  depth. Cram belongs to that one launch and is never saved, so a plain tap on
-  the deck never crams.
+- The phone can cram. The launch sheet (below) starts with a **Cram** switch
+  above the three depths: switch it on, then pick a depth. Cram belongs to
+  that one launch and is never saved.
   A crammed session also serves cards that are not due, under the same rules
   as the web app's cram: a due card grades as a normal review, an early pass
   only re-anchors the due date and records nothing, a miss lapses normally,
@@ -234,7 +241,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `alix doctor` warns when a cloze card's question, as shown before the
   reveal, still shows a span's hidden text outside its blank: on the `##`
   line, in another block, as an uncovered second occurrence, or in the
-  card's section heading and prose. Case and whitespace are ignored and only
+  card's topic heading and prose. Case and whitespace are ignored and only
   whole words match.
 
 - The phone can now sync with a paired desktop: the Sync button beside the
@@ -277,10 +284,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix workspace generate`, freeze the files the model drew on as each
   deck's exam sources, bound per topic (with line ranges for files longer
   than 400 lines; a single file binds whole to every topic), and save the
-  source folder as the deck's `src` root. A file that cannot be frozen, a
-  card-bearing topic the list leaves out, or cards before the first `#`
-  heading stop the generation, naming the file or the topic, and write
-  nothing; a `--review` pass returns its own list for the deck it rewrites.
+  source folder as the deck's `src` root. A file that cannot be frozen stops
+  the generation, naming the file, and writes nothing. From a folder, the
+  model returns with each deck a list of the files each `#` topic drew on; a
+  topic holding cards that this list leaves out, or cards before the first
+  `#` heading, also stop it, naming the topic. With `--review` (the extra AI
+  pass that removes redundant cards), the reviewing pass returns that list
+  for the deck it rewrites.
   `--force` regeneration removes the replaced deck's sources. `alix workspace
   update` refuses a proposal that retires a topic its sources are bound to,
   and an apply whose staged sources manifest was edited after review. `alix
@@ -338,22 +348,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answer says so in one line. The tutor no longer browses a deck's only
   local `cite:` root for a card that cites none.
 
-- Breaking: wire `ExamDto.standing` is renamed `exam_high_mark` (same text,
-  e.g. `"mastered (4 Nov)"`); `ExamDto` gains `exam_changed` and
-  `unsourced_topics`.
-
-- Breaking: an exam result is recorded per topic, under the topic id with
-  the fingerprint of the sources it was examined over, instead of on each
-  card, and it counts only while that fingerprint is the topic's current
-  one, so a topic whose sources changed is unexamined until re-sat. A
-  progress document holding a card `exam_result`, or a passed or mastered
-  standing without its `exam_stamp`, is unreadable. Wire: `ExamTopicDto`
-  gains `topic_id` and `fingerprint`, and a topic that drew no question is
-  left out of `topics`; `ExamRowDto.topics` loses `new_cards` and the row
-  gains `exam_changed`.
-  The phone evaluates the review condition and the stamp against its own
-  store when it starts a sitting and records the result under each topic's
-  id.
+- Breaking: exam results are recorded per topic. Each examined topic keeps
+  its latest result under its topic id, with the fingerprint of the sources
+  it was examined over, and the result counts only while that fingerprint is
+  the topic's current one, so a topic whose sources changed reads as never
+  examined until it is sat again. A topic reads as passed, needs work, or
+  never examined; it passes when its share of Pass answers reaches
+  `pass_threshold`. A deck's progress gains `passed_at_ms` (every topic
+  passed, by a sitting that met the review condition; it unlocks dependents'
+  exams), `mastered_at_ms` now means a full sitting with every answer Pass,
+  `full_exam_result` keeps the last full sitting's counts, and `exam_stamp`
+  records the material a standing was earned on. Neither instant moves on a
+  later sitting. A deck that has sat its exam once is never locked again by
+  its prerequisites. `exam_failed_at_ms` is removed, and a progress document
+  that still carries it, or that holds a passed or mastered standing without
+  its `exam_stamp`, fails to load. Remediation is offered whenever an answer
+  missed key points, even in a sitting that passed. The phone evaluates the
+  review condition and the material record against its own store when it starts
+  a
+  sitting and records every sitting's result, passed or not, under each
+  topic's id.
 
 - Breaking: every card in a personal file (`<deck>.local.md`) needs a
   `<!-- topic: <topic-id> -->` line directly before its `<!-- id: -->` line,
@@ -379,8 +393,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The exam ideas document is keyed by topic id
   (`{"version", "topics": {"<topic-id>": {"fingerprint", "ideas": [{"text",
   "last_tested_ms", "last_test_passed"}]}}}`) and the prepared exam records
-  each topic's source fingerprint, model and effort, so files written before
-  are unreadable. A prepared exam whose topic sources changed is kept: Take
+  each topic's source fingerprint, model and effort. A prepared exam whose
+  topic sources changed is kept: Take
   exam answers 409, `exam_prepared` reads false, and Generate exam rewrites
   only the changed topics. Starting an exam no longer checks that the
   backend can reach a source.
@@ -392,43 +406,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Breaking: a `#` heading block is a **topic** everywhere, in the book, the
   web and phone interfaces, doctor and parse messages, exam prompts, and the
-  web API. The web API's `section_first`, `section_context`,
-  `section_context_runs`, `section_context_units` are `topic_first`,
-  `topic_context`, `topic_context_runs`, `topic_context_units`;
-  `ExamDto.sections`, `RemoteExamDto.sections` and `DeckItemDto.sections`
-  are `topics` (`ExamSectionDto` is `ExamTopicDto`); `ExamGradeDto.section`
-  is `topic`; the exam ideas document's `sections` is `topics`, so an ideas
-  file written before is unreadable until rewritten with `topics`.
+  web API. The web API's `section_context`, `section_context_runs` and
+  `section_context_units` are `topic_context`, `topic_context_runs` and
+  `topic_context_units`.
 
 - The phone's sync conflict choice reads "Keep the phone's progress" and
   "Keep the desktop's progress", each naming what it keeps (the phone side
   says when it holds no card progress), with the later save marked newer and
   one line saying the other side is lost.
 
-- An exam is now written ahead and taken later. Web: the drawer's **Generate
-  exam** writes it in the background on the server (**Writing exam** shows
-  the minutes and a rough wait, **Stop** cancels), a notice says when it is
-  ready, and **Take exam** opens it. The prepared exam is kept in the deck's
-  store until graded, so it survives a closed page or a restarted server;
-  answers are saved as given and lock once you move on. Phone: the launch
-  sheet's exam row reads Generate exam, Preparing, then Take exam, and a
-  left sitting resumes with its answers. API: `POST /api/exam/generate`,
-  `GET /api/exam/preparing`, `POST /api/exam/generate/cancel` (all three
-  reply with the sequenced `PreparingJobsDto`), `DeckItemDto.exam_prepared` and
-  `ExamDto.answer_locked` are new;
-  `POST /api/exam/start` opens only a prepared exam, and its
-  `needs_work_only` moved to `/api/exam/generate`.
+- An exam is now written ahead and taken later, from its own entry rather
+  than from a session. Web: the focused deck's **Generate exam** chip writes
+  it in the background on the server (**Writing exam** shows the minutes and
+  a rough wait, **Stop** cancels), a notice says when it is ready, and
+  **Take exam** opens it. The chip fills, in the theme's accent colour, when
+  the exam is due and unlocked, and a locked exam stays unfilled and
+  disabled. **Learn** and Enter always drill, also on an exam-due deck, and
+  session summaries no longer offer an exam or announce that one is ready.
+  Phone: the exam moves to the deck's launch sheet, where a row below Walk
+  reads Generate exam, Preparing, then Take exam, and a left sitting resumes
+  with its answers; the session summary no longer offers it. Both offer
+  **only what needs work**, on by default: a tick (web) or switch (phone)
+  that stays visible and is disabled when every topic has passed. The
+  prepared exam is kept in the deck's store until graded, so it survives a
+  closed page or a restarted server; answers are saved as given and lock
+  once you move on. API: `POST /api/exam/generate` (with
+  `needs_work_only`), `GET /api/exam/preparing` and
+  `POST /api/exam/generate/cancel` are new, and all three reply with
+  `PreparingJobsDto`, the list of exams being written, whose `sequence`
+  grows with every reply; `DeckItemDto.exam_prepared` and
+  `ExamDto.answer_locked` are new; `POST /api/exam/start` opens only a
+  prepared exam.
 
-- An exam asks three questions per section, one for each of three ideas
-  picked from the section's idea list: never asked first, then last failed,
+- An exam asks three questions per topic, one for each of three ideas
+  picked from the topic's idea list: never asked first, then last failed,
   then asked longest ago. It used to ask a fixed number for the whole deck
   (`[exam] num_questions`, default 5); that key is removed, and a config
   that still sets it fails to load. The idea lists
   and their history live in `.alix/exam/<deck-id>.json` (the phone keeps
   its own and sends it with `POST /api/remote/exam/start` as `ideas`;
   `RemoteExamDto.ideas` returns it updated, and `RemoteExamDto.estimate`
-  gives a rough wait). The graded question's `model` field is now
-  `mental_model` on the wire.
+  gives a rough wait).
 
 - `[exam] timeout_secs` defaults to 3600 seconds per call instead of 300:
   writing an exam's questions at a high effort takes many minutes, and the
@@ -444,59 +462,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Phone launch sheet: Walk reads "every card once, unscheduled" and Recognize
   "pick the answer from options" (they claimed no grading and four options).
 
-- Web: **Take exam** is the only exam entry for a fact deck. It fills, in the
-  theme's accent color, only when the exam is due and unlocked; a locked exam
-  stays unfilled and
-  disabled. **Learn** and Enter always drill, including on an exam-due deck,
-  and session summaries no longer offer an exam or announce that one is
-  ready. A partial exam defaults to **only what needs work** (a tick that
-  stays visible and is disabled when it would change nothing), and its result
-  shows the point total, per-section counts, and each question's shape;
-  **mastered** appears only for a perfect full sitting.
+- An exam result shows the point total (Pass 1, Partial 0.5), the count for
+  each examined topic, and each question's shape; **mastered** appears only
+  for a perfect full sitting.
 
-- Exam results are kept per card: each examined card stores its section's
-  latest verdict (`exam_result`), and a section's status (unexamined, needs
-  work, new cards, passed) is read from its cards. A deck's progress gains
-  `passed_at_ms` (every section passed at `pass_threshold`; unlocks
-  dependents' exams), `mastered_at_ms` now means a full sitting with every
-  answer PASS, and `full_exam_result` keeps the last full sitting's counts.
-  Neither instant moves on a re-pass. A deck that has sat its exam once is
-  never locked again by its prerequisites. `exam_failed_at_ms` is removed: a
-  progress file that still carries it fails to load. A section passes when its
-  share of PASS answers reaches `pass_threshold`, and remediation is offered
-  whenever an answer missed key points, even in a sitting that passed.
+- Exam wire: `ExamDto` and `RemoteExamDto` drop `passed` and `is_trace` and
+  gain `topics` (an `ExamTopicDto` per examined topic: `topic_id`,
+  `fingerprint`, label, card ids, pass, verdict counts; a topic that drew no
+  question is left out), `verdicts` (the sitting's counts), `full` and
+  `mastered`; `ExamDto` drops `cooldown_ms` and gains `exam_high_mark`,
+  `exam_changed` and `unsourced_topics`. Each grade row gains `topic`,
+  `shape` and `mental_model`. `ExamDto.unlocks` names the decks this sitting
+  unlocked. `POST /api/remote/exam/start` takes `cards` and examines the
+  topics holding them, listing ids it does not know in
+  `RemoteExamDto.unknown_cards`. `DeckItemDto` and `MemberDto` gain
+  `passed_at_ms`, `full_exam_result`, a `topics` tally (`passed`,
+  `needs_work`, `unexamined`), `exam_filter` and `exam_changed`.
+  `StateDto.exam_due` is removed.
 
-- Exam wire: `ExamDto` and `RemoteExamDto` drop `passed` and gain
-  `sections` (label, card ids, pass, verdict counts per examined section),
-  `verdicts` (the sitting's counts), `full` and `mastered`; each grade row
-  gains `section`, `shape` and `model`. `ExamDto.unlocks` names the decks
-  this sitting unlocked. `POST /api/exam/start` takes `needs_work_only` to
-  examine only the sections that have not passed; `POST
-  /api/remote/exam/start` takes `cards` and examines the sections holding
-  them, listing ids it does not know in `RemoteExamDto.unknown_cards`.
-  `DeckItemDto` and `MemberDto` gain `passed_at_ms`, `full_exam_result`, a
-  `sections` tally and `exam_filter`. `StateDto.exam_due` is removed.
+- The deck row badge, on the web and the phone, shows an examined deck's
+  highest exam standing and the day it was reached, then the last full
+  sitting's day and points (`passed (2 Nov) · last (4 Nov) 15.5 / 18`,
+  `last (4 Nov) 15 / 18` when not passed). The exam results screen, web and
+  phone, names the same standing (`mastered (4 Nov)`), carried by
+  `ExamDto.exam_high_mark`.
 
-- Phone: the exam moves to the deck's launch sheet (an **Exam** row below
-  Walk, with an "Only what needs work" switch, on by default); the session
-  summary no longer offers it. Every sitting,
-  passed or not, records its per-card results on the phone, and the deck row
-  shows the same exam badge as the web.
-
-- The deck row badge shows an examined deck's highest exam state and the
-  day it was reached, then the last full sitting's day and points (`passed
-  (2 Nov) · last (4 Nov) 15.5 / 18`, `last (4 Nov) 15 / 18` when not
-  passed). The exam results screen, web and phone, names the same standing
-  (`mastered (4 Nov)`); `ExamDto.standing` carries it.
-
-- The exam takes each section's topic from its heading and the prose under
-  it, not from its cards: it covers everything the source teaches within that
+- The exam takes each topic from its heading and the prose under it, not
+  from its cards: it covers everything the source teaches within that
   topic, including what no card states yet.
 
-- Trace decks are drill-only: finishing their checkpoint path no longer opens
-  an AI compression exam, and graduated checkpoints move the trace to
-  Finished for dependency gates. The web and phone no longer show trace exam
-  capstones or cooldowns. `[exam] retry_cooldown_secs` is removed, and a
+- Trace decks have no AI exam: finishing a trace's checkpoint path no longer
+  opens one, and the web and phone no longer offer a trace exam or show the
+  wait before retrying it. `[exam] retry_cooldown_secs` is removed, and a
   config that still sets it now fails to load.
 
 - Exam questions stand alone: the examiner is told to reproduce any example
@@ -507,9 +504,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ExamDto.question_units`,
   `ExamGradeDto.{question,points,feedback,missed}_units`
   and `RemoteExamDto.questions_units` carry the parsed text.
-
-- The tutor's **Make this a note** gets a default key, `ctrl-s`
-  (`[keys.review] make_note`), so both distill buttons have one.
 
 - The desktop no longer copies the tutorial deck into a new decks folder; a
   first run creates the folder empty. A `tutorial.md` copied in by an
@@ -527,10 +521,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`"sure"` | `"unsure"`) on a review. A tracked deck's progress no longer
   loads in an older desktop or phone build, so update both before syncing it.
 
-- The exam writes its questions per deck section, cycling through a new
-  instance, a boundary, and a statement with a seeded mistake to fix. The
-  section's cards go into the prompt as scope, so the
-  questions avoid what the deck already asks.
+- The exam writes its questions per topic, cycling through a new instance, a
+  boundary, and a statement with a seeded mistake to fix. The topic's cards
+  go into the prompt as scope, so the questions avoid what the deck already
+  asks.
 
 - Web: a code block in a card's question sits on a much lighter panel in the
   light palettes (6% black instead of 25%), so the code, not the box, draws
@@ -549,27 +543,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the review header (it had no way to skip). The row before the answer reads
   Context, the main button, then Hint, on both.
 
-- A section now runs to the next `#` heading and nothing else ends it: a `#`
-  with no title (also `# ##` or `# <!-- an aside -->`) is an error, "section
-  heading is empty; write its title", instead of ending the section. A deck
+- A topic now runs to the next `#` heading and nothing else ends it: a `#`
+  with no title (also `# ##` or `# <!-- an aside -->`) is an error, "topic
+  heading is empty; write its title", instead of ending the topic. A deck
   that used one fails to parse until the line is removed or given a title. An
   empty card-table front cell now reports "table row has an empty front
   cell".
 
-- On the web, a card's section opens from a quiet **Context** chip in the
-  bottom row (or `c`, or the review menu) until the answer shows; a click on
-  the question no longer opens it. Hiding a revealed answer (`h` or a click)
-  lays a cover with an eye-off glyph over it instead of drawing each word with
-  transparent middle letters.
-
-- On the phone, a tap on a revealed answer hides it under a **Hide** sheet
-  that rises from the answer's top edge, leaving the question in view; its
-  close mark shows the answer again. It replaces the in-place look that kept
-  each word's first and last letters.
-
-- On the phone, a card's section opens from a quiet **Context** chip left of
-  Reveal, shown only before the reveal; a tap on the question no longer opens
-  it, and the section is not offered once the answer shows.
+- A card's topic context (its `#` heading and the prose under it) no longer
+  shows on the card face. It opens as a sheet that slides up from the bottom
+  of the page, takes only the room its prose needs, and carries a `×` in its
+  top-right corner; a click on the dimmed page, `c` or Escape (web) and a
+  swipe down (phone) also close it. Until the answer shows, a quiet
+  **Context** chip opens it: in the bottom row on the web (also `c` and the
+  review menu's **Context** entry), left of Reveal on the phone. The first
+  card ever introduced from a topic opens the sheet by itself, once; review
+  state marks that card (`topic_first`), and a topic with any progress stays
+  quiet in later sittings.
 
 - A long inline code run wraps after its punctuation (`::`, `.`, `(`, `/`
   and the like) on the web, the children's page and the phone, instead of
@@ -584,29 +574,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   column's cell as its bullet. The card JSON drops `context` and
   `context_runs`; the title now arrives inside `front`.
 
-- On the web, a card's section context opens as a sheet that slides up from
-  the bottom of the page, as on the phone, in place of the panel that sat
-  under the question; it takes only the room its prose needs. The sheet
-  carries a `×` in its top-right corner on both clients; a click on the dimmed
-  page, `c`, Escape (web) and a swipe down (phone) still close it.
-
-- Every revealed answer can be hidden for a self-test, not only a new card's:
-  `h` or a click on the answer on the web, a tap on the answer on the phone.
-  The hidden look is new: each word keeps its first letter, and its last past
-  two letters, the rest is drawn transparent in place so nothing moves; the
-  note disappears while the answer is hidden. On a cited card the hide marker
-  sits beside the source marker, and a click on the answer hides it rather
-  than swapping in the source (the marker and `s` still do).
-
-- A note's coloured left bar is a 1px hairline on the web and on the phone,
-  where it was 4px; the badge word keeps the colour and the text keeps its
-  place. A quotation's dim bar is unchanged.
-
-- A card's section heading no longer shows on the card face: the phone's
-  pill above the question and the web's dim title line with its key cap are
-  gone. A tap or click on the question opens the section sheet instead; a
-  card without a section ignores it. The first-introduction auto-open, the
-  `c` key, and the review menu's **Context** entry are unchanged.
+- Every revealed answer can be hidden for a self-test, not only a new card's.
+  On the web, `h` or a click on the answer lays a cover with an eye-off glyph
+  over it and hides the note; on a cited card the hide marker sits beside
+  the source marker, and a click on the answer hides it rather than swapping
+  in the source (the marker and `s` still do). On the phone, a tap on the
+  answer hides it under a **Hide** sheet that rises from the answer's top
+  edge, leaving the question in view; its close mark shows the answer again.
 
 - Question and answer prose on the web and on the phone is left-aligned
   inside a block that shrinks to its content and is centred in the card: a
@@ -704,13 +678,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (except a mermaid node id that spells a masked label). The reveal
   shows the same question with the card's own blanks filled in. On the wire
   `CardDto` loses `context_leads` and `context_units` and gains `front_steps`
-  (one filled question per own blank, each with `rects_revealed`, true
-  from the step that uncovers the card's image rects); `context` now carries
-  only a card
-  table's title, and `InlineRun` gains an `answer` flag. The third mask
-  marker `⍱` joins `⍰` and `⬚` as a parse error in authored text.
+  (one filled question per own blank, each with `rects_revealed`, true from
+  the step that uncovers the rectangles a `blank:` masks on the card's
+  image); `context` now carries only a card table's title, and `InlineRun`
+  gains an `answer` flag. `⍱`, the marker around filled-in answer text in a
+  revealed question, is a parse error in authored text, as `⍰` and `⬚` are.
 
-- A `blank:`, `cover:` or `crop:` line binds to the block directly above it:
+- A `blank:`, `cover:` or `crop:` line (a blank asks hidden text or an image
+  region, a cover masks an image region without asking, a crop shows only
+  part of an image) binds to the block directly above it:
   a run of text lines, an image line, a code fence or a `$$` block. Comment
   lines and link definitions in between are skipped. A text blank's hidden
   words must be in that block, and `occurrence=` and `position:` count
@@ -744,7 +720,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   runs into the count.
 
 - Review `skip` and `remove` have no default key (were `ctrl-s` and
-  `ctrl-x`); the **Skip** button and the **Remove card** menu item still work,
+  `ctrl-x`); the **Skip card** and **Remove card** menu items still work,
   and a button whose action has no key shows no key hint. The
   `[keys.browse] remove` setting is gone: no browse action ever used it, and a
   config that sets it fails as an unknown key. The tutor's `ask` key defaults
@@ -755,9 +731,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   actions that are live at the same moment share a key; the error names the
   key and the actions.
 
-- Default key bindings no longer claim browser or system shortcuts: the tutor's
-  `make_note` has no default key (was `ctrl-n`; the **Make this a note** button
-  still works), and review and browse `quit` lose `ctrl-c`.
+- Default key bindings no longer claim browser or system shortcuts: the
+  tutor's **Make this a note** (`[keys.review] make_note`) defaults to
+  `ctrl-s` (was `ctrl-n`), and review and browse `quit` lose `ctrl-c`.
 
 - The web app now honors the `submit`, `continue`, and `quit` review bindings
   (a typed answer or a multiple-choice selection, moving on from an answered
@@ -788,17 +764,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exam, is new: the drill introduces it like any other new card instead of
   treating it as already seen.
 
-- A trace deck's session is now called a trace, not a walk. The web API
+- A trace deck's session is now called a trace, not a walk. Its web API
   routes moved from `/api/walk` and `/api/walk/{predict,grade,restart,leave,ask,
   ask/note}` to the same paths under `/api/trace`, and the session payload's
   `kind` is `"trace"` instead of `"walk"` (the payload is now documented as
-  `TraceSessionDto`). The old routes and `kind` are gone. On the web and the
+  `TraceSessionDto`). `/api/walk` now serves walks (see Added). On the web and
+  the
   phone the done screen reads "Trace again", "Trace finished.", and "Trace
   it again before re-sitting", and leaving mid-way asks "Leave the trace?"
   with "Keep tracing".
 
 - Every note is a badged block, on the web and on the phone alike: the badge
-  word above the text and a 4px bar down its left edge, both in GitHub's own
+  word above the text and a 1px bar down its left edge, both in GitHub's own
   colour for that badge (`#0969da` NOTE, `#1a7f37` TIP, `#8250df` IMPORTANT,
   `#9a6700` WARNING, `#cf222e` CAUTION on light themes; `#4493f8`, `#3fb950`,
   `#ab7df8`, `#d29922`, `#f85149` on dark ones), the same on every palette.
@@ -860,30 +837,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A revealed answer is set in the card's proportional face, ragged right, on
   the web and on the phone alike. Monospace stays where it carries meaning: a
   code span, a fenced block, a typed line's expected text. Both clients had
-  set the whole answer in monospace, which was TUI heritage rather than a
-  ruling. The note is set the same way. An earlier unreleased build justified
-  both above a fifty-character line; that rule is gone, since without
-  hyphenation justified lines open gaps at every width, only less so on wide
-  ones.
+  set the whole answer in monospace. The note is set the same way.
 
-- The phone review card now wraps the question, every answer unit and every
-  note at one measure instead of insetting the answer and the note inside the
-  question. A one-line answer unit no longer centres itself as a block while a
-  wrapping one sits left, and a line-by-line reveal aligns with the rest of
-  the answer rather than centring each line.
-
-- The web review card reads as one column. The question, the answer and the
-  note wrap at one shared measure: the question is centred in it, and every
-  answer unit and note aligns to its left edge, including a short one that
-  used to centre itself as a block. The question, the type pill and
-  the section title stay centred. A note no longer sits in a tinted box: the
-  divider above it, its dimmer face, and its badge carry the separation, and
-  the badge keeps each kind's accent in its border so severity stays legible
-  without reading the word. That badge and the card's type pill are now the
-  same object in two places, matching in size, border, tracking and padding.
-  The section-context key moved into the same right-hand column as the region
-  toggles, as a glyph and keycap of the same shape, and the gap under the type
-  pill grew so it no longer crowds the section title.
+- The review card reads as one column on the web and on the phone: the
+  question, the answer and the note wrap at one shared measure instead of
+  the phone insetting the answer and the note inside the question.
 
 - The "more below" and "more above" markers on an overflowing answer or note
   are now buttons. Pressing one scrolls that region by most of its own height,
@@ -906,24 +864,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check tag (NEW, FLIP, SELECT ALL and the rest) moves into the space that
   frees, so the card itself starts where the tag used to sit and gains that
   height for its question and answer.
-
-- The phone's review card follows the same design: a revealed answer reads as
-  left-aligned prose, a badged note drops its tinted ground and keeps its
-  accent in the badge border, and that badge and the card's type pill are one
-  shape in two places. The question, the answer and an unboxed note wrap at
-  one measure, the card's own; a framed note puts that measure on its box and
-  keeps its text inside the frame.
-
-- Review state now marks the first card ever introduced from a section (a
-  section with any progress stays quiet in later sittings), so clients can
-  present its section by themselves once and offer it on demand thereafter.
-  The web review shows the section heading as a dim title line on every
-  sectioned card, never renders the section inline, and opens the full,
-  paragraph-preserving section sheet by itself once on the first
-  introduction. The title, `c` key, and **Context** menu entry open it on
-  demand. The phone shows the heading as a tappable pill above the question
-  that opens the section in a bottom sheet, and opens that sheet by itself
-  under the same rule.
 
 - An `assets/` directory that no deck in the workspace owns is left out of
   `alix share` and of a paired phone's pull instead of failing the whole
@@ -981,18 +921,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   they are confined to the source folder: a path outside it, `../`, or a
   symlink pointing out is refused.
 
-- `alix doctor`'s long-section warning gives the current reason: the exam asks
-  3 questions per section and a pass credits every card in it. It used to say
-  the exam asks about every idea in a section.
-
 - The phone's sync status no longer counts one conflicted deck twice when
   its push and the pull right after it both find the conflict.
 
 - The phone's exam error screen now shows the desktop's reason under "The exam
   backend failed.", as the web does.
-
-- The web's checked **only what needs work** filter now reaches the exam request
-  when every section needs work, not only after part of the deck has passed.
 
 - `alix reset --exam --all` no longer follows a directory symlink outside the
   configured decks root and clears another folder's exam progress.
@@ -1000,8 +933,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A card added on the desktop and synced to the phone before the desktop
   stamped it no longer gets a second id on the phone. The desktop now stamps
   such cards before serving the entry, so phone reviews of the card stay
-  attached after the next pull, and a phone exam limited to "only what needs
-  work" no longer drops a section made only of such cards.
+  attached after the next pull.
 
 - The web exam no longer shows "Preparing your exam…" and a working
   indicator forever when its questions could not be generated; it shows the
@@ -1020,7 +952,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   syncing the deck carried every one of them.
 
 - On the web, typing a `c` into an answer field (or the explain box) types
-  it instead of opening the section context.
+  it instead of opening the topic context.
 
 - On narrow screens the web review card no longer runs to the right edge:
   it keeps the same gutter on both sides.
@@ -1042,7 +974,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it, as `alix receive` already did; before, it extracted into its private
   staging folder first and refused only afterwards.
 
-- On the phone, a section too long for the screen no longer pushes its sheet
+- On the phone, a topic context too long for the screen no longer pushes its
+  sheet
   under the status bar, where its close mark could not be reached; the sheet
   now stops at the top of the review or walk header.
 
@@ -1101,9 +1034,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the walked deck's personal file (`/api/walk/ask/card/draft` and
   `/api/walk/ask/card/create`).
 
-- The web section sheet sizes to its content instead of filling the window
-  below the question, and has a **Close** button.
-
 - A select-all card no longer makes the keyboard cursor look like a pick: the
   cursor is an outline ring, and a picked option is filled and marked with a
   check.
@@ -1128,9 +1058,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Claude allow rules no longer apply to it. A root path with pattern
   characters, or any root on Windows, gets no file tools.
 
-- Locator errors no longer start with an ADR rule number (`rule 3: key ...`);
-  the message itself names what is wrong.
-
 - `alix doctor <deck>` did not show its `cite:` roots. It now prints a `cite:`
   line listing each root by key, and its `settings:` and `cite:` lines include
   what a member deck inherits from its workspace, tagged `(workspace)`.
@@ -1138,21 +1065,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A URL trace build wrote each cited sentence into its `at:` locator, which
   does not parse. Inside a workspace the build now asks the model to copy each
   passage verbatim between two marker lines carrying a token minted per build,
-  freezes it as a `sha256-<hex>.txt` object in the deck's asset folder, and
+  freezes it as a text object in the deck's asset folder, and
   cites it as `<!-- at: src fingerprint: ... asset: ... -->` under the `cite:`
   root `src` naming the URL. A missing, unclosed, or altered marker, or a
   checkpoint without a passage, fails the build naming the checkpoint, and
   nothing is written. Outside a workspace the build stops before calling the
   model.
 
-- Drift was judged against a deck's first local source whatever root a
-  citation came from, so an unchanged file under a later source was reported
+- Citation drift was judged against a deck's first local citation root
+  (declared under `source:` in 0.8.0, under `cite:` now) whatever root a
+  citation came from, so an unchanged file under a later root was reported
   as gone.
 
-- Freezing collapsed same-named files from different sources into one
-  citation path, so two sources each holding `x.txt` froze as the same file.
+- Freezing collapsed same-named files from different citation roots into one
+  citation path, so two roots each holding `x.txt` froze as the same file.
 
-- A citation path its source lacked was retried against every parent folder
+- A citation path its root lacked was retried against every parent folder
   and then by file name, so a mistyped folder could freeze an unrelated file
   of the same name.
 
@@ -1209,8 +1137,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   settings (`retention`, `short_term`, a workspace deadline); they had used
   the built-in defaults.
 
-- A card cannot retire before it graduates, preserving the published
-  `retired <= graduated` count invariant; `retire_after` also rejects a
+- A card cannot retire before it graduates, so the deck counts stay nested
+  as `docs/API.md` documents them (`retired <= graduated <= seen <= total`);
+  `retire_after` also rejects a
   zero-day duration instead of hiding a deck's Learning cards.
 
 - Making a tutor answer into a note refreshes the current card without hiding
@@ -1232,15 +1161,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never a host path or a user-authored file name, and one remedy sentence; the
   class and message reach the server log and the bug-report archive, and
   the phone shows the message and remedy instead of a bare status number.
-
-- The web section context dims the whole page at once and slides a sheet up
-  from the bottom of the page to just under the question, as wide as the
-  card, so the question stays legible above it; the title shows its key
-  beside it, a click anywhere on the dimmed page, `c`, or Escape closes the
-  sheet, and closing returns focus to the title without a ring. Before, a
-  card-bounded drawer hid the question, its only visible close route was the
-  dark ring around the panel, and the title took a focus ring after every
-  close.
 
 - A sync route that fails answers with the failure's message and prints it
   on the server's stderr; `GET /api/sync/entries` sent an empty 500 and
@@ -1294,9 +1214,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before the pick, so a colliding one is passed over instead.
 
 - Inline code on the phone is painted in the theme's code colour, so a code
-  span is distinguishable where the surrounding text is already monospace (the
-  answer and every progressive reveal step); it was distinguished by font
-  family alone, which those regions had already spent.
+  span stands out from the text around it; it was distinguished by font
+  family alone.
 
 - Opening a workspace on the phone, and listing one anywhere, parses each
   member deck once instead of two or three times, classifies the folder once,
