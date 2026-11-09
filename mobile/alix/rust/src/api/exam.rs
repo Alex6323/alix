@@ -181,7 +181,8 @@ pub fn exam_sitting_start(
     let deck = alix::deck::Deck::load(&path)?;
     let store = open_store(&path, &root_dir, None)?;
     let cards = needs_work_only.then(|| alix::exam_status::needs_work_card_ids(&deck, &store));
-    let retire_after_days = alix::config::ReviewConfig::default().retire_after_days;
+    let retire_after_days =
+        alix::exam_status::retire_after_days_for(alix::config::ReviewConfig::default(), &path);
     let start = alix::exam_status::sitting_start(&deck, &store, now_ms, retire_after_days);
     Ok(ExamStart {
         cards,

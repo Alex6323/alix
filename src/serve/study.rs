@@ -1285,12 +1285,8 @@ impl StudyState {
                 let dto = match self.examining.as_mut() {
                     None => None,
                     Some(ex) => {
-                        let root = workspace::content_root(&ex.deck_path);
-                        let retire_after_days = self
-                            .config
-                            .review_cfg
-                            .for_workspace(&root)
-                            .retire_after_days;
+                        let retire_after_days =
+                            exam::retire_after_days_for(self.config.review_cfg, &ex.deck_path);
                         let poll = ex
                             .sitting
                             .poll(&mut self.store, now_ms(), retire_after_days);
@@ -2267,7 +2263,7 @@ impl StudyState {
                     &deck,
                     &candidate,
                     now_ms(),
-                    self.config.review_cfg.retire_after_days,
+                    exam::retire_after_days_for(self.config.review_cfg, &path),
                 );
                 let sitting = exam::Sitting::from_prepared(
                     &deck,

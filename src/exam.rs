@@ -19,7 +19,8 @@ use crate::{
 pub use crate::{
     exam_status::{
         ExamFilter, ExamScope, ExamStatus, ExamTopic, SittingStart, TOPIC_NUDGE_CARDS, TopicStatus,
-        TopicTally, exam_status, exam_topics, examined_topics, oversized_topics, sitting_start,
+        TopicTally, exam_status, exam_topics, examined_topics, oversized_topics,
+        retire_after_days_for, sitting_start,
     },
     sources::SourceText,
 };

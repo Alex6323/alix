@@ -753,8 +753,6 @@ impl ExamResultParts {
     }
 }
 
-/// A topic that drew no question is left out, as `Sitting` leaves it out
-/// of the record, and `ExamGradeDto.topic` is renumbered to match.
 pub(super) fn exam_result_parts(s: &exam::Sitting) -> ExamResultParts {
     let Some(result) = s.result() else {
         return ExamResultParts {

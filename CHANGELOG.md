@@ -239,8 +239,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   progress document holding a card `exam_result`, or a passed or mastered
   standing without its `exam_stamp`, is unreadable. Wire: `ExamTopicDto`
   gains `topic_id` and `fingerprint`, and a topic that drew no question is
-  left out of `topics` (a phone recorded it as failed before);
-  `ExamRowDto.topics` loses `new_cards` and the row gains `exam_changed`.
+  left out of `topics`; `ExamRowDto.topics` loses `new_cards` and the row
+  gains `exam_changed`.
   The phone evaluates the review condition and the stamp against its own
   store when it starts a sitting and records the result under each topic's
   id.

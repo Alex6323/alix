@@ -4,8 +4,9 @@
 - Evidence: fn the_exam_reads_only_frozen_sources_never_exam_entries_cite_roots_or_cited_text in src/exam.rs
 - Recorded: 2026-11-08
 - Retrospective: No
-- Amends: [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md)
-  and [ADR 0053](0053-cite-names-the-keyed-roots-citations-resolve-against.md)
+- Amends: [ADR 0026](0026-self-describing-ids-and-named-locator-fields.md),
+  [ADR 0053](0053-cite-names-the-keyed-roots-citations-resolve-against.md)
+  and [ADR 0063](0063-an-exam-result-lives-on-its-cards.md)
   (clauses listed under Compatibility)
 
 ## Context

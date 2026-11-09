@@ -444,6 +444,15 @@ fn meets_review_condition(
     schedule.graduated() && latest_passed && schedule.due_ms > now_ms
 }
 
+pub fn retire_after_days_for(
+    review: crate::config::ReviewConfig,
+    deck_path: &std::path::Path,
+) -> Option<u32> {
+    review
+        .for_workspace(&crate::workspace::content_root(deck_path))
+        .retire_after_days
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SittingStart {
     pub eligible: bool,
@@ -769,6 +778,48 @@ mod tests {
         assert!(
             exam_changed(&added, &recorded),
             "control: a new id still dots"
+        );
+    }
+
+    #[test]
+    fn a_sitting_judges_retirement_by_the_workspace_overlay_on_the_review_config() {
+        let (ws, _) = law_workspace();
+        let deck = Deck::load(ws.deck()).unwrap();
+        let mut store = Store::open(ws.root().join("p.json")).unwrap();
+        let now = 1_000_000;
+        for id in ["card-u2", "card-v1"] {
+            *store.get_or_insert(id) = graduated_pass(now);
+        }
+        let mut rested = graduated_pass(now);
+        if let Some(recall) = rested.recall.as_mut() {
+            recall.scheduled_days = 20;
+            recall.due_ms = now - 1;
+        }
+        *store.get_or_insert("card-u1") = rested;
+        std::fs::write(
+            ws.root().join(crate::config::LOCAL_MANIFEST),
+            "[review]\nretire_after = \"10d\"\n",
+        )
+        .unwrap();
+
+        let review = crate::config::ReviewConfig::default();
+        let global = sitting_start(&deck, &store, now, review.retire_after_days);
+        assert_eq!(
+            vec!["card-u1".to_string()],
+            global.blocking,
+            "control: under the global cap the due card is not retired and blocks"
+        );
+        let overlay = retire_after_days_for(review, &ws.deck());
+        assert_eq!(
+            Some(10),
+            overlay,
+            "the workspace's own retire_after is the cap"
+        );
+        let local = sitting_start(&deck, &store, now, overlay);
+        assert!(
+            local.eligible,
+            "retired under the workspace cap, so it meets the condition: {:?}",
+            local.blocking
         );
     }
 
