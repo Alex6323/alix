@@ -63,6 +63,10 @@ impl DeckFiles {
         }
     }
 
+    pub(super) fn path(&self, deck_id: &str) -> Option<&Path> {
+        self.paths.get(deck_id).map(PathBuf::as_path)
+    }
+
     pub(super) fn append_note(
         &mut self,
         deck_id: &str,

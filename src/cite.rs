@@ -643,16 +643,9 @@ impl CitationRoots {
                 Root::Url(_) => None,
             }
         }
-        let cited = locators
+        let dir = locators
             .into_iter()
-            .find_map(|locator| self.root_of(&locator.key).and_then(local));
-        let dir = cited.or_else(|| {
-            let mut locals = self.visible().iter().filter_map(|root| local(&root.root));
-            match (locals.next(), locals.next()) {
-                (Some(only), None) => Some(only),
-                _ => None,
-            }
-        })?;
+            .find_map(|locator| self.root_of(&locator.key).and_then(local))?;
         Some(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.clone()))
     }
 
@@ -787,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tutor_browses_the_first_local_cited_root_else_the_deck_s_only_local_root() {
+    fn the_tutor_browses_the_first_local_cited_root_and_no_other() {
         let fx = fixture();
         let ws = &fx.workspace;
         let manifest_cite: BTreeMap<String, String> =
@@ -815,7 +808,6 @@ mod tests {
             CitationRoots::from_place(&[], DeckPlace::Loose { folder: &fx.loose }, None);
         let core = canonical(&ws.join("crates/core"));
         let docs = canonical(&ws.join("docs"));
-        let here = canonical(&fx.loose.join("here"));
         let rows: Vec<(&str, &CitationRoots, Vec<&str>, Option<PathBuf>)> = vec![
             (
                 "a card with a local locator",
@@ -842,16 +834,16 @@ mod tests {
                 Some(core.clone()),
             ),
             (
-                "a locator-less card with one local root",
+                "a locator-less card browses no root, even the deck's only local one",
                 &code_and_guide,
                 vec![],
-                Some(core.clone()),
+                None,
             ),
             (
-                "a card citing only a url passage with one local root",
+                "a card citing only a url passage browses no root",
                 &code_and_guide,
                 vec!["guide"],
-                Some(core.clone()),
+                None,
             ),
             (
                 "a locator-less card with two local roots",
@@ -866,10 +858,10 @@ mod tests {
                 None,
             ),
             (
-                "a loose deck with one local root",
+                "a locator-less card in a loose deck with one local root",
                 &loose_one,
                 vec![],
-                Some(here.clone()),
+                None,
             ),
             ("a loose deck without roots", &loose_none, vec![], None),
         ];

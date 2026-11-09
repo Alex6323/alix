@@ -259,6 +259,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The tutor reads a deck's frozen sources instead of its `exam:` list. On
+  Claude and Copilot it browses the deck's sources folder read-only, with a
+  map from each display path to its copy and the card's topic named as the
+  place to start; on Codex and Gemini each question carries the card's
+  topic's sources (only the bound lines when ranged). A topic over the
+  backend's prompt limit is answered from the card alone, and the first
+  answer says so in one line. The tutor no longer browses a deck's only
+  local `cite:` root for a card that cites none.
+
 - Breaking: wire `ExamDto.standing` is renamed `exam_high_mark` (same text,
   e.g. `"mastered (4 Nov)"`); `ExamDto` gains `exam_changed` and
   `unsourced_topics`.

@@ -38,14 +38,14 @@ pub(super) fn can_fetch_url_sources(cfg: &AskConfig) -> bool {
 
 struct TutorInfo {
     links: Vec<String>,
-    sources: crate::deck::ExamLayers,
+    sources: ask::TutorSources,
     root: Option<PathBuf>,
     source_base: Option<CitationRoots>,
 }
 
 struct TutorContextData {
     links: Vec<String>,
-    sources: crate::deck::ExamLayers,
+    sources: ask::TutorSources,
     root: Option<PathBuf>,
     frozen: Option<String>,
 }
@@ -70,13 +70,11 @@ fn tutor_context_for(card: &Card, info: TutorInfo, cfg: &AskConfig) -> (TutorCon
             .collect::<Vec<_>>();
         (!blocks.is_empty()).then(|| blocks.join("\n\n"))
     });
-    let root = info.root.filter(|path| path.exists());
-    let has_url_source = info
-        .sources
-        .own
-        .iter()
-        .chain(&info.sources.workspace)
-        .any(|source| crate::deck::is_url(source));
+    let root = info
+        .root
+        .filter(|path| path.exists())
+        .filter(|_| !matches!(info.sources, ask::TutorSources::Browse { .. }));
+    let has_url_source = info.links.iter().any(|link| crate::deck::is_url(link));
     let has_source_context = root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
     (
         TutorContextData {
@@ -89,6 +87,18 @@ fn tutor_context_for(card: &Card, info: TutorInfo, cfg: &AskConfig) -> (TutorCon
     )
 }
 
+fn deck_tutor_sources(
+    card: &Card,
+    info: &crate::session::DeckInfo,
+    cfg: &AskConfig,
+) -> ask::TutorSources {
+    let topic_id = info.topic_ids.get(card.topic).cloned().flatten();
+    match info.deck_token.as_deref() {
+        Some(deck_id) => ask::tutor_sources_at(card, topic_id.as_deref(), &info.path, deck_id, cfg),
+        None => ask::TutorSources::None,
+    }
+}
+
 pub(super) struct Reviewing {
     pub(super) session: Session,
     pub(super) label: String,
@@ -98,7 +108,6 @@ pub(super) struct Reviewing {
     pub(super) images: HashMap<String, PathBuf>,
     pub(super) ask: Ask,
     pub(super) links: HashMap<String, Vec<String>>,
-    pub(super) exam_layers: HashMap<String, crate::deck::ExamLayers>,
     pub(super) browsable: std::collections::HashSet<String>,
     pub(super) source_bases: HashMap<String, CitationRoots>,
     pub(super) augment: AugmentCache,
@@ -147,6 +156,7 @@ pub(super) struct Ask {
     pub(super) pending: Option<Pending>,
     pub(super) draft: Option<ask::DraftCard>,
     pub(super) context_warning: Option<String>,
+    visible_line: Option<String>,
 }
 
 impl Ask {
@@ -160,6 +170,7 @@ impl Ask {
             pending: None,
             draft: None,
             context_warning: None,
+            visible_line: None,
         }
     }
 
@@ -245,10 +256,12 @@ impl Ask {
         }
         self.context_warning = (context.frozen.is_some() && !has_source_context)
             .then(|| ask::FROZEN_ONLY_WARNING.to_string());
-        let run_cfg = match context.root {
-            Some(r) => ask::with_source_root(cfg, r),
-            None => cfg.clone(),
-        };
+        self.visible_line = context
+            .sources
+            .visible_line()
+            .filter(|_| self.transcript.is_empty())
+            .map(str::to_string);
+        let run_cfg = ask::tutor_run_config(cfg, context);
         let args = self.cli.args_in(run_cfg.cwd.as_deref());
         let keeps_session = crate::backend::backend_for(&run_cfg)
             .map(|b| b.supports_session())
@@ -307,6 +320,7 @@ impl Ask {
         match (reply, purpose) {
             (Reply::Answer(answer), Purpose::Question(question)) => {
                 self.cli.started = true;
+                let answer = ask::with_visible_line(self.visible_line.take().as_deref(), answer);
                 self.transcript_units
                     .push(crate::render::tutor_answer_units(&answer));
                 self.transcript.push((question, answer));
@@ -560,6 +574,7 @@ pub(super) struct RemoteAsk {
     card_only: bool,
     note_target: Option<NoteTarget>,
     status: Option<String>,
+    visible_line: Option<String>,
     started_ms: u64,
     outcome: Option<RemoteAskOutcome>,
     job: ask::AskJob,
@@ -584,9 +599,10 @@ impl RemoteAsk {
             RemoteCardResolution::Grounded { card, info } => {
                 let info = *info;
                 let root = info.browse_root(&card);
+                let sources = deck_tutor_sources(&card, &info, cfg);
                 let tutor_info = TutorInfo {
                     links: info.links,
-                    sources: info.exam_layers,
+                    sources,
                     root,
                     source_base: Some(info.source_base),
                 };
@@ -597,7 +613,7 @@ impl RemoteAsk {
                 card,
                 TutorContextData {
                     links: Vec::new(),
-                    sources: crate::deck::ExamLayers::default(),
+                    sources: ask::TutorSources::None,
                     root: None,
                     frozen: None,
                 },
@@ -608,19 +624,23 @@ impl RemoteAsk {
         let context = context_data.context();
         let status = (context.frozen.is_some() && !has_source_context)
             .then(|| ask::FROZEN_ONLY_WARNING.to_string());
-        let run_cfg = match context.root {
-            Some(root) => ask::with_source_root(cfg, root),
-            None => cfg.clone(),
-        };
+        let run_cfg = ask::tutor_run_config(cfg, &context);
+        let visible_line = context
+            .sources
+            .visible_line()
+            .filter(|_| prior.is_empty())
+            .map(str::to_string);
         let prompt = ask::question_prompt_with_history(&card, audience, &context, &prior, question);
-        Self::spawn(
+        let mut remote = Self::spawn(
             &run_cfg,
             prompt,
             RemoteAskPurpose::Question,
             card_only,
             None,
             status,
-        )
+        );
+        remote.visible_line = visible_line;
+        remote
     }
 
     pub(super) fn draft(
@@ -677,6 +697,7 @@ impl RemoteAsk {
             card_only,
             note_target,
             status,
+            visible_line: None,
             started_ms: now_ms(),
             outcome: None,
             job,
@@ -699,10 +720,13 @@ impl RemoteAsk {
             }
         };
         self.outcome = Some(match (reply, &self.purpose) {
-            (Reply::Answer(text), RemoteAskPurpose::Question) => RemoteAskOutcome::Answer {
-                units: crate::render::tutor_answer_units(&text),
-                text,
-            },
+            (Reply::Answer(text), RemoteAskPurpose::Question) => {
+                let text = ask::with_visible_line(self.visible_line.as_deref(), text);
+                RemoteAskOutcome::Answer {
+                    units: crate::render::tutor_answer_units(&text),
+                    text,
+                }
+            }
             (Reply::Answer(text), RemoteAskPurpose::Draft) => {
                 match ask::parse_drafted_card(&text) {
                     Ok(card) => RemoteAskOutcome::Draft(card),
@@ -883,7 +907,6 @@ impl Reviewing {
             ask: Ask::new(),
             links: build.links,
             browsable: build.browsable,
-            exam_layers: build.exam_layers,
             source_bases: build.source_bases,
             augment: build.augment,
             present_seq: now_ms(),
@@ -941,13 +964,21 @@ impl Reviewing {
             .as_ref()
             .filter(|_| self.browsable.contains(&*card.deck_id))
             .and_then(|base| base.browse_root(card.citations.iter().map(|c| &c.locator)));
+        let topic_id = self
+            .topic_ids
+            .get(&*card.deck_id)
+            .and_then(|ids| ids.get(card.topic))
+            .cloned()
+            .flatten();
+        let sources = match self.files.path(&card.deck_id) {
+            Some(path) => {
+                ask::tutor_sources_at(&card, topic_id.as_deref(), path, &card.deck_id, cfg)
+            }
+            None => ask::TutorSources::None,
+        };
         let info = TutorInfo {
             links: self.links.get(&*card.deck_id).cloned().unwrap_or_default(),
-            sources: self
-                .exam_layers
-                .get(&*card.deck_id)
-                .cloned()
-                .unwrap_or_default(),
+            sources,
             root,
             source_base,
         };
@@ -1829,7 +1860,7 @@ impl Tracing {
         };
         let context = ask::TutorContext {
             links: &self.session.trace().links,
-            sources,
+            sources: &ask::TutorSources::None,
             root: live_root,
             frozen: frozen.as_deref(),
         };
@@ -1900,7 +1931,7 @@ impl Walking {
         };
         let info = TutorInfo {
             links: self.info.links.clone(),
-            sources: self.info.exam_layers.clone(),
+            sources: deck_tutor_sources(&card, &self.info, cfg),
             root: self.info.browse_root(&card),
             source_base: Some(self.info.source_base.clone()),
         };
@@ -1987,6 +2018,7 @@ mod tests {
             card_only: false,
             note_target: None,
             status: None,
+            visible_line: None,
             started_ms: now_ms().saturating_sub(2_500),
             outcome: None,
             job: ask::AskJob::default(),

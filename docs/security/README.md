@@ -409,13 +409,25 @@ commands must be trusted. Run evidence may contain source code, prompts, model
 output, command output, and filesystem paths, so its external run directory
 should be protected like the target checkout (`orchestrator/`).
 
-Filesystem grounding is opt-in. With `[ask] source_access = true` (or a
-manifest override), the tutor browses one local `cite:` root per card: the
-root of the first locator, in card order, whose key names a local root; for a
-card without one, the deck's only local root when the deck and its manifest
-declare exactly one; otherwise none. A URL root is never browsed, and an
+Live filesystem grounding is opt-in. With `[ask] source_access = true` (or a
+manifest override), the tutor browses at most one local `cite:` root per card:
+the root of the first locator, in card order, whose key names a local root;
+a card without one browses none. A URL root is never browsed, and an
 `exam:` entry never grants browsing (`CitationRoots::browse_root` in
-`src/cite.rs`). A root may be any local directory the deck or manifest
+`src/cite.rs`).
+
+A deck's frozen sources are a separate grant that needs no `source_access`:
+they are verified copies inside the deck's own `sources/<deck-id>/` folder,
+loaded through the verified load above at every tutor question. On a backend
+that confines file reads (Claude, Copilot) the tutor gets file tools rooted at
+that folder alone, and the folder replaces any `cite:` root for that call;
+the parent configuration's working folder or source-access grant is never
+inherited. A folder `ask::expressible_root` rejects gets no file tools, and the
+topic's sources are pasted instead. A backend that does not confine reads
+(Codex, Gemini) never receives a folder: the card's topic's sources are pasted
+into the prompt, and a topic over the backend's prompt limit is not sent at
+all (`ask::tutor_sources_for`, `ask::tutor_run_config` in `src/ask.rs`). A
+copy that fails verification sends nothing and the answer says so. A root may be any local directory the deck or manifest
 declares, absolute ones included, so a received deck can name a wide root;
 inspect a received workspace's `cite:` roots before enabling source access.
 The exam reads only a deck's frozen sources, through the verified load
@@ -730,6 +742,9 @@ The most relevant deterministic checks currently live beside their controls:
   `src/exam.rs`, and `src/icon.rs`: the configuration each AI subprocess is
   derived with, pinned as an exact table over the tool grant, the tool root,
   and the refusal to inherit a parent source-access grant;
+- `src/ask.rs`: the tutor's browse grant, pinned as an exact table over the
+  tool grant and the tool root (the deck's sources folder, never a parent
+  working folder or `cite:` root) for every way the tutor reads sources;
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.

@@ -183,6 +183,13 @@ pub fn load_verified(
     }))
 }
 
+pub fn load_for_deck(deck_path: &Path, deck_id: &str) -> Result<Option<DeckSources>, SourceError> {
+    match crate::workspace::root_for_deck(deck_path) {
+        Some(root) => load_verified(&root, deck_id),
+        None => Ok(None),
+    }
+}
+
 pub(super) fn folder_exists(path: &Path) -> Result<bool, SourceError> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {

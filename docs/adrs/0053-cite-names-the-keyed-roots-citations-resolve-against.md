@@ -7,13 +7,16 @@
 - Evidence: fn every_rule_11_locator_violation_is_an_error_in_every_doctor_mode_and_target in src/cli/doctor.rs
 - Evidence: fn frozen_drift_warns_only_on_request_and_a_failing_live_citation_always_errors in src/cli/doctor.rs
 - Evidence: fn freezing_two_roots_that_each_hold_x_txt_keeps_each_citations_key_and_freezes_distinct_objects in src/assets.rs
-- Evidence: fn the_tutor_browses_the_first_local_cited_root_else_the_deck_s_only_local_root in src/cite.rs
+- Evidence: fn the_tutor_browses_the_first_local_cited_root_and_no_other in src/cite.rs
 - Evidence: fn a_generator_reuses_the_root_holding_its_input_or_declares_src_or_refuses in src/cite.rs
 - Evidence: fn a_url_trace_build_freezes_each_passage_verbatim_under_the_src_root in tests/cli.rs
 - Evidence: fn a_transfer_is_refused_for_every_used_key_whose_root_differs_in_the_destination in src/cite.rs
 - Evidence: fn a_transfer_is_refused_for_every_exam_entry_that_resolves_differently_in_the_destination in src/cite.rs
 - Recorded: 2026-10-17
 - Retrospective: No
+- Amended by: 0064 (rule 15's clause that a card without a local locator
+  browses the deck's only local root, replaced by 0064 rule 13: such a card
+  browses no root)
 - Refines: [ADR 0024](0024-deck-transfer-reuses-public-bundles.md)
 
 ## Context

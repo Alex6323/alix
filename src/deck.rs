@@ -297,12 +297,9 @@ impl Deck {
     pub fn sources(
         &self,
     ) -> Result<Option<crate::sources::DeckSources>, crate::sources::SourceError> {
-        match (
-            crate::workspace::root_for_deck(&self.path),
-            self.deck_token.as_deref(),
-        ) {
-            (Some(root), Some(deck_id)) => crate::sources::load_verified(&root, deck_id),
-            _ => Ok(None),
+        match self.deck_token.as_deref() {
+            Some(deck_id) => crate::sources::load_for_deck(&self.path, deck_id),
+            None => Ok(None),
         }
     }
 

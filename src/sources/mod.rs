@@ -20,7 +20,9 @@ pub(crate) mod testkit;
 mod transaction;
 
 pub use findings::{Findings, deck_findings};
-pub use manifest::{DeckSources, Manifest, Row, ValidRow, load_verified, stray_copies};
+pub use manifest::{
+    DeckSources, Manifest, Row, ValidRow, load_for_deck, load_verified, stray_copies,
+};
 pub use roots::{Roots, canonical_folder};
 pub use transaction::{Candidate, CommitError, CommitReport, commit};
 

@@ -87,44 +87,70 @@ a `link:` never becomes exam material (the exam reads only a deck's
 sources, covered in the AI exam chapter). And like every directive, they don't affect a
 card's identity.
 
-## Grounding a frozen card: `exam:` and `cite:`
+## What the tutor reads: the deck's sources
+
+When a deck has sources (added with `alix deck source add`, covered in the AI
+exam chapter), the tutor reads those frozen copies, not your live files. How it
+reads them depends on the backend:
+
+- **Claude and Copilot** confine file reads to a folder, so the tutor browses
+  the deck's sources folder (`sources/<deck-id>/` in the workspace),
+  read-only. The prompt carries a map from each source's display path
+  (such as `sdk:src/lib.rs`) to the file name of its frozen copy, and the tutor
+  is asked to cite sources by display path. Each question also names the
+  sources bound to the card's topic as where to start, with the bound line
+  ranges (such as `sdk:src/lib.rs:120-180`) when the binding has them.
+- **Codex and Gemini** do not confine reads, so they get no folder. Instead,
+  each question carries the sources bound to the card's topic, pasted into the
+  prompt (only the bound lines, when the binding has ranges). Moving to a card
+  of another topic pastes that topic's sources instead; sources never pile up
+  in the conversation.
+- When a topic's sources are too large for the backend's prompt limit (the
+  same limit and measure the exam uses), the tutor answers from the card
+  alone, and its first answer on that card starts with one line saying so:
+  `answering from the card alone: this topic's sources exceed codex's limit`.
+
+Browsing the sources folder needs no `source_access` setting: the copies are
+part of the deck, not files elsewhere on your machine. A deck whose sources
+fail verification (a missing or altered copy) gets a first answer line naming
+the problem, and the tutor answers from the card alone; `alix doctor` reports
+the damage.
+
+## Grounding a frozen card: `cite:`
 
 A frozen workspace card is grounded in its deck-owned `assets/deck-<token>/`
 evidence. The tutor receives the exact excerpt shown during review, so deleting
-or editing the live source cannot silently change its ground truth.
-
-The deck's `exam:` (and a workspace's `exam`) is listed to the tutor as
-context. A URL entry is fetched when the selected backend can use `WebFetch`.
-The tutor always receives the frozen excerpt first; current source context can
+or editing the live source cannot silently change its ground truth. The
+tutor always receives the frozen excerpt first; current source context can
 explain the surrounding material or detect drift, but never silently replaces
 the captured evidence.
 
-Local file browsing is opt-in with `[ask] source_access = true`, and a
+Browsing a live `cite:` root is opt-in with `[ask] source_access = true`, and a
 workspace's `alix.toml` may carry its own top-level `source_access` key,
 which overrides the global setting in either direction for that workspace's
 decks. The manifest travels when a workspace is shared, so inspect a
 received workspace's `alix.toml` before making an AI call over it. With
-access on, the tutor browses one local `cite:` root, chosen per card:
-
-- the root of the first locator (in card order) whose key names a local root;
-- for a card without such a locator, the deck's only local root, when the
-  deck and its manifest declare exactly one;
-- otherwise none. A URL root is never browsed, and an `exam:` entry never
-  grants browsing.
+access on, the tutor browses the root of the card's first locator (in card
+order) whose key names a local root. A card without such a locator browses no
+root, and a URL root is never browsed. When the tutor browses the deck's
+sources folder (above), that folder is its working folder and no `cite:` root
+is browsed.
 
 This keeps every live-source grant reviewable: the grant is on in your config
 or a manifest you can read, and the folder is a root the deck declares.
 
-With the Claude backend, the tutor reads only inside that root: its file tools
-are allowed under the root's resolved path alone, and the call loads none of
+With the Claude backend, the tutor reads only inside the folder it browses
+(the sources folder or a `cite:` root): its file tools are allowed under the
+folder's resolved path alone, and the call loads none of
 your Claude settings files, whose own allow rules would otherwise widen it. A
-root whose path contains `(`, `)`, `*`, `?`, `[`, `]`, `{` or `}`, or any
-root on Windows, gets no file tools. Copilot's file tool is confined to the
-root too: a path outside it, or a symlink pointing out of it, is refused, and
-a root those rules cannot name (the same characters, or Windows) drops
-Copilot's file tools as well. A call with no root, on Claude or Copilot, runs
-in alix's own working folder. Gemini and Codex do not confine reads to the
-root.
+folder whose path contains `(`, `)`, `*`, `?`, `[`, `]`, `{` or `}`, or any
+folder on Windows, gets no file tools; for the sources folder the tutor then
+pastes the topic's sources as it does on Codex. Copilot's file tool is confined
+to the folder too: a path outside it, or a symlink pointing out of it, is
+refused, and a folder those rules cannot name (the same characters, or Windows)
+drops Copilot's file tools as well. A call with no folder, on Claude or
+Copilot, runs in alix's own working folder. Gemini and Codex do not confine
+reads to the folder.
 
 When no usable source is available, the tutor still works from the frozen
 excerpt and card context. The Ask status warns that it lacks the full current

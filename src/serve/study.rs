@@ -2345,7 +2345,6 @@ mod tests {
             load_warnings: Vec::new(),
             topic_ids: HashMap::from([(deck_id.clone(), vec![Some(deck_id.clone())])]),
             links: HashMap::new(),
-            exam_layers: HashMap::new(),
             browsable: std::collections::HashSet::new(),
             source_bases: HashMap::new(),
             topology_name: None,

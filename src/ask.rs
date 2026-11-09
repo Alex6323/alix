@@ -13,6 +13,7 @@ use crate::{
     card::Card,
     config::{AskConfig, Audience},
     exam_prompt::truncate_chars,
+    sources::{DeckSources, SourceText},
 };
 
 pub type Exchange = (String, String);
@@ -112,14 +113,131 @@ fn uuid_from_seed(now_ms: u64, pid: u64, nonce: u64) -> String {
     )
 }
 
-/// Everything the tutor is grounded on, layered per ADR 0026: the deck's own
-/// sources are the primary grounding, the workspace source supporting context.
 #[derive(Clone, Copy, Debug)]
 pub struct TutorContext<'a> {
     pub links: &'a [String],
-    pub sources: &'a crate::deck::ExamLayers,
+    pub sources: &'a TutorSources,
     pub root: Option<&'a Path>,
     pub frozen: Option<&'a str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TutorSources {
+    Browse {
+        dir: PathBuf,
+        /// Display path, copy name.
+        listing: Vec<(String, String)>,
+        focus: Vec<String>,
+    },
+    Pasted(Vec<SourceText>),
+    CardOnly {
+        line: String,
+    },
+    None,
+}
+
+impl TutorSources {
+    pub fn visible_line(&self) -> Option<&str> {
+        match self {
+            TutorSources::CardOnly { line } => Some(line),
+            _ => None,
+        }
+    }
+}
+
+pub fn tutor_sources_for(
+    card: &Card,
+    topic_id: Option<&str>,
+    sources: Option<&DeckSources>,
+    cfg: &AskConfig,
+) -> TutorSources {
+    let Some(sources) = sources.filter(|sources| !sources.manifest.sources.is_empty()) else {
+        return TutorSources::None;
+    };
+    let texts = topic_id
+        .and_then(|topic| sources.texts_of(topic).ok())
+        .unwrap_or_default();
+    if confines_file_reads(cfg) && can_browse(&sources.dir) {
+        return TutorSources::Browse {
+            dir: sources.dir.clone(),
+            listing: source_listing(sources),
+            focus: texts.into_iter().map(|text| text.display).collect(),
+        };
+    }
+    if texts.is_empty() {
+        return TutorSources::None;
+    }
+    let pasted = TutorSources::Pasted(texts);
+    let context = TutorContext {
+        links: &[],
+        sources: &pasted,
+        root: None,
+        frozen: None,
+    };
+    let prompt = question_prompt(card, Audience::Adult, &context, "", true);
+    if crate::exam_prompt::TopicMeasure::of(cfg.backend, &prompt).exceeds() {
+        return TutorSources::CardOnly {
+            line: format!(
+                "answering from the card alone: this topic's sources exceed {}'s limit",
+                cfg.backend.name()
+            ),
+        };
+    }
+    pasted
+}
+
+fn confines_file_reads(cfg: &AskConfig) -> bool {
+    backend_for(cfg).is_ok_and(|backend| backend.confines_file_reads())
+}
+
+fn can_browse(dir: &Path) -> bool {
+    dir.canonicalize().is_ok_and(|root| expressible_root(&root))
+}
+
+fn source_listing(sources: &DeckSources) -> Vec<(String, String)> {
+    let mut listing: Vec<(String, String)> = sources
+        .manifest
+        .sources
+        .iter()
+        .filter_map(|(id, row)| {
+            let display = row.path.parse::<crate::sources::DisplayPath>().ok()?;
+            Some((row.path.clone(), crate::sources::copy_name(id, &display)))
+        })
+        .collect();
+    listing.sort();
+    listing
+}
+
+pub fn tutor_sources_at(
+    card: &Card,
+    topic_id: Option<&str>,
+    deck_path: &Path,
+    deck_id: &str,
+    cfg: &AskConfig,
+) -> TutorSources {
+    match crate::sources::load_for_deck(deck_path, deck_id) {
+        Ok(sources) => tutor_sources_for(card, topic_id, sources.as_ref(), cfg),
+        Err(error) => TutorSources::CardOnly {
+            line: format!(
+                "answering from the card alone: this deck's sources cannot be read: {error}"
+            ),
+        },
+    }
+}
+
+pub fn tutor_run_config(cfg: &AskConfig, context: &TutorContext) -> AskConfig {
+    match (context.sources, context.root) {
+        (TutorSources::Browse { dir, .. }, _) => with_source_root(cfg, dir),
+        (_, Some(root)) => with_source_root(cfg, root),
+        _ => cfg.clone(),
+    }
+}
+
+pub fn with_visible_line(line: Option<&str>, answer: String) -> String {
+    match line {
+        Some(line) => format!("{line}\n\n{answer}"),
+        None => answer,
+    }
 }
 
 pub fn question_prompt(
@@ -183,18 +301,6 @@ fn preamble(audience: Audience) -> &'static str {
     }
 }
 
-fn push_link_group(p: &mut String, heading: &str, links: &[&String]) {
-    if links.is_empty() {
-        return;
-    }
-    p.push_str(heading);
-    p.push('\n');
-    for link in links {
-        p.push_str(link);
-        p.push('\n');
-    }
-}
-
 fn question_context(
     card: &Card,
     audience: Audience,
@@ -207,28 +313,52 @@ fn question_context(
         root,
         frozen,
     } = *context;
+    let root = root.filter(|_| !matches!(sources, TutorSources::Browse { .. }));
     let mut p = String::new();
     if first {
         p.push_str(preamble(audience));
-        // Both layers, told apart like the exam's source section (ADR 0026),
-        // local paths and URLs alike.
-        let own: Vec<&String> = sources.own.iter().collect();
-        let workspace: Vec<&String> = sources.workspace.iter().collect();
-        let other: Vec<&String> = links
-            .iter()
-            .filter(|link| !own.contains(link) && !workspace.contains(link))
-            .collect();
-        if !own.is_empty() || !workspace.is_empty() || !other.is_empty() {
+        if !links.is_empty() {
             p.push_str(
-                "\nReference material for this deck; fetch links with WebFetch \
-                 and read local paths with Read/Glob/Grep when they can improve \
-                 an answer; you only need to read each once:\n",
+                "\nReference links for this deck; fetch them with WebFetch when they can \
+                 improve an answer; you only need to read each once:\n",
             );
-            push_link_group(&mut p, "Deck sources (the primary grounding):", &own);
-            push_link_group(&mut p, "Workspace source (supporting context):", &workspace);
-            push_link_group(&mut p, "Related links:", &other);
+            for link in links {
+                p.push_str(link);
+                p.push('\n');
+            }
+        }
+        if let TutorSources::Browse { listing, .. } = sources {
+            p.push_str(
+                "\nThe deck's frozen sources are the files in your working directory; read \
+                 them with Read, Glob and Grep to ground your answers. This map gives each \
+                 source's display path and the file name of its frozen copy. Open a copy by \
+                 its file name, but always cite a source by its display path, never by the \
+                 copy's file name:\n",
+            );
+            for (display, copy) in listing {
+                p.push_str(&format!("{display} -> {copy}\n"));
+            }
         }
         p.push('\n');
+    }
+    match sources {
+        TutorSources::Browse { focus, .. } if !focus.is_empty() => {
+            p.push_str("This card's topic is grounded in these sources; start there:\n");
+            for display in focus {
+                p.push_str(display);
+                p.push('\n');
+            }
+            p.push('\n');
+        }
+        TutorSources::Pasted(texts) => {
+            p.push_str(
+                "The deck's frozen sources for this card's topic, the primary grounding for \
+                 your answer:\n",
+            );
+            p.push_str(&crate::exam_prompt::source_section(texts));
+            p.push('\n');
+        }
+        _ => {}
     }
     p.push_str("The card being reviewed:\n\n");
     push_card(&mut p, card);
@@ -1030,10 +1160,7 @@ mod tests {
         )
     }
 
-    static NO_SOURCES: crate::deck::ExamLayers = crate::deck::ExamLayers {
-        own: Vec::new(),
-        workspace: Vec::new(),
-    };
+    static NO_SOURCES: TutorSources = TutorSources::None;
 
     fn ctx<'a>(
         links: &'a [String],
@@ -1066,119 +1193,6 @@ mod tests {
         assert!(p.contains("Because."));
         assert!(p.contains("Note: a note"));
         assert!(p.ends_with("The user's question: and why that?"));
-    }
-
-    #[test]
-    fn first_prompt_labels_deck_and_workspace_exam_apart_from_links() {
-        let links = vec![
-            "https://own.example".to_string(),
-            "https://context.example".to_string(),
-            "https://docs.rs/tokio".to_string(),
-        ];
-        let sources = crate::deck::ExamLayers {
-            own: vec!["https://own.example".to_string()],
-            workspace: vec!["https://context.example".to_string()],
-        };
-        let context = TutorContext {
-            links: &links,
-            sources: &sources,
-            root: None,
-            frozen: None,
-        };
-        let p = question_prompt(&card(), Audience::Adult, &context, "why?", true);
-        let own = p.find("Deck sources (the primary grounding):").unwrap();
-        let workspace = p.find("Workspace source (supporting context):").unwrap();
-        let other = p.find("Related links:").unwrap();
-        assert!(own < workspace && workspace < other, "{p}");
-        assert!(p.find("https://own.example").unwrap() < workspace, "{p}");
-        assert!(p.find("https://docs.rs/tokio").unwrap() > other, "{p}");
-        assert_eq!(1, p.matches("https://own.example").count(), "{p}");
-    }
-
-    #[test]
-    fn first_prompt_labels_both_layers_for_local_sources_too() {
-        let sources = crate::deck::ExamLayers {
-            own: vec!["notes/own.md".to_string()],
-            workspace: vec!["ws-material".to_string()],
-        };
-        let context = TutorContext {
-            links: &[],
-            sources: &sources,
-            root: None,
-            frozen: None,
-        };
-        let p = question_prompt(&card(), Audience::Adult, &context, "why?", true);
-        let own = p.find("Deck sources (the primary grounding):").unwrap();
-        let workspace = p.find("Workspace source (supporting context):").unwrap();
-        assert!(own < workspace, "{p}");
-        assert!(p.find("notes/own.md").unwrap() < workspace, "{p}");
-        assert!(p.find("ws-material").unwrap() > workspace, "{p}");
-        assert!(p.contains("read local paths with Read/Glob/Grep"), "{p}");
-    }
-
-    #[test]
-    fn first_prompt_keeps_sources_with_a_shared_basename_distinguishable() {
-        let sources = crate::deck::ExamLayers {
-            own: vec!["a/notes.md".to_string(), "b/notes.md".to_string()],
-            workspace: Vec::new(),
-        };
-        let context = TutorContext {
-            links: &[],
-            sources: &sources,
-            root: None,
-            frozen: None,
-        };
-
-        let prompt = question_prompt(&card(), Audience::Adult, &context, "why?", true);
-
-        assert_eq!(1, prompt.matches("a/notes.md").count(), "first source path");
-        assert_eq!(
-            1,
-            prompt.matches("b/notes.md").count(),
-            "second source path"
-        );
-        assert_eq!(
-            0,
-            prompt.lines().filter(|line| *line == "notes.md").count(),
-            "a source collapsed to its bare basename: {prompt}"
-        );
-    }
-
-    #[test]
-    fn first_prompt_offers_reference_material_when_any_one_layer_is_present() {
-        for (own, workspace, links, expected_heading) in [
-            (
-                vec!["own.md".to_string()],
-                Vec::new(),
-                Vec::new(),
-                "Deck sources (the primary grounding):",
-            ),
-            (
-                Vec::new(),
-                vec!["workspace.md".to_string()],
-                Vec::new(),
-                "Workspace source (supporting context):",
-            ),
-            (
-                Vec::new(),
-                Vec::new(),
-                vec!["https://example.test/related".to_string()],
-                "Related links:",
-            ),
-        ] {
-            let sources = crate::deck::ExamLayers { own, workspace };
-            let context = TutorContext {
-                links: &links,
-                sources: &sources,
-                root: None,
-                frozen: None,
-            };
-
-            let prompt = question_prompt(&card(), Audience::Adult, &context, "why?", true);
-
-            assert!(prompt.contains("Reference material"), "{prompt}");
-            assert!(prompt.contains(expected_heading), "{prompt}");
-        }
     }
 
     #[test]
@@ -2243,5 +2257,373 @@ mod tests {
     fn parse_drafted_card_errors_on_two_cards() {
         let reply = "## q1?\na1\n## q2?\na2\n";
         assert!(parse_drafted_card(reply).is_err());
+    }
+
+    mod tutor_sources {
+        use super::*;
+        use crate::{
+            config::BackendKind,
+            deck::Deck,
+            sources::{
+                DisplayPath, copy_name,
+                testkit::{TOPIC_A, TOPIC_B, Workspace},
+            },
+            testutil::fake_replies,
+        };
+
+        fn sourced_card(w: &Workspace, front: &str) -> (Card, Option<String>, DeckSources) {
+            let deck = Deck::load(w.deck()).unwrap();
+            let topic_ids = deck.topic_ids();
+            let card = deck
+                .cards
+                .iter()
+                .find(|card| card.front == front)
+                .unwrap_or_else(|| panic!("the fixture deck has card {front}"))
+                .clone();
+            let topic = topic_ids[card.topic].clone();
+            (
+                card,
+                topic,
+                deck.sources().unwrap().expect("the deck has sources"),
+            )
+        }
+
+        fn copy_of(sources: &DeckSources, display: &str) -> String {
+            let (id, _) = sources
+                .manifest
+                .sources
+                .iter()
+                .find(|(_, row)| row.path == display)
+                .unwrap_or_else(|| panic!("a row for {display}"));
+            copy_name(id, &display.parse::<DisplayPath>().unwrap())
+        }
+
+        fn backend(kind: BackendKind, cli: &Path) -> AskConfig {
+            AskConfig {
+                backend: kind,
+                ..config(cli, 10)
+            }
+        }
+
+        fn context(sources: &TutorSources) -> TutorContext<'_> {
+            TutorContext {
+                links: &[],
+                sources,
+                root: None,
+                frozen: None,
+            }
+        }
+
+        fn sent(dir: &Path, call: usize) -> String {
+            std::fs::read_to_string(dir.join(format!("prompt-{call}"))).unwrap()
+        }
+
+        #[test]
+        fn a_confined_backend_browses_the_sources_folder_read_only_with_the_manifest_as_its_map() {
+            let _lock = exec_lock();
+            let w = Workspace::new();
+            w.write_live("src/lib.rs", b"one\ntwo\nthree\nfour\n");
+            w.write_live("notes.md", b"beta notes\n");
+            w.add(&["src/lib.rs"], &["2-3|topic-alpha"]).unwrap();
+            w.add(&["notes.md"], &[TOPIC_B]).unwrap();
+            let (card, topic, sources) = sourced_card(&w, "q1");
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_cli(
+                dir.path(),
+                &format!(
+                    "printf '%s\\n' \"$@\" > {d}/args; cat > {d}/prompt-1; echo ok",
+                    d = dir.path().display()
+                ),
+            );
+            let cfg = backend(BackendKind::Claude, &cli);
+
+            let tutor = tutor_sources_for(&card, topic.as_deref(), Some(&sources), &cfg);
+            let context = context(&tutor);
+            let prompt = question_prompt(&card, Audience::Adult, &context, "why?", true);
+            run(&tutor_run_config(&cfg, &context), &prompt, &[]).unwrap();
+
+            let args: Vec<String> = std::fs::read_to_string(dir.path().join("args"))
+                .unwrap()
+                .lines()
+                .map(str::to_string)
+                .collect();
+            let grant = format!(
+                "Read(/{}/**)",
+                sources.dir.canonicalize().unwrap().display()
+            );
+            let allowed = args
+                .iter()
+                .position(|arg| arg == "--allowedTools")
+                .unwrap_or_else(|| panic!("argv grants tools: {args:?}"));
+            assert!(
+                args[allowed + 1..].contains(&grant),
+                "argv grants reads under the sources folder only, as {grant}: {args:?}"
+            );
+            let sent = sent(dir.path(), 1);
+            for display in ["sdk:src/lib.rs", "sdk:notes.md"] {
+                let row = format!("{display} -> {}", copy_of(&sources, display));
+                assert!(sent.contains(&row), "the map lists {row}: {sent}");
+            }
+            assert!(
+                sent.contains(
+                    "always cite a source by its display path, never by the copy's file name"
+                ),
+                "the prompt asks for display paths: {sent}"
+            );
+            assert!(
+                sent.contains("in at most six short sentences"),
+                "the browse prompt keeps the answer-length instruction: {sent}"
+            );
+            assert!(
+                sent.contains("start there:\nsdk:src/lib.rs:2-3\n"),
+                "the topic's ranged binding is named as its focus: {sent}"
+            );
+            assert!(
+                !sent.contains("two\nthree"),
+                "a browsing tutor gets no pasted copy: {sent}"
+            );
+        }
+
+        #[test]
+        fn an_unconfined_backend_gets_the_cards_topic_sources_pasted_and_never_another_topics() {
+            let _lock = exec_lock();
+            let w = Workspace::new();
+            w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+            w.write_live("b.rs", b"fn beta_bytes() {}\n");
+            w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+            w.add(&["b.rs"], &[TOPIC_B]).unwrap();
+            let (card, topic, sources) = sourced_card(&w, "q1");
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_replies(dir.path(), &["first answer", "second answer"]);
+            let cfg = backend(BackendKind::Codex, &cli);
+
+            let tutor = tutor_sources_for(&card, topic.as_deref(), Some(&sources), &cfg);
+            let context = context(&tutor);
+            let run_cfg = tutor_run_config(&cfg, &context);
+            assert_eq!(
+                (cfg.cwd.clone(), cfg.allowed_tools.clone()),
+                (run_cfg.cwd.clone(), run_cfg.allowed_tools.clone()),
+                "an unconfined backend gets no folder and no file tools"
+            );
+            let first = question_prompt_with_history(&card, Audience::Adult, &context, &[], "why?");
+            let answer = run(&run_cfg, &first, &[]).unwrap();
+            let prior = vec![("why?".to_string(), answer)];
+            let second =
+                question_prompt_with_history(&card, Audience::Adult, &context, &prior, "and?");
+            run(&run_cfg, &second, &[]).unwrap();
+
+            for call in [1, 2] {
+                let sent = sent(dir.path(), call);
+                assert_eq!(
+                    1,
+                    sent.matches("fn alpha_bytes() {}").count(),
+                    "turn {call} pastes the card's topic exactly once: {sent}"
+                );
+                assert!(
+                    !sent.contains("beta_bytes"),
+                    "turn {call} never pastes another topic: {sent}"
+                );
+                assert!(
+                    sent.contains("Source `sdk:a.rs`:\n<<<SOURCE\n"),
+                    "turn {call} uses the exam's source header: {sent}"
+                );
+            }
+        }
+
+        #[test]
+        fn an_oversized_topic_answers_from_the_card_alone_with_one_visible_line() {
+            let _lock = exec_lock();
+            let w = Workspace::new();
+            let line = format!("{}\n", "x".repeat(79));
+            w.write_live("big.txt", line.repeat(14_000).as_bytes());
+            w.add(&["big.txt"], &[TOPIC_A]).unwrap();
+            let (card, topic, sources) = sourced_card(&w, "q1");
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_replies(dir.path(), &["from the card"]);
+            let cfg = backend(BackendKind::Codex, &cli);
+
+            let tutor = tutor_sources_for(&card, topic.as_deref(), Some(&sources), &cfg);
+            let visible =
+                "answering from the card alone: this topic's sources exceed codex's limit";
+            assert_eq!(
+                TutorSources::CardOnly {
+                    line: visible.to_string()
+                },
+                tutor,
+                "a topic over Codex's 1,048,576 characters is not pasted"
+            );
+            let context = context(&tutor);
+            let prompt =
+                question_prompt_with_history(&card, Audience::Adult, &context, &[], "why?");
+            let answer = run(&tutor_run_config(&cfg, &context), &prompt, &[]).unwrap();
+            let shown = with_visible_line(tutor.visible_line(), answer);
+
+            assert_eq!(Some(visible), shown.lines().next(), "{shown}");
+            assert_eq!(1, shown.matches(visible).count(), "{shown}");
+            assert!(shown.ends_with("from the card"), "{shown}");
+            assert!(
+                !sent(dir.path(), 1).contains(&"x".repeat(79)),
+                "nothing of the topic's sources is sent"
+            );
+        }
+
+        #[test]
+        fn switching_cards_across_topics_pastes_only_the_new_topics_sources() {
+            let _lock = exec_lock();
+            let w = Workspace::new();
+            w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+            w.write_live("b.rs", b"fn beta_bytes() {}\n");
+            w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+            w.add(&["b.rs"], &[TOPIC_B]).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_replies(dir.path(), &["answer"]);
+            let cfg = backend(BackendKind::Codex, &cli);
+
+            for (call, front, wanted, unwanted) in [
+                (1, "q1", "alpha_bytes", "beta_bytes"),
+                (2, "q3", "beta_bytes", "alpha_bytes"),
+            ] {
+                let (card, topic, sources) = sourced_card(&w, front);
+                let tutor = tutor_sources_for(&card, topic.as_deref(), Some(&sources), &cfg);
+                let context = context(&tutor);
+                let prompt =
+                    question_prompt_with_history(&card, Audience::Adult, &context, &[], "why?");
+                run(&tutor_run_config(&cfg, &context), &prompt, &[]).unwrap();
+                let sent = sent(dir.path(), call);
+                assert!(
+                    sent.contains(wanted),
+                    "card {front} pastes {wanted}: {sent}"
+                );
+                assert!(
+                    !sent.contains(unwanted),
+                    "card {front} never pastes {unwanted}: {sent}"
+                );
+            }
+        }
+
+        #[test]
+        fn the_pasted_tutor_fallback_sends_only_bound_lines() {
+            let _lock = exec_lock();
+            let w = Workspace::new();
+            let copy: String = (1..=9).map(|n| format!("copy line {n}\n")).collect();
+            w.write_live("c.rs", copy.as_bytes());
+            w.add(&["c.rs"], &["2-3|topic-alpha"]).unwrap();
+            let (card, topic, sources) = sourced_card(&w, "q1");
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_replies(dir.path(), &["answer"]);
+            let cfg = backend(BackendKind::Codex, &cli);
+
+            let tutor = tutor_sources_for(&card, topic.as_deref(), Some(&sources), &cfg);
+            let context = context(&tutor);
+            let prompt =
+                question_prompt_with_history(&card, Audience::Adult, &context, &[], "why?");
+            run(&tutor_run_config(&cfg, &context), &prompt, &[]).unwrap();
+
+            let sent = sent(dir.path(), 1);
+            assert!(
+                sent.contains(
+                    "Source `sdk:c.rs:2-3`:\n<<<SOURCE\ncopy line 2\ncopy line 3\nSOURCE\n"
+                ),
+                "the bound lines arrive under their ranged header: {sent}"
+            );
+            for n in [1, 4, 5, 6, 7, 8, 9] {
+                assert!(
+                    !sent.contains(&format!("copy line {n}\n")),
+                    "unbound line {n} is never sent: {sent}"
+                );
+            }
+        }
+
+        #[test]
+        fn the_tutor_run_configuration_grants_file_reads_only_under_the_sources_folder() {
+            let parent = AskConfig {
+                cwd: Some(PathBuf::from("/parent")),
+                source_access: true,
+                allowed_tools: vec!["WebFetch".to_string()],
+                ..AskConfig::default()
+            };
+            let browse = TutorSources::Browse {
+                dir: PathBuf::from("/ws/.alix/sources/deck-x"),
+                listing: Vec::new(),
+                focus: Vec::new(),
+            };
+            let pasted = TutorSources::Pasted(Vec::new());
+            let card_only = TutorSources::CardOnly {
+                line: "x".to_string(),
+            };
+            let live = Path::new("/live");
+            let reads = ["WebFetch", "Read", "Glob", "Grep"];
+            type Row<'a> = (
+                &'a str,
+                &'a TutorSources,
+                Option<&'a Path>,
+                Option<&'a str>,
+                &'a [&'a str],
+            );
+            let rows: Vec<Row> = vec![
+                (
+                    "browse",
+                    &browse,
+                    None,
+                    Some("/ws/.alix/sources/deck-x"),
+                    &reads,
+                ),
+                (
+                    "browse beside a cite root",
+                    &browse,
+                    Some(live),
+                    Some("/ws/.alix/sources/deck-x"),
+                    &reads,
+                ),
+                ("pasted", &pasted, None, Some("/parent"), &["WebFetch"]),
+                (
+                    "card only",
+                    &card_only,
+                    None,
+                    Some("/parent"),
+                    &["WebFetch"],
+                ),
+                (
+                    "none",
+                    &TutorSources::None,
+                    None,
+                    Some("/parent"),
+                    &["WebFetch"],
+                ),
+                (
+                    "a cite root without sources",
+                    &TutorSources::None,
+                    Some(live),
+                    Some("/live"),
+                    &reads,
+                ),
+            ];
+            for (label, sources, root, cwd, tools) in rows {
+                let context = TutorContext {
+                    links: &[],
+                    sources,
+                    root,
+                    frozen: None,
+                };
+                let derived = tutor_run_config(&parent, &context);
+                assert_eq!(
+                    (cwd.map(PathBuf::from), tools.to_vec()),
+                    (
+                        derived.cwd.clone(),
+                        derived
+                            .allowed_tools
+                            .iter()
+                            .map(String::as_str)
+                            .collect::<Vec<_>>()
+                    ),
+                    "{label}"
+                );
+                assert_eq!(
+                    (parent.backend, parent.source_access, parent.timeout_secs),
+                    (derived.backend, derived.source_access, derived.timeout_secs),
+                    "{label}: only the grant changes"
+                );
+            }
+        }
     }
 }

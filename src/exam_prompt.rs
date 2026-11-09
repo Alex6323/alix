@@ -153,7 +153,7 @@ pub fn measure_topic(
     TopicMeasure::of(backend, &measured_prompt(topic, sources, cfg))
 }
 
-fn source_section(sources: &[SourceText]) -> String {
+pub(crate) fn source_section(sources: &[SourceText]) -> String {
     let mut out = String::new();
     for source in sources {
         out.push_str(&format!("\nSource `{}`:\n<<<SOURCE\n", source.display));

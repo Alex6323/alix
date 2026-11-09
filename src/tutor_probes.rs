@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ask::{TutorContext, parse_json, question_prompt, run, with_source_root},
+    ask::{TutorContext, TutorSources, parse_json, question_prompt, run, with_source_root},
     card::Card,
     config::{AskConfig, Audience, BackendKind, Config},
-    deck::{Deck, ExamLayers},
+    deck::Deck,
     exam,
     exam_prompt::TopicMeasure,
     sources::{DeckSources, DisplayPath, SourceText, copy_name},
@@ -225,7 +225,7 @@ fn insert_before_card(prompt: String, block: &str) -> String {
 fn browse_prompt(card: &Card, sources: &DeckSources, question: &str) -> String {
     let context = TutorContext {
         links: &[],
-        sources: &ExamLayers::default(),
+        sources: &TutorSources::None,
         root: Some(&sources.dir),
         frozen: None,
     };
@@ -266,7 +266,7 @@ fn source_block(texts: &[SourceText]) -> String {
 fn paste_prompt(card: &Card, texts: &[SourceText], question: &str) -> String {
     let context = TutorContext {
         links: &[],
-        sources: &ExamLayers::default(),
+        sources: &TutorSources::None,
         root: None,
         frozen: None,
     };

@@ -1834,7 +1834,6 @@ fn reviewing_at(deck: PathBuf, cards: Vec<Card>, store: &mut Store, depth: Depth
         load_warnings: Vec::new(),
         topic_ids,
         links: HashMap::new(),
-        exam_layers: HashMap::new(),
         browsable: std::collections::HashSet::new(),
         source_bases: HashMap::new(),
         topology_name: None,
@@ -2076,7 +2075,6 @@ fn one_card_reviewing(dir: &Path) -> (Reviewing, Card, PathBuf) {
         load_warnings: Vec::new(),
         topic_ids: HashMap::new(),
         links: HashMap::new(),
-        exam_layers: HashMap::new(),
         browsable: std::collections::HashSet::new(),
         source_bases: HashMap::new(),
         topology_name: None,
@@ -2360,7 +2358,6 @@ fn a_frozen_card_without_source_context_warns_and_still_uses_the_tutor() {
         load_warnings: Vec::new(),
         topic_ids: HashMap::new(),
         links: HashMap::new(),
-        exam_layers: HashMap::new(),
         browsable,
         source_bases,
         topology_name: None,
@@ -2439,7 +2436,6 @@ fn a_frozen_review_card_with_a_live_local_source_needs_no_fallback_warning() {
         load_warnings: Vec::new(),
         topic_ids: HashMap::new(),
         links: HashMap::new(),
-        exam_layers: HashMap::new(),
         browsable,
         source_bases,
         topology_name: None,
@@ -3059,7 +3055,6 @@ fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
         load_warnings: Vec::new(),
         topic_ids: HashMap::new(),
         links: HashMap::new(),
-        exam_layers: HashMap::new(),
         browsable: std::collections::HashSet::new(),
         source_bases: HashMap::new(),
         topology_name: Some("t".to_string()),
@@ -3080,5 +3075,106 @@ fn a_scoped_crumb_reports_a_locked_card_outside_the_sitting() {
         r2[0].locked,
         "the child is gated behind an ungraduated parent, so its crumb cell is locked \
          even though the sitting was scoped to r1"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_review_tutor_pastes_the_cards_topic_or_leads_with_one_card_alone_line() {
+    use crate::sources::testkit::{TOPIC_A, TOPIC_B, Workspace};
+
+    let _lock = crate::testutil::exec_lock();
+    let w = Workspace::new();
+    w.write_live("a.rs", b"fn alpha_bytes() {}\n");
+    let line = format!("{}\n", "x".repeat(79));
+    w.write_live("big.txt", line.repeat(14_000).as_bytes());
+    w.add(&["a.rs"], &[TOPIC_A]).unwrap();
+    w.add(&["big.txt"], &[TOPIC_B]).unwrap();
+    crate::stamp::stamp_deck(&w.deck()).unwrap();
+    let deck = Deck::load(w.deck()).unwrap();
+    let deck_id = deck.deck_token.clone().unwrap();
+    let card_on = |front: &str| {
+        deck.cards
+            .iter()
+            .find(|card| card.front == front)
+            .unwrap()
+            .clone()
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let cli = crate::testutil::fake_replies(dir.path(), &["first", "second", "third"]);
+    let cfg = AskConfig {
+        backend: crate::config::BackendKind::Codex,
+        ..crate::testutil::ask_config(&cli)
+    };
+    let visible = "answering from the card alone: this topic's sources exceed codex's limit";
+
+    for (step, front, questions, expected) in [
+        (
+            "a card of the small topic",
+            "q1",
+            vec!["why?"],
+            vec!["first".to_string()],
+        ),
+        (
+            "a card of the oversized topic",
+            "q3",
+            vec!["why?", "and?"],
+            vec![format!("{visible}\n\nsecond"), "third".to_string()],
+        ),
+    ] {
+        let mut store = Store::open(dir.path().join(format!("{front}.json"))).unwrap();
+        let session = Session::new(
+            vec![card_on(front)],
+            &mut store,
+            Box::new(Fsrs::default()),
+            crate::session::SessionOptions::default(),
+            now_ms(),
+        );
+        let mut reviewing = Reviewing::new(SessionBuild {
+            session,
+            label: "d.md".to_string(),
+            decks: HashMap::from([(deck_id.clone(), w.deck())]),
+            load_warnings: Vec::new(),
+            topic_ids: HashMap::from([(deck_id.clone(), deck.topic_ids())]),
+            links: HashMap::new(),
+            browsable: std::collections::HashSet::new(),
+            source_bases: HashMap::new(),
+            topology_name: None,
+            region_name: None,
+            augment: AugmentCache::open(dir.path().join("augment.json")),
+        });
+        for question in &questions {
+            assert!(
+                reviewing.start_ask(
+                    &cfg,
+                    Audience::Adult,
+                    AskAction::Question(question.to_string())
+                ),
+                "{step}: the ask starts"
+            );
+            let deadline = Instant::now() + std::time::Duration::from_secs(10);
+            while reviewing.ask_dto(None, None).thinking && Instant::now() < deadline {
+                let (_, error) = reviewing.poll_ask();
+                assert!(error.is_none(), "{step}: {error:?}");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        let answers: Vec<String> = reviewing
+            .ask
+            .transcript
+            .iter()
+            .map(|(_, a)| a.clone())
+            .collect();
+        assert_eq!(expected, answers, "{step}: the visible answers");
+    }
+    let first = std::fs::read_to_string(dir.path().join("prompt-1")).unwrap();
+    assert!(
+        first.contains("fn alpha_bytes() {}"),
+        "the small topic is pasted: {first}"
+    );
+    let oversized = std::fs::read_to_string(dir.path().join("prompt-2")).unwrap();
+    assert!(
+        !oversized.contains(&"x".repeat(79)),
+        "the oversized topic is not pasted"
     );
 }

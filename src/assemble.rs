@@ -14,7 +14,7 @@ use crate::{
     choice::ColumnPools,
     cite::CitationRoots,
     config::{AskConfig, ReviewConfig},
-    deck::{Deck, DeckSettings, ExamLayers},
+    deck::{Deck, DeckSettings},
     depth::{Depth, Launch, default_depth},
     scheduler::Fsrs,
     session::{DeckInfo, Order, Session, SessionOptions},
@@ -97,7 +97,6 @@ pub struct SessionBuild {
     /// `Deck::topic_ids()` per deck id.
     pub topic_ids: HashMap<String, Vec<Option<String>>>,
     pub links: HashMap<String, Vec<String>>,
-    pub exam_layers: HashMap<String, ExamLayers>,
     pub browsable: std::collections::HashSet<String>,
     pub source_bases: HashMap<String, CitationRoots>,
     pub topology_name: Option<String>,
@@ -288,7 +287,6 @@ pub fn load_decks(
                 path: deck.path.clone(),
                 deck_token: deck.deck_token.clone(),
                 links: deck.reference_links(),
-                exam_layers: deck.exam_layers(),
                 source_access: false,
                 source_base: CitationRoots::for_deck(&deck),
                 load_warnings: deck.load_warnings.clone(),
@@ -688,15 +686,6 @@ pub fn select(
             )
         })
         .collect();
-    let exam_layers = decks
-        .values()
-        .map(|info| {
-            (
-                info.deck_token.clone().unwrap_or_default(),
-                info.exam_layers.clone(),
-            )
-        })
-        .collect();
     let browsable = decks
         .values()
         .filter(|info| info.source_access)
@@ -728,7 +717,6 @@ pub fn select(
         load_warnings,
         topic_ids,
         links,
-        exam_layers,
         browsable,
         source_bases,
         topology_name,
@@ -2188,9 +2176,9 @@ it reads line two\n\
             (
                 build.session.total(),
                 build.info.deck_token.clone(),
-                build.info.exam_layers.own.clone()
+                build.info.links.clone()
             ),
-            "the walk carries the deck's identity and sources for the tutor"
+            "the walk carries the deck's identity and links for the tutor"
         );
     }
 

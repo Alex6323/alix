@@ -71,7 +71,7 @@
 # UNOBSERVABLE. When `add_due` is zero the operators are identical; when it is
 # positive, due filled its share and new is short of its share, so the final
 # `min` adds zero regardless of the value left in `leftover`. Line-pinned.
-src/session.rs:845: replace -= with += in split_slots
+src/session.rs:844: replace -= with += in split_slots
 
 # EQUIVALENT. dependency_forest_by passes this value to visit_node with
 # `is_root` true. Both reads of `is_last` first branch on `is_root`, fixing the
@@ -196,9 +196,9 @@ src/parser/cloze.rs:161: replace - with / in unbracketed_src
 # `:` and `skipping` is still false, so the branch pushes the line unchanged;
 # outside the branch it is pushed unchanged too, since no `at:` rewrite can
 # sit on a fence. The output is identical for every input. Line-pinned.
-src/deck.rs:997: replace > with >= in with_exam
-src/deck.rs:1063: replace > with >= in with_added_cite
-src/deck.rs:1114: replace > with >= in rewrite_frozen_assets
+src/deck.rs:994: replace > with >= in with_exam
+src/deck.rs:1060: replace > with >= in with_added_cite
+src/deck.rs:1111: replace > with >= in rewrite_frozen_assets
 
 # EQUIVALENT. `candidate_count` returns 0 for a card without both a table
 # token and a row, and only card-table rows carry those; the parser rejects a
