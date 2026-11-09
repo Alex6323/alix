@@ -1638,6 +1638,39 @@ it reads line two\n\
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_workspace_manifest_never_widens_tutor_source_access() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("workspace");
+        let decks = workspace.join("decks");
+        std::fs::create_dir_all(&decks).unwrap();
+        let manifest_target = dir.path().join("shared-alix.toml");
+        std::fs::write(&manifest_target, "source_access = false\n").unwrap();
+        symlink(&manifest_target, workspace.join("alix.toml")).unwrap();
+        let deck = decks.join("d.md");
+        write_initialized(&deck, "## q\na\n<!-- id: card-q1 -->\n");
+        let mut cfg = test_config();
+        cfg.ask.source_access = true;
+
+        let before = tutor_deck(&deck, &cfg).unwrap();
+        assert!(
+            !before.info.source_access,
+            "the readable workspace manifest overrides the open global default"
+        );
+
+        std::fs::remove_file(&manifest_target).unwrap();
+        match tutor_deck(&deck, &cfg) {
+            Err(_) => {}
+            Ok(after) => panic!(
+                "an unreadable workspace manifest must fail closed, not forget the workspace and widen source access to {}",
+                after.info.source_access
+            ),
+        }
+    }
+
     #[test]
     fn recognize_selection_keeps_excluded_parent_units_in_the_lock_fold() {
         let dir = tempfile::tempdir().unwrap();

@@ -505,7 +505,10 @@ intended.
 A manifest that does not parse is an error, never a fallback to defaults:
 loading the workspace, its decks, or an AI call over them fails, so a broken
 `source_access = false` cannot silently yield to the global setting
-(`workspace::load_manifest` in `src/workspace.rs`).
+(`workspace::load_manifest` in `src/workspace.rs`). A manifest that is present
+but unreadable, a dangling symlink included, still marks its folder as a
+workspace, so tutor source access fails closed with an error
+(`workspace::has_manifest`).
 
 ### Decks, generation, sharing, and receiving
 

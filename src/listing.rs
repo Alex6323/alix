@@ -1101,6 +1101,21 @@ mod tests {
                 .is_empty(),
             "an unparseable workspace lists no members"
         );
+
+        #[cfg(unix)]
+        {
+            let other = tempfile::tempdir().unwrap();
+            let ws = other.path().join("dangling");
+            std::fs::create_dir_all(ws.join("decks")).unwrap();
+            std::os::unix::fs::symlink(other.path().join("gone.toml"), ws.join("alix.toml"))
+                .unwrap();
+            write(&ws.join("decks/m.md"), "## q\na\n<!-- id: card-qm -->\n");
+            let rows = list_root(other.path(), &ReviewConfig::default(), T0);
+            assert!(
+                rows.len() == 1 && rows[0].is_workspace && rows[0].manifest_error.is_some(),
+                "a dangling manifest is a present workspace that fails to load: {rows:?}"
+            );
+        }
     }
 
     #[test]

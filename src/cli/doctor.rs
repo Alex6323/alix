@@ -1277,7 +1277,7 @@ fn check_report(decks: Vec<PathBuf>, drift: DriftChecks, exam: ExamConfig) -> Re
     for path in &decks {
         // Deck::load would error on a directory, so a workspace target is
         // handled separately here.
-        if path.is_dir() && path.join(alix::workspace::MANIFEST).is_file() {
+        if path.is_dir() && alix::workspace::has_manifest(path) {
             if manifests_reported.insert(std::path::absolute(path).unwrap_or_else(|_| path.clone()))
             {
                 workspace_manifest_findings(path, &mut report);

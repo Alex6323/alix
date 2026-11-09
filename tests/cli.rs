@@ -6617,6 +6617,46 @@ fn workspace_augment_batches_every_member_deck_into_one_call() {
 }
 
 #[test]
+fn workspace_augment_refuses_an_unparseable_manifest_before_writing() {
+    let dir = TempDir::new().unwrap();
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "title = [unterminated\n").unwrap();
+    write(
+        &workspace.join("decks"),
+        "one.md",
+        "---\nformat-version: 1\nid: \"deck-one\"\n---\n## Q1\nA1\n<!-- id: card-q1 -->\n",
+    );
+    let cli = fake_claude(dir.path(), r#"{"0": ["W1", "W2"]}"#);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+
+    let out = alix(&[
+        "workspace",
+        "augment",
+        workspace.to_str().unwrap(),
+        "--target",
+        "choices",
+        "--config",
+        &config,
+    ]);
+
+    assert!(
+        !out.status.success(),
+        "an unreadable manifest must stop the mutating command: stdout: {} stderr: {}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        !workspace.join("augment").exists(),
+        "the refusal must happen before augmentation is persisted"
+    );
+}
+
+#[test]
 fn workspace_augment_format_reshapes_a_member_decks_card() {
     let dir = TempDir::new().unwrap();
     let workspace = dir.path().join("workspace");

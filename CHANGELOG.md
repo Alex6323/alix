@@ -287,7 +287,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   silent fallback to defaults. The picker lists the workspace as an `error`
   row carrying the parse message and no members, `alix doctor` reports it, and
   every other reader (review, the tutor, AI calls, transfer, freezing) fails
-  naming the file.
+  naming the file. The same holds for an `alix.toml` that is present but
+  unreadable, a dangling symlink included: its folder is still a workspace.
 
 - Breaking: a trace build (`alix deck generate <trace deck>`) takes its scope
   from the deck's first `cite:` root, local or URL (the workspace `[cite]`

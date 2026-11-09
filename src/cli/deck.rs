@@ -274,9 +274,7 @@ pub(crate) fn workspace_augment_cmd(args: WorkspaceAugmentArgs) -> Result<()> {
     }
     let config = Config::load(args.config.as_deref())?;
     let ask_cfg = augment_ai::run_config(&config.ai, &config.ask);
-    let title = workspace::Workspace::load(root)
-        .map(|ws| ws.display_name())
-        .unwrap_or_else(|_| root.display().to_string());
+    let title = workspace::Workspace::load(root)?.display_name();
 
     let target = match args.target {
         WorkspaceAugmentTarget::Icon => {

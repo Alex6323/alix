@@ -134,7 +134,9 @@ fn load_manifest(path: &Path) -> Result<Option<Manifest>, ManifestError> {
     profile::hit(Counter::ManifestReads);
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound && !manifest_present(path) => {
+            return Ok(None);
+        }
         Err(error) => {
             return Err(ManifestError::Io {
                 path: path.to_path_buf(),
@@ -451,7 +453,17 @@ pub fn diagnosable_deck_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 pub fn has_manifest(path: &Path) -> bool {
-    path.join(MANIFEST).is_file()
+    manifest_present(&path.join(MANIFEST))
+}
+
+fn manifest_present(manifest: &Path) -> bool {
+    match std::fs::symlink_metadata(manifest) {
+        Ok(_) => true,
+        Err(error) => !matches!(
+            error.kind(),
+            io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+        ),
+    }
 }
 
 pub fn member_dir(path: &Path) -> PathBuf {
