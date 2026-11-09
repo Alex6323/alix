@@ -9710,6 +9710,60 @@ fn deck_source_add_warns_on_a_topic_over_a_backends_limit_and_list_and_doctor_sh
 }
 
 #[test]
+fn doctor_without_a_path_measures_topics_with_the_global_exam_extra_like_the_path_route() {
+    let root = source_workspace();
+    let home = TempDir::new().unwrap();
+    let run = |args: &[&str]| alix_in(root.path(), home.path(), args);
+    let root_arg = format!("sdk={}", root.path().join("live").display());
+    let out = run(&[
+        "deck",
+        "source",
+        "add",
+        "decks/d.md",
+        "live/a.rs",
+        "--root",
+        &root_arg,
+        "--topic",
+        "topic-al",
+    ]);
+    assert!(out.status.success(), "add: {}", stderr(&out));
+    let config = write(
+        home.path(),
+        "config.toml",
+        &format!(
+            "decks_dir = {:?}\n\n[exam]\nextra = \"{}\"\n",
+            root.path().as_os_str(),
+            "x".repeat(330_000)
+        ),
+    );
+    let warning_of = |report: &str| {
+        report
+            .lines()
+            .filter(|line| line.starts_with("warning: "))
+            .find_map(|line| {
+                line.find("topic `Alpha` exceeds copilot's limit: ")
+                    .map(|at| line[at..].to_string())
+            })
+    };
+
+    let by_path = stderr(&run(&["doctor", "--config", &config, "decks/d.md"]));
+    let expected = warning_of(&by_path);
+    assert!(
+        expected
+            .as_deref()
+            .is_some_and(|line| line.ends_with(" of 128000 estimated tokens")),
+        "explicit path: the global extra pushes the topic over copilot's limit: {by_path}"
+    );
+
+    let without_path = stderr(&run(&["doctor", "--config", &config]));
+    assert_eq!(
+        expected,
+        warning_of(&without_path),
+        "no path: the same warning with the same size: {without_path}"
+    );
+}
+
+#[test]
 fn doctor_repair_sources_refreezes_a_drifted_source_only_when_asked() {
     let root = source_workspace();
     let home = TempDir::new().unwrap();

@@ -1052,10 +1052,10 @@ fn audit_asset_root(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut R
     }
 }
 
-fn workspace_findings(dir: &Path, drift: DriftChecks) -> Report {
+fn workspace_findings(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
     let mut report = Report::new(drift);
     for root in alix::workspace::roots_under(dir) {
-        let nested = findings_in(&root, drift);
+        let nested = findings_in(&root, drift, exam);
         report.errors.extend(nested.errors);
         report.warnings.extend(nested.warnings);
         report.notes.extend(nested.notes);
@@ -1081,8 +1081,11 @@ fn workspace_manifest_findings(dir: &Path, report: &mut Report) {
     }
 }
 
-fn findings_in(dir: &Path, drift: DriftChecks) -> Report {
-    let mut report = Report::new(drift);
+fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
+    let mut report = Report {
+        exam: exam.clone(),
+        ..Report::new(drift)
+    };
     workspace_manifest_findings(dir, &mut report);
     if alix::workspace::has_manifest(dir)
         && let Err(error) = alix::workspace::Workspace::load(dir)
@@ -1977,7 +1980,7 @@ pub(crate) fn doctor_cmd(args: DoctorArgs) -> Result<()> {
     }
     // A standalone deck-file target returned above and skips this: it stays
     // dedup-blind by design.
-    if workspace_findings(&decks_dir, drift).render() {
+    if workspace_findings(&decks_dir, drift, &config.exam).render() {
         failed = true;
     }
     if args.backends || args.all_backends {
@@ -2121,7 +2124,7 @@ mod tests {
     fn doctor_names_the_copy_of_a_topic_id_shared_by_two_decks() {
         let dir = tempfile::tempdir().unwrap();
         let (one, two) = topic_pair(dir.path());
-        let report = findings_in(dir.path(), DriftChecks::default());
+        let report = findings_in(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let errors = topic_errors(&report);
         assert_eq!(1, errors.len(), "one error per finding: {errors:?}");
         for site in [
@@ -2159,7 +2162,7 @@ mod tests {
         let (one, _) = topic_pair(dir.path());
         let deck = Deck::load(&one).unwrap();
         let refusal = alix::topic::duplicated_topics(&deck, Some(dir.path()))[0].to_string();
-        let report = findings_in(dir.path(), DriftChecks::default());
+        let report = findings_in(dir.path(), DriftChecks::default(), &ExamConfig::default());
         assert_eq!(vec![&refusal], topic_errors(&report), "cross-deck");
 
         let single = tempfile::tempdir().unwrap();
@@ -2212,7 +2215,7 @@ mod tests {
              refreezes it"
         );
         let report_of = |target: &str, drift: DriftChecks| match target {
-            "workspace" => findings_in(ws, drift),
+            "workspace" => findings_in(ws, drift, &ExamConfig::default()),
             _ => check_report(vec![deck.clone()], drift, ExamConfig::default()),
         };
         for target in ["workspace", "deck file"] {
@@ -3311,7 +3314,7 @@ mod tests {
                 return report;
             }
         }
-        let nested = workspace_findings(target, DriftChecks::default());
+        let nested = workspace_findings(target, DriftChecks::default(), &ExamConfig::default());
         report.errors.extend(nested.errors);
         report.warnings.extend(nested.warnings);
         report
@@ -3548,7 +3551,7 @@ mod tests {
         store.get_or_insert("card-orphan");
         store.save().unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -3564,14 +3567,14 @@ mod tests {
     fn a_root_progress_directory_is_ignored_like_any_unknown_directory() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("unknown")).unwrap();
-        let before = workspace_findings(dir.path(), DriftChecks::default());
+        let before = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         let path = dir.path().join("progress/deck-stray.json");
         let mut store = alix::store::Store::open_deck(&path, "deck-stray", "stray.md").unwrap();
         store.get_or_insert("card-stray");
         store.save().unwrap();
 
-        let after = workspace_findings(dir.path(), DriftChecks::default());
+        let after = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         assert_eq!(before.errors, after.errors, "unknown directory errors");
         assert_eq!(
             before.warnings, after.warnings,
@@ -3595,14 +3598,16 @@ mod tests {
                 false,
             ),
         ] {
-            let before = workspace_findings(dir.path(), DriftChecks::default());
+            let before =
+                workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
             let path = progress.join(name);
             if directory {
                 std::fs::create_dir(&path).unwrap();
             } else {
                 std::fs::write(&path, "not json").unwrap();
             }
-            let after = workspace_findings(dir.path(), DriftChecks::default());
+            let after =
+                workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
             assert_eq!(before.errors, after.errors, "{pattern}: doctor errors");
             assert_eq!(
                 before.warnings, after.warnings,
@@ -3611,7 +3616,7 @@ mod tests {
             assert_eq!(before.notes, after.notes, "{pattern}: doctor notes");
         }
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let findings = report
             .warnings
             .iter()
@@ -3641,7 +3646,7 @@ mod tests {
         alix::assets::write_object(dir.path(), "deck-m1", b"excerpt\n", "md").unwrap();
         std::fs::create_dir_all(dir.path().join("assets/deck-zz")).unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         let orphan: Vec<&String> = report
             .warnings
@@ -3677,7 +3682,7 @@ mod tests {
             "the linked orphan blocks sharing: {share_error:#}"
         );
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let findings = report
             .warnings
             .iter()
@@ -3717,7 +3722,7 @@ mod tests {
             "the linked assets root blocks sharing: {share_error:#}"
         );
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let findings = report
             .warnings
             .iter()
@@ -3750,7 +3755,7 @@ mod tests {
         let original = std::fs::metadata(&assets).unwrap().permissions();
         std::fs::set_permissions(&assets, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let stage = tempfile::tempdir().unwrap();
         let share = alix::share::stage_path(dir.path(), stage.path());
 
@@ -3779,7 +3784,7 @@ mod tests {
             .save()
             .unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -3798,7 +3803,7 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
         w(&nested, "loose.md", "## q\na\n");
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -3912,7 +3917,8 @@ mod tests {
                     "{name}: explicit doctor errors were {:?}",
                     explicit.errors
                 );
-                let bare = workspace_findings(root.path(), DriftChecks::default());
+                let bare =
+                    workspace_findings(root.path(), DriftChecks::default(), &ExamConfig::default());
                 assert!(
                     bare.errors
                         .iter()
@@ -4467,7 +4473,7 @@ printf ']}}'
         }
         store.save().unwrap();
 
-        let report = workspace_findings(ws, DriftChecks::default());
+        let report = workspace_findings(ws, DriftChecks::default(), &ExamConfig::default());
 
         let warnings = report.warnings.join("\n");
         assert!(
@@ -4490,7 +4496,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: deck-misplaced\n---\n## q <!-- id: card-q1 -->\na\n",
         );
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         assert!(
             report
                 .warnings
@@ -4515,7 +4521,7 @@ printf ']}}'
         .unwrap();
         let before = std::fs::read(&path).unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report.errors.join("\n").contains("live `at:` citation"),
@@ -4545,7 +4551,7 @@ printf ']}}'
         )
         .unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -4574,7 +4580,7 @@ printf ']}}'
         )
         .unwrap();
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -5078,7 +5084,7 @@ printf ']}}'
         store.get_or_insert("card-parent1");
         store.save().unwrap();
 
-        let report = workspace_findings(dir, DriftChecks::default());
+        let report = workspace_findings(dir, DriftChecks::default(), &ExamConfig::default());
         assert!(
             report.errors.is_empty(),
             "the fixture itself must be clean: {:?}",
@@ -5173,7 +5179,7 @@ printf ']}}'
         store.set_last_launch("orphan-owner", alix::depth::Launch::Recall);
         store.save().unwrap();
 
-        let report = workspace_findings(dir, DriftChecks::default());
+        let report = workspace_findings(dir, DriftChecks::default(), &ExamConfig::default());
         let errors = report.errors.join("\n");
         let warnings = report.warnings.join("\n");
 
@@ -5240,7 +5246,7 @@ printf ']}}'
         );
         w(dir, "notes.md", "one\n");
 
-        let report = workspace_findings(dir, DriftChecks::default());
+        let report = workspace_findings(dir, DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             !report
@@ -5280,7 +5286,7 @@ printf ']}}'
         );
         w(dir.path(), ".alix/progress/deck-deck1.json.bak", "{}");
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
         let warnings = report.warnings.join("\n");
 
         assert!(warnings.contains("orphaned augmentation document"));
@@ -5302,7 +5308,7 @@ printf ']}}'
             r#"{"version":1,"deck_id":"mathdeck","subject":"math.md","revision":1,"cards":{},"records":{},"writer":null}"#,
         );
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -5346,7 +5352,7 @@ printf ']}}'
             ),
         );
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report
@@ -5371,7 +5377,7 @@ printf ']}}'
             "---\nformat-version: 1\nid: \"deck-3nmmy2qkrw2trvvrmbm7ajry9t\"\n---\n## q\na\n<!-- id: card-4jkya9q3m8z0tw5v9y2b4n6d8f -->\n",
         );
 
-        let report = workspace_findings(dir.path(), DriftChecks::default());
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
         assert!(
             report.warnings.is_empty() && report.errors.is_empty(),
@@ -5547,7 +5553,7 @@ printf ']}}'
         store.get_or_insert("card-draft1");
         store.save().unwrap();
 
-        let report = workspace_findings(dir, DriftChecks::default());
+        let report = workspace_findings(dir, DriftChecks::default(), &ExamConfig::default());
         assert!(
             report.errors.is_empty(),
             "the fixture itself must be clean: {:?}",

@@ -415,7 +415,10 @@ pub fn generate_topic(
         .collect(),
     };
     let chosen = crate::exam_ideas::select_ideas(&listed);
-    let chosen_text: Vec<String> = chosen.iter().map(|&at| listed[at].text.clone()).collect();
+    let chosen_text: Vec<String> = chosen
+        .iter()
+        .map(|&at| truncate_chars(&listed[at].text, IDEA_LINE_MAX_CHARS).to_string())
+        .collect();
     let mut questions = with_one_retry(
         job,
         &run,
@@ -4965,6 +4968,61 @@ mod tests {
         assert_eq!(
             limit, sizes[2],
             "the questions retry is the largest prompt and meets the limit exactly: {sizes:?}"
+        );
+    }
+
+    #[test]
+    fn a_stored_idea_over_the_cap_is_cut_before_the_questions_prompt_so_it_fits_the_limit() {
+        let _lock = exec_lock();
+        let kind = crate::config::BackendKind::Codex;
+        let limit = crate::exam_prompt::prompt_limit(kind);
+        let (_at, deck) = workspace_measuring(kind, limit.limit);
+        let fingerprint = deck
+            .sources()
+            .unwrap()
+            .unwrap()
+            .manifest
+            .fingerprints()
+            .unwrap()
+            .get("topic-moves")
+            .unwrap()
+            .to_string();
+        let (ideas_path, _) = exam_files(&deck).unwrap();
+        let mut stored = IdeasDocument::default();
+        stored.topics.insert(
+            "topic-moves".to_string(),
+            IdeaTopic {
+                fingerprint,
+                ideas: ["a", "b", "c"]
+                    .map(|mark| Idea {
+                        text: mark.repeat(801),
+                        ..Idea::default()
+                    })
+                    .to_vec(),
+            },
+        );
+        stored.save(&ideas_path).unwrap();
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[THREE_QUESTIONS]);
+        let (rx, _job) = spawn_prepare(
+            &deck,
+            examined_topics(&deck),
+            ExamConfig::default(),
+            AskConfig {
+                backend: kind,
+                ..ask_config(&cli)
+            },
+        );
+        assert_eq!(Ok(()), rx.recv().unwrap(), "prepared from the stored ideas");
+        let sizes: Vec<u64> = prompts(cli_dir.path())
+            .iter()
+            .map(|prompt| limit.measure.of(prompt))
+            .collect();
+        assert_eq!(1, sizes.len(), "only the questions were asked");
+        assert!(
+            sizes[0] <= limit.limit,
+            "the questions prompt built from stored ideas fits: {sizes:?} against {}",
+            limit.limit
         );
     }
 
