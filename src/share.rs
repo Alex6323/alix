@@ -1441,6 +1441,16 @@ fn land_sources(from: &Path, to: &Path) -> Result<()> {
         .unwrap_or_default();
     let incoming = parent.join(format!(".{name}.landing"));
     let replaced = parent.join(format!(".{name}.replaced"));
+    let roots = to.join(crate::sources::ROOTS);
+    if !to.exists() && replaced.is_dir() {
+        std::fs::rename(&replaced, to)
+            .with_context(|| format!("cannot restore {}", to.display()))?;
+    }
+    let left_roots = incoming.join(crate::sources::ROOTS);
+    if to.is_dir() && !roots.exists() && left_roots.is_file() {
+        std::fs::rename(&left_roots, &roots)
+            .with_context(|| format!("cannot restore {}", roots.display()))?;
+    }
     for leftover in [&incoming, &replaced] {
         if leftover.exists() {
             std::fs::remove_dir_all(leftover)
@@ -1449,9 +1459,8 @@ fn land_sources(from: &Path, to: &Path) -> Result<()> {
     }
     copy_sources_dir(from, &incoming)?;
     if to.is_dir() {
-        let roots = to.join(crate::sources::ROOTS);
         if roots.is_file() {
-            std::fs::rename(&roots, incoming.join(crate::sources::ROOTS))
+            std::fs::copy(&roots, incoming.join(crate::sources::ROOTS))
                 .with_context(|| format!("cannot keep {}", roots.display()))?;
         }
         std::fs::rename(to, &replaced)
@@ -1483,6 +1492,79 @@ mod tests {
         )
         .unwrap();
         crate::assets::write_object(root, "deck-m1", b"excerpt\n", "md").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn landing_sources_again_after_an_interrupted_landing_keeps_the_receivers_roots_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        freeze_one_source(&root, "deck-m1");
+        let to = root.join("sources/deck-m1");
+        let roots = to.join(crate::sources::ROOTS);
+        let roots_bytes = std::fs::read(&roots).unwrap();
+        assert!(
+            roots.is_file(),
+            "precondition: the receiver has a roots file"
+        );
+
+        let bundle = dir.path().join("bundle-sources");
+        copy_sources_dir(&to, &bundle).unwrap();
+        assert!(
+            !bundle.join(crate::sources::ROOTS).exists(),
+            "precondition: the bundle carries no roots file"
+        );
+
+        // A landing folder holding the receiver's only roots file.
+        let incoming = root.join("sources/.deck-m1.landing");
+        copy_sources_dir(&bundle, &incoming).unwrap();
+        std::fs::rename(&roots, incoming.join(crate::sources::ROOTS)).unwrap();
+        assert!(
+            !roots.exists() && to.is_dir(),
+            "precondition: interrupted layout"
+        );
+
+        land_sources(&bundle, &to).unwrap();
+
+        assert_eq!(
+            Some(roots_bytes),
+            std::fs::read(&roots).ok(),
+            "re-running the landing must keep the receiver's own roots file"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn landing_sources_again_after_a_landing_died_between_its_two_renames_keeps_the_roots_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ws");
+        workspace_with_one_deck(&root);
+        freeze_one_source(&root, "deck-m1");
+        let to = root.join("sources/deck-m1");
+        let roots = to.join(crate::sources::ROOTS);
+        let roots_bytes = std::fs::read(&roots).unwrap();
+        let bundle = dir.path().join("bundle-sources");
+        copy_sources_dir(&to, &bundle).unwrap();
+
+        let incoming = root.join("sources/.deck-m1.landing");
+        copy_sources_dir(&bundle, &incoming).unwrap();
+        std::fs::copy(&roots, incoming.join(crate::sources::ROOTS)).unwrap();
+        std::fs::rename(&to, root.join("sources/.deck-m1.replaced")).unwrap();
+        assert!(!to.exists(), "precondition: the old folder was moved aside");
+
+        land_sources(&bundle, &to).unwrap();
+
+        assert_eq!(
+            Some(roots_bytes),
+            std::fs::read(&roots).ok(),
+            "re-running the landing must keep the receiver's own roots file"
+        );
+        assert!(
+            !root.join("sources/.deck-m1.replaced").exists()
+                && !root.join("sources/.deck-m1.landing").exists(),
+            "the rerun leaves no landing leftovers"
+        );
     }
 
     #[cfg(unix)]
