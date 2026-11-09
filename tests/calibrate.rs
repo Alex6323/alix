@@ -42,7 +42,7 @@ use alix::{
 const CALIBRATED: [(BackendKind, Option<&str>, Option<&str>); 3] = [
     (BackendKind::Claude, Some("haiku"), None),
     (BackendKind::Codex, None, Some("none")),
-    (BackendKind::Copilot, Some("gpt-5-mini"), None),
+    (BackendKind::Copilot, Some("auto"), None),
 ];
 
 #[test]
