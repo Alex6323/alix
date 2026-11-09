@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show AnyhowException;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/exam_screen.dart';
@@ -696,6 +697,21 @@ void main() {
     await tester.pump();
 
     expect(events, ['ideas', 'result', 'clear']);
+  });
+
+  testWidgets('a result the core refuses to record shows its reason and still renders the results',
+      (tester) async {
+    const reason = 'the exam material changed while this exam was open';
+    final client = FakeServerClient(examGetReplies: const [resultsMastered]);
+    await pumpExam(
+      tester,
+      client: client,
+      applyResult: (_, _) => throw AnyhowException(reason),
+    );
+    await tester.pump();
+
+    expect(find.text(reason), findsOneWidget);
+    expect(find.text('1 / 1'), findsWidgets);
   });
 
   testWidgets('a new sitting sends the saved ideas document', (tester) async {

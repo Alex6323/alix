@@ -415,6 +415,13 @@ void main() {
       await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
       expect(find.text('0 / 1'), findsOneWidget);
+      expect(
+        find.textContaining('the exam material changed'),
+        findsOneWidget,
+        reason: 'this phone deck has no sources, so the core records no result',
+      );
+      ScaffoldMessenger.of(tester.element(find.text('0 / 1'))).hideCurrentSnackBar();
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Turn the gaps into cards'));
       await tester.pumpAndSettle();
 

@@ -7,7 +7,7 @@ use crate::{
     deck::Deck,
     depth::Depth,
     sources::Manifest,
-    store::{ExamStamp, Store},
+    store::{ExamStamp, SittingRecord, Store},
     token,
 };
 
@@ -379,6 +379,40 @@ fn stamp_of(pairs: &[(String, String)], unsourced_cards: Vec<String>) -> ExamSta
         sourced: sourced_hash(&pairs),
         unsourced_cards,
     }
+}
+
+pub const MATERIAL_CHANGED: &str = "the exam material changed while this exam was open, so nothing was recorded; take the exam again";
+
+pub fn record_sitting_checked(
+    store: &mut Store,
+    deck: &Deck,
+    deck_topics: &[ExamTopic],
+    record: &SittingRecord,
+    now_ms: u64,
+    eligible: bool,
+    stamp: &ExamStamp,
+) -> anyhow::Result<bool> {
+    if !material_unchanged(deck, record, stamp) {
+        anyhow::bail!(MATERIAL_CHANGED);
+    }
+    let deck_id = deck.deck_token.as_deref().unwrap_or_default();
+    Ok(store.record_sitting(deck_id, deck_topics, record, now_ms, eligible, stamp))
+}
+
+fn material_unchanged(deck: &Deck, record: &SittingRecord, stamp: &ExamStamp) -> bool {
+    let Ok(Some(sources)) = deck.sources() else {
+        return false;
+    };
+    let (_, pairs) = topic_sourcing(deck, Some(&sources.manifest));
+    let current: BTreeMap<&str, &str> = pairs
+        .iter()
+        .map(|(topic_id, fingerprint)| (topic_id.as_str(), fingerprint.as_str()))
+        .collect();
+    stamp_of(&pairs, Vec::new()).sourced == stamp.sourced
+        && record
+            .topics
+            .iter()
+            .all(|topic| current.get(topic.topic_id.as_str()) == Some(&topic.fingerprint.as_str()))
 }
 
 pub fn current_stamp(deck: &Deck, personal: &[Card], manifest: Option<&Manifest>) -> ExamStamp {

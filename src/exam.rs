@@ -1332,6 +1332,28 @@ impl Sitting {
         }
     }
 
+    fn record(
+        &self,
+        store: &mut Store,
+        record: &crate::store::SittingRecord,
+        now_ms: u64,
+    ) -> Result<bool> {
+        let path = self
+            .deck_path
+            .as_deref()
+            .context("the sitting has no deck file to record against")?;
+        let deck = Deck::load(path)?;
+        crate::exam_status::record_sitting_checked(
+            store,
+            &deck,
+            &self.deck_topics,
+            record,
+            now_ms,
+            self.start.eligible,
+            &self.start.stamp,
+        )
+    }
+
     pub fn poll(
         &mut self,
         store: &mut Store,
@@ -1346,16 +1368,14 @@ impl Sitting {
             Some(Effect::Graded) => {
                 if let Some(result) = &self.result {
                     let record = sitting_record(&self.topics, self.full(), result);
-                    self.unlocked = store.record_sitting(
-                        &self.deck_token,
-                        &self.deck_topics,
-                        &record,
-                        now_ms,
-                        self.start.eligible,
-                        &self.start.stamp,
-                    );
+                    match self.record(store, &record, now_ms) {
+                        Ok(unlocked) => {
+                            self.unlocked = unlocked;
+                            store_mutated = true;
+                        }
+                        Err(error) => self.error = Some(format!("{error:#}")),
+                    }
                 }
-                store_mutated = true;
             }
             Some(Effect::RemediationCards(by_topic)) => {
                 store_mutated = true;
@@ -3388,6 +3408,73 @@ mod tests {
             "the full count"
         );
         assert!(!s.can_remediate());
+    }
+
+    #[test]
+    fn a_sitting_does_not_unlock_after_its_source_changes_before_grading() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let mut sitting = Sitting::start(
+            &deck,
+            sitting_start(&deck, &store, 0, None),
+            Strictness::Strict,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        drain(&mut sitting, &mut store);
+        assert_eq!(&Phase::Answering, sitting.phase());
+
+        ws.write_live("s.txt", b"c now stands for a changed concept.\n");
+        sources::commands::update(
+            &ws.deck(),
+            &sources::source_id(b"c stands for a concept.\n"),
+            &ws.live().join("s.txt"),
+            None,
+            false,
+            &ExamConfig::default(),
+        )
+        .unwrap();
+
+        sitting.set_answer("a".to_string());
+        sitting.next();
+        sitting.set_answer("b".to_string());
+        sitting.submit();
+        drain(&mut sitting, &mut store);
+
+        assert_eq!(&Phase::Results, sitting.phase());
+        assert!(sitting.result().unwrap().count().passed);
+        assert!(
+            !store.deck_passed(DECK),
+            "an exam of the old source must not latch standing after the source changed"
+        );
+        assert!(
+            !sitting.unlocked(),
+            "an exam of the old source must not unlock dependent decks"
+        );
+        assert_eq!(
+            Some(crate::exam_status::MATERIAL_CHANGED),
+            sitting.error(),
+            "the learner is told the material changed"
+        );
+        assert_eq!(
+            (None, None, None, None),
+            (
+                store.topic_result(DECK, DECK),
+                store.full_exam_result(DECK),
+                store.exam_stamp(DECK),
+                store.deck_mastered_at(DECK),
+            ),
+            "nothing of the sitting is recorded"
+        );
     }
 
     #[test]

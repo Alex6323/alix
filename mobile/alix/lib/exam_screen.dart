@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
@@ -255,7 +256,11 @@ class _ExamScreenState extends State<ExamScreen> {
     if (dto.phase == 'results' && !_resultApplied) {
       final ideas = dto.ideas;
       if (ideas != null) widget.saveIdeas?.call(ideas);
-      _examHighMark = widget.applyResult(dto, widget.nowMs());
+      try {
+        _examHighMark = widget.applyResult(dto, widget.nowMs());
+      } catch (error) {
+        _snack(bridgeErrorText(error));
+      }
       _resultApplied = true;
       widget.clearAnswers?.call();
     }

@@ -246,7 +246,9 @@ A sitting reports points, not a verdict: each Pass is worth 1, each Partial
 0.5, each Fail 0, shown as `17 / 18` or `17.5 / 18`, with the same count for
 each examined topic and the shape of each question. The deck's progress
 records each examined topic's latest result, together with the fingerprint
-of the sources it was examined over:
+of the sources it was examined over. If an examined topic's sources change
+(or stop loading) while the exam is open, the sitting records nothing at all,
+no result and no standing, and says the exam must be taken again:
 
 - A **topic passes** when its share of Pass answers reaches `pass_threshold`
   (a fraction; 1.0, every answer, by default; a Partial counts as no Pass

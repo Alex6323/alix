@@ -233,7 +233,15 @@ pub fn apply_exam_result(
         sourced: outcome.stamp.sourced,
         unsourced_cards: outcome.stamp.unsourced_cards,
     };
-    let unlocked = store.record_exam_result(&deck, &record, now_ms, outcome.eligible, &stamp);
+    let unlocked = alix::exam_status::record_sitting_checked(
+        &mut store,
+        &deck,
+        &alix::exam_status::examined_topics(&deck),
+        &record,
+        now_ms,
+        outcome.eligible,
+        &stamp,
+    )?;
     store.save()?;
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     Ok(ExamApplied {
@@ -544,6 +552,56 @@ mod tests {
             None,
             store.deck_mastered_at("deck-d"),
             "mastered needs a full 100% sitting"
+        );
+    }
+
+    #[test]
+    fn a_phone_result_over_sources_changed_after_its_start_records_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let start = exam_sitting_start(deck_path.clone(), root_arg(root), false, NOW).unwrap();
+        let passed = outcome(
+            &start,
+            vec![
+                topic_outcome(&path, "A", true),
+                topic_outcome(&path, "B", true),
+            ],
+            true,
+        );
+
+        let live = root.join("live/d.md.txt");
+        std::fs::write(&live, "the changed source of d.md\n").unwrap();
+        alix::sources::commands::update(
+            &path,
+            &alix::sources::source_id(b"the source of d.md\n"),
+            &live,
+            None,
+            false,
+            &alix::config::ExamConfig::default(),
+        )
+        .unwrap();
+
+        let error = apply_exam_result(deck_path, root_arg(root), passed, NOW, None).unwrap_err();
+        assert_eq!(
+            alix::exam_status::MATERIAL_CHANGED,
+            format!("{error:#}"),
+            "the phone is told the material changed"
+        );
+        let store = reopened(&path, root);
+        assert!(!store.deck_passed("deck-d"), "no standing latches");
+        assert_eq!(None, store.deck_mastered_at("deck-d"), "no mastery latches");
+        assert_eq!(None, store.exam_stamp("deck-d"), "no stamp is written");
+        assert_eq!(
+            None,
+            store.topic_result("deck-d", "topic-a"),
+            "no topic result is written"
+        );
+        assert_eq!(
+            None,
+            store.full_exam_result("deck-d"),
+            "no full count is written"
         );
     }
 
