@@ -1657,11 +1657,8 @@ fn repair_sources(paths: &[PathBuf]) -> Result<()> {
         for source in &report.missing {
             eprintln!("warning: {at}: source `{source}` is missing on this machine; kept");
         }
-        for (source, drift) in &report.skipped {
-            eprintln!(
-                "warning: {at}: source `{source}` is {}, so it was not refrozen",
-                drift.label()
-            );
+        for (source, reason) in &report.skipped {
+            eprintln!("warning: {at}: source `{source}` was not refrozen: {reason}");
         }
         for name in &report.collected {
             println!("{at}: deleted unused copy {name}");
@@ -2203,6 +2200,70 @@ mod tests {
             let errors = report_of(target, DriftChecks::default()).errors;
             assert!(errors.contains(&damaged), "{target}: damage: {errors:?}");
         }
+    }
+
+    #[test]
+    fn a_duplicated_topic_id_is_one_error_and_never_hides_a_binding_to_no_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        w(ws, "alix.toml", "");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::create_dir_all(ws.join("live")).unwrap();
+        w(&ws.join("live"), "a.rs", "a\n");
+        let deck = ws.join("decks").join("d.md");
+        let text = "---\nid: \"deck-sourced\"\n---\n# A\n<!-- id: topic-alpha -->\n## q\na\n<!-- id: \
+                    card-q -->\n# B\n<!-- id: topic-beta -->\n## r\nb\n<!-- id: card-r -->\n";
+        std::fs::write(&deck, text).unwrap();
+        alix::sources::commands::add(alix::sources::commands::AddRequest {
+            deck: &deck,
+            files: vec![ws.join("live").join("a.rs")],
+            root: Some(("sdk".to_string(), ws.join("live"))),
+            key: None,
+            topics: vec!["topic-alpha".to_string(), "topic-beta".to_string()],
+        })
+        .unwrap();
+        std::fs::write(&deck, text.replace("topic-beta", "topic-alpha")).unwrap();
+        let mut report = Report::default();
+        deck_findings(&deck, &mut report);
+        let mentions = |needle: &str| {
+            report
+                .errors
+                .iter()
+                .filter(|error| error.contains(needle))
+                .count()
+        };
+        assert_eq!(
+            (1, 0),
+            (
+                mentions("topic id `topic-alpha` is also at"),
+                mentions("is on two topics")
+            ),
+            "the duplicate is reported once, by the topic lint: {:?}",
+            report.errors
+        );
+        assert_eq!(
+            1,
+            mentions("is bound to `topic-beta`, which names no topic of the deck"),
+            "the binding to the topic the deck lost is still named: {:?}",
+            report.errors
+        );
+
+        std::fs::write(
+            &deck,
+            format!("{text}# C\n<!-- id: topic-beta -->\n## s\nc\n<!-- id: card-s -->\n"),
+        )
+        .unwrap();
+        let mut report = Report::default();
+        deck_findings(&deck, &mut report);
+        let lines: Vec<&String> = report
+            .errors
+            .iter()
+            .filter(|error| error.contains("topic-beta"))
+            .collect();
+        assert!(
+            lines.len() == 1 && lines[0].contains("is also at"),
+            "only a duplicate: one line, the topic lint's: {lines:?}"
+        );
     }
 
     #[test]

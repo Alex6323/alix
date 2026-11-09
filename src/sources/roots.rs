@@ -49,6 +49,17 @@ pub(super) fn root_problem(dir: &Path) -> Option<&'static str> {
     }
 }
 
+pub(super) fn root_issue(roots: &BTreeMap<String, PathBuf>, key: &str) -> Option<String> {
+    match roots.get(key) {
+        None => Some("no root on this machine".to_string()),
+        Some(dir) => root_problem(dir).map(|problem| format!("root `{}` {problem}", dir.display())),
+    }
+}
+
+pub(super) fn root_fix(deck_id: &str, key: &str) -> String {
+    format!("(alix deck source root set {deck_id} {key} <dir>)")
+}
+
 pub fn canonical_folder(dir: &Path) -> Result<PathBuf, SourceError> {
     let canonical = std::fs::canonicalize(dir).map_err(io_error(dir))?;
     if !canonical.is_dir() {

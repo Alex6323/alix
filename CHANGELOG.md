@@ -26,8 +26,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changed, is gone, or cannot be read, and names each key with no usable root
   on this machine with the command that saves one. `--repair-sources`
   refreezes changed sources, keeping their bindings; it refuses the whole
-  repair when two sources would hold the same bytes, and keeps a source whose
-  live file is gone.
+  repair when two sources would hold the same bytes, keeps a source whose
+  live file is gone, names why a source under an unusable root was skipped,
+  and deletes copies no row names. `alix deck source list` shows a key whose
+  saved root is not an absolute existing folder as `unchecked`, with the
+  reason.
 
 - Topics carry permanent IDs: `alix deck init` and opening a deck write one
   `<!-- id: topic-<token> -->` line closing each `#` heading block (after its

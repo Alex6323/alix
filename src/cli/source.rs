@@ -227,12 +227,15 @@ pub(crate) fn run(action: SourceAction) -> Result<()> {
             }
             println!("sources:");
             for source in &listing.sources {
+                let drift = match &source.root_issue {
+                    Some(issue) => format!("{} ({issue})", source.drift.label()),
+                    None => source.drift.label().to_string(),
+                };
                 println!(
-                    "  {}  {} bytes  {}  {}  bound to {}",
+                    "  {}  {} bytes  {}  {drift}  bound to {}",
                     source.id,
                     source.bytes,
                     source.path,
-                    source.drift.label(),
                     source.bound.join(", ")
                 );
             }

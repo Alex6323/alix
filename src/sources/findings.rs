@@ -4,10 +4,10 @@ use std::{
 };
 
 use super::{
-    DeckSources, DisplayPath, Manifest, Roots,
+    DeckSources, DisplayPath, Manifest, Roots, SourceError,
     commands::{Drift, live_state},
     load_verified,
-    roots::root_problem,
+    roots::{root_fix, root_issue},
     stray_copies,
 };
 use crate::{deck::Deck, workspace::WorkspaceFiles};
@@ -35,8 +35,10 @@ pub fn deck_findings(workspace_root: &Path, deck: &Deck, check_drift: bool) -> F
             return findings;
         }
         Ok(Some(sources)) => {
-            if let Err(error) = sources.validate_bindings(deck) {
-                findings.errors.push(error.to_string());
+            match sources.validate_bindings(deck) {
+                // Doctor's topic lint already reports a duplicated id.
+                Ok(()) | Err(SourceError::DuplicateTopicId(_)) => {}
+                Err(error) => findings.errors.push(error.to_string()),
             }
             residue_notes(&dir, sources.residue(), &mut findings);
             let DeckSources { manifest, .. } = sources;
@@ -56,11 +58,7 @@ pub fn deck_findings(workspace_root: &Path, deck: &Deck, check_drift: bool) -> F
     findings
 }
 
-fn residue_notes(
-    dir: &Path,
-    residue: Result<Vec<String>, super::SourceError>,
-    findings: &mut Findings,
-) {
+fn residue_notes(dir: &Path, residue: Result<Vec<String>, SourceError>, findings: &mut Findings) {
     match residue {
         Ok(names) => {
             for name in names {
@@ -90,7 +88,7 @@ fn drift_findings(
     for (display, id) in &rows {
         let usable = roots
             .get(&display.key)
-            .filter(|dir| root_problem(dir).is_none());
+            .filter(|_| root_issue(roots, &display.key).is_none());
         let Some(dir) = usable else {
             *unchecked.entry(display.key.as_str()).or_default() += 1;
             continue;
@@ -118,20 +116,11 @@ fn drift_findings(
     }
     for (key, count) in unchecked {
         let sources = if count == 1 { "source" } else { "sources" };
-        let fix = format!("(alix deck source root set {deck_id} {key} <dir>)");
-        let line = match roots
-            .get(key)
-            .and_then(|dir| Some((dir, root_problem(dir)?)))
-        {
-            Some((dir, problem)) => format!(
-                "`{key}`: root `{}` {problem}, {count} {sources} not checked for drift {fix}",
-                dir.display()
-            ),
-            None => format!(
-                "`{key}`: no root on this machine, {count} {sources} not checked for drift {fix}"
-            ),
-        };
-        findings.warnings.push(line);
+        let issue = root_issue(roots, key).unwrap_or_default();
+        let fix = root_fix(deck_id, key);
+        findings.warnings.push(format!(
+            "`{key}`: {issue}, {count} {sources} not checked for drift {fix}"
+        ));
     }
 }
 

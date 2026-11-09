@@ -10,7 +10,7 @@ use super::{
     binding_of, canonical_folder, copy_name, line_count, load_verified,
     manifest::topic_of,
     parse_binding,
-    roots::root_problem,
+    roots::{root_fix, root_issue},
     source_id, stray_copies,
     transaction::{Candidate, CommitReport, commit, save_roots},
 };
@@ -55,7 +55,7 @@ pub struct UpdateReport {
 pub struct RepairReport {
     pub refrozen: Vec<(String, String)>,
     pub missing: Vec<String>,
-    pub skipped: Vec<(String, Drift)>,
+    pub skipped: Vec<(String, String)>,
     pub kept_ranges: Vec<(String, String)>,
     pub collected: Vec<String>,
 }
@@ -88,6 +88,7 @@ pub struct SourceLine {
     pub path: String,
     pub bound: Vec<String>,
     pub drift: Drift,
+    pub root_issue: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -701,9 +702,10 @@ pub fn list(deck: &Path) -> Result<Listing> {
     let mut sources = Vec::with_capacity(opened.manifest.sources.len());
     for (id, row) in &opened.manifest.sources {
         let display: DisplayPath = row.path.parse()?;
-        let drift = match opened.roots.roots.get(&display.key) {
-            Some(dir) => live_state(id, &display, dir).0,
-            None => Drift::Unchecked,
+        let issue = root_issue(&opened.roots.roots, &display.key);
+        let drift = match (&issue, opened.roots.roots.get(&display.key)) {
+            (None, Some(dir)) => live_state(id, &display, dir).0,
+            _ => Drift::Unchecked,
         };
         sources.push((
             display,
@@ -713,6 +715,7 @@ pub fn list(deck: &Path) -> Result<Listing> {
                 path: row.path.clone(),
                 bound: row.bound_to.clone(),
                 drift,
+                root_issue: issue,
             },
         ));
     }
@@ -757,8 +760,10 @@ pub fn repair(deck: &Path) -> Result<RepairReport> {
     ordered.sort_by(|a, b| a.1.path.cmp(&b.1.path));
     for (id, row) in ordered {
         let display: DisplayPath = row.path.parse()?;
-        let state = match opened.roots.roots.get(&display.key) {
-            Some(dir) if root_problem(dir).is_none() => live_state(id, &display, dir),
+        let key = display.key.as_str();
+        let issue = root_issue(&opened.roots.roots, key);
+        let state = match (&issue, opened.roots.roots.get(key)) {
+            (None, Some(dir)) => live_state(id, &display, dir),
             _ => (Drift::Unchecked, None),
         };
         let kept_id = match state {
@@ -783,7 +788,18 @@ pub fn repair(deck: &Path) -> Result<RepairReport> {
                 id.clone()
             }
             (other, _) => {
-                report.skipped.push((row.path.clone(), other));
+                let reason = match other {
+                    Drift::Linked => {
+                        format!("the live file is a symbolic link or leaves root `{key}`")
+                    }
+                    Drift::Unreadable => "the live file cannot be read".to_string(),
+                    _ => format!(
+                        "`{key}`: {} {}",
+                        issue.as_deref().unwrap_or_default(),
+                        root_fix(&opened.deck_id, key)
+                    ),
+                };
+                report.skipped.push((row.path.clone(), reason));
                 id.clone()
             }
         };
@@ -1574,14 +1590,37 @@ mod tests {
         let before = workspace.snapshot();
         let report = repair(&workspace.deck()).unwrap();
         assert_eq!(
-            vec![
-                ("sdk:a.rs".to_string(), Drift::Unchecked),
-                ("sdk:c.rs".to_string(), Drift::Unchecked)
-            ],
+            ["sdk:a.rs", "sdk:c.rs"]
+                .map(|path| {
+                    (
+                        path.to_string(),
+                        "`sdk`: root `src` is not an absolute path (alix deck source root set \
+                         deck-fixture sdk <dir>)"
+                            .to_string(),
+                    )
+                })
+                .to_vec(),
             report.skipped,
-            "a root that is not an absolute folder is never used"
+            "a root that is not an absolute folder is never used, and the reason names the fix"
         );
         assert_eq!(before, workspace.snapshot(), "unchecked: nothing written");
+        let listed: Vec<(Drift, Option<String>)> = list(&workspace.deck())
+            .unwrap()
+            .sources
+            .into_iter()
+            .map(|line| (line.drift, line.root_issue))
+            .collect();
+        assert_eq!(
+            vec![
+                (
+                    Drift::Unchecked,
+                    Some("root `src` is not an absolute path".to_string())
+                );
+                2
+            ],
+            listed,
+            "list: a relative root never resolves against the cwd"
+        );
     }
 
     #[test]

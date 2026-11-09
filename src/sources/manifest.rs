@@ -286,20 +286,21 @@ impl DeckSources {
 
     pub fn validate_bindings(&self, deck: &Deck) -> Result<(), SourceError> {
         let ids: Vec<String> = deck.topic_ids().into_iter().flatten().collect();
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
-        if let Some(repeated) = ids.iter().find(|id| !seen.insert(id.as_str())) {
-            return Err(SourceError::DuplicateTopicId(repeated.clone()));
-        }
+        let known: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
         for (id, row) in &self.manifest.sources {
             for entry in &row.bound_to {
                 let topic = topic_of(entry);
-                if !seen.contains(topic) {
+                if !known.contains(topic) {
                     return Err(SourceError::UnknownTopic {
                         id: id.clone(),
                         topic: topic.to_string(),
                     });
                 }
             }
+        }
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        if let Some(repeated) = ids.iter().find(|id| !seen.insert(id.as_str())) {
+            return Err(SourceError::DuplicateTopicId(repeated.clone()));
         }
         Ok(())
     }
@@ -781,7 +782,8 @@ pub(super) mod tests {
 
         let repeated = write_deck(
             dir.path(),
-            "# A\n<!-- id: topic-aaaa -->\n## q\na\n# B\n<!-- id: topic-aaaa -->\n## r\nb\n",
+            "# A\n<!-- id: topic-aaaa -->\n## q\na\n# B\n<!-- id: topic-aaaa -->\n## r\nb\n# C\n<!-- \
+             id: topic-bbbb -->\n",
         );
         assert!(
             matches!(
@@ -789,6 +791,13 @@ pub(super) mod tests {
                 Err(SourceError::DuplicateTopicId(topic)) if topic == "topic-aaaa"
             ),
             "a duplicated topic id refuses the bindings"
+        );
+        assert!(
+            matches!(
+                unknown.validate_bindings(&repeated),
+                Err(SourceError::UnknownTopic { topic, .. }) if topic == "topic-zzzz"
+            ),
+            "a binding to no topic is named even beside a duplicated id"
         );
     }
 

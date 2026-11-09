@@ -88,7 +88,9 @@ changed, keeping its bindings and printing each kept range for review. It
 refuses the whole repair when two sources would end up with the same bytes,
 naming both, or when a range would lie beyond a new copy's last line. A live
 file that is gone is reported and its source kept; a source under a key
-with no usable root is never refrozen.
+with no usable root is never refrozen, and the warning names why and the
+`root set` command that fixes it. The repair also deletes copies no row
+names.
 
 ## Sitting the exam
 

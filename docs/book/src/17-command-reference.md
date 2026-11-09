@@ -181,7 +181,9 @@ The rest of the AI-and-deck surface:
     source with its id, bytes, display path, drift (`same`, `changed`,
     `missing`, `unreadable`, `linked` for a live path that is a symbolic
     link or leaves its root, which is never followed, or `unchecked` for a
-    key without a root), and bindings.
+    key without a usable root, followed by the reason: no root on this
+    machine, or a saved root that is not an absolute existing folder), and
+    bindings.
 - `alix deck copy <deck> <workspace>`: copy one initialized workspace member,
   its owned frozen assets, and its augmentation into another workspace. Stable
   deck and card IDs are preserved; progress is not copied.
@@ -372,7 +374,8 @@ notes it.
   range for review. Refused as a whole when two sources would hold the same
   bytes or a range would lie beyond a new copy's last line. A live file that
   is gone is reported and its source kept; a key without a usable root is
-  never read.
+  never read, and the warning names why with the `alix deck source root set`
+  command that fixes it. Copies no row names are deleted.
 - `alix doctor [dir-or-deck] --repair-diagrams`: after you review the
   reported [diagram findings](06-cloze-direction-images.md), delete stamps
   attached to no fence and re-freeze every stale or unfrozen fence
