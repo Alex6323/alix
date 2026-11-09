@@ -14,9 +14,9 @@ use crate::{
     cite::GeneratedRoot,
     config::{AskConfig, GenerateCardStyle, GenerateDeckConfig},
     deck::is_url,
-    library::TopicSources,
     parser,
     source::resolve_source,
+    sources::commands::TopicSources,
 };
 
 pub const DEFAULT_GOAL: &str = "understand the whole source";
@@ -328,6 +328,8 @@ block fronts, `> [!NOTE]` notes, and any `<!-- key: value -->` directive lines. 
 cloze card keeps its sentence on the `## ` line and its \
 `<!-- blank: span hidden=\"...\" -->` comments directly below it, with no answer \
 lines.
+- Keep every `# ` topic heading exactly as written, in its order: never merge, \
+rename, reorder, or drop a topic, and keep each card under its topic.
 - Preserve the good cards and their order; do not invent filler to hit a count.
 
 Output ONLY the improved deck — no commentary, no markdown code fences.
@@ -426,7 +428,10 @@ struct ReturnedSource {
 
 impl ReturnedSource {
     fn resolve(self, root: &Path) -> (PathBuf, Option<String>) {
-        let lines = self.lines.filter(|lines| !lines.trim().is_empty());
+        let lines = self
+            .lines
+            .map(|lines| lines.split_whitespace().collect::<String>())
+            .filter(|lines| !lines.is_empty());
         (root.join(self.path), lines)
     }
 }
@@ -438,11 +443,10 @@ pub struct GeneratedDeck {
 }
 
 fn strip_json_fence(text: &str) -> &str {
-    let trimmed = text.trim();
-    let Some(rest) = trimmed.strip_prefix("```") else {
-        return trimmed;
-    };
-    let body = rest.split_once('\n').map_or("", |(_, body)| body);
+    let mut body = text.trim();
+    if let Some(rest) = body.strip_prefix("```") {
+        body = rest.split_once('\n').map_or("", |(_, body)| body);
+    }
     body.trim_end().strip_suffix("```").unwrap_or(body).trim()
 }
 
@@ -459,7 +463,7 @@ pub(crate) fn parse_source_list(json: &str, root: &Path) -> Result<Vec<(PathBuf,
 pub fn parse_generated(text: &str, sources: &str, root: &Path) -> Result<GeneratedDeck> {
     let returned: Vec<ReturnedTopic> = serde_json::from_str(strip_json_fence(sources))
         .context("the model's list of sources is not the JSON array it was asked for")?;
-    let parsed = parser::parse("generated.md", text).map_err(|error| {
+    let parsed = parser::parse("generated.md", &parser::normalize(text)).map_err(|error| {
         anyhow::anyhow!(
             "the generated deck does not parse ({error}), so its sources cannot be bound"
         )
@@ -494,8 +498,6 @@ pub fn parse_generated(text: &str, sources: &str, root: &Path) -> Result<Generat
     })
 }
 
-/// The topic sources of a local generation and the root (key and folder) its
-/// files are frozen under.
 pub fn generated_sources(
     source: &str,
     root: &GeneratedRoot,
@@ -527,7 +529,7 @@ pub fn generated_sources(
 
 impl GeneratedDeck {
     pub fn whole_file(text: &str, file: &Path) -> Result<Self> {
-        let parsed = parser::parse("generated.md", text).map_err(|error| {
+        let parsed = parser::parse("generated.md", &parser::normalize(text)).map_err(|error| {
             anyhow::anyhow!(
                 "the generated deck does not parse ({error}), so its source cannot be bound"
             )
@@ -1361,6 +1363,10 @@ mod tests {
         assert!(p.contains("one row per pair"));
         assert!(p.ends_with("---\nlink: u\n---\n\n## Q\nA\n"));
         assert!(p.contains("`---` frontmatter block"));
+        assert!(
+            p.contains("Keep every `# ` topic heading exactly as written"),
+            "the reviewer keeps the headings the sources are bound to"
+        );
     }
 
     #[test]
@@ -2044,6 +2050,92 @@ mod tests {
                 "refusal: no `{folder}/` folder is left"
             );
         }
+    }
+
+    #[test]
+    fn model_shaped_source_lists_bind_like_their_plain_spelling() {
+        let deck = "# Alpha\n\n## What is a?\nThe first letter\n\n# Beta\n\n## What is b?\nThe second letter\n";
+        let plain = "[{\"topic\": \"Alpha\", \"sources\": [{\"path\": \"a.md\", \"lines\": \"1-2,3\"}]}, {\"topic\": \"Beta\", \"sources\": [{\"path\": \"a.md\"}]}]";
+        let cases = [
+            ("spaces in ranges", plain.replace("1-2,3", "1 - 2, 3")),
+            (
+                "a second spelling",
+                plain.replace("\"path\": \"a.md\"}", "\"path\": \"sub/../a.md\"}"),
+            ),
+            ("an outer fence", format!("{plain}\n```")),
+            ("a json fence", format!("```json\n{plain}\n```")),
+        ];
+        let bind = |sources: &str| {
+            let (_temp, decks, source) = generation_workspace();
+            std::fs::write(source.join("a.md"), "one\ntwo\nthree\n").unwrap();
+            std::fs::create_dir(source.join("sub")).unwrap();
+            let generated = parse_generated(deck, sources, &source)?;
+            let (placed, _) = crate::library::place_sourced_deck(
+                &decks,
+                "gen.md",
+                &generated.text,
+                &generated.topic_sources,
+                ("src".to_string(), source.clone()),
+                &crate::config::ExamConfig::default(),
+            )?;
+            let (ids, rows) = bound(&decks, &placed.path);
+            let names: Vec<String> = ids.into_iter().flatten().collect();
+            anyhow::Ok(
+                rows.into_iter()
+                    .map(|(path, entries)| {
+                        let entries = entries
+                            .into_iter()
+                            .map(|entry| {
+                                names.iter().enumerate().fold(entry, |entry, (at, id)| {
+                                    entry.replace(id.as_str(), &format!("topic{at}"))
+                                })
+                            })
+                            .collect();
+                        (path, entries)
+                    })
+                    .collect::<Rows>(),
+            )
+        };
+        let expected = bind(plain).unwrap();
+        assert_eq!(
+            vec![(
+                "src:a.md".to_string(),
+                vec!["1-2,3|topic1".to_string(), "topic2".to_string()]
+            )],
+            expected,
+            "plain: one row binds both topics"
+        );
+        for (case, sources) in cases {
+            assert_eq!(
+                expected,
+                bind(&sources).unwrap_or_else(|error| panic!("{case}: {error:#}")),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_heading_that_only_normalization_reveals_shifts_no_binding() {
+        let deck = "# Alpha\n\n## q\na\n\n\u{feff}# Hidden\n\n## q2\na2\n\n# Beta\n\n## q3\na3\n";
+        let sources = "[{\"topic\": \"Beta\", \"sources\": [{\"path\": \"b.md\"}]}]";
+
+        let generated = parse_generated(deck, sources, Path::new("/project")).unwrap();
+
+        let placed = parser::parse("generated.md", &parser::normalize(deck)).unwrap();
+        let beta = placed
+            .topics
+            .iter()
+            .position(|topic| topic.heading.as_deref() == Some("Beta"))
+            .unwrap();
+        assert_eq!(
+            vec![beta],
+            generated
+                .topic_sources
+                .iter()
+                .map(|(index, _)| *index)
+                .collect::<Vec<_>>(),
+            "the index is the one the placed (normalized) deck has"
+        );
     }
 
     #[test]

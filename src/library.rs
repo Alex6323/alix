@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     io,
     path::{Path, PathBuf},
 };
@@ -13,7 +13,7 @@ use crate::{
     config::ExamConfig,
     deck::Deck,
     parser,
-    sources::commands::{AddReport, add_generated},
+    sources::commands::{AddReport, TopicSources, add_generated},
     store::Store,
     workspace::{self, WorkspaceFiles},
 };
@@ -59,9 +59,6 @@ pub fn place_deck(dir: &Path, name: &str, text: &str) -> Result<Placed> {
     }
 }
 
-/// Indexed like `Deck::topics`: 0 is the block before the first `#`.
-pub type TopicSources = Vec<(usize, Vec<(PathBuf, Option<String>)>)>;
-
 pub fn place_sourced_deck(
     dir: &Path,
     name: &str,
@@ -70,6 +67,18 @@ pub fn place_sourced_deck(
     root: (String, PathBuf),
     exam: &ExamConfig,
 ) -> Result<(Placed, AddReport)> {
+    place_and_bind(dir, name, text, topic_sources, root, exam)
+        .map(|(placed, report, _)| (placed, report))
+}
+
+fn place_and_bind(
+    dir: &Path,
+    name: &str,
+    text: &str,
+    topic_sources: &TopicSources,
+    root: (String, PathBuf),
+    exam: &ExamConfig,
+) -> Result<(Placed, AddReport, CreatedFolders)> {
     let Some(workspace_root) = workspace::root_for_member_dir(dir) else {
         bail!(
             "{} is not a workspace's `decks/` folder, where a deck keeps its sources",
@@ -79,16 +88,14 @@ pub fn place_sourced_deck(
     let created = CreatedFolders::before(&WorkspaceFiles::new(&workspace_root));
     let placed = place_deck(dir, name, text)?;
     match bind_placed(&placed, topic_sources, root, exam) {
-        Ok(report) => Ok((placed, report)),
+        Ok(report) => Ok((placed, report, created)),
         Err(error) => {
             let deck_id = parser::read_deck_identity(&placed.path).ok().flatten();
-            let removed = std::fs::remove_file(&placed.path)
-                .with_context(|| format!("cannot remove {}", placed.path.display()))
-                .and_then(|()| created.remove(deck_id.as_deref()));
-            match removed {
-                Ok(()) => Err(error),
-                Err(cleanup) => Err(error.context(format!("{cleanup:#}"))),
-            }
+            let removed = first_error([
+                remove_file(&placed.path),
+                created.remove(deck_id.as_deref()),
+            ]);
+            Err(with_cleanup(error, removed))
         }
     }
 }
@@ -106,7 +113,10 @@ pub fn replace_sourced_deck(
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("deck");
-    let (placed, report) = place_sourced_deck(
+    let old_id = parser::read_deck_identity(&dir.join(format!("{stem}.md")))
+        .ok()
+        .flatten();
+    let (placed, report, created) = place_and_bind(
         dir,
         &format!(".{stem}.generated.md"),
         text,
@@ -114,24 +124,40 @@ pub fn replace_sourced_deck(
         root,
         exam,
     )?;
-    let stamped = std::fs::read_to_string(&placed.path)
-        .with_context(|| format!("cannot read {}", placed.path.display()));
-    let replaced = stamped.and_then(|stamped| replace_deck(dir, name, &stamped, store));
-    let deck_id = parser::read_deck_identity(&placed.path).ok().flatten();
-    std::fs::remove_file(&placed.path)
-        .with_context(|| format!("cannot remove {}", placed.path.display()))?;
+    let new_id = parser::read_deck_identity(&placed.path).ok().flatten();
+    let replaced = std::fs::read_to_string(&placed.path)
+        .with_context(|| format!("cannot read {}", placed.path.display()))
+        .and_then(|stamped| replace_deck(dir, name, &stamped, store));
+    let temporary = remove_file(&placed.path);
     match replaced {
-        Ok(replaced) => Ok((replaced, report)),
-        Err(error) => {
-            let workspace_root = workspace::root_for_member_dir(dir).unwrap_or_default();
-            let files = WorkspaceFiles::new(&workspace_root);
-            if let Some(deck_id) = deck_id {
-                for folder in [files.sources_for(&deck_id), files.assets_for(&deck_id)] {
-                    remove_folder(&folder)?;
-                }
-            }
-            Err(error)
+        Ok(replaced) => {
+            let old_sources = old_id
+                .filter(|old| Some(old) != new_id.as_ref())
+                .map_or(Ok(()), |old| {
+                    remove_folder(&created.files.sources_for(&old))
+                });
+            first_error([temporary, old_sources])?;
+            Ok((replaced, report))
         }
+        Err(error) => Err(with_cleanup(
+            error,
+            first_error([temporary, created.remove(new_id.as_deref())]),
+        )),
+    }
+}
+
+fn remove_file(path: &Path) -> Result<()> {
+    std::fs::remove_file(path).with_context(|| format!("cannot remove {}", path.display()))
+}
+
+fn first_error<const N: usize>(steps: [Result<()>; N]) -> Result<()> {
+    steps.into_iter().find(Result::is_err).unwrap_or(Ok(()))
+}
+
+fn with_cleanup(error: anyhow::Error, cleanup: Result<()>) -> anyhow::Error {
+    match cleanup {
+        Ok(()) => error,
+        Err(cleanup) => error.context(format!("{cleanup:#}")),
     }
 }
 
@@ -144,27 +170,7 @@ fn bind_placed(
     if let Some(error) = &placed.parse_error {
         bail!("the generated deck does not parse: {error}");
     }
-    let ids = Deck::load(&placed.path)?.topic_ids();
-    let mut by_file: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
-    for (index, files) in topic_sources {
-        let Some(Some(id)) = ids.get(*index) else {
-            bail!("the generated deck has no topic {index} to bind sources to");
-        };
-        for (file, lines) in files {
-            by_file.entry(file.clone()).or_default().push(match lines {
-                Some(lines) => format!("{lines}|{id}"),
-                None => id.clone(),
-            });
-        }
-    }
-    if by_file.is_empty() {
-        return Ok(AddReport {
-            added: Vec::new(),
-            collected: Vec::new(),
-            over_limit: Vec::new(),
-        });
-    }
-    add_generated(&placed.path, root, by_file.into_iter().collect(), exam)
+    add_generated(&placed.path, root, topic_sources, exam)
 }
 
 struct CreatedFolders {
@@ -183,17 +189,21 @@ impl CreatedFolders {
     }
 
     fn remove(&self, deck_id: Option<&str>) -> Result<()> {
-        if let Some(deck_id) = deck_id {
-            remove_folder(&self.files.sources_for(deck_id))?;
-            remove_folder(&self.files.assets_for(deck_id))?;
-        }
-        if !self.sources_existed {
-            remove_folder(&self.files.sources())?;
-        }
-        if !self.assets_existed {
-            remove_folder(&self.files.assets())?;
-        }
-        Ok(())
+        let owned = |folder: PathBuf| deck_id.map_or(Ok(()), |_| remove_folder(&folder));
+        let created = |existed: bool, folder: PathBuf| {
+            if existed {
+                Ok(())
+            } else {
+                remove_folder(&folder)
+            }
+        };
+        let deck_id = deck_id.unwrap_or_default();
+        first_error([
+            owned(self.files.sources_for(deck_id)),
+            owned(self.files.assets_for(deck_id)),
+            created(self.sources_existed, self.files.sources()),
+            created(self.assets_existed, self.files.assets()),
+        ])
     }
 }
 
@@ -1149,6 +1159,127 @@ mod tests {
             ),
         )
         .unwrap();
+    }
+
+    struct SourcedReplace {
+        _dir: tempfile::TempDir,
+        ws: PathBuf,
+        members: PathBuf,
+        project: PathBuf,
+        old_id: String,
+    }
+
+    fn sourced_replace_fixture() -> SourcedReplace {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().canonicalize().unwrap().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "").unwrap();
+        std::fs::write(members.join("a.md"), "## old q\nold a\n").unwrap();
+        crate::sources::testkit::sourced(members.join("a.md"));
+        let old_id = parser::read_deck_identity(&members.join("a.md"))
+            .unwrap()
+            .unwrap();
+        let project = ws.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("notes.md"), "new material\n").unwrap();
+        SourcedReplace {
+            _dir: dir,
+            ws,
+            members,
+            project,
+            old_id,
+        }
+    }
+
+    fn replace_sourced(fixture: &SourcedReplace) -> Result<(ReplaceReport, AddReport)> {
+        let mut store =
+            crate::state::open_store(&fixture.members.join("a.md"), &fixture.ws).unwrap();
+        replace_sourced_deck(
+            &fixture.members,
+            "a.md",
+            "# New\n\n## new q\nnew a\n",
+            &vec![(1, vec![(fixture.project.join("notes.md"), None)])],
+            ("src".to_string(), fixture.project.clone()),
+            &ExamConfig::default(),
+            &mut store,
+        )
+    }
+
+    fn deck_folders(ws: &Path, root: &str) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(ws.join(root))
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn a_sourced_replacement_binds_the_new_deck_and_drops_the_old_decks_sources() {
+        let fixture = sourced_replace_fixture();
+
+        let (_, added) = replace_sourced(&fixture).unwrap();
+
+        let new_id = parser::read_deck_identity(&fixture.members.join("a.md"))
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            fixture.old_id, new_id,
+            "the replacement has a fresh deck id"
+        );
+        assert_eq!(1, added.added.len(), "the new file is frozen");
+        assert_eq!(
+            vec![new_id],
+            deck_folders(&fixture.ws, crate::sources::ROOT),
+            "only the replacement's sources folder is left"
+        );
+        assert!(
+            !fixture.members.join(".a.generated.md").exists(),
+            "the temporary deck is gone"
+        );
+    }
+
+    #[test]
+    fn a_failed_sourced_replacement_leaves_the_old_deck_and_its_sources_whole() {
+        let fixture = sourced_replace_fixture();
+        let deck = std::fs::read(fixture.members.join("a.md")).unwrap();
+        let manifest = WorkspaceFiles::new(&fixture.ws)
+            .sources_for(&fixture.old_id)
+            .join(crate::sources::MANIFEST);
+        let manifest_bytes = std::fs::read(&manifest).unwrap();
+        std::fs::create_dir_all(fixture.members.join("a.md.bak/blocker")).unwrap();
+
+        replace_sourced(&fixture).expect_err("a blocked backup fails the replacement");
+
+        assert_eq!(
+            deck,
+            std::fs::read(fixture.members.join("a.md")).unwrap(),
+            "the old deck is untouched"
+        );
+        assert_eq!(
+            manifest_bytes,
+            std::fs::read(&manifest).unwrap(),
+            "the old sources manifest is untouched"
+        );
+        assert_eq!(
+            vec![fixture.old_id.clone()],
+            deck_folders(&fixture.ws, crate::sources::ROOT),
+            "no sources folder of the replacement is left"
+        );
+        assert!(
+            deck_folders(&fixture.ws, crate::assets::ROOT)
+                .iter()
+                .all(|name| *name == fixture.old_id),
+            "no assets folder of the replacement is left"
+        );
+        assert!(
+            !fixture.members.join(".a.generated.md").exists(),
+            "the temporary deck is gone"
+        );
     }
 
     #[test]

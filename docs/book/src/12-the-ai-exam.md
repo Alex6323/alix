@@ -77,8 +77,9 @@ listed in the [command reference](17-command-reference.md#the-ai-features).
 
 `alix doctor` checks every member deck's sources folder: a damaged folder
 (a copy missing, renamed, linked or not matching its id, a malformed
-manifest) and a binding to a topic the deck lacks are errors, and a copy no
-row names is a note. A live file changing is normal, so drift is opt-in:
+manifest) and a binding to a topic the deck lacks are errors, a copy no
+row names is a note, and a `sources/<deck-id>/` folder no member deck owns
+(left by a replaced or unmerged generated deck) is a warning. A live file changing is normal, so drift is opt-in:
 `alix doctor --warn-on-source-drift` warns for each source whose live file
 changed, is gone, or cannot be read, and names each key with no usable root
 on this machine together with the `root set` command that saves one.

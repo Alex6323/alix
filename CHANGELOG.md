@@ -279,9 +279,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   than 400 lines; a single file binds whole to every topic), and save the
   source folder as the deck's `src` root. A file that cannot be frozen stops
   the generation, naming the file and the topic, and writes nothing.
-  `alix workspace update` refuses a proposal that retires a topic its sources
-  are bound to, and an apply whose staged sources manifest was edited after
-  review.
+  `--force` regeneration removes the replaced deck's sources. `alix workspace
+  update` refuses a proposal that retires a topic its sources are bound to,
+  and an apply whose staged sources manifest was edited after review. `alix
+  doctor` warns about a `sources/<deck-id>/` folder no member deck owns.
 
 - Breaking: a workspace `alix.toml` that does not parse is an error, never a
   silent fallback to defaults. The picker lists the workspace as an `error`

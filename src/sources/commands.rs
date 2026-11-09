@@ -614,27 +614,25 @@ fn save_root(roots: &mut Roots, key: &str, dir: &Path) -> Result<bool> {
     }
 }
 
-/// `entries` are binding entries, `[<ranges>|]<topic-id>`, one per topic the
-/// file grounds.
+/// Indexed like `Deck::topics`: 0 is the block before the first `#`.
+pub type TopicSources = Vec<(usize, Vec<(PathBuf, Option<String>)>)>;
+
 pub fn add_generated(
     deck: &Path,
     root: (String, PathBuf),
-    bindings: Vec<(PathBuf, Vec<String>)>,
+    topic_sources: &TopicSources,
     exam: &ExamConfig,
 ) -> Result<AddReport> {
     let opened = open(deck)?;
-    let (key, dir) = root;
-    let key = parse_root_key(&key)?;
-    let mut roots = opened.roots.clone();
-    let roots_changed = save_root(&mut roots, &key, &dir)?;
+    let ids = opened.deck.topic_ids();
     let labels: BTreeMap<String, String> = opened
         .deck
         .topics
         .iter()
-        .zip(opened.deck.topic_ids())
+        .zip(&ids)
         .filter_map(|(topic, id)| {
             Some((
-                id?,
+                id.clone()?,
                 topic
                     .heading
                     .clone()
@@ -642,8 +640,38 @@ pub fn add_generated(
             ))
         })
         .collect();
-    let mut files = Vec::with_capacity(bindings.len());
-    for (file, entries) in bindings {
+    let mut by_file: BTreeMap<PathBuf, (PathBuf, Vec<String>)> = BTreeMap::new();
+    for (index, files) in topic_sources {
+        let Some(Some(id)) = ids.get(*index) else {
+            bail!("the deck has no topic {index} to bind sources to");
+        };
+        for (file, lines) in files {
+            let entry = match lines {
+                Some(lines) => format!("{lines}|{id}"),
+                None => id.clone(),
+            };
+            let same = std::fs::canonicalize(file).unwrap_or_else(|_| file.clone());
+            let (_, entries) = by_file
+                .entry(same)
+                .or_insert_with(|| (file.clone(), Vec::new()));
+            if !entries.contains(&entry) {
+                entries.push(entry);
+            }
+        }
+    }
+    if by_file.is_empty() {
+        return Ok(AddReport {
+            added: Vec::new(),
+            collected: Vec::new(),
+            over_limit: Vec::new(),
+        });
+    }
+    let (key, dir) = root;
+    let key = parse_root_key(&key)?;
+    let mut roots = opened.roots.clone();
+    let roots_changed = save_root(&mut roots, &key, &dir)?;
+    let mut files = Vec::with_capacity(by_file.len());
+    for (file, entries) in by_file.into_values() {
         let mut parsed: Vec<Binding> = Vec::with_capacity(entries.len());
         for entry in &entries {
             let binding = binding_of(entry).map_err(|problem| {

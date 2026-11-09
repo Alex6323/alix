@@ -992,21 +992,51 @@ fn orphan_note_findings(sidecar: &Path, report: &mut Report) {
     }
 }
 
-fn audit_asset_root(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut Report) {
-    let assets = dir.join(alix::assets::ROOT);
-    if std::fs::symlink_metadata(&assets).is_ok_and(|metadata| metadata.is_symlink()) {
+struct OwnedRoot {
+    name: &'static str,
+    linked: &'static str,
+    orphan: &'static str,
+}
+
+const OWNED_ROOTS: [OwnedRoot; 2] = [
+    OwnedRoot {
+        name: alix::assets::ROOT,
+        linked: "share and sync refuse it",
+        orphan: "; share and sync leave it out",
+    },
+    OwnedRoot {
+        name: alix::sources::ROOT,
+        linked: "the exam refuses it",
+        orphan: "; no exam reads it",
+    },
+];
+
+fn audit_owned_roots(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut Report) {
+    for root in &OWNED_ROOTS {
+        audit_owned_root(dir, root, known_deck_ids, report);
+    }
+}
+
+fn audit_owned_root(
+    dir: &Path,
+    root: &OwnedRoot,
+    known_deck_ids: &HashSet<String>,
+    report: &mut Report,
+) {
+    let folder = dir.join(root.name);
+    if std::fs::symlink_metadata(&folder).is_ok_and(|metadata| metadata.is_symlink()) {
         report.error(format!(
-            "{} is a link; share and sync refuse it: replace it with what it points to, or \
-             remove it",
-            assets.display()
+            "{} is a link; {}: replace it with what it points to, or remove it",
+            folder.display(),
+            root.linked
         ));
         return;
     }
-    let entries = match std::fs::read_dir(&assets) {
+    let entries = match std::fs::read_dir(&folder) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
-            report.error(format!("cannot read {}: {error}", assets.display()));
+            report.error(format!("cannot read {}: {error}", folder.display()));
             return;
         }
     };
@@ -1015,22 +1045,22 @@ fn audit_asset_root(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut R
         {
             Ok(found) => found,
             Err(error) => {
-                report.error(format!("cannot read {}: {error}", assets.display()));
+                report.error(format!("cannot read {}: {error}", folder.display()));
                 continue;
             }
         };
         let name = name.to_string_lossy().into_owned();
         if kind.is_symlink() {
             report.error(format!(
-                "{}/{name} is a link; share and sync refuse it: replace it with what it points \
-                 to, or remove it",
-                alix::assets::ROOT
+                "{}/{name} is a link; {}: replace it with what it points to, or remove it",
+                root.name, root.linked
             ));
         } else if kind.is_dir() && !known_deck_ids.contains(&name) {
             report.warn(format!(
-                "{}/{name} belongs to no deck in {}; share and sync leave it out",
-                alix::assets::ROOT,
-                dir.display()
+                "{}/{name} belongs to no deck in {}{}",
+                root.name,
+                dir.display(),
+                root.orphan
             ));
         }
     }
@@ -1139,7 +1169,7 @@ fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
         }
     }
     if alix::workspace::is_workspace(dir) {
-        audit_asset_root(dir, &known_deck_ids, &mut report);
+        audit_owned_roots(dir, &known_deck_ids, &mut report);
     }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
@@ -3571,7 +3601,7 @@ mod tests {
     }
 
     #[test]
-    fn an_asset_directory_no_deck_owns_is_a_workspace_warning() {
+    fn an_asset_or_sources_directory_no_deck_owns_is_a_workspace_warning() {
         let dir = tempfile::tempdir().unwrap();
         w(dir.path(), "alix.toml", "title = \"W\"\n");
         std::fs::create_dir(dir.path().join("decks")).unwrap();
@@ -3582,19 +3612,23 @@ mod tests {
         );
         alix::assets::write_object(dir.path(), "deck-m1", b"excerpt\n", "md").unwrap();
         std::fs::create_dir_all(dir.path().join("assets/deck-zz")).unwrap();
+        std::fs::create_dir_all(dir.path().join("sources/deck-yy")).unwrap();
 
         let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
 
-        let orphan: Vec<&String> = report
+        let mut orphan: Vec<&String> = report
             .warnings
             .iter()
             .filter(|warning| warning.contains("belongs to no deck"))
             .collect();
-        assert_eq!(1, orphan.len(), "{:#?}", report.warnings);
-        assert!(
-            orphan[0].contains("assets/deck-zz") && !orphan[0].contains("deck-m1"),
-            "{orphan:?}"
-        );
+        orphan.sort();
+        assert_eq!(2, orphan.len(), "{:#?}", report.warnings);
+        for (warning, folder) in orphan.iter().zip(["assets/deck-zz", "sources/deck-yy"]) {
+            assert!(
+                warning.contains(folder) && !warning.contains("deck-m1"),
+                "{folder}: {orphan:?}"
+            );
+        }
     }
 
     #[cfg(unix)]

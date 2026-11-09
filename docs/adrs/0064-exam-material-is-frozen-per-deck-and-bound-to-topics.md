@@ -127,8 +127,10 @@ one command-line argument; on a Linux host with 4096-byte pages, a
    unchecked, and doctor's drift check says so per key.
 
 6. Sources change only through `alix deck source` commands (`add`,
-   `remove`, `update`, `bind`, `unbind`, `list`, `root set|unset`) and
-   `alix doctor --repair-sources`. Every mutating command validates the
+   `remove`, `update`, `bind`, `unbind`, `list`, `root set|unset`),
+   `alix doctor --repair-sources`, and deck and workspace generation,
+   which freeze the files the model drew on through `add`'s checks. Every
+   mutating command validates the
    complete new state first. `root set|unset` then writes only the roots
    file. A source mutation writes the roots file first when its roots
    change, then writes and verifies new copies, replaces `manifest.toml`

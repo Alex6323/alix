@@ -349,8 +349,6 @@ fn generate_single_deck(
         text = generate::declare_root(&text, root)?;
     }
 
-    // Parse against the final name (part of every card's id hash); a parse
-    // error still saves the output rather than losing the generation.
     let parsed = parser::parse(&name, &text);
 
     if args.print {
