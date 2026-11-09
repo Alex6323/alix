@@ -136,3 +136,28 @@ Side findings:
 - The 405 KB deck's deck-wide topics measure about 172,000 estimated tokens,
   over Copilot's and Gemini's 128,000 limit; the two largest real `exam:`
   lists (7.2 MB and 5.8 MB) exceed every backend's limit, which bears on 0d.
+
+## 0d. A real deck's largest topic against the limits
+
+Recorded 2026-11-09 with the arc-B build's `alix deck source list`, no model
+calls. The three largest of 147 decks whose `exam:` lists name files were
+copied into a scratch workspace, their files frozen with `alix deck source
+add` and bound to every topic (each list was deck-wide).
+
+Assumption A3: a typical topic's full prompt fits the smallest backend limit.
+
+Falsifier: the per-topic measure `source list` prints, per backend.
+
+| Deck (sources) | Claude (est. tokens) | Codex (characters) | Copilot, Gemini (est. tokens) |
+| --- | --- | --- | --- |
+| PR review, 7.17 MB, 5 topics | 2,866,902 / 1,000,000 | 7,188,250 / 1,048,576 | 2,880,569 / 128,000 |
+| PR review, 5.83 MB, 11 topics | 2,331,028 / 1,000,000 | 5,846,381 / 1,048,576 | 2,342,552 / 128,000 |
+| PR review, 2.24 MB, 12 topics | 900,793 / 1,000,000 | 2,257,094 / 1,048,576 | 906,596 / 128,000 |
+
+Result: the falsifier fired. 100 of 112 topic-backend pairs exceed their
+limit; only the 2.24 MB deck fits, and only on Claude. A byte estimate over
+the 147 file-naming decks finds 2 over Claude's limit, 5 over Codex's and 19
+over Copilot's and Gemini's; these are lower bounds, because 347 more decks
+name whole directories, which were not sized. Ruled 2026-11-09: arc B merges
+with over-limit exams refused at preflight; chunked generation
+(`{#chunked-topic-generation}`) is the next arc.
