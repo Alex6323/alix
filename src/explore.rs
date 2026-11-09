@@ -542,7 +542,7 @@ pub fn materialize(
     let mut traces = 0;
     let mut decks = 0;
     let mut filled_count = 0;
-    let mut topic_indices: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut pending: HashMap<usize, TopicSources> = HashMap::new();
     for (item, name) in items.iter().zip(&names) {
         let mut body = String::from("---\n");
         match item.kind {
@@ -591,39 +591,44 @@ pub fn materialize(
                 }
             }),
         }
-        if item.kind == Kind::Deck
-            && filled.is_some_and(|filled| filled.sources.contains_key(&item.num))
+        let item_context = || {
+            format!(
+                "generated workspace item {} `{}`, left partly built in {}",
+                item.num,
+                item.title,
+                dir.display()
+            )
+        };
+        if let (Some(_), Some(filled), Kind::Deck) = (&root, filled, item.kind)
+            && filled
+                .bodies
+                .get(&item.num)
+                .is_some_and(|body| !body.trim().is_empty())
         {
-            let headings = crate::parser::parse(name, &body)
-                .map(|parsed| {
-                    parsed
-                        .topics
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, topic)| topic.heading.is_some())
-                        .map(|(index, _)| index)
-                        .collect()
-                })
-                .unwrap_or_default();
-            topic_indices.insert(item.num, headings);
+            let parsed = crate::parser::parse(name, &crate::parser::normalize(&body))
+                .with_context(item_context)?;
+            let files = filled.sources.get(&item.num).cloned().unwrap_or_default();
+            let topic_sources: TopicSources = parsed
+                .topics
+                .iter()
+                .enumerate()
+                .filter(|(_, topic)| topic.heading.is_some())
+                .map(|(index, _)| (index, files.clone()))
+                .collect();
+            generate::check_complete(&parsed, &topic_sources).with_context(item_context)?;
+            pending.insert(item.num, topic_sources);
         }
         fs::write(member_dir.join(name), body)?;
     }
 
     let mut bound = 0;
     let mut over_limit = Vec::new();
-    if let (Some(root), Some(filled)) = (&root, filled) {
+    if let Some(root) = &root {
         for (item, name) in items.iter().zip(&names) {
-            let (Some(files), Some(headings)) =
-                (filled.sources.get(&item.num), topic_indices.get(&item.num))
-            else {
+            let Some(topic_sources) = pending.get(&item.num) else {
                 continue;
             };
-            let topic_sources = headings
-                .iter()
-                .map(|&index| (index, files.clone()))
-                .collect();
-            let report = bind_member(&member_dir.join(name), root, &topic_sources, exam)
+            let report = bind_member(&member_dir.join(name), root, topic_sources, exam)
                 .with_context(|| {
                     format!(
                         "generated workspace item {} `{}`, left partly built in {}",
@@ -1510,19 +1515,20 @@ Spine   a -> b
     }
 
     #[test]
-    fn a_deck_item_that_lists_no_files_writes_no_sources() {
+    fn a_heading_only_normalization_reveals_still_gets_the_items_files() {
         let temp = tempfile::tempdir().unwrap();
         let base = temp.path().canonicalize().unwrap();
         let source = base.join("project");
         fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("a.md"), "one\n").unwrap();
         let mut filled = Filled::default();
-        filled
-            .bodies
-            .insert(1, "## What marks a card?\nA heading".to_string());
-        filled.sources.insert(1, Vec::new());
+        filled.bodies.insert(
+            1,
+            "## q1\na1\n\n\u{feff}# Hidden\n\n## q2\na2\n\n# Beta\n\n## q3\na3".to_string(),
+        );
+        filled.sources.insert(1, vec![(source.join("a.md"), None)]);
         let dir = base.join("ws");
-
-        let report = materialize(
+        materialize(
             SAMPLE_PLAN,
             &dir,
             "g",
@@ -1533,12 +1539,71 @@ Spine   a -> b
             &ExamConfig::default(),
         )
         .unwrap();
-
-        assert_eq!(0, report.sources);
-        assert!(
-            !dir.join(crate::sources::ROOT).exists(),
-            "an empty list writes no manifest and no roots file"
+        let deck = Deck::load(dir.join("decks/01-the-deck-format.md")).unwrap();
+        let headed: Vec<String> = deck
+            .topics
+            .iter()
+            .zip(deck.topic_ids())
+            .filter(|(topic, _)| topic.heading.is_some())
+            .filter_map(|(_, id)| id)
+            .collect();
+        let sources = crate::sources::load_verified(&dir, deck.deck_token.as_deref().unwrap())
+            .unwrap()
+            .unwrap();
+        let bound: Vec<String> = sources
+            .manifest
+            .sources
+            .values()
+            .flat_map(|row| row.bound_to.clone())
+            .collect();
+        let headings: Vec<_> = deck.topics.iter().map(|t| t.heading.clone()).collect();
+        assert_eq!(
+            headed, bound,
+            "every headed topic binds the item's file; headings {headings:?}"
         );
+    }
+
+    #[test]
+    fn a_deck_item_whose_cards_list_no_files_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let base = temp.path().canonicalize().unwrap();
+        let source = base.join("project");
+        fs::create_dir_all(&source).unwrap();
+        for (case, listed) in [("an empty list", Some(Vec::new())), ("no list", None)] {
+            let mut filled = Filled::default();
+            filled
+                .bodies
+                .insert(1, "## What marks a card?\nA heading".to_string());
+            if let Some(listed) = listed {
+                filled.sources.insert(1, listed);
+            }
+            let dir = base.join(case.replace(' ', "-"));
+
+            let message = format!(
+                "{:#}",
+                materialize(
+                    SAMPLE_PLAN,
+                    &dir,
+                    "g",
+                    None,
+                    &source.display().to_string(),
+                    &[],
+                    Some(&filled),
+                    &ExamConfig::default(),
+                )
+                .err()
+                .expect("a card-bearing topic without sources refuses")
+            );
+
+            assert!(
+                message.contains("item 1") && message.contains("no sources for topic"),
+                "{case}: {message}"
+            );
+            assert!(
+                !dir.join(crate::sources::ROOT).exists(),
+                "{case}: no manifest and no roots file"
+            );
+        }
     }
 
     #[test]

@@ -996,6 +996,7 @@ struct OwnedRoot {
     name: &'static str,
     linked: &'static str,
     orphan: &'static str,
+    owner_reports_links: bool,
 }
 
 const OWNED_ROOTS: [OwnedRoot; 2] = [
@@ -1003,11 +1004,13 @@ const OWNED_ROOTS: [OwnedRoot; 2] = [
         name: alix::assets::ROOT,
         linked: "share and sync refuse it",
         orphan: "; share and sync leave it out",
+        owner_reports_links: false,
     },
     OwnedRoot {
         name: alix::sources::ROOT,
         linked: "the exam refuses it",
         orphan: "; no exam reads it",
+        owner_reports_links: true,
     },
 ];
 
@@ -1050,12 +1053,13 @@ fn audit_owned_root(
             }
         };
         let name = name.to_string_lossy().into_owned();
-        if kind.is_symlink() {
+        let owned = known_deck_ids.contains(&name);
+        if kind.is_symlink() && !(owned && root.owner_reports_links) {
             report.error(format!(
                 "{}/{name} is a link; {}: replace it with what it points to, or remove it",
                 root.name, root.linked
             ));
-        } else if kind.is_dir() && !known_deck_ids.contains(&name) {
+        } else if kind.is_dir() && !owned {
             report.warn(format!(
                 "{}/{name} belongs to no deck in {}{}",
                 root.name,
@@ -3598,6 +3602,50 @@ mod tests {
             !findings.contains("unrecognized progress document"),
             "{findings}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_sources_folder_is_reported_once() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        for deck in ["k", "m"] {
+            w(
+                &dir.path().join("decks"),
+                &format!("{deck}.md"),
+                &format!(
+                    "---\nformat-version: 1\nid: \"deck-{deck}1\"\n---\n## q\na\n<!-- id: card-{deck}1c1 -->\n"
+                ),
+            );
+        }
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(elsewhere.join("deck-m1")).unwrap();
+        std::fs::create_dir(dir.path().join("sources")).unwrap();
+        std::os::unix::fs::symlink(
+            elsewhere.join("deck-m1"),
+            dir.path().join("sources/deck-m1"),
+        )
+        .unwrap();
+        let linked_folder =
+            workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+        std::fs::remove_dir_all(dir.path().join("sources")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.path().join("sources")).unwrap();
+        let linked_root =
+            workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+
+        for (case, report, named) in [
+            ("a linked root", linked_root, "sources is a link"),
+            ("a linked deck folder", linked_folder, "deck-m1"),
+        ] {
+            let links: Vec<&String> = report
+                .errors
+                .iter()
+                .filter(|error| error.contains("link"))
+                .collect();
+            assert_eq!(1, links.len(), "{case}: {links:#?}");
+            assert!(links[0].contains(named), "{case}: {links:?}");
+        }
     }
 
     #[test]

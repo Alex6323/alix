@@ -277,8 +277,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `alix workspace generate`, freeze the files the model drew on as each
   deck's exam sources, bound per topic (with line ranges for files longer
   than 400 lines; a single file binds whole to every topic), and save the
-  source folder as the deck's `src` root. A file that cannot be frozen stops
-  the generation, naming the file and the topic, and writes nothing.
+  source folder as the deck's `src` root. A file that cannot be frozen, a
+  card-bearing topic the list leaves out, or cards before the first `#`
+  heading stop the generation, naming the file or the topic, and write
+  nothing; a `--review` pass returns its own list for the deck it rewrites.
   `--force` regeneration removes the replaced deck's sources. `alix workspace
   update` refuses a proposal that retires a topic its sources are bound to,
   and an apply whose staged sources manifest was edited after review. `alix

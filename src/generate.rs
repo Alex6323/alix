@@ -430,7 +430,13 @@ impl ReturnedSource {
     fn resolve(self, root: &Path) -> (PathBuf, Option<String>) {
         let lines = self
             .lines
-            .map(|lines| lines.split_whitespace().collect::<String>())
+            .map(|lines| {
+                lines
+                    .split(',')
+                    .map(|part| part.split('-').map(str::trim).collect::<Vec<_>>().join("-"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
             .filter(|lines| !lines.is_empty());
         (root.join(self.path), lines)
     }
@@ -492,10 +498,40 @@ pub fn parse_generated(text: &str, sources: &str, root: &Path) -> Result<Generat
             .collect();
         topic_sources.push((index, files));
     }
+    check_complete(&parsed, &topic_sources)?;
     Ok(GeneratedDeck {
         text: text.to_string(),
         topic_sources,
     })
+}
+
+pub(crate) fn check_complete(
+    parsed: &parser::ParsedDeck,
+    topic_sources: &TopicSources,
+) -> Result<()> {
+    if parsed.cards.iter().any(|card| card.topic == 0) {
+        bail!(
+            "the generated deck has cards before its first `#` topic heading, so they have no \
+             topic to bind sources to"
+        );
+    }
+    for (index, topic) in parsed.topics.iter().enumerate().skip(1) {
+        if !parsed.cards.iter().any(|card| card.topic == index) {
+            continue;
+        }
+        let heading = topic.heading.as_deref().unwrap_or_default();
+        let listed: Vec<&Vec<(PathBuf, Option<String>)>> = topic_sources
+            .iter()
+            .filter(|(at, _)| *at == index)
+            .map(|(_, files)| files)
+            .collect();
+        match listed.as_slice() {
+            [files] if !files.is_empty() => {}
+            [] | [_] => bail!("the model listed no sources for topic `{heading}`"),
+            _ => bail!("the model listed topic `{heading}` more than once"),
+        }
+    }
+    Ok(())
 }
 
 pub fn generated_sources(
@@ -569,21 +605,41 @@ pub fn spawn(
     rx
 }
 
+/// `sources` is the draft's list; when given, the reply must carry the list
+/// for the deck it returns.
 pub fn review_deck(
     deck: &str,
+    sources: Option<&str>,
     cfg: &GenerateDeckConfig,
     ask_cfg: &AskConfig,
     spec: &GenerationSpec,
-) -> Result<String> {
-    let prompt = build_review_prompt(deck, spec);
+) -> Result<DeckReply> {
+    let mut prompt = build_review_prompt(deck, spec);
+    if let Some(sources) = sources {
+        prompt.push_str(&format!(
+            "\n\nTHE DRAFT'S SOURCES, per topic:\n{}\n\nAfter the last card of the \
+             improved deck, write a line `{SOURCES_MARKER}` and then the same JSON array \
+             for the deck you return: for every topic, the files its cards now draw on, \
+             taken from the draft's list, with `lines` kept where given.",
+            sources.trim()
+        ));
+    }
     // The reviewer only rewrites the supplied text; no source access needed.
     let raw = ask::run(&run_config(cfg, ask_cfg, true, None), &prompt, &[])?;
-    let reviewed = clean_output(&raw);
+    let (deck_part, listed) = if sources.is_some() {
+        split_sources(&raw)
+    } else {
+        (raw.as_str(), None)
+    };
+    let reviewed = clean_output(deck_part);
     if reviewed.trim().is_empty() {
         bail!("the review pass returned no deck content");
     }
     validate_card_style(&reviewed, spec)?;
-    Ok(reviewed)
+    Ok(DeckReply {
+        text: reviewed,
+        sources: listed.map(str::to_string),
+    })
 }
 
 fn run_config(
@@ -1582,13 +1638,14 @@ mod tests {
 
         let reviewed = review_deck(
             "## Draft\n- [ ] A\n- [x] B\n- [ ] C\n",
+            None,
             &cfg(10),
             &ask_config(&cli),
             &spec,
         )
         .unwrap();
 
-        assert!(reviewed.contains("- [x] Correct"));
+        assert!(reviewed.text.contains("- [x] Correct"));
     }
 
     #[test]
@@ -2115,9 +2172,23 @@ mod tests {
     }
 
     #[test]
+    fn a_space_inside_a_range_number_is_kept_for_the_range_check_to_refuse() {
+        let listed = parse_source_list(
+            "[{\"path\": \"a.md\", \"lines\": \"1 2\"}]",
+            Path::new("/p"),
+        )
+        .unwrap();
+        assert_eq!(
+            None,
+            listed[0].1.as_deref().filter(|lines| *lines == "12"),
+            "`1 2` became {listed:?}"
+        );
+    }
+
+    #[test]
     fn a_heading_that_only_normalization_reveals_shifts_no_binding() {
         let deck = "# Alpha\n\n## q\na\n\n\u{feff}# Hidden\n\n## q2\na2\n\n# Beta\n\n## q3\na3\n";
-        let sources = "[{\"topic\": \"Beta\", \"sources\": [{\"path\": \"b.md\"}]}]";
+        let sources = "[{\"topic\": \"Alpha\", \"sources\": [{\"path\": \"a.md\"}]}, {\"topic\": \"Hidden\", \"sources\": [{\"path\": \"h.md\"}]}, {\"topic\": \"Beta\", \"sources\": [{\"path\": \"b.md\"}]}]";
 
         let generated = parse_generated(deck, sources, Path::new("/project")).unwrap();
 
@@ -2128,14 +2199,70 @@ mod tests {
             .position(|topic| topic.heading.as_deref() == Some("Beta"))
             .unwrap();
         assert_eq!(
-            vec![beta],
+            Some(beta),
             generated
                 .topic_sources
                 .iter()
-                .map(|(index, _)| *index)
-                .collect::<Vec<_>>(),
+                .find(|(_, files)| files[0].0.ends_with("b.md"))
+                .map(|(index, _)| *index),
             "the index is the one the placed (normalized) deck has"
         );
+    }
+
+    #[test]
+    fn a_source_list_must_name_every_card_bearing_topic_once_with_files() {
+        let deck = "# Alpha\n\n## a?\nA\n\n# Beta\n\n## b?\nB\n\n# Empty\n";
+        let alpha = "{\"topic\": \"Alpha\", \"sources\": [{\"path\": \"a.md\"}]}";
+        let beta = "{\"topic\": \"Beta\", \"sources\": [{\"path\": \"b.md\"}]}";
+        let beta_empty = "{\"topic\": \"Beta\", \"sources\": []}";
+        let cases = [
+            (
+                "complete",
+                deck.to_string(),
+                format!("[{alpha}, {beta}]"),
+                None,
+            ),
+            (
+                "an omitted topic",
+                deck.to_string(),
+                format!("[{alpha}]"),
+                Some("no sources for topic `Beta`"),
+            ),
+            (
+                "an empty list",
+                deck.to_string(),
+                format!("[{alpha}, {beta_empty}]"),
+                Some("no sources for topic `Beta`"),
+            ),
+            (
+                "a topic listed twice",
+                deck.to_string(),
+                format!("[{alpha}, {beta}, {beta}]"),
+                Some("topic `Beta` more than once"),
+            ),
+            (
+                "cards before the first heading",
+                format!("## lead?\nL\n\n{deck}"),
+                format!("[{alpha}, {beta}]"),
+                Some("before its first `#` topic heading"),
+            ),
+            (
+                "no headings at all",
+                "## a?\nA\n".to_string(),
+                "[]".to_string(),
+                Some("before its first `#` topic heading"),
+            ),
+        ];
+        for (case, text, sources, refusal) in cases {
+            let result = parse_generated(&text, &sources, Path::new("/project"));
+            match refusal {
+                None => assert!(result.is_ok(), "{case}: {:#}", result.unwrap_err()),
+                Some(expected) => {
+                    let message = format!("{:#}", result.expect_err(case));
+                    assert!(message.contains(expected), "{case}: {message}");
+                }
+            }
+        }
     }
 
     #[test]

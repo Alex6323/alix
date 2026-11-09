@@ -335,16 +335,22 @@ fn generate_single_deck(
 
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
-    let reply = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;
-    let mut text = reply.text.clone();
+    let mut reply = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;
     if !args.common.links.is_empty() {
-        text = alix::deck::with_added_links(&text, &args.common.links)?;
+        reply.text = alix::deck::with_added_links(&reply.text, &args.common.links)?;
     }
 
     if args.review || gen_cfg.review {
         eprintln!("Reviewing the deck to remove redundant cards…");
-        text = generate::review_deck(&text, &gen_cfg, &config.ask, spec)?;
+        reply = generate::review_deck(
+            &reply.text,
+            reply.sources.as_deref(),
+            &gen_cfg,
+            &config.ask,
+            spec,
+        )?;
     }
+    let mut text = reply.text.clone();
     if let Some(root) = &root {
         text = generate::declare_root(&text, root)?;
     }

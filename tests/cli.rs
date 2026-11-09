@@ -3292,6 +3292,31 @@ fn fake_reviewing_claude(dir: &Path) -> (String, PathBuf) {
     (script.display().to_string(), calls)
 }
 
+fn fake_two_reply_claude(dir: &Path, draft_text: &str, reviewed_text: &str) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let draft = dir.join("source-draft-reply.txt");
+    let reviewed = dir.join("source-reviewed-reply.txt");
+    let marker = dir.join("source-review-marker");
+    std::fs::write(&draft, draft_text).unwrap();
+    std::fs::write(&reviewed, reviewed_text).unwrap();
+    let script = dir.join("fake-source-reviewing-claude");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\n\
+             if test -e \"{marker}\"; then cat \"{reviewed}\"; \
+             else : > \"{marker}\"; cat \"{draft}\"; fi\n",
+            marker = marker.display(),
+            reviewed = reviewed.display(),
+            draft = draft.display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    script.display().to_string()
+}
+
 #[test]
 fn augment_target_format_caches_a_reshape() {
     // `deck augment --target format` reshapes a badly-shaped plain card and
@@ -5702,6 +5727,210 @@ fn either_review_switch_independently_runs_the_second_generation_pass() {
 }
 
 #[test]
+fn folder_generation_refuses_when_the_model_omits_a_deck_topic_from_its_sources_list() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "a.md", "alpha evidence\n");
+    write(&source, "b.md", "beta evidence\n");
+    let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n# Beta\n\n## Beta?\nBeta.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
+    let cli = fake_claude(dir.path(), reply);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        source.to_str().unwrap(),
+        "--config",
+        &config,
+        "--into",
+        workspace.to_str().unwrap(),
+        "--output",
+        "partial",
+    ]);
+
+    assert!(
+        !out.status.success(),
+        "a local folder deck must not persist with an omitted topic left unsourced: stdout: {} stderr: {}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        !workspace.join("decks/partial.md").exists(),
+        "the incomplete source map must be refused before placement"
+    );
+}
+
+const REVIEWED_DRAFT: &str = "# Alpha\n\n## Alpha?\nAlpha.\n<!-- at: src:a.md:1 -->\n\n# Beta\n\n## Beta?\nBeta.\n<!-- at: src:b.md:1 -->\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]},{\"topic\":\"Beta\",\"sources\":[{\"path\":\"b.md\"}]}]\n";
+const REVIEWED_SWAP: &str = "# Alpha\n\n## Beta moved here?\nBeta.\n<!-- at: src:b.md:1 -->\n\n# Beta\n\n## Alpha moved here?\nAlpha.\n<!-- at: src:a.md:1 -->\n";
+
+#[test]
+fn a_reviewed_folder_generation_whose_review_lists_no_sources_writes_nothing() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "a.md", "alpha evidence\n");
+    write(&source, "b.md", "beta evidence\n");
+    let cli = fake_two_reply_claude(dir.path(), REVIEWED_DRAFT, REVIEWED_SWAP);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        source.to_str().unwrap(),
+        "--review",
+        "--config",
+        &config,
+        "--into",
+        workspace.to_str().unwrap(),
+        "--output",
+        "reviewed",
+    ]);
+
+    assert!(!out.status.success(), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("=== sources ==="),
+        "the refusal names the missing list: {}",
+        stderr(&out)
+    );
+    assert!(!workspace.join("decks/reviewed.md").exists());
+    assert!(!workspace.join("sources").exists());
+}
+
+#[test]
+fn reviewed_folder_generation_binds_sources_to_the_final_card_topics() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "a.md", "alpha evidence\n");
+    write(&source, "b.md", "beta evidence\n");
+    let reviewed = format!(
+        "{REVIEWED_SWAP}=== sources ===\n[{{\"topic\":\"Alpha\",\"sources\":[{{\"path\":\"b.md\"}}]}},{{\"topic\":\"Beta\",\"sources\":[{{\"path\":\"a.md\"}}]}}]\n"
+    );
+    let cli = fake_two_reply_claude(dir.path(), REVIEWED_DRAFT, &reviewed);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        source.to_str().unwrap(),
+        "--review",
+        "--config",
+        &config,
+        "--into",
+        workspace.to_str().unwrap(),
+        "--output",
+        "reviewed",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let deck = alix::deck::Deck::load(workspace.join("decks/reviewed.md")).unwrap();
+    let ids = deck.topic_ids();
+    let topic_id = |heading: &str| {
+        deck.topics
+            .iter()
+            .zip(&ids)
+            .find(|(topic, _)| topic.heading.as_deref() == Some(heading))
+            .and_then(|(_, id)| id.clone())
+            .unwrap()
+    };
+    let alpha = topic_id("Alpha");
+    let beta = topic_id("Beta");
+    let sources = alix::sources::load_verified(&workspace, deck.deck_token.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    let bound_to = |path: &str| {
+        sources
+            .manifest
+            .sources
+            .values()
+            .find(|row| row.path == path)
+            .unwrap()
+            .bound_to
+            .clone()
+    };
+    assert_eq!(
+        vec![beta],
+        bound_to("src:a.md"),
+        "the final Alpha card cites b.md and the final Beta card cites a.md"
+    );
+    assert_eq!(vec![alpha], bound_to("src:b.md"));
+}
+
+#[test]
+fn forcing_a_sourced_generation_removes_the_replaced_decks_source_folder() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "a.md", "alpha evidence\n");
+    let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
+    let cli = fake_claude(dir.path(), reply);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    let args = [
+        "deck",
+        "generate",
+        source.to_str().unwrap(),
+        "--config",
+        &config,
+        "--into",
+        workspace.to_str().unwrap(),
+        "--output",
+        "forced",
+    ];
+
+    let first = alix(&args);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let original = alix::deck::Deck::load(workspace.join("decks/forced.md"))
+        .unwrap()
+        .deck_token
+        .unwrap();
+    let original_sources = workspace.join("sources").join(&original);
+    assert!(original_sources.is_dir());
+
+    let mut forced = args.to_vec();
+    forced.push("--force");
+    let second = alix(&forced);
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+    let replacement = alix::deck::Deck::load(workspace.join("decks/forced.md"))
+        .unwrap()
+        .deck_token
+        .unwrap();
+    assert_ne!(original, replacement);
+    assert!(
+        !original_sources.exists(),
+        "the old source copies and private roots file must retire with the replaced deck"
+    );
+}
+
+#[test]
 fn generate_print_normalizes_exactly_one_trailing_newline() {
     for reply in [
         "## Generated Q\nGenerated A",
@@ -5912,6 +6141,8 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
          > [!NOTE]\n\
          > Hamburg und München sind Großstädte, aber keine Bundeshauptstadt.\n\
          <!-- at: src:notes.md:1 -->\n\
+         === sources ===\n\
+         [{\"path\": \"notes.md\"}]\n\
          === item 2 ===\n\
          ## Welche Ebene ist hier gemeint?\n\
          - [ ] Kommune\n\
@@ -5919,7 +6150,9 @@ fn generate_workspace_applies_goal_language_audience_and_card_style() {
          - [ ] Land\n\
          > [!NOTE]\n\
          > Kommune und Land bezeichnen andere staatliche Ebenen.\n\
-         <!-- at: src:notes.md:1 -->\n",
+         <!-- at: src:notes.md:1 -->\n\
+         === sources ===\n\
+         [{\"path\": \"notes.md\"}]\n",
     );
     let request = dir.path().join("request.txt");
     let cli = dir.path().join("fake-claude");
@@ -6041,7 +6274,7 @@ fn generated_workspace_reports_one_stub_and_stays_silent_at_zero_frozen_assets()
     let filled = write(
         dir.path(),
         "filled.txt",
-        "=== item 1 ===\n## First question\nFirst answer\n",
+        "=== item 1 ===\n## First question\nFirst answer\n=== sources ===\n[{\"path\": \"notes.md\"}]\n",
     );
     let request = dir.path().join("request.txt");
     let cli = dir.path().join("fake-claude");
@@ -6093,8 +6326,13 @@ fn generated_workspace_reports_one_stub_and_stays_silent_at_zero_frozen_assets()
         stdout(&out)
     );
     assert!(
-        !stdout(&out).contains("Froze "),
+        !stdout(&out).contains("asset(s)"),
         "zero frozen assets must not print a summary: {}",
+        stdout(&out)
+    );
+    assert!(
+        stdout(&out).contains("Froze 1 source file(s) for the exam."),
+        "the filled deck's listed file is frozen: {}",
         stdout(&out)
     );
 }

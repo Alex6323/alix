@@ -31,6 +31,11 @@ pub fn deck_findings(
     };
     let dir = WorkspaceFiles::new(workspace_root).sources_for(deck_id);
     let manifest = match load_verified(workspace_root, deck_id) {
+        Err(SourceError::LinkedFolder(path))
+            if path == WorkspaceFiles::new(workspace_root).sources() =>
+        {
+            return findings;
+        }
         Err(error) => {
             findings.errors.push(error.to_string());
             return findings;
@@ -167,10 +172,15 @@ mod tests {
                 .expect_err("the fault table only holds faults")
                 .to_string();
             let findings = deck_findings(fixture.root.path(), &deck, false, &ExamConfig::default());
+            let expected = if name == "sources root replaced by a symlink" {
+                Vec::new()
+            } else {
+                vec![refused]
+            };
             assert_eq!(
-                vec![refused],
-                findings.errors,
-                "{name}: the verified load's refusal is the one error"
+                expected, findings.errors,
+                "{name}: the verified load's refusal is the one error, except a linked \
+                 `sources/` root, which the workspace sweep reports once"
             );
         }
     }

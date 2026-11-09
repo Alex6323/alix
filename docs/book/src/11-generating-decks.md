@@ -50,8 +50,10 @@ How the source is recorded depends on its kind, and it matters later:
   [sources](12-the-ai-exam.md#sources), which the **AI exam** reads. For a
   folder, the model groups the cards under `#` topics and lists, per topic,
   the files it drew on; for a file longer than 400 lines it also gives the
-  line ranges the cards rest on, and a shorter file is bound whole. A single
-  file is bound whole to every topic. The `cite:` root the source is cited
+  line ranges the cards rest on, and a shorter file is bound whole. Every
+  topic holding cards must be listed once with at least one file, and no card
+  may sit before the first `#` heading; a `--review` pass returns its own list
+  for the deck it rewrites. A single file is bound whole to every topic. The `cite:` root the source is cited
   through (normally `src`, see below) is saved for the deck's sources on this
   machine only. Any file that cannot be frozen (not text, empty, outside that
   root, a range past its end) stops the generation, naming the
