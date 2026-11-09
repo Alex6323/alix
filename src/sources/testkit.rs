@@ -29,6 +29,7 @@ impl Workspace {
         Self::at(tempfile::tempdir().unwrap())
     }
 
+    #[cfg(unix)]
     pub(crate) fn new_in(parent: &Path) -> Self {
         Self::at(tempfile::tempdir_in(parent).unwrap())
     }
