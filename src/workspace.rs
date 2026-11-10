@@ -357,6 +357,22 @@ pub fn is_backup_name(name: &str) -> bool {
     name.ends_with(".bak")
 }
 
+pub fn backup_of(deck: &Path) -> PathBuf {
+    let name = deck
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("deck.md");
+    deck.with_file_name(format!("{name}.bak"))
+}
+
+pub fn folder_owners(deck_files: &[PathBuf]) -> HashSet<String> {
+    deck_files
+        .iter()
+        .flat_map(|deck| [deck.clone(), backup_of(deck)])
+        .filter_map(|deck| crate::parser::read_deck_identity(&deck).ok().flatten())
+        .collect()
+}
+
 pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
     members(dir).unwrap_or_default()
 }

@@ -1185,15 +1185,11 @@ fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
         }
     }
     if alix::workspace::is_workspace(dir) {
-        let mut owners = known_deck_ids.clone();
-        owners.extend(deck_files.iter().filter_map(|path| {
-            let mut backup = path.clone().into_os_string();
-            backup.push(".bak");
-            alix::parser::read_deck_identity(Path::new(&backup))
-                .ok()
-                .flatten()
-        }));
-        audit_owned_roots(dir, &owners, &mut report);
+        audit_owned_roots(
+            dir,
+            &alix::workspace::folder_owners(&deck_files),
+            &mut report,
+        );
     }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {

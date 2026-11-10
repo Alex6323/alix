@@ -160,7 +160,6 @@ fn deck_stem(name: &str) -> &str {
 }
 
 struct ReplacedSources {
-    deck: PathBuf,
     folder: Option<(WorkspaceFiles, String)>,
 }
 
@@ -168,9 +167,10 @@ impl ReplacedSources {
     fn before(dir: &Path, name: &str) -> Self {
         let deck = dir.join(format!("{}.md", deck_stem(name)));
         let files = workspace::root_for_member_dir(dir).map(WorkspaceFiles::new);
-        let backup_id = parser::read_deck_identity(&backup_of(&deck)).ok().flatten();
+        let backup_id = parser::read_deck_identity(&workspace::backup_of(&deck))
+            .ok()
+            .flatten();
         Self {
-            deck,
             folder: files.zip(backup_id),
         }
     }
@@ -179,25 +179,14 @@ impl ReplacedSources {
         let Some((files, backup_id)) = self.folder else {
             return Ok(());
         };
-        let still_owned = [self.deck.clone(), backup_of(&self.deck)]
-            .iter()
-            .any(|deck| {
-                parser::read_deck_identity(deck).ok().flatten().as_deref()
-                    == Some(backup_id.as_str())
-            });
-        if still_owned {
+        let members = workspace::classify_deck_files(files.root())
+            .with_context(|| format!("cannot list the decks in {}", files.root().display()))?
+            .initialized;
+        if workspace::folder_owners(&members).contains(&backup_id) {
             return Ok(());
         }
         remove_folder(&files.sources_for(&backup_id))
     }
-}
-
-fn backup_of(deck: &Path) -> PathBuf {
-    let name = deck
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("deck.md");
-    deck.with_file_name(format!("{name}.bak"))
 }
 
 fn remove_file(path: &Path) -> Result<()> {
@@ -2220,6 +2209,29 @@ mod tests {
         assert_eq!(
             first,
             std::fs::read_to_string(dir.path().join("a.md.bak")).unwrap()
+        );
+    }
+
+    #[test]
+    fn a_second_replace_keeps_sources_owned_by_another_live_deck() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "").unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        write_deck(&members, "b.md", "da1", "cb1");
+        let sources = WorkspaceFiles::new(&ws).sources_for("deck-da1");
+        std::fs::create_dir_all(&sources).unwrap();
+        std::fs::write(sources.join("source.md"), "irreplaceable frozen source").unwrap();
+        let mut store = crate::state::open_store(&members.join("a.md"), &ws).unwrap();
+
+        replace_deck(&members, "a", "## first q\nfirst ans\n", &mut store).unwrap();
+        replace_deck(&members, "a", "## second q\nsecond ans\n", &mut store).unwrap();
+
+        assert!(
+            sources.join("source.md").exists(),
+            "b.md still owns deck-da1, so replacing a.md must not retire its sources"
         );
     }
 
