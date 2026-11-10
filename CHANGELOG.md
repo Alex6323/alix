@@ -935,9 +935,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Remediation saves the progress store only when it revives a retired card,
   so it no longer advances the store's sync revision otherwise. A new
   remediation card lives in the deck's personal sidecar and gains a progress
-  entry when it is first studied, so it shows as unseen until then. The phone
-  also
-  remembers the remediation it applied for the exam sitting it keeps, and a
+  entry when it is first studied, so it shows as unseen until then. A
+  remediation that revives a card saves that revival before it writes any new
+  card, so a failed save writes nothing new and a retry counts every card.
+  The phone also remembers the remediation it applied for the exam sitting it
+  keeps, and a
   reopened sitting shows that count instead of applying the cards again.
 
 - The phone shows a remediation's progress save error and offers Try again

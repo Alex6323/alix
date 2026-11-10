@@ -1912,7 +1912,9 @@ fn store_remediation_blocks(
     if blocks.is_empty() {
         bail!("remediation produced no cards to store");
     }
-    let mut revived = false;
+    let mut seen = std::collections::HashSet::new();
+    let mut fresh = Vec::new();
+    let mut revivals = Vec::new();
 
     for block in &blocks {
         // Stamped before storing so the text re-parses to the same id forever.
@@ -1934,7 +1936,7 @@ fn store_remediation_blocks(
         // The BLOCK key: one sidecar block is created or revived as a
         // unit, whatever its span count.
         let fingerprint = first.block_fingerprint;
-        if deck_fingerprints.contains(&fingerprint) {
+        if deck_fingerprints.contains(&fingerprint) || !seen.insert(fingerprint) {
             continue;
         }
         let existing = personal_ids_with_content(deck_path, deck_id, fingerprint);
@@ -1942,24 +1944,31 @@ fn store_remediation_blocks(
             let Some(block) = bind_block_to_topic(&block, &token, topic_id) else {
                 bail!("the stamped remediation block lost its id line `{token}`");
             };
-            crate::personal::append_cards(deck_path, deck_id, &block)?;
-            *created_or_revived += cards.iter().filter(|card| card.id().is_some()).count();
+            let ids = cards.iter().filter(|card| card.id().is_some()).count();
+            fresh.push((block, ids));
         } else if existing
             .iter()
             .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
         {
-            let bases = personal_bases_with_content(deck_path, deck_id, fingerprint);
-            crate::personal::rebind_topic(deck_path, &bases, topic_id)?;
-            for id in &existing {
-                *store.get_or_insert(id) = CardState::new();
-                *created_or_revived += 1;
-            }
-            revived = true;
+            revivals.push((fingerprint, existing));
         }
         // Else at least one matching entry is still active: leave it, no reset.
     }
-    if revived {
+
+    for (fingerprint, existing) in &revivals {
+        let bases = personal_bases_with_content(deck_path, deck_id, *fingerprint);
+        crate::personal::rebind_topic(deck_path, &bases, topic_id)?;
+        for id in existing {
+            *store.get_or_insert(id) = CardState::new();
+            *created_or_revived += 1;
+        }
+    }
+    if !revivals.is_empty() {
         store.save()?;
+    }
+    for (block, ids) in &fresh {
+        crate::personal::append_cards(deck_path, deck_id, block)?;
+        *created_or_revived += ids;
     }
     Ok(())
 }
@@ -3787,6 +3796,30 @@ mod tests {
     }
 
     #[test]
+    fn a_block_repeated_in_one_batch_is_stored_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        let deck = empty_deck(&dir, "d.md");
+        let block = "## Same gap?\nsame answer\n";
+
+        let created = store_remediation(
+            &mut store,
+            &deck,
+            "d.md",
+            &format!("{block}\n{block}"),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(1, created, "the repeated block counts once");
+        assert_eq!(
+            1,
+            sidecar_cards(&deck, "d.md").len(),
+            "the repeated block is appended once"
+        );
+    }
+
+    #[test]
     fn failing_the_same_exam_twice_yields_zero_duplicate_gap_cards() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("p.json")).unwrap();
@@ -3871,6 +3904,60 @@ mod tests {
             retired + 1,
             revision(),
             "step 3: a rerun that revives a retired card saves progress once"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_retry_acknowledges_a_fresh_card_committed_before_a_mixed_save_failed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let progress_dir = dir.path().join("progress");
+        std::fs::create_dir(&progress_dir).unwrap();
+        let progress = progress_dir.join("p.json");
+        let mut store = Store::open(&progress).unwrap();
+        let deck = empty_deck(&dir, "d.md");
+        let retired = "## Old gap?\nold answer\n";
+        let fresh = "## New gap?\nnew answer\n";
+        let mixed = format!("{retired}\n{fresh}");
+        let cap = Some(30u32);
+
+        assert_eq!(
+            1,
+            store_remediation(&mut store, &deck, "d.md", retired, cap).unwrap()
+        );
+        let retired_id = sidecar_ids(&deck, "d.md").remove(0);
+        store.get_or_insert(&retired_id).recall = Some(FsrsState {
+            state: 2,
+            scheduled_days: 90,
+            ..Default::default()
+        });
+        store.save().unwrap();
+
+        std::fs::set_permissions(&progress_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let first = store_remediation_cards(
+            &mut store,
+            Some(&deck),
+            "d.md",
+            "topic-t",
+            &std::collections::HashSet::new(),
+            &mixed,
+            cap,
+        );
+        std::fs::set_permissions(&progress_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(first.outcome.is_err(), "the revival save must fail");
+        let first_reported = first.into_result().unwrap_or_default();
+
+        let mut retry_store = Store::open(&progress).unwrap();
+        let retry_reported =
+            store_remediation(&mut retry_store, &deck, "d.md", &mixed, cap).unwrap();
+
+        assert_eq!(2, sidecar_cards(&deck, "d.md").len());
+        assert_eq!(
+            2,
+            first_reported + retry_reported,
+            "after retry clears the error, the caller must learn about both the fresh card and the revived card"
         );
     }
 
