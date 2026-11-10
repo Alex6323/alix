@@ -930,6 +930,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Remediation that creates or revives no card no longer saves the progress
+  store, so it no longer advances the store's sync revision. The phone also
+  remembers the remediation it applied for the exam sitting it keeps, and a
+  reopened sitting shows that count instead of applying the cards again.
+
 - Long prompts no longer fail to start on Codex and Copilot: every backend now
   receives the prompt on stdin, where those two took it as one command-line
   argument that Linux refuses past 128 KiB. A CLI that exits before reading

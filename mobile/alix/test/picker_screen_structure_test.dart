@@ -660,6 +660,102 @@ void main() {
   );
 
   testWidgets(
+    'reopening a remediated sitting after close failure does not apply it twice',
+    (tester) async {
+      final fixture = await examFixture('exam-remediation-close-failure');
+      const remediatedExam = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'remediated',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: ['the tested idea'],
+        canRemediate: false,
+        cardsByTopic: [
+          RemoteTopicCards(
+            topicId: 'topic-remediation',
+            cards: '## Why?\nBecause.\n',
+          ),
+        ],
+        thinking: false,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
+        examGetReplies: const [failedRemoteExam],
+        examGetRepliesAfterRemediate: const [remediatedExam],
+        failExamClose: true,
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Turn the gaps into cards'));
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Done.'),
+        findsOneWidget,
+        reason: 'step 1: remediation lands',
+      );
+      expect(
+        find.text('1 new cards to drill.'),
+        findsOneWidget,
+        reason: 'step 1: the first remediation creates one card',
+      );
+      final progress = fixture.root
+          .listSync(recursive: true)
+          .whereType<File>()
+          .singleWhere((file) => file.path.contains('/.alix/progress/'));
+      final first =
+          jsonDecode(progress.readAsStringSync()) as Map<String, dynamic>;
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(client.examCloseCalls, 1, reason: 'step 2: closing failed once');
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('1 new cards to drill.'),
+        findsNothing,
+        reason: 'step 2: the first remediation snack is gone',
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Take exam'));
+      await tester.pumpAndSettle();
+      final reopened =
+          jsonDecode(progress.readAsStringSync()) as Map<String, dynamic>;
+
+      expect(
+        reopened['revision'],
+        first['revision'],
+        reason: 'step 3: reopening retained remediation must not save it again',
+      );
+      expect(
+        find.text('1 new cards to drill.'),
+        findsOneWidget,
+        reason: 'step 4: the reopen reports the remediation it kept, not a rerun',
+      );
+    },
+  );
+
+  testWidgets(
     'picker tree: generate unavailable, idle, busy, failed, and destination states',
     (tester) async {
       final root = tempDir('alix-picker-structure-generate-');

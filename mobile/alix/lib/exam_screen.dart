@@ -118,7 +118,7 @@ class ExamScreen extends StatefulWidget {
   /// Turns one failed topic's remediation deck-text into phone-store
   /// personal cards bound to that topic (a closure over
   /// `applyRemediation`), returning how many were created or revived.
-  final int Function(String topicId, String cardsText) applyRemediation;
+  final int Function(RemoteExam exam, RemoteTopicCards topic) applyRemediation;
 
   /// The wall clock, injected so tests can fake it.
   final BigInt Function() nowMs;
@@ -275,7 +275,7 @@ class _ExamScreenState extends State<ExamScreen> {
       _remediationApplied = true;
       var count = 0;
       for (final topic in dto.cardsByTopic) {
-        count += widget.applyRemediation(topic.topicId, topic.cards);
+        count += widget.applyRemediation(dto, topic);
       }
       _snack('$count new cards to drill.');
     }

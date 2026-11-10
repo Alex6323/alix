@@ -67,8 +67,8 @@ void main() {
         },
         cards: cards,
         unsourcedTopics: unsourcedTopics,
-        applyRemediation: (topicId, cardsText) {
-          remediationCalls.add('$topicId: $cardsText');
+        applyRemediation: (exam, topic) {
+          remediationCalls.add('${topic.topicId}: ${topic.cards}');
           return remediationCountReply;
         },
         nowMs: () => BigInt.from(1000),

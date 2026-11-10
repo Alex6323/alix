@@ -1918,7 +1918,9 @@ pub fn store_remediation_cards(
         }
         // Else at least one matching entry is still active: leave it, no reset.
     }
-    store.save()?;
+    if created_or_revived > 0 {
+        store.save()?;
+    }
     Ok(created_or_revived)
 }
 
@@ -3767,6 +3769,53 @@ mod tests {
             "the same gap again is a content dupe, not a new card"
         );
         assert_eq!(1, sidecar_cards(&deck, "d.md").len());
+    }
+
+    #[test]
+    fn a_remediation_rerun_saves_progress_only_when_it_creates_or_revives_a_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let progress = dir.path().join("p.json");
+        let mut store = Store::open(&progress).unwrap();
+        let deck = empty_deck(&dir, "d.md");
+        let text = "## Why does X happen?\nbecause of Y\n";
+        let cap = Some(30u32);
+        let revision = || {
+            let file: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+            file["revision"].as_u64().unwrap()
+        };
+
+        assert_eq!(
+            1,
+            store_remediation(&mut store, &deck, "d.md", text, cap).unwrap()
+        );
+        let created = revision();
+
+        assert_eq!(
+            0,
+            store_remediation(&mut store, &deck, "d.md", text, cap).unwrap()
+        );
+        assert_eq!(
+            created,
+            revision(),
+            "step 2: a rerun that creates and revives nothing does not save progress"
+        );
+
+        let ids = sidecar_ids(&deck, "d.md");
+        store.get_or_insert(&ids[0]).recall = Some(FsrsState {
+            state: 2,
+            scheduled_days: 90,
+            ..Default::default()
+        });
+        assert_eq!(
+            1,
+            store_remediation(&mut store, &deck, "d.md", text, cap).unwrap()
+        );
+        assert_eq!(
+            created + 1,
+            revision(),
+            "step 3: a rerun that revives a retired card saves progress once"
+        );
     }
 
     #[test]

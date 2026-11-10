@@ -41,6 +41,7 @@ class _StartedSitting {
   String? sitting;
   bool recorded = false;
   ({String text, bool examChanged})? standing;
+  final Map<String, int> remediated = {};
 }
 
 _StartedSitting? _startedSitting;
@@ -691,13 +692,20 @@ class _PickerScreenState extends State<PickerScreen> {
             kept.recorded = true;
             return kept.standing;
           },
-          applyRemediation: (topicId, cardsText) => exam_bridge.applyExamRemediation(
-            deckPath: entry.path,
-            rootDir: root,
-            topicId: topicId,
-            cardsText: cardsText,
-            device: widget.device,
-          ),
+          applyRemediation: (exam, topic) {
+            final kept = _keptSitting(entry.path, exam.sitting);
+            final applied = kept?.remediated[topic.topicId];
+            if (applied != null) return applied;
+            final count = exam_bridge.applyExamRemediation(
+              deckPath: entry.path,
+              rootDir: root,
+              topicId: topic.topicId,
+              cardsText: topic.cards,
+              device: widget.device,
+            );
+            kept?.remediated[topic.topicId] = count;
+            return count;
+          },
           nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
         ),
       ),
