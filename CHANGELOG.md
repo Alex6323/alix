@@ -308,8 +308,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `#` heading, also stop it, naming the topic. With `--review` (the extra AI
   pass that removes redundant cards), the reviewing pass returns that list
   for the deck it rewrites.
-  A `--force` regeneration keeps the replaced deck's sources while its `.bak`
-  exists, so `alix deck restore` brings back a deck with its exam; the next
+  A `--force` regeneration or import keeps the replaced deck's sources
+  while its `.bak` exists, so `alix deck restore` brings back a deck with its
+  exam; the next
   forced replace of that deck removes them. `alix workspace
   update` refuses a proposal that retires a topic its sources are bound to,
   and an apply whose staged sources manifest was edited after review. `alix

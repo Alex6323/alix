@@ -7721,6 +7721,77 @@ fn deck_import_refuses_to_clobber_without_force_then_force_overwrites() {
     );
 }
 
+#[test]
+fn a_second_forced_import_retires_the_overwritten_backups_sources() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "a.md", "alpha evidence\n");
+    let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
+    let cli = fake_claude(dir.path(), reply);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    let generated = alix(&[
+        "deck",
+        "generate",
+        source.to_str().unwrap(),
+        "--config",
+        &config,
+        "--into",
+        workspace.to_str().unwrap(),
+        "--output",
+        "geo",
+    ]);
+    assert!(
+        generated.status.success(),
+        "fixture generation: {}",
+        stderr(&generated)
+    );
+    let deck = workspace.join("decks/geo.md");
+    let original = alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
+    let original_sources = workspace.join("sources").join(&original);
+    assert!(
+        original_sources.is_dir(),
+        "fixture: generated sources exist"
+    );
+
+    for (step, cards) in [("first", "Q1\tA1\n"), ("second", "Q2\tA2\n")] {
+        let tsv = write(dir.path(), &format!("{step}.tsv"), cards);
+        let imported = alix(&[
+            "deck",
+            "import",
+            &tsv,
+            "--workspace",
+            workspace.to_str().unwrap(),
+            "--output",
+            "geo",
+            "--force",
+        ]);
+        assert!(
+            imported.status.success(),
+            "{step} forced import: {}",
+            stderr(&imported)
+        );
+        if step == "first" {
+            assert!(
+                original_sources.is_dir(),
+                "the generated deck's sources stay while its backup exists"
+            );
+        }
+    }
+
+    assert!(
+        !original_sources.exists(),
+        "the second import overwrote the generated backup, so its sources must retire"
+    );
+}
+
 // ── `alix deck remove` / `alix deck restore` ─────────────────────────────────
 
 fn imported_workspace_deck(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {

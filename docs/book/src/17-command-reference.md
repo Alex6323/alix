@@ -220,7 +220,7 @@ The rest of the AI-and-deck surface:
   import, a trace or workspace regeneration, and also the progress backup an
   accepted paired-phone push leaves when the deck text itself has no backup.
   The command reports which of the three sides swapped. A forced
-  regeneration keeps the replaced deck's frozen exam sources
+  import or regeneration keeps the replaced deck's frozen exam sources
   (`sources/<deck-id>/`) for as long as its backup exists, so a restored deck
   has its exam again; the next forced replace of the same deck overwrites that
   backup and removes those sources. Nothing is destroyed:

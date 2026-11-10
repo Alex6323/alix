@@ -727,7 +727,7 @@ pub fn merge_built(
                     }
                     let text = fs::read_to_string(&member_from)
                         .with_context(|| format!("cannot read {}", member_from.display()))?;
-                    library::replace_deck_retiring_backup_sources(&to, &member_name, &text, store)?;
+                    library::replace_deck(&to, &member_name, &text, store)?;
                     fs::remove_file(&member_from)
                         .with_context(|| format!("cannot remove {}", member_from.display()))?;
                 } else {

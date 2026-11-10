@@ -125,7 +125,7 @@ pub fn replace_sourced_deck(
     let new_id = parser::read_deck_identity(&placed.path).ok().flatten();
     let replaced = std::fs::read_to_string(&placed.path)
         .with_context(|| format!("cannot read {}", placed.path.display()))
-        .and_then(|stamped| replace_deck(dir, name, &stamped, store));
+        .and_then(|stamped| replace_deck_file(dir, name, &stamped, store));
     let temporary = remove_file(&placed.path);
     match replaced {
         Ok(replaced) => {
@@ -139,14 +139,14 @@ pub fn replace_sourced_deck(
     }
 }
 
-pub fn replace_deck_retiring_backup_sources(
+pub fn replace_deck(
     dir: &Path,
     name: &str,
     text: &str,
     store: &mut Store,
 ) -> Result<ReplaceReport> {
     let old_sources = ReplacedSources::before(dir, name);
-    let replaced = replace_deck(dir, name, text, store)?;
+    let replaced = replace_deck_file(dir, name, text, store)?;
     old_sources.drop_if_replaced()?;
     Ok(replaced)
 }
@@ -292,7 +292,7 @@ pub struct ReplaceReport {
     pub wiped_cards: usize,
 }
 
-pub fn replace_deck(
+fn replace_deck_file(
     dir: &Path,
     name: &str,
     text: &str,
