@@ -9718,7 +9718,15 @@ fn remote_exam_start_examines_topics_of_the_named_cards_reports_unknown_ids_and_
         body["unknown_cards"],
         "{body}"
     );
-    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    assert_eq!(
+        "examws/twosect.md", body["deck"],
+        "start: the sitting names its deck as the client did: {body}"
+    );
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    assert_eq!(
+        "examws/twosect.md", body["deck"],
+        "poll: the sitting names its deck as the client did: {body}"
+    );
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["b"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
 

@@ -1115,6 +1115,7 @@ impl Preparing {
 
 pub(super) struct RemoteExamining {
     pub(super) id: String,
+    pub(super) deck: String,
     pub(super) sitting: exam::Sitting,
     pub(super) estimate: Option<&'static str>,
     pub(super) cards_by_topic: Vec<exam::TopicCards>,
@@ -1137,7 +1138,7 @@ impl RemoteExamining {
         RemoteExamDto {
             sitting: Some(self.id.clone()),
             phase: exam_phase_name(s.phase()),
-            deck: s.subject().to_string(),
+            deck: self.deck.clone(),
             strictness: strictness_name(s.strictness()),
             // prompts only: the rubric never leaves the server outside a
             // graded result

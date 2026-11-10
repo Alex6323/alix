@@ -108,6 +108,7 @@ pub(super) enum JobsCommand {
         reply: Reply<RemoteCreateOutcome>,
     },
     RemoteExamStart {
+        deck: String,
         path: PathBuf,
         cards: Option<Vec<String>>,
         ideas: Option<crate::exam_ideas::IdeasDocument>,
@@ -268,6 +269,7 @@ impl JobsHandle {
     }
     pub(super) fn remote_exam_start(
         &self,
+        deck: String,
         path: PathBuf,
         cards: Option<Vec<String>>,
         ideas: Option<crate::exam_ideas::IdeasDocument>,
@@ -275,6 +277,7 @@ impl JobsHandle {
         ask_cfg: AskConfig,
     ) -> Option<Started<RemoteExamDto>> {
         self.call(|reply| JobsCommand::RemoteExamStart {
+            deck,
             path,
             cards,
             ideas,
@@ -572,6 +575,7 @@ impl JobsState {
                 let _ = reply.send(remote_create_card(&self.catalog, &self.config, &req));
             }
             JobsCommand::RemoteExamStart {
+                deck,
                 path,
                 cards,
                 ideas,
@@ -579,7 +583,8 @@ impl JobsState {
                 ask_cfg,
                 reply,
             } => {
-                let _ = reply.send(self.remote_exam_start(path, cards, ideas, exam_cfg, ask_cfg));
+                let _ =
+                    reply.send(self.remote_exam_start(deck, path, cards, ideas, exam_cfg, ask_cfg));
             }
             JobsCommand::RemoteExamPoll(reply) => {
                 // advance() only, never poll(): poll() writes the store,
@@ -905,6 +910,7 @@ impl JobsState {
 
     fn remote_exam_start(
         &mut self,
+        deck_name: String,
         path: PathBuf,
         cards: Option<Vec<String>>,
         ideas: Option<crate::exam_ideas::IdeasDocument>,
@@ -946,6 +952,7 @@ impl JobsState {
         );
         let ex = RemoteExamining {
             id,
+            deck: deck_name,
             sitting,
             estimate,
             cards_by_topic: Vec::new(),

@@ -932,6 +932,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Phone exam: leaving a prepared exam on a deck inside a workspace folder no
+  longer hides it. The picker offered "Generate exam" instead of "Take exam",
+  and the desktop refused the new exam while the old one stayed open.
+
 - Phone exam: a long question scrolls within its own area and the answer field
   stays on screen; a question's code blocks and formatting render instead of
   showing raw Markdown fences. Each result row shows the question it grades,

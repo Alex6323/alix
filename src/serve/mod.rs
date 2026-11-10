@@ -2029,6 +2029,7 @@ pub fn run_review(
                     continue;
                 };
                 match jobs.remote_exam_start(
+                    body.deck,
                     path,
                     body.cards,
                     body.ideas,
