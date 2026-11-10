@@ -97,8 +97,8 @@ listed in the [command reference](17-command-reference.md#the-ai-features).
 `alix doctor` checks every member deck's sources folder: a damaged folder
 (a copy missing, renamed, linked or not matching its id, a malformed
 manifest) and a binding to a topic the deck lacks are errors, a copy no
-row names is a note, and a `sources/<deck-id>/` folder no member deck owns
-(left, for example, when `alix workspace generate` into an existing
+row names is a note, and a `sources/<deck-id>/` folder no member deck or
+member's `.bak` backup owns (left, for example, when `alix workspace generate` into an existing
 workspace kept your deck of the same file name instead of the generated
 one, or by hand edits) is a warning. A `sources/` folder that is a symbolic
 link is one error, whether doctor checks the workspace, its `decks/` folder, or one

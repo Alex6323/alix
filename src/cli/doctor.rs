@@ -1185,7 +1185,15 @@ fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
         }
     }
     if alix::workspace::is_workspace(dir) {
-        audit_owned_roots(dir, &known_deck_ids, &mut report);
+        let mut owners = known_deck_ids.clone();
+        owners.extend(deck_files.iter().filter_map(|path| {
+            let mut backup = path.clone().into_os_string();
+            backup.push(".bak");
+            alix::parser::read_deck_identity(Path::new(&backup))
+                .ok()
+                .flatten()
+        }));
+        audit_owned_roots(dir, &owners, &mut report);
     }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
@@ -3713,6 +3721,35 @@ mod tests {
                 "{folder}: {orphan:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_sources_directory_a_backup_deck_owns_is_no_orphan() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        std::fs::create_dir(dir.path().join("decks")).unwrap();
+        w(
+            &dir.path().join("decks"),
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        w(
+            &dir.path().join("decks"),
+            "m.md.bak",
+            "---\nformat-version: 1\nid: \"deck-m0\"\n---\n## q\na\n<!-- id: card-m0c1 -->\n",
+        );
+        std::fs::create_dir_all(dir.path().join("sources/deck-m0")).unwrap();
+
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("sources/deck-m0")),
+            "the folder `deck restore` brings back is not an orphan: {:#?}",
+            report.warnings
+        );
     }
 
     #[cfg(unix)]

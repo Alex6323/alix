@@ -727,7 +727,7 @@ pub fn merge_built(
                     }
                     let text = fs::read_to_string(&member_from)
                         .with_context(|| format!("cannot read {}", member_from.display()))?;
-                    library::replace_deck_dropping_old_sources(&to, &member_name, &text, store)?;
+                    library::replace_deck_retiring_backup_sources(&to, &member_name, &text, store)?;
                     fs::remove_file(&member_from)
                         .with_context(|| format!("cannot remove {}", member_from.display()))?;
                 } else {
@@ -1935,34 +1935,55 @@ back a
     }
 
     #[test]
-    fn forced_workspace_regeneration_drops_the_replaced_decks_old_sources() {
+    fn forced_workspace_regeneration_keeps_the_replaced_decks_sources_while_its_backup_exists() {
         let (staging, dest) = merge_test_dirs("sourced-regeneration");
-        for root in [&staging, &dest] {
-            fs::create_dir_all(root.join("decks")).unwrap();
-            fs::write(root.join("alix.toml"), "").unwrap();
-        }
-        let old = dest.join("decks/01-a.md");
-        fs::write(
-            &old,
-            "---\nformat-version: 1\nid: deck-old1\n---\n# Old\n<!-- id: topic-old1 -->\n\n## old\nold\n<!-- id: card-old1 -->\n",
-        )
-        .unwrap();
-        crate::sources::testkit::sourced(old.clone());
-        let replacement = staging.join("decks/01-a.md");
-        fs::write(
-            &replacement,
-            "---\nformat-version: 1\nid: deck-new1\n---\n# New\n<!-- id: topic-new1 -->\n\n## new\nnew\n<!-- id: card-new1 -->\n",
-        )
-        .unwrap();
-        crate::sources::testkit::sourced(replacement);
-        let mut store = crate::state::open_store(&old, &dest).unwrap();
+        fs::create_dir_all(dest.join("decks")).unwrap();
+        fs::write(dest.join("alix.toml"), "").unwrap();
+        let live = dest.join("decks/01-a.md");
+        let member = |id: &str| {
+            format!(
+                "---\nformat-version: 1\nid: deck-{id}\n---\n# T\n<!-- id: topic-{id} -->\n\n## q\na\n<!-- id: card-{id} -->\n"
+            )
+        };
+        fs::write(&live, member("old1")).unwrap();
+        crate::sources::testkit::sourced(live.clone());
+        let regenerate = |id: &str| {
+            fs::create_dir_all(staging.join("decks")).unwrap();
+            fs::write(staging.join("alix.toml"), "").unwrap();
+            let staged = staging.join("decks/01-a.md");
+            fs::write(&staged, member(id)).unwrap();
+            crate::sources::testkit::sourced(staged);
+            let mut store = crate::state::open_store(&live, &dest).unwrap();
+            merge_built(&staging, &dest, true, &mut store).unwrap();
+        };
 
-        merge_built(&staging, &dest, true, &mut store).unwrap();
+        regenerate("new1");
+        assert!(
+            dest.join("sources/deck-new1").is_dir(),
+            "first: the new deck's sources land"
+        );
+        assert!(
+            dest.join("sources/deck-old1").is_dir(),
+            "first: the replaced deck's sources stay for its backup"
+        );
 
-        assert!(dest.join("sources/deck-new1").is_dir());
+        crate::library::restore_deck(&live, &dest).unwrap();
+        assert!(
+            crate::sources::load_verified(&dest, "deck-old1")
+                .unwrap()
+                .is_some(),
+            "restore: the original deck's exam material verifies"
+        );
+        crate::library::restore_deck(&live, &dest).unwrap();
+
+        regenerate("new2");
         assert!(
             !dest.join("sources/deck-old1").exists(),
-            "the source folder owned by the replaced generated deck must not be orphaned"
+            "second: the overwritten backup's sources go with it"
+        );
+        assert!(
+            dest.join("sources/deck-new1").is_dir(),
+            "second: the newly replaced deck's sources stay for its backup"
         );
 
         let _ = fs::remove_dir_all(staging.parent().unwrap());

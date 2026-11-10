@@ -5879,103 +5879,114 @@ fn reviewed_folder_generation_binds_sources_to_the_final_card_topics() {
 }
 
 #[test]
-fn forcing_a_sourced_generation_removes_the_replaced_decks_source_folder() {
-    let dir = TempDir::new().unwrap();
-    let source = dir.path().join("source");
-    std::fs::create_dir_all(&source).unwrap();
-    write(&source, "a.md", "alpha evidence\n");
-    let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
-    let cli = fake_claude(dir.path(), reply);
-    let config = write(
-        dir.path(),
-        "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
-    );
-    let workspace = dir.path().join("workspace");
-    std::fs::create_dir_all(workspace.join("decks")).unwrap();
-    std::fs::write(workspace.join("alix.toml"), "").unwrap();
-    let args = [
-        "deck",
-        "generate",
-        source.to_str().unwrap(),
-        "--config",
-        &config,
-        "--into",
-        workspace.to_str().unwrap(),
-        "--output",
-        "forced",
-    ];
+fn a_forced_generation_keeps_the_replaced_decks_sources_while_its_backup_exists() {
+    for (row, replacement_input) in [
+        ("sourced", None),
+        ("unsourced", Some("https://example.com/replacement")),
+    ] {
+        let dir = TempDir::new().unwrap();
+        let source = dir.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        write(&source, "a.md", "alpha evidence\n");
+        let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
+        let cli = fake_claude(dir.path(), reply);
+        let config = write(
+            dir.path(),
+            "config.toml",
+            &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+        );
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "").unwrap();
+        let deck = workspace.join("decks/forced.md");
+        let args = [
+            "deck",
+            "generate",
+            source.to_str().unwrap(),
+            "--config",
+            &config,
+            "--into",
+            workspace.to_str().unwrap(),
+            "--output",
+            "forced",
+        ];
+        let mut forced = args.to_vec();
+        if let Some(input) = replacement_input {
+            forced[2] = input;
+        }
+        forced.push("--force");
+        let deck_id = || alix::deck::Deck::load(&deck).unwrap().deck_token.unwrap();
+        let restore = |step: &str| {
+            let out = alix(&["deck", "restore", deck.to_str().unwrap()]);
+            assert!(out.status.success(), "{row} / {step}: {}", stderr(&out));
+        };
 
-    let first = alix(&args);
-    assert!(first.status.success(), "stderr: {}", stderr(&first));
-    let original = alix::deck::Deck::load(workspace.join("decks/forced.md"))
-        .unwrap()
-        .deck_token
-        .unwrap();
-    let original_sources = workspace.join("sources").join(&original);
-    assert!(original_sources.is_dir());
+        let first = alix(&args);
+        assert!(first.status.success(), "{row} / first: {}", stderr(&first));
+        let original = deck_id();
+        let original_sources = workspace.join("sources").join(&original);
+        assert!(
+            original_sources.is_dir(),
+            "{row}: fixture: the first deck is sourced"
+        );
 
-    let mut forced = args.to_vec();
-    forced.push("--force");
-    let second = alix(&forced);
-    assert!(second.status.success(), "stderr: {}", stderr(&second));
-    let replacement = alix::deck::Deck::load(workspace.join("decks/forced.md"))
-        .unwrap()
-        .deck_token
-        .unwrap();
-    assert_ne!(original, replacement);
-    assert!(
-        !original_sources.exists(),
-        "the old source copies and private roots file must retire with the replaced deck"
-    );
-}
+        let second = alix(&forced);
+        assert!(
+            second.status.success(),
+            "{row} / second: {}",
+            stderr(&second)
+        );
+        let replacement = deck_id();
+        assert_ne!(original, replacement, "{row}: the replacement has a new id");
+        assert!(
+            original_sources.is_dir(),
+            "{row} / after the forced replace: the replaced deck's sources stay for its backup"
+        );
 
-#[test]
-fn forcing_an_unsourced_generation_over_a_sourced_deck_removes_old_sources() {
-    let dir = TempDir::new().unwrap();
-    let source = dir.path().join("source");
-    std::fs::create_dir_all(&source).unwrap();
-    write(&source, "a.md", "alpha evidence\n");
-    let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
-    let cli = fake_claude(dir.path(), reply);
-    let config = write(
-        dir.path(),
-        "config.toml",
-        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
-    );
-    let workspace = dir.path().join("workspace");
-    std::fs::create_dir_all(workspace.join("decks")).unwrap();
-    std::fs::write(workspace.join("alix.toml"), "").unwrap();
-    let args = [
-        "deck",
-        "generate",
-        source.to_str().unwrap(),
-        "--config",
-        &config,
-        "--into",
-        workspace.to_str().unwrap(),
-        "--output",
-        "forced",
-    ];
+        restore("restore");
+        assert_eq!(
+            original,
+            deck_id(),
+            "{row} / restore: the original deck is live again"
+        );
+        let restored = alix::deck::Deck::load(&deck).unwrap();
+        let topics: Vec<String> = restored.topic_ids().into_iter().flatten().collect();
+        let sources = alix::sources::load_verified(&workspace, &original)
+            .unwrap_or_else(|error| {
+                panic!("{row} / restore: the old exam material verifies: {error}")
+            })
+            .unwrap_or_else(|| panic!("{row} / restore: the old exam material is present"));
+        assert!(
+            !sources.manifest.sources.is_empty()
+                && sources
+                    .manifest
+                    .sources
+                    .values()
+                    .flat_map(|row| &row.bound_to)
+                    .all(|topic| topics.contains(topic)),
+            "{row} / restore: every source binds a topic of the restored deck: {topics:?} {:?}",
+            sources.manifest.sources
+        );
 
-    let first = alix(&args);
-    assert!(first.status.success(), "stderr: {}", stderr(&first));
-    let original = alix::deck::Deck::load(workspace.join("decks/forced.md"))
-        .unwrap()
-        .deck_token
-        .unwrap();
-    let original_sources = workspace.join("sources").join(&original);
-    assert!(original_sources.is_dir());
-
-    let mut forced = args.to_vec();
-    forced[2] = "https://example.com/replacement";
-    forced.push("--force");
-    let second = alix(&forced);
-    assert!(second.status.success(), "stderr: {}", stderr(&second));
-    assert!(
-        !original_sources.exists(),
-        "forcing a URL generation must retire the replaced deck's source folder"
-    );
+        restore("restore back");
+        assert_eq!(
+            replacement,
+            deck_id(),
+            "{row} / restore back: the replacement is live again"
+        );
+        let third = alix(&forced);
+        assert!(third.status.success(), "{row} / third: {}", stderr(&third));
+        assert!(
+            !original_sources.exists(),
+            "{row} / third forced replace: the overwritten backup's sources go with it"
+        );
+        if row == "sourced" {
+            assert!(
+                workspace.join("sources").join(&replacement).is_dir(),
+                "{row} / third forced replace: the newly replaced deck's sources stay for its backup"
+            );
+        }
+    }
 }
 
 #[test]

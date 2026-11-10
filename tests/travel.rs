@@ -403,7 +403,7 @@ fn every_lifecycle_operation_carries_each_per_deck_folder_with_its_deck_and_neve
         let root = workspace_at(&base, "restore");
         let member = sourced_member(&root);
         let mut store = state::open_store(&deck_path(&root), &root).unwrap();
-        library::replace_deck(
+        library::replace_deck_retiring_backup_sources(
             &root.join("decks"),
             DECK_FILE,
             "---\nformat-version: 1\nid: \"deck-travel2\"\n---\n## new\nanswer\n",
@@ -414,7 +414,7 @@ fn every_lifecycle_operation_carries_each_per_deck_folder_with_its_deck_and_neve
             cell(
                 rel_path(&root, &member.rel(kind)).exists(),
                 format!(
-                    "{op} / {} / after replace: keyed by the old token, so left in place",
+                    "{op} / {} / after a forced replace: kept while the replaced deck's backup exists",
                     kind.label()
                 ),
             );

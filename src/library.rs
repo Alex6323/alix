@@ -139,7 +139,7 @@ pub fn replace_sourced_deck(
     }
 }
 
-pub fn replace_deck_dropping_old_sources(
+pub fn replace_deck_retiring_backup_sources(
     dir: &Path,
     name: &str,
     text: &str,
@@ -168,23 +168,36 @@ impl ReplacedSources {
     fn before(dir: &Path, name: &str) -> Self {
         let deck = dir.join(format!("{}.md", deck_stem(name)));
         let files = workspace::root_for_member_dir(dir).map(WorkspaceFiles::new);
-        let old_id = parser::read_deck_identity(&deck).ok().flatten();
+        let backup_id = parser::read_deck_identity(&backup_of(&deck)).ok().flatten();
         Self {
             deck,
-            folder: files.zip(old_id),
+            folder: files.zip(backup_id),
         }
     }
 
     fn drop_if_replaced(self) -> Result<()> {
-        let Some((files, old_id)) = self.folder else {
+        let Some((files, backup_id)) = self.folder else {
             return Ok(());
         };
-        let new_id = parser::read_deck_identity(&self.deck).ok().flatten();
-        if new_id.as_deref() == Some(old_id.as_str()) {
+        let still_owned = [self.deck.clone(), backup_of(&self.deck)]
+            .iter()
+            .any(|deck| {
+                parser::read_deck_identity(deck).ok().flatten().as_deref()
+                    == Some(backup_id.as_str())
+            });
+        if still_owned {
             return Ok(());
         }
-        remove_folder(&files.sources_for(&old_id))
+        remove_folder(&files.sources_for(&backup_id))
     }
+}
+
+fn backup_of(deck: &Path) -> PathBuf {
+    let name = deck
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("deck.md");
+    deck.with_file_name(format!("{name}.bak"))
 }
 
 fn remove_file(path: &Path) -> Result<()> {
@@ -1256,7 +1269,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sourced_replacement_binds_the_new_deck_and_drops_the_old_decks_sources() {
+    fn a_sourced_replacement_binds_the_new_deck_and_keeps_the_old_decks_sources_for_its_backup() {
         let fixture = sourced_replace_fixture();
 
         let (_, added) = replace_sourced(&fixture).unwrap();
@@ -1269,14 +1282,34 @@ mod tests {
             "the replacement has a fresh deck id"
         );
         assert_eq!(1, added.added.len(), "the new file is frozen");
+        let mut expected = vec![fixture.old_id.clone(), new_id];
+        expected.sort();
         assert_eq!(
-            vec![new_id],
+            expected,
             deck_folders(&fixture.ws, crate::sources::ROOT),
-            "only the replacement's sources folder is left"
+            "the replacement's sources and the backup's sources are both kept"
         );
         assert!(
             !fixture.members.join(".a.generated.md").exists(),
             "the temporary deck is gone"
+        );
+    }
+
+    #[test]
+    fn a_replaced_backup_sharing_the_live_decks_id_keeps_that_ids_sources() {
+        let fixture = sourced_replace_fixture();
+        std::fs::copy(
+            fixture.members.join("a.md"),
+            fixture.members.join("a.md.bak"),
+        )
+        .unwrap();
+
+        replace_sourced(&fixture).unwrap();
+
+        assert!(
+            deck_folders(&fixture.ws, crate::sources::ROOT).contains(&fixture.old_id),
+            "the overwritten backup's id is the new backup's id, so its folder stays: {:?}",
+            deck_folders(&fixture.ws, crate::sources::ROOT)
         );
     }
 
