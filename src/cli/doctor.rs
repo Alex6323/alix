@@ -256,7 +256,7 @@ fn deck_source_findings(deck: &Deck, report: &mut Report) {
     };
     let exam = report.exam.clone().for_workspace(&root);
     let found = alix::sources::deck_findings(&root, deck, report.drift.sources, &exam);
-    if let Some(linked) = &found.linked_root {
+    if let Some(linked) = &found.linked_folder {
         report.linked_folder(linked, SOURCES_LINKED);
     }
     let at = deck.path.display();
@@ -1067,9 +1067,7 @@ fn audit_owned_root(
         let name = name.to_string_lossy().into_owned();
         let owned = known_deck_ids.map(|ids| ids.contains(&name));
         if kind.is_symlink() && root.owner_reports_links {
-            if owned != Some(true) {
-                report.linked_folder(&folder.join(&name), root.linked);
-            }
+            report.linked_folder(&folder.join(&name), root.linked);
         } else if kind.is_symlink() {
             report.error(format!(
                 "{}/{name} is a link; {}: replace it with what it points to, or remove it",
@@ -3820,6 +3818,40 @@ mod tests {
                 .iter()
                 .any(|warning| warning.contains("sources/deck-m0")),
             "the folder `deck restore` brings back is not an orphan: {:#?}",
+            report.warnings
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_sources_folder_owned_only_by_a_backup_is_still_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        let decks = dir.path().join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        w(
+            &decks,
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        w(
+            &decks,
+            "m.md.bak",
+            "---\nformat-version: 1\nid: \"deck-m0\"\n---\n## q\na\n<!-- id: card-m0c1 -->\n",
+        );
+        std::fs::create_dir(dir.path().join("sources")).unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), dir.path().join("sources/deck-m0")).unwrap();
+
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| { error.contains("sources/deck-m0") && error.contains("is a link") }),
+            "a restore backup does not audit its owned source folder, so the workspace must report the link: errors={:#?}, warnings={:#?}",
+            report.errors,
             report.warnings
         );
     }

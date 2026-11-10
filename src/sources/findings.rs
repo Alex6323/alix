@@ -17,9 +17,7 @@ pub struct Findings {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub notes: Vec<String>,
-    /// The workspace's shared `sources/` folder when it is a link: every
-    /// member deck meets it, so the caller reports it once.
-    pub linked_root: Option<PathBuf>,
+    pub linked_folder: Option<PathBuf>,
 }
 
 pub fn deck_findings(
@@ -34,10 +32,8 @@ pub fn deck_findings(
     };
     let dir = WorkspaceFiles::new(workspace_root).sources_for(deck_id);
     let manifest = match load_verified(workspace_root, deck_id) {
-        Err(SourceError::LinkedFolder(path))
-            if path == WorkspaceFiles::new(workspace_root).sources() =>
-        {
-            findings.linked_root = Some(path);
+        Err(SourceError::LinkedFolder(path)) => {
+            findings.linked_folder = Some(path);
             return findings;
         }
         Err(error) => {
@@ -177,16 +173,19 @@ mod tests {
                 .to_string();
             let findings = deck_findings(fixture.root.path(), &deck, false, &ExamConfig::default());
             let root = WorkspaceFiles::new(fixture.root.path()).sources();
-            let (errors, linked_root) = if name == "sources root replaced by a symlink" {
-                (Vec::new(), Some(root))
-            } else {
-                (vec![refused], None)
+            let deck_folder = WorkspaceFiles::new(fixture.root.path()).sources_for(DECK);
+            let (errors, linked_folder) = match name {
+                "sources root replaced by a symlink" => (Vec::new(), Some(root)),
+                "deck folder replaced by a symlink to a folder holding the same files" => {
+                    (Vec::new(), Some(deck_folder))
+                }
+                _ => (vec![refused], None),
             };
             assert_eq!(
-                (errors, linked_root),
-                (findings.errors, findings.linked_root),
-                "{name}: the verified load's refusal is the one finding; a linked shared \
-                 `sources/` root is handed to the caller to report once"
+                (errors, linked_folder),
+                (findings.errors, findings.linked_folder),
+                "{name}: the verified load's refusal is the one finding; a linked \
+                 `sources/` root or deck folder is handed to the caller to report once"
             );
         }
     }
