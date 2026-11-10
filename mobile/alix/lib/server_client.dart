@@ -529,6 +529,7 @@ class RemoteExam {
     required this.deck,
     required this.strictness,
     required this.questions,
+    this.questionsUnits = const [],
     required this.grades,
     required this.gaps,
     required this.canRemediate,
@@ -551,6 +552,7 @@ class RemoteExam {
   final String deck;
   final String strictness;
   final List<String> questions;
+  final List<List<ReviewContentUnitModel>> questionsUnits;
   final List<RemoteExamTopic> topics;
   final ExamVerdicts? verdicts;
   final bool full;
@@ -577,6 +579,9 @@ class RemoteExam {
         deck: _asString(json['deck']) ?? '',
         strictness: _asString(json['strictness']) ?? 'balanced',
         questions: _asStringList(json['questions']),
+        questionsUnits: json['questions_units'] is List
+            ? [for (final units in json['questions_units'] as List) contentUnitsFromJson(units)]
+            : const [],
         topics: json['topics'] is List
             ? (json['topics'] as List).map(RemoteExamTopic.fromJson).whereType<RemoteExamTopic>().toList()
             : const [],

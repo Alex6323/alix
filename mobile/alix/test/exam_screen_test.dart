@@ -451,6 +451,62 @@ void main() {
     expect(find.byType(ExamScreen), findsNothing);
   });
 
+  testWidgets('a long question with a code block leaves the answer field on a phone screen', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    const prose = 'For one commit, A and B each build a checkpoint whose summary digest '
+        'is X. C and D each build a checkpoint whose summary digest is Y, because their '
+        'post-consensus verdict on one transaction differed. Every validator signs its own '
+        'build and submits that signature to consensus. What does the checkpoint aggregator '
+        'conclude for this commit, and what happens next on A, B, C and D? Say which '
+        'quantity decides the outcome. Then repeat the analysis for a committee where C '
+        'holds 4,000 and A holds 2,000, name the threshold the aggregator compares against, '
+        'state whether any checkpoint for this commit is ever certified, and explain what '
+        'an operator would see in the logs of each validator while the split persists.';
+    final exam = RemoteExam.fromJson({
+      'phase': 'answering',
+      'deck': 'rust.md',
+      'questions': [
+        'A committee of four validators holds this stake out of a total voting power of 10,000:\n\n'
+            '```\nvalidator A: 4,000\nvalidator B: 3,000\nvalidator C: 2,000\nvalidator D: 1,000\n```\n\n$prose',
+      ],
+      'questions_units': [
+        [
+          {
+            'kind': 'sentence',
+            'text': 'A committee of four validators holds this stake out of a total voting power of 10,000:',
+            'runs': [
+              {'text': 'A committee of four validators holds this stake out of a total voting power of 10,000:'},
+            ],
+          },
+          {
+            'kind': 'code',
+            'lines': ['validator A: 4,000', 'validator B: 3,000', 'validator C: 2,000', 'validator D: 1,000'],
+          },
+          {
+            'kind': 'sentence',
+            'text': prose,
+            'runs': [
+              {'text': prose},
+            ],
+          },
+        ],
+      ],
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.textContaining('```'), findsNothing, reason: 'the question renders its units, not raw markdown');
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final field = tester.getRect(find.byKey(const ValueKey('exam-answer-field')));
+    expect(field.height, greaterThanOrEqualTo(96), reason: 'answer field rect $field must keep typing room');
+    expect(field.bottom, lessThanOrEqualTo(screen.height), reason: 'answer field rect $field must be on screen $screen');
+    expect(tester.takeException(), isNull, reason: 'no layout overflow');
+  });
+
   testWidgets('answering navigation keeps typed text across Back/Next', (tester) async {
     final client = FakeServerClient(examGetReplies: const [answering2]);
     await pumpExam(tester, client: client);

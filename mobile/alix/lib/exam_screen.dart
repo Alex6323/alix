@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
+import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
 
@@ -552,7 +553,12 @@ class _ExamScreenState extends State<ExamScreen> {
         Text('Question ${index + 1} of $total',
             style: TextStyle(color: tokens.dim, fontSize: 13)),
         const SizedBox(height: 12),
-        Text(exam.questions[index], style: Theme.of(context).textTheme.titleMedium),
+        Flexible(
+          child: SingleChildScrollView(
+            key: const ValueKey('exam-question'),
+            child: _question(context, exam, index),
+          ),
+        ),
         const SizedBox(height: 16),
         Expanded(
           child: TextField(
@@ -585,6 +591,23 @@ class _ExamScreenState extends State<ExamScreen> {
           onPressed: _closing ? null : _explicitClose,
           child: const Text('End exam'),
         ),
+      ],
+    );
+  }
+
+  Widget _question(BuildContext context, RemoteExam exam, int index) {
+    final style = Theme.of(context).textTheme.titleMedium ?? const TextStyle();
+    final units = index < exam.questionsUnits.length ? exam.questionsUnits[index] : const [];
+    if (units.isEmpty) return Text(exam.questions[index], style: style);
+    final tokens = Theme.of(context).alix;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final unit in units)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: unitWidget(unit, tokens, style, TextAlign.start),
+          ),
       ],
     );
   }
