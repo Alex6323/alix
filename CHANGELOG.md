@@ -932,6 +932,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Alix Kids: a box whose `alix.toml` cannot be read shows "needs a grown-up"
+  on the home screen and inside the box, instead of "all caught up" and "This
+  box has no decks yet".
+
 - Remediation saves the progress store only when it revives a retired card,
   so it no longer advances the store's sync revision otherwise. A new
   remediation card lives in the deck's personal sidecar and gains a progress

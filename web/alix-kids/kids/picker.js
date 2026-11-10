@@ -61,10 +61,10 @@ function boxCard(b) {
   card.type = "button";
   card.appendChild(iconEl(b, "box-icon", "box-emoji"));
   card.appendChild(el("div", "box-name", b.label || b.name || "Box"));
-  // A damaged member is deliberately non-reviewable, so plain
+  // A damaged box or member is deliberately non-reviewable, so plain
   // !reviewable would tell the kid a broken box is complete.
   const damaged = !b.reviewable
-    && (b.members || []).some((m) => m.state === "error");
+    && (b.state === "error" || (b.members || []).some((m) => m.state === "error"));
   const ready = b.reviewable ? "ready to practise"
     : damaged ? "needs a grown-up 🔧"
     : "all caught up 🌱";
@@ -122,6 +122,8 @@ function renderBox() {
     const list = el("div", "deck-list");
     for (const m of members) list.appendChild(deckRow(m));
     wrap.appendChild(list);
+  } else if (b.state === "error") {
+    wrap.appendChild(el("div", "soft", "This one needs a grown-up's help before practising. 🔧"));
   } else {
     wrap.appendChild(el("div", "soft", "This box has no decks yet."));
   }

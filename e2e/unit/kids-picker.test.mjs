@@ -78,6 +78,34 @@ test("kids catalog failure preserves the previous catalog and becomes retryable"
   assert.equal(next.loadError, true);
 });
 
+test("a box whose workspace cannot be read does not tell a kid it is all caught up", async () => {
+  const run = pickerHarness({
+    workspaces: [{
+      name: "broken",
+      label: "broken",
+      state: "error",
+      reviewable: false,
+      members: [],
+    }],
+  });
+
+  await run.picker.load();
+
+  assert.equal(
+    findClass(run.stage, "box-ready").textContent,
+    "needs a grown-up 🔧",
+    "an unreadable workspace (state error, no members) must not read as complete",
+  );
+
+  findClass(run.stage, "box").listeners.get("click")();
+
+  assert.equal(
+    findClass(run.stage, "soft").textContent,
+    "This one needs a grown-up's help before practising. 🔧",
+    "the opened box must not claim an unreadable workspace simply has no decks",
+  );
+});
+
 test("a box with damaged progress does not tell a kid it is all caught up", async () => {
   const member = {
     name: "animals/facts.md",
