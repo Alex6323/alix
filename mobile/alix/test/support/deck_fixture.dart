@@ -23,3 +23,20 @@ void writeTestSources(String deckPath) {
     'source-${'0' * 52} = { path = "live:source.txt", bound-to = ["$deckId"] }\n',
   );
 }
+
+/// Like [writeTestSources], but with a frozen copy the core verifies, so an
+/// exam result on the deck is recorded rather than refused.
+void writeVerifiedTestSources(String deckPath) {
+  writeTestSources(deckPath);
+  final deckId = RegExp(r'^id: "(deck-[^"]+)"$', multiLine: true)
+      .firstMatch(File(deckPath).readAsStringSync())!
+      .group(1)!;
+  final dir = '${File(deckPath).parent.parent.path}/sources/$deckId';
+  // The id `alix deck source add` gives a copy of exactly 'alpha\nbeta\n'.
+  const id = 'source-1s4wg7hd5y2e4pem1rqvg69f7f6hk2sna6288qbpv3trg1ygty7e';
+  File('$dir/$id.txt').writeAsStringSync('alpha\nbeta\n');
+  File('$dir/manifest.toml').writeAsStringSync(
+    'version = 1\n\n[sources]\n'
+    '$id = { path = "live:source.txt", bound-to = ["$deckId"] }\n',
+  );
+}

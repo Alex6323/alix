@@ -714,6 +714,23 @@ void main() {
     expect(find.text('1 / 1'), findsWidgets);
   });
 
+  testWidgets('a failed result the core refuses to record offers no remediation',
+      (tester) async {
+    const reason = 'the exam material changed while this exam was open';
+    final client = FakeServerClient(examGetReplies: const [resultsFailed]);
+    await pumpExam(
+      tester,
+      client: client,
+      applyResult: (_, _) => throw AnyhowException(reason),
+    );
+    await tester.pump();
+
+    expect(find.text(reason), findsOneWidget, reason: 'the refusal is shown');
+    expect(find.text('1.5 / 2'), findsWidgets, reason: 'the results still render');
+    expect(find.text('Turn the gaps into cards'), findsNothing,
+        reason: 'gaps from voided material must not become cards');
+  });
+
   testWidgets('a new sitting sends the saved ideas document', (tester) async {
     const ideas = {
       'version': 1,

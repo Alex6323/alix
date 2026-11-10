@@ -144,6 +144,7 @@ class _ExamScreenState extends State<ExamScreen> {
   /// extra poll landing on the same terminal `results` DTO (e.g. two
   /// periodic ticks resolving out of order) must not double-apply.
   bool _resultApplied = false;
+  bool _resultRefused = false;
   ({String text, bool examChanged})? _examHighMark;
 
   /// Same guard, for turning `remediated` cards into store entries.
@@ -259,6 +260,7 @@ class _ExamScreenState extends State<ExamScreen> {
       try {
         _examHighMark = widget.applyResult(dto, widget.nowMs());
       } catch (error) {
+        _resultRefused = true;
         _snack(bridgeErrorText(error));
       }
       _resultApplied = true;
@@ -614,7 +616,7 @@ class _ExamScreenState extends State<ExamScreen> {
             ],
           ),
         ),
-        if (exam.canRemediate) ...[
+        if (exam.canRemediate && !_resultRefused) ...[
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _remediating ? null : _remediate,
