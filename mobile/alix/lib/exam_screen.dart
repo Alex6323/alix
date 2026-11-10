@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/theme.dart';
@@ -597,8 +598,12 @@ class _ExamScreenState extends State<ExamScreen> {
 
   Widget _question(BuildContext context, RemoteExam exam, int index) {
     final style = Theme.of(context).textTheme.titleMedium ?? const TextStyle();
-    final units = index < exam.questionsUnits.length ? exam.questionsUnits[index] : const [];
-    if (units.isEmpty) return Text(exam.questions[index], style: style);
+    final units = index < exam.questionsUnits.length ? exam.questionsUnits[index] : const <ReviewContentUnitModel>[];
+    return _examText(context, units, exam.questions[index], style);
+  }
+
+  Widget _examText(BuildContext context, List<ReviewContentUnitModel> units, String text, TextStyle style) {
+    if (units.isEmpty) return Text(text, style: style);
     final tokens = Theme.of(context).alix;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -648,7 +653,7 @@ class _ExamScreenState extends State<ExamScreen> {
                   'Not examined: ${widget.unsourcedTopics.join(', ')}',
                   style: TextStyle(color: tokens.dim, fontSize: 13),
                 ),
-              for (final g in exam.grades) _gradeRow(g, tokens),
+              for (final g in exam.grades) _gradeRow(context, g, tokens),
               if (exam.gaps.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('gaps', style: TextStyle(color: tokens.faint, fontSize: 11, letterSpacing: 1.4)),
@@ -698,7 +703,7 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
-  Widget _gradeRow(RemoteExamGrade g, AlixTokens tokens) {
+  Widget _gradeRow(BuildContext context, RemoteExamGrade g, AlixTokens tokens) {
     final color = switch (g.verdict) {
       'PASS' => tokens.good,
       'PARTIAL' => tokens.warn,
@@ -718,6 +723,8 @@ class _ExamScreenState extends State<ExamScreen> {
               ],
             ],
           ),
+          const SizedBox(height: 4),
+          _examText(context, g.questionUnits, g.question, TextStyle(color: tokens.text)),
           const SizedBox(height: 4),
           Text(g.feedback, style: TextStyle(color: tokens.dim)),
         ],

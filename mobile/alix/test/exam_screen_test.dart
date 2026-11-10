@@ -451,9 +451,10 @@ void main() {
     expect(find.byType(ExamScreen), findsNothing);
   });
 
-  testWidgets('a long question with a code block leaves the answer field on a phone screen', (tester) async {
+  testWidgets('a long question with a code block leaves typing room above the phone keyboard', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
     addTearDown(tester.view.reset);
     const prose = 'For one commit, A and B each build a checkpoint whose summary digest '
         'is X. C and D each build a checkpoint whose summary digest is Y, because their '
@@ -501,10 +502,75 @@ void main() {
 
     expect(find.textContaining('```'), findsNothing, reason: 'the question renders its units, not raw markdown');
     final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final keyboardTop = screen.height - tester.view.viewInsets.bottom / tester.view.devicePixelRatio;
     final field = tester.getRect(find.byKey(const ValueKey('exam-answer-field')));
     expect(field.height, greaterThanOrEqualTo(96), reason: 'answer field rect $field must keep typing room');
-    expect(field.bottom, lessThanOrEqualTo(screen.height), reason: 'answer field rect $field must be on screen $screen');
+    expect(field.bottom, lessThanOrEqualTo(keyboardTop),
+        reason: 'answer field rect $field must stay above keyboard top $keyboardTop');
     expect(tester.takeException(), isNull, reason: 'no layout overflow');
+  });
+
+  testWidgets('results identify each grade with its rendered question', (tester) async {
+    final exam = RemoteExam.fromJson({
+      'phase': 'results',
+      'deck': 'rust.md',
+      'questions': [
+        'Which validator has the largest stake?\n\n```\nvalidator A: 4,000\nvalidator B: 3,000\n```',
+      ],
+      'questions_units': [
+        [
+          {
+            'kind': 'sentence',
+            'text': 'Which validator has the largest stake?',
+            'runs': [
+              {'text': 'Which validator has the largest stake?'},
+            ],
+          },
+          {
+            'kind': 'code',
+            'lines': ['validator A: 4,000', 'validator B: 3,000'],
+          },
+        ],
+      ],
+      'verdicts': {'pass': 0, 'partial': 1, 'total': 1},
+      'grades': [
+        {
+          'question':
+              'Which validator has the largest stake?\n\n```\nvalidator A: 4,000\nvalidator B: 3,000\n```',
+          'question_units': [
+            {
+              'kind': 'sentence',
+              'text': 'Which validator has the largest stake?',
+              'runs': [
+                {'text': 'Which validator has the largest stake?'},
+              ],
+            },
+            {
+              'kind': 'code',
+              'lines': ['validator A: 4,000', 'validator B: 3,000'],
+            },
+          ],
+          'points': ['validator A'],
+          'answer': 'A',
+          'verdict': 'PARTIAL',
+          'feedback': 'Name the stake as well.',
+          'missed': ['4,000'],
+        },
+      ],
+      'gaps': [],
+      'can_remediate': false,
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('Which validator has the largest stake?'), findsOneWidget,
+        reason: 'each verdict must identify the question it grades');
+    expect(find.text('validator A: 4,000\nvalidator B: 3,000'), findsOneWidget,
+        reason: 'the grade question must use the server-provided content units');
+    expect(find.textContaining('```'), findsNothing,
+        reason: 'results must not expose raw Markdown fences');
   });
 
   testWidgets('answering navigation keeps typed text across Back/Next', (tester) async {

@@ -934,7 +934,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Phone exam: a long question scrolls within its own area and the answer field
   stays on screen; a question's code blocks and formatting render instead of
-  showing raw Markdown fences.
+  showing raw Markdown fences. Each result row shows the question it grades.
 
 - Alix Kids: a box whose `alix.toml` cannot be read shows "needs a grown-up"
   on the home screen and inside the box, instead of "all caught up" and "This

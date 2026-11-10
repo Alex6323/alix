@@ -417,6 +417,7 @@ class RemoteAsk {
 class RemoteExamGrade {
   const RemoteExamGrade({
     required this.question,
+    this.questionUnits = const [],
     required this.points,
     required this.answer,
     required this.verdict,
@@ -428,6 +429,7 @@ class RemoteExamGrade {
   });
 
   final String question;
+  final List<ReviewContentUnitModel> questionUnits;
   final List<String> points;
   final String answer;
   final String verdict;
@@ -448,6 +450,7 @@ class RemoteExamGrade {
     }
     return RemoteExamGrade(
       question: question,
+      questionUnits: contentUnitsFromJson(json['question_units']),
       points: _asStringList(json['points']),
       answer: answer,
       verdict: verdict,
