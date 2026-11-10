@@ -34,7 +34,7 @@ void main() {
     SyncEntryState(
       entry: 'Biology',
       kind: 'workspace',
-      digest: 'xxh64-0000000000000001',
+      fingerprint: '0000000000001',
       decks: [
         SyncDeckState(
           deckId: 'deck-a',
@@ -61,7 +61,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -155,7 +155,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -164,7 +164,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];

@@ -539,7 +539,7 @@ class _MidSessionConflictController extends ChangeNotifier
     SyncEntryState(
       entry: 'ws',
       kind: 'workspace',
-      digest: 'xxh64-0000000000000001',
+      fingerprint: '0000000000001',
       decks: [
         SyncDeckState(
           deckId: deckId,

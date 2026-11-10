@@ -203,9 +203,9 @@ desktop's `/api/sync/*` surface, authenticated with the same pairing token
 as the rest of the remote surface (`docs/book/src/18-the-mobile-app.md`).
 On the desktop, building the entries listing stamps the unstamped cards of
 initialized served decks (the same deck-file write review-open makes), so the
-phone never mints ids for desktop-owned cards. The entries listing carries a per-entry digest of the files a pull would
-ship (`SyncEntryDto.digest`), so a phone skips an entry whose digest equals
-the manifest it holds; the digest is computed by the same walk that sizes
+phone never mints ids for desktop-owned cards. The entries listing carries a per-entry fingerprint of the files a pull would
+ship (`SyncEntryDto.fingerprint`), so a phone skips an entry whose fingerprint equals
+the manifest it holds; the fingerprint is computed by the same walk that sizes
 the projection, never over a private file the sanitizer excludes, and the
 `sync::server` tests pin it against a real staging of a workspace with an
 excluded deck, a personal sidecar, assets, and augmentation files. A phone

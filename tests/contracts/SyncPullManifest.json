@@ -10,11 +10,11 @@
   "files": [
     {
       "bytes": 4,
-      "digest": "xxh64-0123456789abcdef",
+      "fingerprint": "028t5cy4tqkff",
       "path": "decks/cells.md"
     }
   ],
   "kind": "workspace",
   "root_id": "root-00000000000000000000000000",
-  "version": 1
+  "version": 2
 }

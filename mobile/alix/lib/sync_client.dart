@@ -81,7 +81,7 @@ class SyncEntry {
     required this.kind,
     required this.members,
     required this.unpackedBytes,
-    required this.digest,
+    required this.fingerprint,
     required this.leftOut,
   });
 
@@ -92,8 +92,8 @@ class SyncEntry {
   final int members;
   final int unpackedBytes;
 
-  /// `SyncEntryDto.digest`, compared for equality only.
-  final String digest;
+  /// `SyncEntryDto.fingerprint`, compared for equality only.
+  final String fingerprint;
 
   /// Entry-relative member paths the desktop could not load into this
   /// listing (`SyncEntryDto.left_out`). Always present on the wire, so
@@ -107,13 +107,13 @@ class SyncEntry {
     final kind = _asString(json['kind']);
     final members = _asInt(json['members']);
     final unpackedBytes = _asInt(json['unpacked_bytes']);
-    final digest = _asString(json['digest']);
+    final fingerprint = _asString(json['fingerprint']);
     final leftOut = _asStringList(json['left_out']);
     if (name == null ||
         kind == null ||
         members == null ||
         unpackedBytes == null ||
-        digest == null ||
+        fingerprint == null ||
         leftOut == null) {
       return null;
     }
@@ -122,7 +122,7 @@ class SyncEntry {
       kind: kind,
       members: members,
       unpackedBytes: unpackedBytes,
-      digest: digest,
+      fingerprint: fingerprint,
       leftOut: leftOut,
     );
   }
@@ -134,7 +134,7 @@ class SyncEntry {
       other.kind == kind &&
       other.members == members &&
       other.unpackedBytes == unpackedBytes &&
-      other.digest == digest &&
+      other.fingerprint == fingerprint &&
       _stringListEquals(other.leftOut, leftOut);
 
   @override
@@ -143,7 +143,7 @@ class SyncEntry {
     kind,
     members,
     unpackedBytes,
-    digest,
+    fingerprint,
     Object.hashAll(leftOut),
   );
 }

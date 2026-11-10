@@ -3715,7 +3715,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PairedEntryState(
       entry: dco_decode_String(arr[0]),
       kind: dco_decode_String(arr[1]),
-      digest: dco_decode_String(arr[2]),
+      fingerprint: dco_decode_String(arr[2]),
       decks: dco_decode_list_paired_deck_state(arr[3]),
     );
   }
@@ -5691,12 +5691,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_entry = sse_decode_String(deserializer);
     var var_kind = sse_decode_String(deserializer);
-    var var_digest = sse_decode_String(deserializer);
+    var var_fingerprint = sse_decode_String(deserializer);
     var var_decks = sse_decode_list_paired_deck_state(deserializer);
     return PairedEntryState(
       entry: var_entry,
       kind: var_kind,
-      digest: var_digest,
+      fingerprint: var_fingerprint,
       decks: var_decks,
     );
   }
@@ -7616,7 +7616,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.entry, serializer);
     sse_encode_String(self.kind, serializer);
-    sse_encode_String(self.digest, serializer);
+    sse_encode_String(self.fingerprint, serializer);
     sse_encode_list_paired_deck_state(self.decks, serializer);
   }
 

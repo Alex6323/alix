@@ -6,7 +6,7 @@ use std::{
 
 use super::{
     ROOT_ID_PREFIX, SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFailure, SyncFailureClass,
-    SyncFileDto, SyncPullManifest, digest_reader, entry_digest, is_root_id,
+    SyncFileDto, SyncPullManifest, entry_fingerprint, fingerprint_reader, is_root_id,
 };
 #[cfg(feature = "full")]
 use crate::share::StagedFile;
@@ -78,7 +78,7 @@ pub struct SyncEntry {
     pub kind: String,
     pub members: u64,
     pub unpacked_bytes: u64,
-    pub digest: String,
+    pub fingerprint: String,
     pub left_out: Vec<String>,
     path: PathBuf,
     store_root: PathBuf,
@@ -300,7 +300,7 @@ impl SyncCatalog {
                 kind: kind.to_string(),
                 members: entry_decks.len() as u64,
                 unpacked_bytes,
-                digest: entry_digest(&files),
+                fingerprint: entry_fingerprint(&files),
                 left_out,
                 path,
                 store_root,
@@ -436,13 +436,13 @@ fn manifest_rows(staged: &[StagedFile]) -> Result<Vec<SyncFileDto>> {
         }
         let cannot_read = || SyncFailure::unreadable("cannot read a file inside the entry");
         let mut source = std::fs::File::open(&file.source).map_err(|_| cannot_read())?;
-        let (bytes, digest) = digest_reader(&mut source).map_err(|_| cannot_read())?;
+        let (bytes, fingerprint) = fingerprint_reader(&mut source).map_err(|_| cannot_read())?;
         files.insert(
             path.clone(),
             SyncFileDto {
                 path,
                 bytes,
-                digest,
+                fingerprint,
             },
         );
     }
@@ -589,11 +589,12 @@ fn manifest_files(root: &Path) -> Result<Vec<SyncFileDto>> {
                     .map_err(|_| cannot_read())?
                     .to_path_buf();
                 let mut file = std::fs::File::open(entry.path()).map_err(|_| cannot_read())?;
-                let (bytes, digest) = digest_reader(&mut file).map_err(|_| cannot_read())?;
+                let (bytes, fingerprint) =
+                    fingerprint_reader(&mut file).map_err(|_| cannot_read())?;
                 out.push(SyncFileDto {
                     path: wire_path(&relative)?,
                     bytes,
-                    digest,
+                    fingerprint,
                 });
             }
         }
@@ -833,7 +834,10 @@ mod tests {
             after.entries()[0].unpacked_bytes,
             "the stray directory's bytes are not priced into the pull"
         );
-        assert_eq!(before.entries()[0].digest, after.entries()[0].digest);
+        assert_eq!(
+            before.entries()[0].fingerprint,
+            after.entries()[0].fingerprint
+        );
     }
 
     #[test]
@@ -1127,14 +1131,14 @@ mod tests {
             pull.manifest.files.iter().map(|f| f.bytes).sum::<u64>()
         );
         assert_eq!(
-            catalog.entries()[0].digest,
-            entry_digest(&pull.manifest.files),
-            "the listing's entry digest is the pull manifest's, computed without staging"
+            catalog.entries()[0].fingerprint,
+            entry_fingerprint(&pull.manifest.files),
+            "the listing's entry fingerprint is the pull manifest's, computed without staging"
         );
     }
 
     #[test]
-    fn listing_digest_matches_pull_when_workspace_members_share_a_deck_id() {
+    fn listing_fingerprint_matches_pull_when_workspace_members_share_a_deck_id() {
         let served = tempfile::tempdir().unwrap();
         let workspace = served.path().join("course");
         std::fs::create_dir_all(workspace.join("decks")).unwrap();
@@ -1162,9 +1166,9 @@ mod tests {
         let pull = catalog.stage_pull("course", &root, stage.path()).unwrap();
 
         assert_eq!(
-            entry.digest,
-            entry_digest(&pull.manifest.files),
-            "the listing digest must describe the pull even when duplicate ids make the push target ambiguous"
+            entry.fingerprint,
+            entry_fingerprint(&pull.manifest.files),
+            "the listing fingerprint must describe the pull even when duplicate ids make the push target ambiguous"
         );
     }
 
@@ -1344,9 +1348,9 @@ mod tests {
             let bytes = std::fs::read(pull.root.join(&file.path)).unwrap();
             assert_eq!(bytes.len() as u64, file.bytes, "{} byte count", file.path);
             assert_eq!(
-                crate::sync::digest(&bytes),
-                file.digest,
-                "{} digest",
+                crate::sync::fingerprint(&bytes),
+                file.fingerprint,
+                "{} fingerprint",
                 file.path
             );
         }
@@ -1360,9 +1364,9 @@ mod tests {
             "entries size equals the manifest payload sum"
         );
         assert_eq!(
-            entry.digest,
-            entry_digest(&pull.manifest.files),
-            "the listing's entry digest is the pull manifest's, computed without staging"
+            entry.fingerprint,
+            entry_fingerprint(&pull.manifest.files),
+            "the listing's entry fingerprint is the pull manifest's, computed without staging"
         );
     }
 

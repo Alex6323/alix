@@ -9,7 +9,7 @@ void main() {
       const SyncEntryState(
         entry: 'Biology',
         kind: 'workspace',
-        digest: 'xxh64-0000000000000001',
+        fingerprint: '0000000000001',
         decks: [
           SyncDeckState(
             deckId: 'deck-cells',
@@ -26,7 +26,7 @@ void main() {
       const SyncEntryState(
         entry: 'Physics.md',
         kind: 'deck',
-        digest: 'xxh64-0000000000000001',
+        fingerprint: '0000000000001',
         decks: [
           SyncDeckState(
             deckId: 'deck-physics',

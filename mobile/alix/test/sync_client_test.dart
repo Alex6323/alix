@@ -57,7 +57,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
-                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
+                'fingerprint': '9yb0b38z4tq3b',
                 'left_out': <String>[],
               },
             ],
@@ -77,7 +77,7 @@ void main() {
               kind: 'workspace',
               members: 2,
               unpackedBytes: 4096,
-              digest: 'xxh64-9f2c0b1a3e4d5c6b',
+              fingerprint: '9yb0b38z4tq3b',
               leftOut: [],
             ),
           ],
@@ -109,7 +109,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
-                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
+                'fingerprint': '9yb0b38z4tq3b',
                 'left_out': <String>[],
               },
               {'name': 'missing kind field'},
@@ -130,7 +130,7 @@ void main() {
               kind: 'workspace',
               members: 2,
               unpackedBytes: 4096,
-              digest: 'xxh64-9f2c0b1a3e4d5c6b',
+              fingerprint: '9yb0b38z4tq3b',
               leftOut: [],
             ),
           ],
@@ -148,7 +148,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
-                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
+                'fingerprint': '9yb0b38z4tq3b',
                 'left_out': ['decks/broken.md'],
               },
             ],
@@ -174,7 +174,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
-                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
+                'fingerprint': '9yb0b38z4tq3b',
               },
             ],
           });
@@ -187,7 +187,7 @@ void main() {
         expect(result.entries, isEmpty);
       });
 
-      test('an entry missing digest is rejected the same way', () async {
+      test('an entry missing fingerprint is rejected the same way', () async {
         final s = await startServer((request) async {
           await request.drain<void>();
           await respondJson(request, 200, {
@@ -222,7 +222,7 @@ void main() {
                 'kind': 'workspace',
                 'members': 2,
                 'unpacked_bytes': 4096,
-                'digest': 'xxh64-9f2c0b1a3e4d5c6b',
+                'fingerprint': '9yb0b38z4tq3b',
                 'left_out': 'decks/broken.md',
               },
             ],

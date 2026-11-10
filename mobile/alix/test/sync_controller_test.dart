@@ -70,7 +70,7 @@ void main() {
             kind: 'deck',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -178,7 +178,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 500,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -187,7 +187,7 @@ void main() {
           SyncEntryState(
             entry: 'Biology',
             kind: 'workspace',
-            digest: 'xxh64-0000000000000001',
+            fingerprint: '0000000000001',
             decks: [],
           ),
         ];
@@ -215,7 +215,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -224,7 +224,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -249,7 +249,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -258,7 +258,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -308,7 +308,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
           SyncEntry(
@@ -316,7 +316,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -325,13 +325,13 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
         SyncEntryState(
           entry: 'Chemistry',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -342,9 +342,9 @@ void main() {
       expect(port.pullCalls, ['Biology']);
     });
 
-    group('an entry whose digest is the one the phone last pulled', () {
-      const unchanged = 'xxh64-00000000000000aa';
-      const moved = 'xxh64-00000000000000bb';
+    group('an entry whose fingerprint is the one the phone last pulled', () {
+      const unchanged = '000000000005a';
+      const moved = '000000000005v';
       const desktop = SyncEntries(
         rootId: 'root-a',
         entries: [
@@ -353,7 +353,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: unchanged,
+            fingerprint: unchanged,
             leftOut: [],
           ),
           SyncEntry(
@@ -361,7 +361,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: moved,
+            fingerprint: moved,
             leftOut: [],
           ),
         ],
@@ -370,19 +370,19 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: unchanged,
+          fingerprint: unchanged,
           decks: [],
         ),
         SyncEntryState(
           entry: 'Chemistry',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
 
       test(
-        'is skipped: the cycle pulls only the entry whose digest moved',
+        'is skipped: the cycle pulls only the entry whose fingerprint moved',
         () async {
           final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
           port.entriesImpl = () async => desktop;
@@ -411,7 +411,7 @@ void main() {
           SyncEntryState(
             entry: 'Biology',
             kind: 'workspace',
-            digest: unchanged,
+            fingerprint: unchanged,
             decks: [
               SyncDeckState(
                 deckId: 'deck-cells',
@@ -452,7 +452,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -493,7 +493,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -528,7 +528,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -580,7 +580,7 @@ void main() {
           SyncEntryState(
             entry: 'Gone',
             kind: 'workspace',
-            digest: 'xxh64-0000000000000001',
+            fingerprint: '0000000000001',
             decks: [],
           ),
         ];
@@ -604,7 +604,7 @@ void main() {
               kind: 'deck',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -630,7 +630,7 @@ void main() {
             kind: 'workspace',
             members: 2,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: ['decks/broken.md'],
           ),
           SyncEntry(
@@ -638,7 +638,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -647,7 +647,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -702,7 +702,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -711,7 +711,7 @@ void main() {
           SyncEntryState(
             entry: 'Biology',
             kind: 'workspace',
-            digest: 'xxh64-0000000000000001',
+            fingerprint: '0000000000001',
             decks: [],
           ),
         ];
@@ -735,7 +735,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -744,7 +744,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -791,7 +791,7 @@ void main() {
               kind: 'deck',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -857,7 +857,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -866,7 +866,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -933,7 +933,7 @@ void main() {
         SyncEntryState(
           entry: 'Biology',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-a',
@@ -958,7 +958,7 @@ void main() {
       SyncEntryState(
         entry: 'greek.md',
         kind: 'deck',
-        digest: 'xxh64-0000000000000001',
+        fingerprint: '0000000000001',
         decks: [
           SyncDeckState(
             deckId: 'deck-1',
@@ -1004,7 +1004,7 @@ void main() {
           SyncEntryState(
             entry: 'Biology',
             kind: 'workspace',
-            digest: 'xxh64-0000000000000001',
+            fingerprint: '0000000000001',
             decks: [
               SyncDeckState(
                 deckId: 'deck-1',
@@ -1028,7 +1028,7 @@ void main() {
       SyncEntryState(
         entry: 'Biology',
         kind: 'workspace',
-        digest: 'xxh64-0000000000000001',
+        fingerprint: '0000000000001',
         decks: [
           SyncDeckState(
             deckId: deckId,
@@ -1086,7 +1086,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -1112,7 +1112,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -1146,7 +1146,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -1257,7 +1257,7 @@ void main() {
                 SyncEntryState(
                   entry: 'Biology',
                   kind: 'workspace',
-                  digest: 'xxh64-0000000000000001',
+                  fingerprint: '0000000000001',
                   decks: [],
                 ),
               ]
@@ -1274,7 +1274,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -1302,7 +1302,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -1348,7 +1348,7 @@ void main() {
         SyncEntryState(
           entry: 'Old Deck',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [],
         ),
       ];
@@ -1380,7 +1380,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000002',
+            fingerprint: '0000000000002',
             leftOut: [],
           ),
         ],
@@ -1404,7 +1404,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000002',
+              fingerprint: '0000000000002',
               leftOut: [],
             ),
           ],
@@ -1415,7 +1415,7 @@ void main() {
                 SyncEntryState(
                   entry: 'Biology',
                   kind: 'workspace',
-                  digest: 'xxh64-0000000000000001',
+                  fingerprint: '0000000000001',
                   decks: [],
                 ),
               ]

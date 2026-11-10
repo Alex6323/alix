@@ -1323,32 +1323,32 @@ Clients must treat an id as an opaque string and never parse it as a number.
 | `kind` | string | Exactly `workspace` or `deck`. |
 | `members` | integer | Successfully loaded initialized member count; 1 for a loadable loose deck. |
 | `unpacked_bytes` | integer | Sum of `bytes` in this entry's pull manifest. |
-| `digest` | string | `xxh64-<16 lowercase hex>` over this entry's pull-manifest file rows in byte-wise `path` order, each `path`, NUL, `bytes` in decimal, NUL, `digest`, LF. Equal digests mean the pull would land identical files; a phone skips such an entry. |
+| `fingerprint` | string | 13 lowercase base32 characters (the XxHash64 value in the deck-locator fingerprint form) over this entry's pull-manifest file rows in byte-wise `path` order, each `path`, NUL, `bytes` in decimal, NUL, `fingerprint`, LF. Equal fingerprints mean the pull would land identical files; a phone skips such an entry. |
 | `left_out` | `[string]` | Entry-relative paths that could not be loaded and are omitted from the pull and push index. |
 
-Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096,"digest":"xxh64-9f2c0b1a3e4d5c6b","left_out":["decks/draft.md"]}]}`.
+Example: `{"root_id":"root-00000000000000000000000000","entries":[{"name":"Biology","kind":"workspace","members":2,"unpacked_bytes":4096,"fingerprint":"9yb0b38z4tq3b","left_out":["decks/draft.md"]}]}`.
 
 ### SyncPullManifest / SyncFileDto / SyncDeckDto
 
-The version-1 `.alix/pull.json` document inside a sync ZIP:
+The version-2 `.alix/pull.json` document inside a sync ZIP:
 
 | Key | Type | Meaning |
 |---|---|---|
-| `version` | integer | Exactly 1. |
+| `version` | integer | Exactly 2. |
 | `root_id` | string | Identity of the served root that produced the pull. |
 | `entry` | string | Exact picker entry name. |
 | `kind` | string | Exactly `workspace` or `deck`. |
 | `files` | `[SyncFileDto]` | Every ZIP path except `.alix/pull.json` itself. |
 | `decks` | `[SyncDeckDto]` | One row per initialized member. |
 
-`SyncFileDto` has `path: string`, `bytes: integer`, and `digest: string`.
+`SyncFileDto` has `path: string`, `bytes: integer`, and `fingerprint: string`.
 Paths are root-relative slash-separated ZIP names with no empty, `.`, `..`,
-root, or prefix component. Digests are `xxh64-` plus 16 lowercase hex digits.
+root, or prefix component. Fingerprints are 13 lowercase base32 characters, the same form as deck locator fingerprints.
 
 `SyncDeckDto` has `path: string`, `deck_id: string`, and `revision: integer?`.
 The revision is null when no progress document existed in the pull.
 
-Example: `{"version":1,"root_id":"root-00000000000000000000000000","entry":"Biology","kind":"workspace","files":[{"path":"decks/cells.md","bytes":4,"digest":"xxh64-0123456789abcdef"}],"decks":[{"path":"decks/cells.md","deck_id":"deck-cells","revision":null}]}`.
+Example: `{"version":2,"root_id":"root-00000000000000000000000000","entry":"Biology","kind":"workspace","files":[{"path":"decks/cells.md","bytes":4,"fingerprint":"028t5cy4tqkff"}],"decks":[{"path":"decks/cells.md","deck_id":"deck-cells","revision":null}]}`.
 
 ### SyncPushDto / SyncConflictDto / SyncRootDto
 

@@ -10,8 +10,8 @@ use crate::{
     state::UserFiles,
     store::{self, Writer},
     sync::{
-        SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, digest,
-        digest_reader,
+        SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, fingerprint,
+        fingerprint_reader,
     },
     token,
 };
@@ -185,7 +185,7 @@ pub struct DeckState {
 pub struct PulledEntry {
     pub entry: String,
     pub kind: String,
-    pub digest: String,
+    pub fingerprint: String,
     pub decks: Vec<DeckState>,
 }
 
@@ -464,12 +464,12 @@ fn verify_files(unpacked: &Path, manifest: &SyncPullManifest, present: &[String]
                 file.bytes
             );
         }
-        let actual = digest(&bytes);
-        if actual != file.digest {
+        let actual = fingerprint(&bytes);
+        if actual != file.fingerprint {
             bail!(
-                "`{}` digests to {actual}, the manifest says {}",
+                "`{}` fingerprints to {actual}, the manifest says {}",
                 file.path,
-                file.digest
+                file.fingerprint
             );
         }
     }
@@ -711,11 +711,11 @@ pub fn pulled_entries(root: &PairedRoot) -> Result<Vec<PulledEntry>> {
                 conflict: marks.get(&deck.deck_id).cloned(),
             });
         }
-        let digest = crate::sync::entry_digest(&manifest.files);
+        let fingerprint = crate::sync::entry_fingerprint(&manifest.files);
         out.push(PulledEntry {
             entry: manifest.entry,
             kind: manifest.kind,
-            digest,
+            fingerprint,
             decks,
         });
     }
@@ -1321,8 +1321,8 @@ fn keep_unchanged_modified_times(
         if !meta.is_file() || meta.len() != file.bytes || !staged.is_file() {
             continue;
         }
-        let (_, live_digest) = digest_reader(std::fs::File::open(&live)?)?;
-        if live_digest != file.digest {
+        let (_, live_fingerprint) = fingerprint_reader(std::fs::File::open(&live)?)?;
+        if live_fingerprint != file.fingerprint {
             continue;
         }
         std::fs::File::options()
@@ -1496,7 +1496,7 @@ mod tests {
                     .map(|(path, bytes)| SyncFileDto {
                         path: path.clone(),
                         bytes: bytes.len() as u64,
-                        digest: digest(bytes),
+                        fingerprint: fingerprint(bytes),
                     })
                     .collect(),
                 decks: self
@@ -2670,7 +2670,7 @@ mod tests {
                 Some(|m| m.entry = "a/b".to_string()),
                 none_d,
             ),
-            ("a wrong version", Some(|m| m.version = 2), none_d),
+            ("a version-1 manifest", Some(|m| m.version = 1), none_d),
             (
                 "a bad deck id",
                 Some(|m| m.decks[0].deck_id = "deck-x".to_string()),
@@ -2682,8 +2682,8 @@ mod tests {
                 none_d,
             ),
             (
-                "a wrong digest",
-                Some(|m| m.files[0].digest = "xxh64-0000000000000000".to_string()),
+                "a wrong fingerprint",
+                Some(|m| m.files[0].fingerprint = "0000000000000".to_string()),
                 none_d,
             ),
             (
@@ -2730,6 +2730,20 @@ mod tests {
             std::fs::remove_dir_all(&dir).unwrap();
             assert_eq!(live(&root), before, "{name}: nothing moved");
         }
+    }
+
+    #[test]
+    fn a_stored_version_1_pull_manifest_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pull.json");
+        let stored = r#"{"version":1,"root_id":"root-00000000000000000000000000","entry":"Biology","kind":"deck","files":[],"decks":[]}"#;
+        std::fs::write(&path, stored).unwrap();
+        assert!(read_manifest(&path).is_err());
+        std::fs::write(&path, stored.replace("\"version\":1", "\"version\":2")).unwrap();
+        assert!(
+            read_manifest(&path).is_ok(),
+            "the same document at version 2 reads"
+        );
     }
 
     #[test]
@@ -2919,7 +2933,7 @@ mod tests {
         let missing = SyncFileDto {
             path: "missing.md".to_string(),
             bytes: 0,
-            digest: digest(b""),
+            fingerprint: fingerprint(b""),
         };
         keep_unchanged_modified_times(&entry_root, &unpacked, &[missing]).unwrap();
 
@@ -2927,7 +2941,7 @@ mod tests {
         let looped = SyncFileDto {
             path: "loop.md".to_string(),
             bytes: 0,
-            digest: digest(b""),
+            fingerprint: fingerprint(b""),
         };
         let error = keep_unchanged_modified_times(&entry_root, &unpacked, &[looped])
             .expect_err("a metadata error other than NotFound must surface");
@@ -2948,7 +2962,7 @@ mod tests {
         let file = SyncFileDto {
             path: "deck.md".to_string(),
             bytes: b"unchanged".len() as u64,
-            digest: digest(b"unchanged"),
+            fingerprint: fingerprint(b"unchanged"),
         };
 
         keep_unchanged_modified_times(&entry_root, &unpacked, &[file])
@@ -2968,7 +2982,7 @@ mod tests {
         let file = SyncFileDto {
             path: "deck.md".to_string(),
             bytes: std::fs::metadata(&live).unwrap().len(),
-            digest: digest(b""),
+            fingerprint: fingerprint(b""),
         };
 
         keep_unchanged_modified_times(&entry_root, &unpacked, &[file])

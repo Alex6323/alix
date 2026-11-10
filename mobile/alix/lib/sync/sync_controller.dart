@@ -288,8 +288,8 @@ class SyncController extends ChangeNotifier {
         final conflicted =
             phone?.decks.where((deck) => deck.conflict != null).length;
         debugPrint(
-          'alix-sync $name phone=${phone?.digest} '
-          'desktop=${desktopEntry.first.digest} '
+          'alix-sync $name phone=${phone?.fingerprint} '
+          'desktop=${desktopEntry.first.fingerprint} '
           'conflicted=$conflicted pushed=${pushedEntries.contains(name)}',
         );
       }
@@ -370,11 +370,11 @@ class SyncController extends ChangeNotifier {
     );
   }
 
-  /// A pull would land byte-identical files: the desktop's entry digest is
+  /// A pull would land byte-identical files: the desktop's entry fingerprint is
   /// the one the phone's last pull recorded. A conflicted or unpushed deck
   /// keeps its phone copy through a pull anyway, so it forces none.
   static bool _unchangedSincePull(SyncEntryState? onPhone, SyncEntry desktop) =>
-      onPhone != null && onPhone.digest == desktop.digest;
+      onPhone != null && onPhone.fingerprint == desktop.fingerprint;
 
   Future<SyncPullReport> _pullEntry(String entry, int unpackedBytes) async {
     final zipPath = _port.pairedStagingZip(entry);

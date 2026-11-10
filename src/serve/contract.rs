@@ -2228,7 +2228,7 @@ fn sync_wire_shapes() {
                 kind: "workspace".to_string(),
                 members: 2,
                 unpacked_bytes: 4096,
-                digest: "xxh64-9f2c0b1a3e4d5c6b".to_string(),
+                fingerprint: "9yb0b38z4tq3b".to_string(),
                 left_out: vec!["decks/draft.md".to_string()],
             }],
         },
@@ -2239,7 +2239,7 @@ fn sync_wire_shapes() {
                 "kind": "workspace",
                 "members": 2,
                 "unpacked_bytes": 4096,
-                "digest": "xxh64-9f2c0b1a3e4d5c6b",
+                "fingerprint": "9yb0b38z4tq3b",
                 "left_out": ["decks/draft.md"]
             }]
         }),
@@ -2254,7 +2254,7 @@ fn sync_wire_shapes() {
             files: vec![crate::sync::SyncFileDto {
                 path: "decks/cells.md".to_string(),
                 bytes: 4,
-                digest: "xxh64-0123456789abcdef".to_string(),
+                fingerprint: "028t5cy4tqkff".to_string(),
             }],
             decks: vec![crate::sync::SyncDeckDto {
                 path: "decks/cells.md".to_string(),
@@ -2263,14 +2263,14 @@ fn sync_wire_shapes() {
             }],
         },
         json!({
-            "version": 1,
+            "version": 2,
             "root_id": "root-00000000000000000000000000",
             "entry": "Biology",
             "kind": "workspace",
             "files": [{
                 "path": "decks/cells.md",
                 "bytes": 4,
-                "digest": "xxh64-0123456789abcdef"
+                "fingerprint": "028t5cy4tqkff"
             }],
             "decks": [{
                 "path": "decks/cells.md",

@@ -55,7 +55,7 @@ void main() {
               kind: 'workspace',
               members: 1,
               unpackedBytes: 10,
-              digest: 'xxh64-0000000000000001',
+              fingerprint: '0000000000001',
               leftOut: [],
             ),
           ],
@@ -64,7 +64,7 @@ void main() {
           SyncEntryState(
             entry: 'ws',
             kind: 'workspace',
-            digest: 'xxh64-0000000000000001',
+            fingerprint: '0000000000001',
             decks: [
               SyncDeckState(
                 deckId: 'deck-1',

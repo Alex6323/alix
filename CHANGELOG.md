@@ -280,6 +280,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Sync file fingerprints are written as 13 base32 characters (the `digest`
+  field is now `fingerprint`) and the pull manifest is version 2. Phone and
+  desktop must run the same version, and a paired phone needs a fresh pull.
+
 - `alix deck generate` from a local folder or file into a workspace, and
   `alix workspace generate`, freeze the files the model drew on as each
   deck's exam sources, bound per topic (with line ranges for files longer

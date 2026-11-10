@@ -24,7 +24,7 @@ use alix::{
     },
     state,
     store::Store,
-    sync::{SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, digest},
+    sync::{SYNC_PULL_MANIFEST_VERSION, SyncDeckDto, SyncFileDto, SyncPullManifest, fingerprint},
 };
 use tempfile::TempDir;
 
@@ -282,7 +282,7 @@ fn unpack_pull(
             .map(|(path, bytes)| SyncFileDto {
                 path: path.clone(),
                 bytes: bytes.len() as u64,
-                digest: digest(bytes),
+                fingerprint: fingerprint(bytes),
             })
             .collect(),
         decks: vec![SyncDeckDto {
@@ -992,9 +992,9 @@ fn a_landing_refuses_a_tampered_or_linked_source_copy_before_writing_the_deck() 
             "workspace, {fault}: nothing landed"
         );
 
-        // A tampered copy is listed with its own digest, so only the source
+        // A tampered copy is listed with its own fingerprint, so only the source
         // check can catch it; a link cannot be zipped past `unpack`, so it is
-        // planted in the unpacked tree, where the manifest digest still
+        // planted in the unpacked tree, where the manifest fingerprint still
         // matches the bytes behind it.
         let phone = fresh_phone(&base.join(format!("phone-{fault}")));
         let (staged, _) = staged_tree(&sender, &base, SourcesPolicy::Carry);

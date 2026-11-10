@@ -126,7 +126,7 @@ void main() {
       SyncEntryState(
         entry: 'ws',
         kind: 'workspace',
-        digest: 'xxh64-0000000000000001',
+        fingerprint: '0000000000001',
         decks: [
           SyncDeckState(
             deckId: 'trace-1',
@@ -168,7 +168,7 @@ void main() {
             kind: 'workspace',
             members: 1,
             unpackedBytes: 10,
-            digest: 'xxh64-0000000000000001',
+            fingerprint: '0000000000001',
             leftOut: [],
           ),
         ],
@@ -177,7 +177,7 @@ void main() {
         SyncEntryState(
           entry: 'ws',
           kind: 'workspace',
-          digest: 'xxh64-0000000000000001',
+          fingerprint: '0000000000001',
           decks: [
             SyncDeckState(
               deckId: 'deck-1',
@@ -251,7 +251,7 @@ class _YieldingConflictController extends ChangeNotifier
     SyncEntryState(
       entry: 'ws',
       kind: 'workspace',
-      digest: 'xxh64-0000000000000001',
+      fingerprint: '0000000000001',
       decks: [
         SyncDeckState(deckId: 'deck-1', path: 'decks/deck.md', unpushed: false),
       ],
