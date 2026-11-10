@@ -860,6 +860,7 @@ pub struct Sitting {
     deck_topics: Vec<ExamTopic>,
     start: SittingStart,
     unlocked: bool,
+    voided: bool,
     ideas: Option<IdeasDocument>,
     locked: Vec<bool>,
     job: ask::AskJob,
@@ -1030,6 +1031,7 @@ impl Sitting {
             deck_topics: examined_topics(deck),
             start,
             unlocked: false,
+            voided: false,
             ideas: None,
             locked: Vec::new(),
             job: ask::AskJob::default(),
@@ -1247,7 +1249,7 @@ impl Sitting {
     }
 
     pub fn can_remediate(&self) -> bool {
-        self.phase == Phase::Results && !self.gaps_by_topic().is_empty()
+        self.phase == Phase::Results && !self.voided && !self.gaps_by_topic().is_empty()
     }
 
     fn gaps_by_topic(&self) -> Vec<(String, Vec<String>)> {
@@ -1373,7 +1375,10 @@ impl Sitting {
                             self.unlocked = unlocked;
                             store_mutated = true;
                         }
-                        Err(error) => self.error = Some(format!("{error:#}")),
+                        Err(error) => {
+                            self.voided = true;
+                            self.error = Some(format!("{error:#}"));
+                        }
                     }
                 }
             }
@@ -2859,6 +2864,7 @@ mod tests {
             topics: Vec::new(),
             deck_topics: Vec::new(),
             unlocked: false,
+            voided: false,
             ideas: None,
             locked: vec![false],
             job: ask::AskJob::default(),
@@ -3520,6 +3526,54 @@ mod tests {
         );
         assert!(!sitting.unlocked());
         assert_eq!(Some(crate::exam_status::MATERIAL_CHANGED), sitting.error());
+    }
+
+    #[test]
+    fn a_voided_sitting_does_not_offer_remediation_from_stale_material() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = branching_cli(
+            dir.path(),
+            "{\"grades\":[{\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"old gap\"]},\
+             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+        );
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
+        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+
+        let mut sitting = Sitting::start(
+            &deck,
+            sitting_start(&deck, &store, 0, None),
+            Strictness::Balanced,
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        drain(&mut sitting, &mut store);
+
+        ws.write_live("s.txt", b"c now stands for a changed concept.\n");
+        sources::commands::update(
+            &ws.deck(),
+            &sources::source_id(b"c stands for a concept.\n"),
+            &ws.live().join("s.txt"),
+            None,
+            false,
+            &ExamConfig::default(),
+        )
+        .unwrap();
+
+        sitting.set_answer("a".to_string());
+        sitting.next();
+        sitting.set_answer("b".to_string());
+        sitting.submit();
+        drain(&mut sitting, &mut store);
+
+        assert_eq!(&Phase::Results, sitting.phase());
+        assert_eq!(Some(crate::exam_status::MATERIAL_CHANGED), sitting.error());
+        assert_eq!(vec!["old gap"], sitting.gaps());
+        assert!(
+            !sitting.can_remediate(),
+            "a voided result must not generate cards from the superseded exam material"
+        );
     }
 
     #[test]

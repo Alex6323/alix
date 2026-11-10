@@ -313,7 +313,8 @@ Whenever an answer missed key points, the results offer to turn the gaps into
 **remediation cards**: a cloze card or a plain card for a missed fact, an open
 understanding card (a prompt plus key points) for a missed concept, with
 overlapping gaps merged. Re-drill those and re-sit. Once created, the screen
-reports how many remediation cards it added.
+reports how many remediation cards it added. The web results of a sitting
+that recorded nothing offer no remediation.
 
 Remediation runs once per failed topic, and each card it writes is bound to
 that topic. Those remediation cards land in the deck's
