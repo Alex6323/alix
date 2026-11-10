@@ -149,10 +149,12 @@ launch settings; after a cram launch it carries a small "cram" caption.
 
 ## Syncing with the desktop
 
-Once paired (see [Pairing a device](19-pairing.md)), a pulled entry's row
-gains a **Sync** action in its `⋮` menu: it pushes every local deck whose
-progress changed, then pulls that entry when the desktop's copy differs
-from the phone's. The app also runs one cycle in the background each time
+Once paired (see [Pairing a device](19-pairing.md)), the paired desktop's
+heading carries a **SYNC** button: it pushes every local deck whose progress
+changed, then pulls every entry the desktop lists, including entries not yet
+on the phone, skipping an entry whose copy on the phone already matches the
+desktop's. An entry the phone lacks the free space for is refused and named
+in the report; the rest still land. The app also runs one cycle in the background each time
 it opens, for every entry already on the phone, once the paired desktop
 answers and still serves the same root; an entry whose files did not
 change on the desktop is left as it is. A
@@ -185,8 +187,9 @@ puts the desktop's copy in its place, listed as replaced.
 
 A desktop entry the phone has never pulled shows below the phone's own
 entries: its name and size only, in a subdued row with no `⋮` menu and no
-review action. Tapping it pulls it for the first time; once it lands it
-becomes an ordinary entry, reviewable like any other.
+review action. Tapping it pulls just that entry for the first time (**SYNC**
+pulls it along with the rest); once it lands it becomes an ordinary entry,
+reviewable like any other.
 
 Tapping the status line above the deck list (shown while a cycle runs, or
 its last report is unread) opens the full report: landed, pushed, kept,

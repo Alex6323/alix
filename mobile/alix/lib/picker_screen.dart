@@ -426,7 +426,7 @@ class _PickerScreenState extends State<PickerScreen> {
   }
 
   void _syncAll() {
-    _syncController?.cycle();
+    _syncController?.cycle(everyListed: true);
   }
 
   void _pullAvailable(String name) {

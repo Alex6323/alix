@@ -39,6 +39,112 @@ void main() {
   }
 
   group('cycle', () {
+    SyncEntry listed(String name, {int unpackedBytes = 10}) => SyncEntry(
+      name: name,
+      kind: 'workspace',
+      members: 1,
+      unpackedBytes: unpackedBytes,
+      fingerprint: '0000000000002',
+      leftOut: const [],
+    );
+
+    FakeSyncPort freshPhone(List<SyncEntry> desktop) {
+      final port = FakeSyncPort(rootId: 'root-a', rootDir: scratch.path);
+      final onPhone = <SyncEntryState>[];
+      port.entriesImpl = () async =>
+          SyncEntries(rootId: 'root-a', entries: desktop);
+      port.pairedEntriesImpl = () => List.of(onPhone);
+      port.applyPullImpl = (entry, zipPath) async {
+        onPhone.add(
+          SyncEntryState(
+            entry: entry,
+            kind: 'workspace',
+            fingerprint: '0000000000002',
+            decks: const [],
+          ),
+        );
+        return SyncPullReport(
+          entry: entry,
+          kind: 'workspace',
+          landed: ['deck-$entry'],
+          kept: const [],
+          conflicts: const [],
+          phoneOnly: const [],
+          removed: const [],
+        );
+      };
+      return port;
+    }
+
+    test(
+      'SYNC on a fresh phone lands every workspace the desktop lists',
+      () async {
+        final port = freshPhone([
+          listed('Biology'),
+          listed('Chemistry'),
+          listed('Physics'),
+        ]);
+        final controller = SyncController(port: port);
+
+        await controller.cycle(everyListed: true);
+
+        expect(port.pullCalls, ['Biology', 'Chemistry', 'Physics']);
+        expect(port.applyPullCalls, ['Biology', 'Chemistry', 'Physics']);
+        expect(controller.lastReport?.landed, hasLength(3));
+        expect(controller.lastReport?.notOnPhone, isEmpty);
+        expect(controller.lastReport?.error, isNull);
+      },
+    );
+
+    test(
+      'tapping one listed row on a fresh phone pulls only that row',
+      () async {
+        final port = freshPhone([listed('Biology'), listed('Chemistry')]);
+        final controller = SyncController(port: port);
+
+        await controller.cycle(entry: 'Chemistry');
+
+        expect(port.pullCalls, ['Chemistry']);
+        expect(controller.lastReport?.notOnPhone, ['Biology']);
+      },
+    );
+
+    test('SYNC on a fresh phone reports a free-space refusal and lands the '
+        'rest', () async {
+      final port = freshPhone([
+        listed('Biology'),
+        listed('Huge', unpackedBytes: 5000),
+        listed('Physics'),
+      ]);
+      port.pullImpl = (entry, target, unpackedBytes) async {
+        if (entry == 'Huge') {
+          throw const SyncFreeSpaceRefusal(needed: 5000, free: 100);
+        }
+        await target.writeAsBytes(const []);
+        return 0;
+      };
+      final controller = SyncController(port: port);
+
+      await controller.cycle(everyListed: true);
+
+      expect(port.applyPullCalls, ['Biology', 'Physics']);
+      expect(controller.lastReport?.refused, [
+        'Huge: needs 4.9 KB, 100 bytes free',
+      ]);
+      expect(controller.lastReport?.notOnPhone, ['Huge']);
+    });
+
+    test('the launch cycle on a fresh phone pulls nothing: only SYNC '
+        'fetches entries not yet on the phone', () async {
+      final port = freshPhone([listed('Biology'), listed('Chemistry')]);
+      final controller = SyncController(port: port);
+
+      await controller.cycle();
+
+      expect(port.pullCalls, isEmpty);
+      expect(controller.lastReport?.notOnPhone, ['Biology', 'Chemistry']);
+    });
+
     test(
       'an entries answer naming another root aborts before any push',
       () async {

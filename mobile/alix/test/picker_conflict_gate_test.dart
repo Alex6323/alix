@@ -289,7 +289,7 @@ class _YieldingConflictController extends ChangeNotifier
   void markReportRead() {}
 
   @override
-  Future<void> cycle({String? entry}) async {}
+  Future<void> cycle({String? entry, bool everyListed = false}) async {}
 
   @override
   Future<void> pushOne(String deckId) async {}

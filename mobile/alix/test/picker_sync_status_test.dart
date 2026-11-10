@@ -178,6 +178,11 @@ void main() {
         until: () => find.text('SYNC').evaluate().isNotEmpty,
       );
       expect(port.entriesCalls.length, 1);
+      expect(
+        port.pullCalls,
+        isEmpty,
+        reason: 'the launch cycle pulls only entries on the phone',
+      );
       expect(tester.widget<TextButton>(find.byType(TextButton)).enabled, true);
 
       // A real entries() match now runs a real pull attempt (staging dir,
@@ -186,14 +191,18 @@ void main() {
       await tester.runAsync(() async {
         await tester.tap(find.text('SYNC'));
         final deadline = DateTime.now().add(const Duration(seconds: 2));
-        while (port.entriesCalls.length < 2 &&
-            DateTime.now().isBefore(deadline)) {
+        while (port.pullCalls.isEmpty && DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 5));
         }
         await tester.pumpAndSettle();
       });
 
       expect(port.entriesCalls.length, 2);
+      expect(
+        port.pullCalls,
+        ['deck.md'],
+        reason: 'SYNC pulls every listed entry',
+      );
       // The cycle the button starts names no entry: it covers the root, so
       // no row carries a sync action of its own.
       expect(find.byIcon(Icons.more_vert), findsNothing);

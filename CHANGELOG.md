@@ -286,6 +286,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The phone's **SYNC** button pulls every entry the paired desktop lists,
+  including ones not yet on the phone, so SYNC on a freshly paired phone
+  lands the desktop's workspaces instead of doing nothing. Tapping one
+  not-yet-pulled row still pulls only that entry, the launch cycle still
+  pulls only entries already on the phone, and an entry without enough free
+  space is still refused and reported.
+
 - Sync file fingerprints are written as 13 base32 characters (the `digest`
   field is now `fingerprint`) and the pull manifest is version 2. Phone and
   desktop must run the same version, and a paired phone needs a fresh pull.

@@ -170,16 +170,17 @@ class SyncController extends ChangeNotifier {
 
   /// Runs one sync cycle: lists what the desktop serves, pushes every
   /// locally changed deck in order, pulls [entry] (or, when null, every
-  /// entry the phone already has a manifest for), tidies renamed entries,
-  /// and reports the result. A cycle already running is left alone.
-  Future<void> cycle({String? entry}) async {
+  /// entry the phone already has a manifest for, or with [everyListed] every
+  /// entry the desktop lists), tidies renamed entries, and reports the
+  /// result. A cycle already running is left alone.
+  Future<void> cycle({String? entry, bool everyListed = false}) async {
     if (_running) return;
     _running = true;
     _runningEntry = entry;
     _notify();
     SyncReport report;
     try {
-      report = await _runCycle(entry);
+      report = await _runCycle(entry, everyListed: everyListed);
     } on Object catch (error) {
       report = SyncReport(error: 'sync failed: $error');
     } finally {
@@ -201,7 +202,10 @@ class SyncController extends ChangeNotifier {
     _notify();
   }
 
-  Future<SyncReport> _runCycle(String? onlyEntry) async {
+  Future<SyncReport> _runCycle(
+    String? onlyEntry, {
+    required bool everyListed,
+  }) async {
     final landed = <String>[];
     final kept = <String>[];
     final conflicts = <String>[];
@@ -279,7 +283,11 @@ class SyncController extends ChangeNotifier {
     final onPhone = {
       for (final entry in _port.pairedEntries()) entry.entry: entry,
     };
-    final toPull = onlyEntry != null ? [onlyEntry] : [...onPhone.keys];
+    final toPull = onlyEntry != null
+        ? [onlyEntry]
+        : everyListed
+        ? [for (final entry in desktop.entries) entry.name]
+        : [...onPhone.keys];
     for (final name in toPull) {
       final desktopEntry = desktop.entries.where((e) => e.name == name);
       if (desktopEntry.isEmpty) continue;
