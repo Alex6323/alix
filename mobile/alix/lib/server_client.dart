@@ -168,6 +168,9 @@ Map<String, dynamic>? _asJsonObject(dynamic v) {
 /// `[ContentUnitDto]` (docs/API.md) to the review models, so a tutor answer
 /// renders through the card's unit widgets. A unit of an unknown kind or
 /// without its required fields is dropped rather than guessed at.
+List<List<ReviewContentUnitModel>> _unitLists(dynamic json) =>
+    json is List ? [for (final units in json) contentUnitsFromJson(units)] : const [];
+
 List<ReviewContentUnitModel> contentUnitsFromJson(dynamic json) {
   if (json is! List) return const [];
   return [for (final unit in json) ?_contentUnitFromJson(unit)];
@@ -419,10 +422,13 @@ class RemoteExamGrade {
     required this.question,
     this.questionUnits = const [],
     required this.points,
+    this.pointsUnits = const [],
     required this.answer,
     required this.verdict,
     required this.feedback,
+    this.feedbackUnits = const [],
     required this.missed,
+    this.missedUnits = const [],
     this.topic = 0,
     this.shape = '',
     this.mentalModel = '',
@@ -431,10 +437,13 @@ class RemoteExamGrade {
   final String question;
   final List<ReviewContentUnitModel> questionUnits;
   final List<String> points;
+  final List<List<ReviewContentUnitModel>> pointsUnits;
   final String answer;
   final String verdict;
   final String feedback;
+  final List<ReviewContentUnitModel> feedbackUnits;
   final List<String> missed;
+  final List<List<ReviewContentUnitModel>> missedUnits;
   final int topic;
   final String shape;
   final String mentalModel;
@@ -452,10 +461,13 @@ class RemoteExamGrade {
       question: question,
       questionUnits: contentUnitsFromJson(json['question_units']),
       points: _asStringList(json['points']),
+      pointsUnits: _unitLists(json['points_units']),
       answer: answer,
       verdict: verdict,
       feedback: feedback,
+      feedbackUnits: contentUnitsFromJson(json['feedback_units']),
       missed: _asStringList(json['missed']),
+      missedUnits: _unitLists(json['missed_units']),
       topic: _asInt(json['topic']) ?? 0,
       shape: _asString(json['shape']) ?? '',
       mentalModel: _asString(json['mental_model']) ?? '',
@@ -582,9 +594,7 @@ class RemoteExam {
         deck: _asString(json['deck']) ?? '',
         strictness: _asString(json['strictness']) ?? 'balanced',
         questions: _asStringList(json['questions']),
-        questionsUnits: json['questions_units'] is List
-            ? [for (final units in json['questions_units'] as List) contentUnitsFromJson(units)]
-            : const [],
+        questionsUnits: _unitLists(json['questions_units']),
         topics: json['topics'] is List
             ? (json['topics'] as List).map(RemoteExamTopic.fromJson).whereType<RemoteExamTopic>().toList()
             : const [],

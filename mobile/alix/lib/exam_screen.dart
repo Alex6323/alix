@@ -703,6 +703,26 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
+  List<Widget> _pointList(
+    BuildContext context,
+    String label,
+    List<String> points,
+    List<List<ReviewContentUnitModel>> units,
+    AlixTokens tokens,
+  ) {
+    if (points.isEmpty) return const [];
+    final style = TextStyle(color: tokens.dim);
+    return [
+      const SizedBox(height: 6),
+      Text(label, style: TextStyle(color: tokens.faint, fontSize: 12)),
+      for (var i = 0; i < points.length; i++)
+        Padding(
+          padding: const EdgeInsets.only(left: 8, top: 2),
+          child: _examText(context, i < units.length ? units[i] : const [], points[i], style),
+        ),
+    ];
+  }
+
   Widget _gradeRow(BuildContext context, RemoteExamGrade g, AlixTokens tokens) {
     final color = switch (g.verdict) {
       'PASS' => tokens.good,
@@ -726,7 +746,11 @@ class _ExamScreenState extends State<ExamScreen> {
           const SizedBox(height: 4),
           _examText(context, g.questionUnits, g.question, TextStyle(color: tokens.text)),
           const SizedBox(height: 4),
-          Text(g.feedback, style: TextStyle(color: tokens.dim)),
+          _examText(context, g.feedbackUnits, g.feedback, TextStyle(color: tokens.dim)),
+          if (g.verdict != 'PASS') ...[
+            ..._pointList(context, 'A complete answer covers:', g.points, g.pointsUnits, tokens),
+            ..._pointList(context, 'You missed:', g.missed, g.missedUnits, tokens),
+          ],
         ],
       ),
     );

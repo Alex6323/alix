@@ -573,6 +573,156 @@ void main() {
         reason: 'results must not expose raw Markdown fences');
   });
 
+  testWidgets('results render structured feedback and failed rubric details', (tester) async {
+    final exam = RemoteExam.fromJson({
+      'phase': 'results',
+      'deck': 'rust.md',
+      'questions': ['Which validator has the largest stake?'],
+      'questions_units': [
+        [
+          {
+            'kind': 'sentence',
+            'text': 'Which validator has the largest stake?',
+            'runs': [
+              {'text': 'Which validator has the largest stake?'},
+            ],
+          },
+        ],
+      ],
+      'verdicts': {'pass': 0, 'partial': 1, 'total': 1},
+      'grades': [
+        {
+          'question': 'Which validator has the largest stake?',
+          'question_units': [
+            {
+              'kind': 'sentence',
+              'text': 'Which validator has the largest stake?',
+              'runs': [
+                {'text': 'Which validator has the largest stake?'},
+              ],
+            },
+          ],
+          'points': ['Name the validator and stake.'],
+          'points_units': [
+            [
+              {
+                'kind': 'code',
+                'lines': ['complete: validator A has 4,000'],
+              },
+            ],
+          ],
+          'answer': 'A',
+          'verdict': 'PARTIAL',
+          'feedback': 'Almost.\n\n```\nfeedback: include 4,000\n```',
+          'feedback_units': [
+            {
+              'kind': 'sentence',
+              'text': 'Almost.',
+              'runs': [
+                {'text': 'Almost.'},
+              ],
+            },
+            {
+              'kind': 'code',
+              'lines': ['feedback: include 4,000'],
+            },
+          ],
+          'missed': ['4,000'],
+          'missed_units': [
+            [
+              {
+                'kind': 'code',
+                'lines': ['missed: 4,000'],
+              },
+            ],
+          ],
+        },
+      ],
+      'gaps': [],
+      'can_remediate': true,
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('feedback: include 4,000'), findsOneWidget,
+        reason: 'feedback must use feedback_units');
+    expect(find.text('A complete answer covers:'), findsOneWidget,
+        reason: 'a partial verdict must show its rubric points');
+    expect(find.text('complete: validator A has 4,000'), findsOneWidget,
+        reason: 'rubric points must use points_units');
+    expect(find.text('You missed:'), findsOneWidget,
+        reason: 'a partial verdict must name its missed points');
+    expect(find.text('missed: 4,000'), findsOneWidget,
+        reason: 'missed points must use missed_units');
+    expect(find.textContaining('```'), findsNothing,
+        reason: 'results must not expose raw Markdown fences');
+  });
+
+  testWidgets('many long result questions remain reachable on a phone screen', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final questions = [
+      for (var i = 1; i <= 8; i++)
+        'Question $i: explain how the validator set reaches a decision when several participants '
+            'report different checkpoint digests, including the threshold and the next operator action.',
+    ];
+    final exam = RemoteExam.fromJson({
+      'phase': 'results',
+      'deck': 'rust.md',
+      'questions': questions,
+      'questions_units': [
+        for (final question in questions)
+          [
+            {
+              'kind': 'sentence',
+              'text': question,
+              'runs': [
+                {'text': question},
+              ],
+            },
+          ],
+      ],
+      'verdicts': {'pass': 8, 'partial': 0, 'total': 8},
+      'grades': [
+        for (final question in questions)
+          {
+            'question': question,
+            'question_units': [
+              {
+                'kind': 'sentence',
+                'text': question,
+                'runs': [
+                  {'text': question},
+                ],
+              },
+            ],
+            'points': [],
+            'answer': 'Answer',
+            'verdict': 'PASS',
+            'feedback': 'Correct.',
+            'missed': [],
+          },
+      ],
+      'gaps': [],
+      'can_remediate': false,
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    await tester.scrollUntilVisible(
+      find.text(questions.last),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text(questions.last), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'long result rows must scroll without overflow');
+  });
+
   testWidgets('answering navigation keeps typed text across Back/Next', (tester) async {
     final client = FakeServerClient(examGetReplies: const [answering2]);
     await pumpExam(tester, client: client);
