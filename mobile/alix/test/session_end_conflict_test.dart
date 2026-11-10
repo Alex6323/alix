@@ -462,6 +462,7 @@ const _failedExam = RemoteExam(
 );
 
 const _remediatedExam = RemoteExam(
+  sitting: 'sitting-1',
   phase: 'remediated',
   deck: 'ws/deck.md',
   strictness: 'balanced',

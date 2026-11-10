@@ -694,7 +694,8 @@ class _PickerScreenState extends State<PickerScreen> {
           },
           applyRemediation: (exam, topic) {
             final kept = _keptSitting(entry.path, exam.sitting);
-            final applied = kept?.remediated[topic.topicId];
+            if (kept == null) return 0;
+            final applied = kept.remediated[topic.topicId];
             if (applied != null) return applied;
             final count = exam_bridge.applyExamRemediation(
               deckPath: entry.path,
@@ -703,7 +704,7 @@ class _PickerScreenState extends State<PickerScreen> {
               cardsText: topic.cards,
               device: widget.device,
             );
-            kept?.remediated[topic.topicId] = count;
+            kept.remediated[topic.topicId] = count;
             return count;
           },
           nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),

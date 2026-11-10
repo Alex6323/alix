@@ -528,6 +528,71 @@ void main() {
   );
 
   testWidgets(
+    'a remediated sitting this phone did not start writes no personal cards',
+    (tester) async {
+      final fixture = await examFixture('exam-unstarted-remediated');
+      const remediatedExam = RemoteExam(
+        sitting: 'sitting-from-another-client',
+        phase: 'remediated',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: ['the tested idea'],
+        canRemediate: false,
+        cardsByTopic: [
+          RemoteTopicCards(
+            topicId: 'topic-remediation',
+            cards: '## Why?\nBecause.\n',
+          ),
+        ],
+        thinking: false,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [remediatedExam],
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Take exam'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Done.'), findsOneWidget);
+      expect(
+        fixture.root
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.local.md')),
+        isEmpty,
+        reason:
+            'another client sitting is display-only on this phone and must not write remediation cards',
+      );
+      expect(
+        fixture.root
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.contains('/.alix/progress/')),
+        isEmpty,
+        reason: 'the refused sitting must not create phone progress either',
+      );
+    },
+  );
+
+  testWidgets(
     'a replacement sitting on the same deck does not reuse this phone previous start',
     (tester) async {
       final fixture = await examFixture('exam-replaced');
