@@ -33,14 +33,23 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
-({String deckPath, exam_bridge.ExamSittingStart start, String? sitting})?
-_startedSitting;
+class _StartedSitting {
+  _StartedSitting(this.deckPath, this.start);
 
-exam_bridge.ExamSittingStart? _keptStart(String deckPath, String? sitting) {
+  final String deckPath;
+  final exam_bridge.ExamSittingStart start;
+  String? sitting;
+  bool recorded = false;
+  ({String text, bool examChanged})? standing;
+}
+
+_StartedSitting? _startedSitting;
+
+_StartedSitting? _keptSitting(String deckPath, String? sitting) {
   final kept = _startedSitting;
   if (kept == null || kept.deckPath != deckPath) return null;
   if (sitting == null || kept.sitting != sitting) return null;
-  return kept.start;
+  return kept;
 }
 
 class _UnrecordableSitting implements Exception {
@@ -610,7 +619,7 @@ class _PickerScreenState extends State<PickerScreen> {
           needsWorkOnly: needsWorkOnly,
           nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
         );
-        _startedSitting = (deckPath: entry.path, start: fresh, sitting: null);
+        _startedSitting = _StartedSitting(entry.path, fresh);
         cards = fresh.cards;
         final encoded = exam_bridge.examIdeasLoad(
           deckPath: entry.path,
@@ -638,18 +647,14 @@ class _PickerScreenState extends State<PickerScreen> {
           buildClient: widget.buildClient ?? HttpServerClient.new,
           cards: cards,
           unsourcedTopics:
-              (fresh ?? _keptStart(entry.path, initialExam?.sitting))
+              (fresh ?? _keptSitting(entry.path, initialExam?.sitting)?.start)
                   ?.unsourcedTopics ??
               const [],
           initialExam: initialExam,
           onStarted: (sitting) {
             final kept = _startedSitting;
             if (kept != null && identical(kept.start, fresh)) {
-              _startedSitting = (
-                deckPath: kept.deckPath,
-                start: kept.start,
-                sitting: sitting,
-              );
+              kept.sitting = sitting;
             }
           },
           ideas: ideas,
@@ -672,16 +677,19 @@ class _PickerScreenState extends State<PickerScreen> {
             json: jsonEncode(ideas),
           ),
           applyResult: (exam, nowMs) {
-            final kept = _keptStart(entry.path, exam.sitting);
+            final kept = _keptSitting(entry.path, exam.sitting);
             if (kept == null) throw const _UnrecordableSitting();
-            return exam_bridge.applyExamResult(
+            if (kept.recorded) return kept.standing;
+            kept.standing = exam_bridge.applyExamResult(
               deckPath: entry.path,
               rootDir: root,
               exam: exam,
-              start: kept,
+              start: kept.start,
               nowMs: nowMs,
               device: widget.device,
             );
+            kept.recorded = true;
+            return kept.standing;
           },
           applyRemediation: (topicId, cardsText) => exam_bridge.applyExamRemediation(
             deckPath: entry.path,

@@ -449,7 +449,7 @@ void main() {
         versionReply: minServerVersion,
         noSittingBeforeStart: true,
         examStartSitting: 'sitting-1',
-        examGetReplies: const [generatingExam, failedRemoteExam],
+        examGetReplies: const [generatingExam],
       );
       await pumpPicker(
         tester,
@@ -476,6 +476,9 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(client.examCloseCalls, 0, reason: 'step 2: leaving keeps the sitting');
+      client.replaceExam(failedRemoteExam);
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
 
       File(fixture.deck).writeAsStringSync(
         '\n# Extra\n\n## q2\na2\n',
@@ -593,6 +596,66 @@ void main() {
             'step 2: another client sitting must not write this phone store',
       );
       expect(find.textContaining('not recorded'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'reopening after close failure does not record one result twice',
+    (tester) async {
+      final fixture = await examFixture('exam-close-failure');
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
+        examGetReplies: const [failedRemoteExam],
+        failExamClose: true,
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('0 / 1'),
+        findsOneWidget,
+        reason: 'step 1: the result opens',
+      );
+      final progress = fixture.root
+          .listSync(recursive: true)
+          .whereType<File>()
+          .singleWhere((file) => file.path.contains('/.alix/progress/'));
+      final first =
+          jsonDecode(progress.readAsStringSync()) as Map<String, dynamic>;
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(client.examCloseCalls, 1, reason: 'step 2: closing failed once');
+      await takeFinishedExam(tester);
+      final reopened =
+          jsonDecode(progress.readAsStringSync()) as Map<String, dynamic>;
+
+      expect(
+        reopened['revision'],
+        first['revision'],
+        reason: 'step 3: reopening the retained result must not save it again',
+      );
+      expect(
+        find.text('Turn the gaps into cards'),
+        findsOneWidget,
+        reason: 'step 3: the recorded result still offers remediation',
+      );
     },
   );
 
