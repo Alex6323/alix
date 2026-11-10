@@ -694,7 +694,7 @@ class _PickerScreenState extends State<PickerScreen> {
           },
           applyRemediation: (exam, topic) {
             final kept = _keptSitting(entry.path, exam.sitting);
-            if (kept == null) return 0;
+            if (kept == null) return null;
             final applied = kept.remediated[topic.topicId];
             if (applied != null) return applied;
             final count = exam_bridge.applyExamRemediation(

@@ -573,6 +573,12 @@ void main() {
 
       expect(find.text('Done.'), findsOneWidget);
       expect(
+        find.text('0 new cards to drill.'),
+        findsNothing,
+        reason:
+            'a remote sitting this phone refuses to apply must not report a local remediation result',
+      );
+      expect(
         fixture.root
             .listSync(recursive: true)
             .whereType<File>()
