@@ -734,18 +734,10 @@ class _ExamScreenState extends State<ExamScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(g.verdict, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
-              if (g.shape.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Text(g.shape, style: TextStyle(color: tokens.faint, fontSize: 11)),
-              ],
-            ],
-          ),
-          const SizedBox(height: 4),
+          if (g.shape.isNotEmpty) Text(g.shape, style: TextStyle(color: tokens.faint, fontSize: 11)),
           _examText(context, g.questionUnits, g.question, TextStyle(color: tokens.text)),
           const SizedBox(height: 4),
+          Text(g.verdict, style: TextStyle(fontWeight: FontWeight.w600, color: color)),
           _examText(context, g.feedbackUnits, g.feedback, TextStyle(color: tokens.dim)),
           if (g.verdict != 'PASS') ...[
             ..._pointList(context, 'A complete answer covers:', g.points, g.pointsUnits, tokens),

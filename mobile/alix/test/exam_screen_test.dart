@@ -660,6 +660,116 @@ void main() {
         reason: 'results must not expose raw Markdown fences');
   });
 
+  testWidgets('a result identifies its question before announcing the verdict', (tester) async {
+    const question = 'Which validator has the largest stake?';
+    const exam = RemoteExam(
+      phase: 'results',
+      deck: 'rust.md',
+      strictness: 'balanced',
+      questions: [question],
+      verdicts: ExamVerdicts(pass: 0, partial: 1, total: 1),
+      grades: [
+        RemoteExamGrade(
+          question: question,
+          points: ['Name the validator and stake.'],
+          answer: 'A',
+          verdict: 'PARTIAL',
+          feedback: 'Almost.',
+          missed: ['4,000'],
+          shape: 'boundary',
+        ),
+      ],
+      gaps: [],
+      canRemediate: true,
+      thinking: false,
+    );
+    final client = FakeServerClient(examGetReplies: const [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    final questionTop = tester.getTopLeft(find.text(question)).dy;
+    final verdictTop = tester.getTopLeft(find.text('PARTIAL')).dy;
+    expect(questionTop, lessThan(verdictTop),
+        reason: 'the row must identify the question before announcing its verdict');
+  });
+
+  testWidgets('short grade unit lists fall back at the matching raw index', (tester) async {
+    final exam = RemoteExam.fromJson({
+      'phase': 'results',
+      'deck': 'rust.md',
+      'questions': ['Why?'],
+      'verdicts': {'pass': 0, 'partial': 1, 'total': 1},
+      'grades': [
+        {
+          'question': 'Why?',
+          'points': ['first raw point', 'second raw point'],
+          'points_units': [
+            [
+              {
+                'kind': 'code',
+                'lines': ['first structured point'],
+              },
+            ],
+          ],
+          'answer': 'Because.',
+          'verdict': 'PARTIAL',
+          'feedback': 'Almost.',
+          'missed': ['raw missed point'],
+          'missed_units': [],
+        },
+      ],
+      'gaps': [],
+      'can_remediate': true,
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('first structured point'), findsOneWidget);
+    expect(find.text('first raw point'), findsNothing);
+    expect(find.text('second raw point'), findsOneWidget);
+    expect(find.text('raw missed point'), findsOneWidget);
+  });
+
+  testWidgets('a pass formats feedback without exposing rubric details', (tester) async {
+    final exam = RemoteExam.fromJson({
+      'phase': 'results',
+      'deck': 'rust.md',
+      'questions': ['Why?'],
+      'verdicts': {'pass': 1, 'partial': 0, 'total': 1},
+      'grades': [
+        {
+          'question': 'Why?',
+          'points': ['A complete point.'],
+          'points_units': [],
+          'answer': 'Because.',
+          'verdict': 'PASS',
+          'feedback': '```\nraw feedback\n```',
+          'feedback_units': [
+            {
+              'kind': 'code',
+              'lines': ['structured feedback'],
+            },
+          ],
+          'missed': [],
+          'missed_units': [],
+        },
+      ],
+      'gaps': [],
+      'can_remediate': false,
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    expect(find.text('structured feedback'), findsOneWidget);
+    expect(find.textContaining('```'), findsNothing);
+    expect(find.text('A complete answer covers:'), findsNothing);
+    expect(find.text('You missed:'), findsNothing);
+  });
+
   testWidgets('many long result questions remain reachable on a phone screen', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
