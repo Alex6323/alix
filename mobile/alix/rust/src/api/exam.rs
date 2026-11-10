@@ -790,6 +790,58 @@ mod tests {
         assert_eq!(1, alix::personal::read(&path, "deck-d").cards.len());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn apply_exam_remediation_keeps_progress_for_a_card_written_before_save_failed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let root_dir = root_arg(root);
+        let progress = alix::state::UserFiles::new(root).progress();
+        std::fs::create_dir_all(&progress).unwrap();
+        std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let error = apply_exam_remediation(
+            deck_path.clone(),
+            root_dir.clone(),
+            "topic-a".to_string(),
+            "## Why b?\nbecause\n".to_string(),
+            None,
+        )
+        .unwrap_err();
+
+        std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            error.to_string().contains("progress"),
+            "the fixture must fail the progress save: {error:#}"
+        );
+        let personal = alix::personal::read(&path, "deck-d");
+        let id = personal.cards[0]
+            .card
+            .id()
+            .expect("the sidecar card is stamped");
+        assert_eq!(
+            1,
+            apply_exam_remediation(
+                deck_path,
+                root_dir,
+                "topic-a".to_string(),
+                "## Why b?\nbecause\n".to_string(),
+                None,
+            )
+            .unwrap(),
+            "a retry restores the lost progress entry without a second block"
+        );
+        assert!(
+            reopened(&path, root).get(&id).is_some(),
+            "a card which escaped to the sidecar must retain its matching progress entry"
+        );
+        assert_eq!(1, alix::personal::read(&path, "deck-d").cards.len());
+    }
+
     #[test]
     fn apply_exam_remediation_skips_a_block_equal_to_a_cloze_block() {
         let dir = tempfile::tempdir().unwrap();

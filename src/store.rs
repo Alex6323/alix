@@ -1948,6 +1948,15 @@ fn store_remediation_blocks(
                 store.get_or_insert(&id);
                 *created_or_revived += 1;
             }
+        } else if existing.iter().any(|id| store.get(id).is_none()) {
+            let missing: Vec<&String> = existing
+                .iter()
+                .filter(|id| store.get(id).is_none())
+                .collect();
+            for id in missing {
+                store.get_or_insert(id);
+                *created_or_revived += 1;
+            }
         } else if existing
             .iter()
             .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
@@ -3207,7 +3216,10 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(0, stored, "remediation dedup");
+        assert_eq!(
+            1, stored,
+            "remediation dedup restores only the progress entry"
+        );
         assert_eq!(
             text,
             std::fs::read_to_string(&sidecar).unwrap(),
@@ -3248,7 +3260,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(0, stored, "remediation");
+        assert_eq!(1, stored, "remediation restores only the progress entry");
         assert_eq!(
             text,
             std::fs::read_to_string(&sidecar).unwrap(),
@@ -3816,6 +3828,27 @@ mod tests {
             "the same gap again is a content dupe, not a new card"
         );
         assert_eq!(1, sidecar_cards(&deck, "d.md").len());
+    }
+
+    #[test]
+    fn a_rerun_restores_the_progress_entry_of_a_sidecar_card_whose_save_was_lost() {
+        let dir = tempfile::tempdir().unwrap();
+        let deck = empty_deck(&dir, "d.md");
+        let text = "## Why does X happen?\nbecause of Y\n";
+        let mut written = Store::open(dir.path().join("lost.json")).unwrap();
+        store_remediation(&mut written, &deck, "d.md", text, None).unwrap();
+        let id = sidecar_ids(&deck, "d.md")[0].clone();
+        let progress = dir.path().join("p.json");
+        let mut store = Store::open(&progress).unwrap();
+
+        let healed = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
+
+        assert_eq!(1, healed, "the missing entry counts as created");
+        assert!(
+            Store::open(&progress).unwrap().get(&id).is_some(),
+            "the rerun saves a progress entry for {id}"
+        );
+        assert_eq!(1, sidecar_cards(&deck, "d.md").len(), "no second block");
     }
 
     #[test]

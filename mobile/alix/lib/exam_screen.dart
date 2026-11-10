@@ -273,18 +273,7 @@ class _ExamScreenState extends State<ExamScreen> {
       widget.clearAnswers?.call();
     }
     if (dto.phase == 'remediated' && !_remediationApplied) {
-      _remediationApplied = true;
-      var count = 0;
-      var refused = false;
-      for (final topic in dto.cardsByTopic) {
-        final applied = widget.applyRemediation(dto, topic);
-        if (applied == null) {
-          refused = true;
-        } else {
-          count += applied;
-        }
-      }
-      if (!refused) _snack('$count new cards to drill.');
+      _applyRemediation(dto);
     }
     setState(() {
       _exam = dto;
@@ -293,6 +282,27 @@ class _ExamScreenState extends State<ExamScreen> {
       }
     });
     _rescheduleTimer(dto);
+  }
+
+  void _applyRemediation(RemoteExam dto) {
+    _remediationApplied = true;
+    var count = 0;
+    var refused = false;
+    try {
+      for (final topic in dto.cardsByTopic) {
+        final applied = widget.applyRemediation(dto, topic);
+        if (applied == null) {
+          refused = true;
+        } else {
+          count += applied;
+        }
+      }
+    } catch (error) {
+      _remediationApplied = false;
+      _snack(bridgeErrorText(error));
+      return;
+    }
+    if (!refused) _snack('$count new cards to drill.');
   }
 
   void _installAnswers(List<String> questions) {
@@ -700,6 +710,13 @@ class _ExamScreenState extends State<ExamScreen> {
         children: [
           Text('Done.', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: tokens.text)),
           const SizedBox(height: 16),
+          if (!_remediationApplied) ...[
+            OutlinedButton(
+              onPressed: () => setState(() => _applyRemediation(_exam!)),
+              child: const Text('Try again'),
+            ),
+            const SizedBox(height: 8),
+          ],
           FilledButton(
             onPressed: _explicitClose,
             child: const Text('Close'),

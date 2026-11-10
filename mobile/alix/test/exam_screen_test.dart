@@ -47,6 +47,7 @@ void main() {
     VoidCallback? clearAnswers,
     void Function(Map<String, dynamic>)? saveIdeas,
     ({String text, bool examChanged})? Function(RemoteExam, BigInt)? applyResult,
+    int? Function(RemoteExam, RemoteTopicCards)? applyRemediation,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: ExamScreen(
@@ -67,10 +68,11 @@ void main() {
         },
         cards: cards,
         unsourcedTopics: unsourcedTopics,
-        applyRemediation: (exam, topic) {
-          remediationCalls.add('${topic.topicId}: ${topic.cards}');
-          return remediationCountReply;
-        },
+        applyRemediation: applyRemediation ??
+            (exam, topic) {
+              remediationCalls.add('${topic.topicId}: ${topic.cards}');
+              return remediationCountReply;
+            },
         nowMs: () => BigInt.from(1000),
         pollInterval: _pollInterval,
       ),
@@ -729,6 +731,34 @@ void main() {
     expect(find.text('1.5 / 2'), findsWidgets, reason: 'the results still render');
     expect(find.text('Turn the gaps into cards'), findsNothing,
         reason: 'gaps from voided material must not become cards');
+  });
+
+  testWidgets('a remediation the core fails to save shows its reason and can be retried',
+      (tester) async {
+    const reason = 'cannot save progress';
+    final client = FakeServerClient(examGetReplies: const [remediated]);
+    var failing = true;
+    await pumpExam(
+      tester,
+      client: client,
+      applyRemediation: (_, _) {
+        if (failing) throw AnyhowException(reason);
+        return 2;
+      },
+    );
+    await tester.pump();
+
+    expect(find.text(reason), findsOneWidget, reason: 'the failure is shown');
+    expect(find.text('Try again'), findsOneWidget, reason: 'the remediation stays unapplied');
+
+    failing = false;
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    expect(find.text('4 new cards to drill.'), findsOneWidget);
+    expect(find.text('Try again'), findsNothing);
   });
 
   testWidgets('a new sitting sends the saved ideas document', (tester) async {
