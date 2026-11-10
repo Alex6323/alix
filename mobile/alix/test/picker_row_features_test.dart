@@ -85,6 +85,31 @@ void main() {
       await settlePicker(tester);
     }
 
+    testWidgets('an unloadable deck is diagnostic and refuses the launch sheet',
+        (tester) async {
+      final root = tempRoot('alix-picker-load-error-');
+      writeTestDeck(
+        '${root.path}/broken.md',
+        '## front\nanswer\n<!-- blank: span hidden="missing" -->\n',
+      );
+
+      await pumpPicker(tester, root);
+
+      expect(find.text('broken'), findsOneWidget);
+      expect(find.text('error'), findsOneWidget);
+      await tester.tap(find.text('broken'));
+      await tester.pumpAndSettle();
+
+      for (final launch in ['Recognize', 'Recall', 'Reconstruct', 'Walk']) {
+        expect(
+          find.text(launch),
+          findsNothing,
+          reason: 'the diagnostic row must not offer $launch',
+        );
+      }
+      expect(find.byType(PickerScreen), findsOneWidget);
+    });
+
     testWidgets(
       'a tap on a deck row opens the launch sheet, and the picked depth '
       'opens the review',

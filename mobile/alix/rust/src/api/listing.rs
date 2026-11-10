@@ -302,6 +302,21 @@ mod tests {
             "the phone must show a diagnostic row and refuse its launch: {}",
             entries[0].title
         );
+        let row = &entries[0];
+        assert!(
+            !row.due
+                && !row.can_recognize
+                && !row.is_trace
+                && !row.mastered
+                && !row.passed
+                && row.exam_badge.is_none()
+                && row.exam_filter == "none"
+                && !row.exam_changed
+                && !row.exam_due
+                && !row.examable
+                && !row.locked,
+            "an unloadable deck must make no phone-visible study claim"
+        );
     }
 
     const T0: u64 = 1_000_000;
