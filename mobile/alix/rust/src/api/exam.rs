@@ -792,7 +792,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn apply_exam_remediation_keeps_a_card_written_before_save_failed() {
+    fn retry_reports_the_card_committed_before_the_first_attempt_failed() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
@@ -804,45 +804,51 @@ mod tests {
         std::fs::create_dir_all(&progress).unwrap();
         std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        let error = apply_exam_remediation(
+        let first = apply_exam_remediation(
             deck_path.clone(),
             root_dir.clone(),
             "topic-a".to_string(),
             "## Why b?\nbecause\n".to_string(),
             None,
-        )
-        .unwrap_err();
+        );
 
         std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(
-            error.to_string().contains("progress"),
-            "the fixture must fail the progress save: {error:#}"
-        );
+        let first_reported = match first {
+            Ok(count) => count,
+            Err(error) => {
+                assert!(
+                    error.to_string().contains("progress"),
+                    "the fixture must fail the progress save: {error:#}"
+                );
+                0
+            }
+        };
+        let retry_reported = apply_exam_remediation(
+            deck_path,
+            root_dir,
+            "topic-a".to_string(),
+            "## Why b?\nbecause\n".to_string(),
+            None,
+        )
+        .unwrap();
         let personal = alix::personal::read(&path, "deck-d");
         let id = personal.cards[0]
             .card
             .id()
-            .expect("the sidecar card is stamped");
-        assert_eq!(
-            0,
-            apply_exam_remediation(
-                deck_path,
-                root_dir,
-                "topic-a".to_string(),
-                "## Why b?\nbecause\n".to_string(),
-                None,
-            )
-            .unwrap(),
-            "a retry reports no new card for the block the failed run wrote"
-        );
-        assert_eq!(1, alix::personal::read(&path, "deck-d").cards.len());
+            .expect("the committed sidecar card is stamped");
         let deck = alix::deck::Deck::load(&path).unwrap();
+        assert_eq!(1, personal.cards.len(), "the attempts create one card");
         assert!(
             alix::assemble::personal_cards(&deck)
                 .cards
                 .iter()
                 .any(|card| card.id().as_deref() == Some(id.as_str())),
-            "the card written before the failed save is still loaded for review"
+            "the card is ready to enter a review session"
+        );
+        assert_eq!(
+            1,
+            first_reported + retry_reported,
+            "after Try again clears the error, the phone must acknowledge the card the operation committed"
         );
     }
 

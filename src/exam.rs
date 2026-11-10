@@ -3636,8 +3636,8 @@ mod tests {
         let cards = sidecar_cards(&deck_path, DECK);
         assert_eq!(1, cards.len(), "one remediation card: {sidecar}");
         assert!(
-            cards[0].id().is_some_and(|id| store.get(&id).is_some()),
-            "the store carries the card's schedule, the file carries its content"
+            cards[0].id().is_some_and(|id| store.get(&id).is_none()),
+            "a fresh card enters sessions from the sidecar; the store gains its schedule on the first grade"
         );
     }
 
@@ -3808,6 +3808,7 @@ mod tests {
         let mut first = two_failed_topics(&ws, &cli);
         first.remediate();
         drain(&mut first, &mut store);
+        store.save().unwrap();
         let revision = || {
             let file: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
@@ -3877,18 +3878,15 @@ mod tests {
         assert_eq!(
             Some(crate::fsio::fault::Operation::CreateTemp),
             fault.triggered_operation(),
-            "the one-shot fault lands on the progress save after the sidecar write",
+            "the one-shot fault lands on the second topic's sidecar write",
         );
         drop(fault);
         assert_eq!(
             1,
             sidecar_cards(&ws.deck(), DECK).len(),
-            "the personal card was appended before the progress save failed",
+            "the first topic's card was appended before the second write failed",
         );
-        assert!(
-            !progress.exists(),
-            "the injected progress save did not land"
-        );
+        assert!(!progress.exists(), "a fresh card saves no progress");
         assert!(
             outcome.store_mutated,
             "the caller must invalidate and backstop a store already mutated before save failed",

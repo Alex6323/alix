@@ -1848,8 +1848,9 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// `created_or_revived` counts store entries touched even when `outcome` is
-/// an error, so a failed save still reports the in-memory mutation.
+/// `created_or_revived` counts sidecar cards created plus store entries
+/// revived, even when `outcome` is an error, so a failed write still reports
+/// what already changed.
 pub struct RemediationStored {
     pub created_or_revived: usize,
     pub outcome: AnyResult<()>,
@@ -1911,6 +1912,7 @@ fn store_remediation_blocks(
     if blocks.is_empty() {
         bail!("remediation produced no cards to store");
     }
+    let mut revived = false;
 
     for block in &blocks {
         // Stamped before storing so the text re-parses to the same id forever.
@@ -1941,13 +1943,7 @@ fn store_remediation_blocks(
                 bail!("the stamped remediation block lost its id line `{token}`");
             };
             crate::personal::append_cards(deck_path, deck_id, &block)?;
-            for card in &cards {
-                let Some(id) = card.id() else {
-                    continue;
-                };
-                store.get_or_insert(&id);
-                *created_or_revived += 1;
-            }
+            *created_or_revived += cards.iter().filter(|card| card.id().is_some()).count();
         } else if existing
             .iter()
             .all(|id| crate::session::is_retired_id(id, store, retire_after_days))
@@ -1958,10 +1954,11 @@ fn store_remediation_blocks(
                 *store.get_or_insert(id) = CardState::new();
                 *created_or_revived += 1;
             }
+            revived = true;
         }
         // Else at least one matching entry is still active: leave it, no reset.
     }
-    if *created_or_revived > 0 {
+    if revived {
         store.save()?;
     }
     Ok(())
@@ -3370,7 +3367,7 @@ mod tests {
     }
 
     #[test]
-    fn a_schedule_entry_exists_whenever_a_card_is_minted() {
+    fn a_schedule_entry_exists_whenever_a_tutor_card_is_minted() {
         use std::collections::HashSet;
         let dir = tempfile::tempdir().unwrap();
         let mut store = Store::open(dir.path().join("s.json")).unwrap();
@@ -3386,18 +3383,6 @@ mod tests {
         )
         .unwrap();
         assert!(store.get(&tutor).is_some(), "the schedule entry exists");
-
-        let deck = empty_deck(&dir, "d.md");
-        store_remediation(
-            &mut store,
-            &deck,
-            "d.md",
-            "## Why does X happen?\nbecause Y\n",
-            None,
-        )
-        .unwrap();
-        let gap = sidecar_ids(&deck, "d.md")[0].clone();
-        assert!(store.get(&gap).is_some());
     }
 
     #[test]
@@ -3839,7 +3824,7 @@ mod tests {
     }
 
     #[test]
-    fn a_remediation_rerun_saves_progress_only_when_it_creates_or_revives_a_card() {
+    fn a_remediation_saves_progress_only_when_it_revives_a_card() {
         let dir = tempfile::tempdir().unwrap();
         let progress = dir.path().join("p.json");
         let mut store = Store::open(&progress).unwrap();
@@ -3856,15 +3841,17 @@ mod tests {
             1,
             store_remediation(&mut store, &deck, "d.md", text, cap).unwrap()
         );
-        let created = revision();
+        assert!(
+            !progress.exists(),
+            "step 1: a fresh gap card lives in the sidecar and saves no progress"
+        );
 
         assert_eq!(
             0,
             store_remediation(&mut store, &deck, "d.md", text, cap).unwrap()
         );
-        assert_eq!(
-            created,
-            revision(),
+        assert!(
+            !progress.exists(),
             "step 2: a rerun that creates and revives nothing does not save progress"
         );
 
@@ -3874,12 +3861,14 @@ mod tests {
             scheduled_days: 90,
             ..Default::default()
         });
+        store.save().unwrap();
+        let retired = revision();
         assert_eq!(
             1,
             store_remediation(&mut store, &deck, "d.md", text, cap).unwrap()
         );
         assert_eq!(
-            created + 1,
+            retired + 1,
             revision(),
             "step 3: a rerun that revives a retired card saves progress once"
         );
@@ -3920,12 +3909,8 @@ mod tests {
         );
         for id in &ids {
             assert!(
-                store.get(id).is_some(),
-                "the id stored in memory is the id reparsed from disk: {id}"
-            );
-            assert!(
-                store.progress(id).is_none(),
-                "an exam-written gap card is new: the drill introduces it: {id}"
+                store.get(id).is_none(),
+                "a fresh gap card enters sessions from the sidecar, not the store: {id}"
             );
         }
 
@@ -4073,7 +4058,7 @@ mod tests {
     }
 
     #[test]
-    fn every_sidecar_card_is_scheduled_under_the_id_its_text_reparses_to() {
+    fn remediation_counts_every_id_its_sidecar_text_reparses_to() {
         for text in [
             "## Why does X?\npoint one\n",
             "## Complete the quote\nTo be or not to bee\n<!-- blank: span hidden=\"be\" b:a1b2c3 -->\n<!-- blank: span hidden=\"bee\" b:d4e5f6 -->\n",
@@ -4084,15 +4069,7 @@ mod tests {
             let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
             let created = store_remediation(&mut store, &deck, "d.md", text, None).unwrap();
-            let ids = sidecar_ids(&deck, "d.md");
-            assert_eq!(created, ids.len(), "{text}");
-
-            for id in &ids {
-                assert!(
-                    store.get(id).is_some(),
-                    "the mint filed a schedule under {id}, the id the sidecar re-parses to"
-                );
-            }
+            assert_eq!(created, sidecar_ids(&deck, "d.md").len(), "{text}");
         }
     }
 

@@ -425,10 +425,14 @@ void main() {
       expect(find.text('Done.'), findsOneWidget);
       expect(
         _cards(syncController.workspace),
-        hasLength(1),
-        reason:
-            'remediation may add its new card but must not restore the '
-            'discarded phone review',
+        isEmpty,
+        reason: 'remediation must not restore the discarded phone review',
+      );
+      expect(
+        File('${syncController.workspace.path}/decks/deck.local.md')
+            .readAsStringSync(),
+        contains('## remediation question?'),
+        reason: 'the new remediation card lives in the sidecar',
       );
     },
   );
