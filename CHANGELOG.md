@@ -291,7 +291,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lands the desktop's workspaces instead of doing nothing. Tapping one
   not-yet-pulled row still pulls only that entry, the launch cycle still
   pulls only entries already on the phone, and an entry without enough free
-  space is still refused and reported.
+  space is still refused and reported. An entry whose download the phone
+  cannot apply is reported and the cycle goes on with the rest.
 
 - Sync file fingerprints are written as 13 base32 characters (the `digest`
   field is now `fingerprint`) and the pull manifest is version 2. Phone and

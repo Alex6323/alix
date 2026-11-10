@@ -216,6 +216,7 @@ class SyncController extends ChangeNotifier {
     final refused = <String>[];
     final pushed = <String>[];
     final pushedEntries = <String>{};
+    final applyFailures = <String>[];
 
     SyncReport aborted(String error) => SyncReport(
       landed: landed,
@@ -227,7 +228,7 @@ class SyncController extends ChangeNotifier {
       replaced: replaced,
       refused: refused,
       pushed: pushed,
-      error: error,
+      error: [...applyFailures, error].join('\n'),
     );
 
     final SyncEntries desktop;
@@ -305,9 +306,9 @@ class SyncController extends ChangeNotifier {
           !pushedEntries.contains(name)) {
         continue;
       }
-      final SyncPullReport pullReport;
+      final String zipPath;
       try {
-        pullReport = await _pullEntry(name, desktopEntry.first.unpackedBytes);
+        zipPath = await _download(name, desktopEntry.first.unpackedBytes);
       } on SyncFreeSpaceRefusal catch (error) {
         refused.add(
           '$name: needs ${humanBytes(error.needed)}, '
@@ -321,7 +322,14 @@ class SyncController extends ChangeNotifier {
       } on SyncTransportFailure catch (error) {
         return aborted('could not pull $name: status ${error.status}');
       } on Object catch (error) {
-        return aborted('could not apply $name: $error');
+        return aborted('could not pull $name: $error');
+      }
+      final SyncPullReport pullReport;
+      try {
+        pullReport = await _applyDownloaded(name, zipPath);
+      } on Object catch (error) {
+        applyFailures.add('could not apply $name: $error');
+        continue;
       }
       final entryLabels = _deckLabelsFor(name);
       landed.addAll(
@@ -375,6 +383,7 @@ class SyncController extends ChangeNotifier {
       orphaned: orphaned,
       refused: refused,
       pushed: pushed,
+      error: applyFailures.isEmpty ? null : applyFailures.join('\n'),
     );
   }
 
@@ -384,14 +393,22 @@ class SyncController extends ChangeNotifier {
   static bool _unchangedSincePull(SyncEntryState? onPhone, SyncEntry desktop) =>
       onPhone != null && onPhone.fingerprint == desktop.fingerprint;
 
-  Future<SyncPullReport> _pullEntry(String entry, int unpackedBytes) async {
+  Future<SyncPullReport> _pullEntry(String entry, int unpackedBytes) async =>
+      _applyDownloaded(entry, await _download(entry, unpackedBytes));
+
+  Future<String> _download(String entry, int unpackedBytes) async {
     final zipPath = _port.pairedStagingZip(entry);
     final zipFile = File(zipPath);
     await zipFile.parent.create(recursive: true);
     await _port.pull(entry, zipFile, unpackedBytes: unpackedBytes);
+    return zipPath;
+  }
+
+  Future<SyncPullReport> _applyDownloaded(String entry, String zipPath) async {
     try {
       return await _port.applyPull(entry, zipPath);
     } finally {
+      final zipFile = File(zipPath);
       if (await zipFile.exists()) await zipFile.delete();
     }
   }

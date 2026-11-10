@@ -134,6 +134,44 @@ void main() {
       expect(controller.lastReport?.notOnPhone, ['Huge']);
     });
 
+    test(
+      'SYNC continues with later listed workspaces after one apply fails',
+      () async {
+        final port = freshPhone([
+          listed('Biology'),
+          listed('Chemistry'),
+          listed('Physics'),
+        ]);
+        port.applyPullImpl = (entry, zipPath) async {
+          if (entry == 'Chemistry') throw Exception('bad archive');
+          return SyncPullReport(
+            entry: entry,
+            kind: 'workspace',
+            landed: ['deck-$entry'],
+            kept: const [],
+            conflicts: const [],
+            phoneOnly: const [],
+            removed: const [],
+          );
+        };
+        final controller = SyncController(port: port);
+
+        await controller.cycle(everyListed: true);
+
+        expect(
+          port.applyPullCalls,
+          ['Biology', 'Chemistry', 'Physics'],
+          reason:
+              'one entry-specific apply failure must not skip later entries',
+        );
+        expect(controller.lastReport?.landed, [
+          'Biology/deck-Biology',
+          'Physics/deck-Physics',
+        ]);
+        expect(controller.lastReport?.error, contains('Chemistry'));
+      },
+    );
+
     test('the launch cycle on a fresh phone pulls nothing: only SYNC '
         'fetches entries not yet on the phone', () async {
       final port = freshPhone([listed('Biology'), listed('Chemistry')]);

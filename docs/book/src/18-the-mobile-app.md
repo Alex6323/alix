@@ -153,8 +153,9 @@ Once paired (see [Pairing a device](19-pairing.md)), the paired desktop's
 heading carries a **SYNC** button: it pushes every local deck whose progress
 changed, then pulls every entry the desktop lists, including entries not yet
 on the phone, skipping an entry whose copy on the phone already matches the
-desktop's. An entry the phone lacks the free space for is refused and named
-in the report; the rest still land. The app also runs one cycle in the background each time
+desktop's. An entry the phone lacks the free space for is refused, and one
+whose download the phone cannot apply is reported; either way the rest
+still land. The app also runs one cycle in the background each time
 it opens, for every entry already on the phone, once the paired desktop
 answers and still serves the same root; an entry whose files did not
 change on the desktop is left as it is. A
