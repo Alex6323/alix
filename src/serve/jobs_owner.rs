@@ -930,6 +930,9 @@ impl JobsState {
         if selection.topics.is_empty() {
             return Started::Conflict;
         }
+        let Ok(id) = crate::token::mint() else {
+            return Started::Conflict;
+        };
         let estimate = exam::wait_estimate(&ask_cfg);
         let sitting = exam::Sitting::start_with(
             &deck,
@@ -942,6 +945,7 @@ impl JobsState {
             ask_cfg,
         );
         let ex = RemoteExamining {
+            id,
             sitting,
             estimate,
             cards_by_topic: Vec::new(),

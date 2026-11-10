@@ -565,7 +565,7 @@ void main() {
         ideas: ideas,
       );
 
-      expect(result, isTrue);
+      expect(result?.phase, 'generating');
       expect(seenPath, '/api/remote/exam/start');
       expect(seenBody, {
         'deck': 'rust.md',

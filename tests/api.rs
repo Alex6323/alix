@@ -10346,6 +10346,52 @@ fn a_remote_exam_returns_remediation_cards_per_failed_topic() {
 }
 
 #[test]
+fn a_remote_exam_sitting_carries_one_id_from_start_until_close() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, _guard) =
+        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
+    let start = r#"{"deck":"examws/examdeck.md"}"#;
+
+    let idle = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "idle");
+    assert!(
+        idle["sitting"].is_null(),
+        "step 1: idle has no sitting: {idle}"
+    );
+
+    let resp = post_json(&base, "/api/remote/exam/start", start);
+    assert_eq!(200, resp.status, "step 2: start");
+    let started: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    let first = started["sitting"].as_str().unwrap_or_default().to_string();
+    assert_eq!(
+        26,
+        first.len(),
+        "step 2: the start names its sitting: {started}"
+    );
+    let answering = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    assert_eq!(
+        first, answering["sitting"],
+        "step 3: polls name the same sitting"
+    );
+
+    assert_eq!(200, post_json(&base, "/api/remote/exam/close", "{}").status);
+    let resp = post_json(&base, "/api/remote/exam/start", start);
+    assert_eq!(200, resp.status, "step 4: a replacement start");
+    let replaced: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+    assert_ne!(
+        first, replaced["sitting"],
+        "step 4: a replacement sitting on the same deck has its own id: {replaced}"
+    );
+}
+
+#[test]
 fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
     let _lock = exec_lock();
     let scripts = TempDir::new().unwrap();

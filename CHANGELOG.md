@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `RemoteExamDto.sitting` names the open remote exam sitting, minted at
+  its start and new for a replacement on the same deck. The phone records a
+  result only for the sitting it started in this run of the app: another
+  client's sitting, or one reopened after the app restarted, shows its
+  result but records nothing and offers no remediation.
+
 - `alix share --with-sources`, the web Share sheet's folded "Include exam
   sources" option, `with_sources` on `POST /api/share` and
   `GET /api/share/zip`, and `ShareDto.sources_omitted`: a public share leaves

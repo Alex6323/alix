@@ -33,7 +33,24 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
-({String deckPath, exam_bridge.ExamSittingStart start})? _startedSitting;
+({String deckPath, exam_bridge.ExamSittingStart start, String? sitting})?
+_startedSitting;
+
+exam_bridge.ExamSittingStart? _keptStart(String deckPath, String? sitting) {
+  final kept = _startedSitting;
+  if (kept == null || kept.deckPath != deckPath) return null;
+  if (sitting == null || kept.sitting != sitting) return null;
+  return kept.start;
+}
+
+class _UnrecordableSitting implements Exception {
+  const _UnrecordableSitting();
+
+  @override
+  String toString() =>
+      'This phone did not start this exam since the app opened, so its '
+      'result was not recorded.';
+}
 
 class PickerScreen extends StatefulWidget {
   const PickerScreen({
@@ -582,19 +599,18 @@ class _PickerScreenState extends State<PickerScreen> {
     final support = await _support();
     final config = readActivePairing(support);
     if (config == null || !mounted) return;
-    final exam_bridge.ExamSittingStart? start;
+    final exam_bridge.ExamSittingStart? fresh;
     final List<String>? cards;
     Map<String, dynamic>? ideas;
     try {
       if (initialExam == null) {
-        final fresh = exam_bridge.examSittingStart(
+        fresh = exam_bridge.examSittingStart(
           deckPath: entry.path,
           rootDir: root,
           needsWorkOnly: needsWorkOnly,
           nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
         );
-        _startedSitting = (deckPath: entry.path, start: fresh);
-        start = fresh;
+        _startedSitting = (deckPath: entry.path, start: fresh, sitting: null);
         cards = fresh.cards;
         final encoded = exam_bridge.examIdeasLoad(
           deckPath: entry.path,
@@ -604,8 +620,7 @@ class _PickerScreenState extends State<PickerScreen> {
           ideas = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
         }
       } else {
-        final started = _startedSitting;
-        start = started?.deckPath == entry.path ? started?.start : null;
+        fresh = null;
         cards = null;
       }
     } on Object catch (error) {
@@ -622,8 +637,21 @@ class _PickerScreenState extends State<PickerScreen> {
           support: support,
           buildClient: widget.buildClient ?? HttpServerClient.new,
           cards: cards,
-          unsourcedTopics: start?.unsourcedTopics ?? const [],
+          unsourcedTopics:
+              (fresh ?? _keptStart(entry.path, initialExam?.sitting))
+                  ?.unsourcedTopics ??
+              const [],
           initialExam: initialExam,
+          onStarted: (sitting) {
+            final kept = _startedSitting;
+            if (kept != null && identical(kept.start, fresh)) {
+              _startedSitting = (
+                deckPath: kept.deckPath,
+                start: kept.start,
+                sitting: sitting,
+              );
+            }
+          },
           ideas: ideas,
           loadAnswers: (questions) => exam_bridge.examAnswersLoad(
             deckPath: entry.path,
@@ -643,16 +671,17 @@ class _PickerScreenState extends State<PickerScreen> {
             rootDir: root,
             json: jsonEncode(ideas),
           ),
-          applyResult: switch (start) {
-            null => null,
-            final kept => (exam, nowMs) => exam_bridge.applyExamResult(
+          applyResult: (exam, nowMs) {
+            final kept = _keptStart(entry.path, exam.sitting);
+            if (kept == null) throw const _UnrecordableSitting();
+            return exam_bridge.applyExamResult(
               deckPath: entry.path,
               rootDir: root,
               exam: exam,
               start: kept,
               nowMs: nowMs,
               device: widget.device,
-            ),
+            );
           },
           applyRemediation: (topicId, cardsText) => exam_bridge.applyExamRemediation(
             deckPath: entry.path,

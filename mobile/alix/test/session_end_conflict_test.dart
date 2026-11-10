@@ -391,6 +391,7 @@ void main() {
       final client = FakeServerClient(
         versionReply: '0.8.0',
         noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
         examGetReplies: [_failedExam],
         examGetRepliesAfterRemediate: [_remediatedExam],
       );
@@ -447,6 +448,7 @@ const _passedExam = RemoteExam(
 );
 
 const _failedExam = RemoteExam(
+  sitting: 'sitting-1',
   phase: 'results',
   deck: 'ws/deck.md',
   strictness: 'balanced',

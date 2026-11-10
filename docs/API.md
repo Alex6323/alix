@@ -1760,6 +1760,7 @@ phone applies it to its own state).
 
 | Key | Type | Meaning |
 |---|---|---|
+| `sitting` | string? | The open sitting's id, minted when it starts (26 lowercase Crockford base32 characters) and unchanged until it is closed; a replacement sitting on the same deck gets a new one. `null` at `idle`. The phone records a result only for the sitting it started. |
 | `phase` | string | `idle` \| `generating` \| `answering` \| `grading` \| `results` \| `remediating` \| `remediated` (open set). `idle` is the baseline when no sitting is open: `ExamDto` has no equivalent, since the browser's exam slot simply doesn't exist between sittings. |
 | `deck` | string | Deck name; empty at `idle`. |
 | `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |

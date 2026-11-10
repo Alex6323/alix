@@ -193,7 +193,8 @@ the phone's prepared exam, and the **End exam** button under each question
 discards it. The phone records a result against the material as it stood
 when the phone started that sitting, and it remembers that starting point
 only while the app runs: a sitting reopened after the app restarted, or
-one this phone did not start, shows its result but records nothing. Either
+one this phone did not start (another client's, even on the same deck),
+shows its result but records nothing. Either
 way, an
 answer locks once you move on from it, and leaving returns you to the first
 unanswered question next time. Grading uses the exam up. In the browser,

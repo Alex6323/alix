@@ -410,6 +410,7 @@ void main() {
   }
 
   const failedRemoteExam = RemoteExam(
+    sitting: 'sitting-1',
     phase: 'results',
     deck: 'ws/exam.md',
     strictness: 'balanced',
@@ -447,6 +448,7 @@ void main() {
       final client = FakeServerClient(
         versionReply: minServerVersion,
         noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
         examGetReplies: const [generatingExam, failedRemoteExam],
       );
       await pumpPicker(
@@ -519,6 +521,78 @@ void main() {
         findsOneWidget,
         reason: 'the phone says the result was not recorded',
       );
+    },
+  );
+
+  testWidgets(
+    'a replacement sitting on the same deck does not reuse this phone previous start',
+    (tester) async {
+      final fixture = await examFixture('exam-replaced');
+      const generatingExam = RemoteExam(
+        phase: 'generating',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: [],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: true,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
+        examGetReplies: const [generatingExam],
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(
+        client.startedDeck,
+        'ws/exam.md',
+        reason: 'step 1: this phone starts a sitting',
+      );
+
+      client.replaceExam(const RemoteExam(
+        sitting: 'sitting-2',
+        phase: 'results',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        verdicts: ExamVerdicts(pass: 0, partial: 0, total: 1),
+        full: true,
+        grades: [],
+        gaps: ['the tested idea'],
+        canRemediate: true,
+        thinking: false,
+      ));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await takeFinishedExam(tester);
+
+      expect(
+        find.text('Turn the gaps into cards'),
+        findsNothing,
+        reason:
+            'step 2: another client sitting must not write this phone store',
+      );
+      expect(find.textContaining('not recorded'), findsOneWidget);
     },
   );
 

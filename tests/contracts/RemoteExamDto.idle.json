@@ -13,6 +13,7 @@
   "phase": "idle",
   "questions": [],
   "questions_units": [],
+  "sitting": null,
   "strictness": "balanced",
   "thinking": false,
   "topics": [],

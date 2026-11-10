@@ -2741,6 +2741,7 @@ fn dto_questions_units(questions: &[String]) -> Vec<Vec<ContentUnit>> {
 #[test]
 fn remoteexamdto_idle_wire_shape() {
     let dto = RemoteExamDto {
+        sitting: None,
         phase: "idle",
         deck: String::new(),
         strictness: "balanced",
@@ -2765,6 +2766,7 @@ fn remoteexamdto_idle_wire_shape() {
         "RemoteExamDto.idle",
         &dto,
         json!({
+            "sitting": null,
             "phase": "idle",
             "deck": "",
             "strictness": "balanced",
@@ -2791,6 +2793,7 @@ fn remoteexamdto_idle_wire_shape() {
 #[test]
 fn remoteexamdto_answering_wire_shape() {
     let dto = RemoteExamDto {
+        sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
         phase: "answering",
         deck: "rust.md".to_string(),
         strictness: "balanced",
@@ -2821,6 +2824,7 @@ fn remoteexamdto_answering_wire_shape() {
         "RemoteExamDto.answering",
         &dto,
         json!({
+            "sitting": "0123456789abcdefghjkmnpqrs",
             "phase": "answering",
             "deck": "rust.md",
             "strictness": "balanced",
@@ -2847,6 +2851,7 @@ fn remoteexamdto_answering_wire_shape() {
 #[test]
 fn remoteexamdto_results_wire_shape() {
     let dto = RemoteExamDto {
+        sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
         phase: "results",
         deck: "rust.md".to_string(),
         strictness: "balanced",
@@ -2911,6 +2916,7 @@ fn remoteexamdto_results_wire_shape() {
         "RemoteExamDto.results",
         &dto,
         json!({
+            "sitting": "0123456789abcdefghjkmnpqrs",
             "phase": "results",
             "deck": "rust.md",
             "strictness": "balanced",
@@ -2958,6 +2964,7 @@ fn remoteexamdto_results_wire_shape() {
 #[test]
 fn remoteexamdto_remediated_wire_shape() {
     let dto = RemoteExamDto {
+        sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
         phase: "remediated",
         deck: "rust.md".to_string(),
         strictness: "balanced",
@@ -3013,6 +3020,7 @@ fn remoteexamdto_remediated_wire_shape() {
         "RemoteExamDto.remediated",
         &dto,
         json!({
+            "sitting": "0123456789abcdefghjkmnpqrs",
             "phase": "remediated",
             "deck": "rust.md",
             "strictness": "balanced",

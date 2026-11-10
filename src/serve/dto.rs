@@ -1005,6 +1005,7 @@ pub(super) struct TopicCardsDto {
 
 #[derive(Serialize)]
 pub(super) struct RemoteExamDto {
+    pub(super) sitting: Option<String>,
     pub(super) phase: &'static str,
     pub(super) deck: String,
     pub(super) strictness: &'static str,

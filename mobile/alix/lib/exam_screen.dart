@@ -62,6 +62,7 @@ class ExamScreen extends StatefulWidget {
     this.cards,
     this.unsourcedTopics = const [],
     this.initialExam,
+    this.onStarted,
     this.ideas,
     this.loadAnswers,
     this.saveAnswers,
@@ -89,10 +90,12 @@ class ExamScreen extends StatefulWidget {
 
   /// Records a settled sitting, whatever its outcome, in the phone's own
   /// store (a closure over `applyExamResult`). Called at most once per
-  /// sitting, with the terminal DTO. Null when this phone no longer holds
-  /// the sitting's start, so its result cannot be recorded.
-  final ({String text, bool examChanged})? Function(RemoteExam exam, BigInt nowMs)?
+  /// sitting, with the terminal DTO; throws when it refuses the result.
+  final ({String text, bool examChanged})? Function(RemoteExam exam, BigInt nowMs)
   applyResult;
+
+  /// Told the id of the sitting this screen started on the desktop.
+  final void Function(String? sitting)? onStarted;
 
   /// The card ids whose topics to examine; null sits the full deck.
   final List<String>? cards;
@@ -194,9 +197,9 @@ class _ExamScreenState extends State<ExamScreen> {
 
   Future<void> _start() async {
     _acceptedStart = true;
-    bool ok;
+    RemoteExam? started;
     try {
-      ok = await widget.client.examStart(
+      started = await widget.client.examStart(
         widget.deckName,
         cards: widget.cards,
         ideas: widget.ideas,
@@ -205,8 +208,9 @@ class _ExamScreenState extends State<ExamScreen> {
       _expirePairingAndPop();
       return;
     }
+    if (started != null) widget.onStarted?.call(started.sitting);
     if (!mounted) return;
-    if (!ok) {
+    if (started == null) {
       _snackAndPop('The desktop refused the exam.');
       return;
     }
@@ -258,17 +262,11 @@ class _ExamScreenState extends State<ExamScreen> {
     if (dto.phase == 'results' && !_resultApplied) {
       final ideas = dto.ideas;
       if (ideas != null) widget.saveIdeas?.call(ideas);
-      final applyResult = widget.applyResult;
-      if (applyResult == null) {
+      try {
+        _examHighMark = widget.applyResult(dto, widget.nowMs());
+      } catch (error) {
         _resultRefused = true;
-        _snack('This phone did not start this exam since the app opened, so its result was not recorded.');
-      } else {
-        try {
-          _examHighMark = applyResult(dto, widget.nowMs());
-        } catch (error) {
-          _resultRefused = true;
-          _snack(bridgeErrorText(error));
-        }
+        _snack(bridgeErrorText(error));
       }
       _resultApplied = true;
       widget.clearAnswers?.call();

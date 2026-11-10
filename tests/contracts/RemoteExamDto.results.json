@@ -107,6 +107,7 @@
       }
     ]
   ],
+  "sitting": "0123456789abcdefghjkmnpqrs",
   "strictness": "balanced",
   "thinking": false,
   "topics": [

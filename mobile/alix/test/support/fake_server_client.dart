@@ -31,6 +31,7 @@ class FakeServerClient implements ServerClient {
     this.expireOnPostCard = false,
     this.postCardGate,
     this.examStartReply = true,
+    this.examStartSitting,
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
     List<RemoteExam>? examGetRepliesAfterRemediate,
@@ -98,6 +99,9 @@ class FakeServerClient implements ServerClient {
 
   // ── exam (examStart / examGet / examGrade / examRemediate) ─────────────
   final bool examStartReply;
+
+  /// The sitting id an accepted `examStart` names.
+  final String? examStartSitting;
   final bool expireOnExamStart;
   final List<RemoteExam> examGetReplies;
   final List<RemoteExam> examGetRepliesAfterRemediate;
@@ -162,6 +166,11 @@ class FakeServerClient implements ServerClient {
   int _gradeCall = 0;
   int _remediateCall = 0;
   int _generateGetCall = 0;
+  RemoteExam? _replacementExam;
+
+  void replaceExam(RemoteExam exam) {
+    _replacementExam = exam;
+  }
 
   @override
   Future<ServerVersion?> version() async {
@@ -241,7 +250,7 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examStart(
+  Future<RemoteExam?> examStart(
     String deck, {
     List<String>? cards,
     Map<String, dynamic>? ideas,
@@ -250,12 +259,24 @@ class FakeServerClient implements ServerClient {
     startedCards = cards;
     startedIdeas = ideas;
     if (expireOnExamStart) throw const PairingExpired();
-    return examStartReply;
+    if (!examStartReply) return null;
+    return RemoteExam(
+      sitting: examStartSitting,
+      phase: 'generating',
+      deck: deck,
+      strictness: 'balanced',
+      questions: const [],
+      grades: const [],
+      gaps: const [],
+      canRemediate: false,
+      thinking: true,
+    );
   }
 
   @override
   Future<RemoteExam?> examGet() async {
     if (expireOnExamGet) throw const PairingExpired();
+    if (_replacementExam case final replacement?) return replacement;
     if (noSittingBeforeStart && startedDeck == null) return null;
     if (_remediateCall > 0 && examGetRepliesAfterRemediate.isNotEmpty) {
       final call = _examGetAfterRemediateCall++;

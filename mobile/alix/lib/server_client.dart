@@ -543,8 +543,10 @@ class RemoteExam {
     this.full = false,
     this.mastered = false,
     this.unknownCards = const [],
+    this.sitting,
   });
 
+  final String? sitting;
   final String phase;
   final String deck;
   final String strictness;
@@ -570,6 +572,7 @@ class RemoteExam {
   final Map<String, dynamic>? ideas;
 
   static RemoteExam fromJson(Map<String, dynamic> json) => RemoteExam(
+        sitting: _asString(json['sitting']),
         phase: _asString(json['phase']) ?? 'idle',
         deck: _asString(json['deck']) ?? '',
         strictness: _asString(json['strictness']) ?? 'balanced',
@@ -701,7 +704,7 @@ abstract class ServerClient {
 
   /// `POST /api/remote/exam/start`: opens a sitting on [deck] (a bare name
   /// or `<workspace>/<file>`, resolved the same way `/api/select` does).
-  Future<bool> examStart(
+  Future<RemoteExam?> examStart(
     String deck, {
     List<String>? cards,
     Map<String, dynamic>? ideas,
@@ -864,7 +867,7 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examStart(
+  Future<RemoteExam?> examStart(
     String deck, {
     List<String>? cards,
     Map<String, dynamic>? ideas,
@@ -874,7 +877,7 @@ class HttpServerClient implements ServerClient {
       'cards': ?cards,
       'ideas': ?ideas,
     });
-    return json != null;
+    return json == null ? null : RemoteExam.fromJson(json);
   }
 
   @override

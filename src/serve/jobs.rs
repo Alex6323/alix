@@ -1114,6 +1114,7 @@ impl Preparing {
 }
 
 pub(super) struct RemoteExamining {
+    pub(super) id: String,
     pub(super) sitting: exam::Sitting,
     pub(super) estimate: Option<&'static str>,
     pub(super) cards_by_topic: Vec<exam::TopicCards>,
@@ -1134,6 +1135,7 @@ impl RemoteExamining {
         let parts = exam_result_parts(s);
         let grades = exam_grades(s, &parts);
         RemoteExamDto {
+            sitting: Some(self.id.clone()),
             phase: exam_phase_name(s.phase()),
             deck: s.subject().to_string(),
             strictness: strictness_name(s.strictness()),
@@ -1174,6 +1176,7 @@ impl RemoteExamining {
 
 pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
     RemoteExamDto {
+        sitting: None,
         phase: "idle",
         deck: String::new(),
         strictness: "balanced",
