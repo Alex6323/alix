@@ -3486,46 +3486,59 @@ mod tests {
     #[test]
     fn a_sitting_does_not_unlock_after_unsourced_material_is_added_before_grading() {
         let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = branching_cli(
-            dir.path(),
-            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
-             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
-        );
-        let ws = Workspace::new();
-        let deck = sourced_deck(&ws);
-        let mut store = Store::open(dir.path().join("p.json")).unwrap();
+        for (label, added) in [
+            (
+                "stamped card",
+                "\n# New topic\n<!-- id: topic-new -->\n\n## new question\nnew answer\n<!-- id: card-new -->\n",
+            ),
+            (
+                "unstamped card",
+                "\n# New topic\n<!-- id: topic-new -->\n\n## new question\nnew answer\n",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let cli = branching_cli(
+                dir.path(),
+                "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
+                 {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
+            );
+            let ws = Workspace::new();
+            let deck = sourced_deck(&ws);
+            let mut store = Store::open(dir.path().join("p.json")).unwrap();
 
-        let mut sitting = Sitting::start(
-            &deck,
-            sitting_start(&deck, &store, 0, None),
-            Strictness::Strict,
-            ExamConfig::default(),
-            ask_config(&cli),
-        );
-        drain(&mut sitting, &mut store);
-        assert_eq!(&Phase::Answering, sitting.phase());
+            let mut sitting = Sitting::start(
+                &deck,
+                sitting_start(&deck, &store, 0, None),
+                Strictness::Strict,
+                ExamConfig::default(),
+                ask_config(&cli),
+            );
+            drain(&mut sitting, &mut store);
+            assert_eq!(&Phase::Answering, sitting.phase(), "{label}: setup");
 
-        let mut changed = std::fs::read_to_string(ws.deck()).unwrap();
-        changed.push_str(
-            "\n# New topic\n<!-- id: topic-new -->\n\n## new question\nnew answer\n<!-- id: card-new -->\n",
-        );
-        std::fs::write(ws.deck(), changed).unwrap();
+            let mut changed = std::fs::read_to_string(ws.deck()).unwrap();
+            changed.push_str(added);
+            std::fs::write(ws.deck(), changed).unwrap();
 
-        sitting.set_answer("a".to_string());
-        sitting.next();
-        sitting.set_answer("b".to_string());
-        sitting.submit();
-        drain(&mut sitting, &mut store);
+            sitting.set_answer("a".to_string());
+            sitting.next();
+            sitting.set_answer("b".to_string());
+            sitting.submit();
+            drain(&mut sitting, &mut store);
 
-        assert_eq!(&Phase::Results, sitting.phase());
-        assert!(sitting.result().unwrap().count().passed);
-        assert!(
-            !store.deck_passed(DECK),
-            "an exam that never covered the new unsourced topic must not latch standing"
-        );
-        assert!(!sitting.unlocked());
-        assert_eq!(Some(crate::exam_status::MATERIAL_CHANGED), sitting.error());
+            assert_eq!(&Phase::Results, sitting.phase(), "{label}: graded");
+            assert!(sitting.result().unwrap().count().passed, "{label}: passed");
+            assert!(
+                !store.deck_passed(DECK),
+                "{label}: an exam that never covered the new unsourced topic must not latch standing"
+            );
+            assert!(!sitting.unlocked(), "{label}: not unlocked");
+            assert_eq!(
+                Some(crate::exam_status::MATERIAL_CHANGED),
+                sitting.error(),
+                "{label}: the learner is told the material changed"
+            );
+        }
     }
 
     #[test]

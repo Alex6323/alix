@@ -358,12 +358,19 @@ fn topic_sourcing(deck: &Deck, manifest: Option<&Manifest>) -> (Vec<bool>, Vec<(
     (by_index, pairs)
 }
 
-fn unsourced_card_ids(deck: &Deck, personal: &[Card], sourced_by_index: &[bool]) -> Vec<String> {
-    let mut ids: Vec<String> = deck
-        .cards
+fn unsourced_cards<'a>(
+    deck: &'a Deck,
+    personal: &'a [Card],
+    sourced_by_index: &'a [bool],
+) -> impl Iterator<Item = &'a Card> {
+    deck.cards
         .iter()
         .chain(personal)
         .filter(|card| !sourced_by_index.get(card.topic).copied().unwrap_or(false))
+}
+
+fn unsourced_card_ids(deck: &Deck, personal: &[Card], sourced_by_index: &[bool]) -> Vec<String> {
+    let mut ids: Vec<String> = unsourced_cards(deck, personal, sourced_by_index)
         .filter_map(Card::id)
         .collect();
     ids.sort_unstable();
@@ -414,6 +421,7 @@ fn material_unchanged(deck: &Deck, record: &SittingRecord, stamp: &ExamStamp) ->
         unsourced_card_ids(deck, &personal, &sourced_by_index),
     );
     !exam_changed(&present, stamp)
+        && unsourced_cards(deck, &personal, &sourced_by_index).all(|card| card.id().is_some())
         && record
             .topics
             .iter()
