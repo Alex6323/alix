@@ -1030,7 +1030,7 @@ const OWNED_ROOTS: [OwnedRoot; 2] = [
     },
 ];
 
-fn audit_owned_roots(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut Report) {
+fn audit_owned_roots(dir: &Path, known_deck_ids: Option<&HashSet<String>>, report: &mut Report) {
     for root in &OWNED_ROOTS {
         audit_owned_root(dir, root, known_deck_ids, report);
     }
@@ -1039,7 +1039,7 @@ fn audit_owned_roots(dir: &Path, known_deck_ids: &HashSet<String>, report: &mut 
 fn audit_owned_root(
     dir: &Path,
     root: &OwnedRoot,
-    known_deck_ids: &HashSet<String>,
+    known_deck_ids: Option<&HashSet<String>>,
     report: &mut Report,
 ) {
     let folder = dir.join(root.name);
@@ -1065,13 +1065,13 @@ fn audit_owned_root(
             }
         };
         let name = name.to_string_lossy().into_owned();
-        let owned = known_deck_ids.contains(&name);
-        if kind.is_symlink() && !(owned && root.owner_reports_links) {
+        let owned = known_deck_ids.map(|ids| ids.contains(&name));
+        if kind.is_symlink() && !(root.owner_reports_links && owned != Some(false)) {
             report.error(format!(
                 "{}/{name} is a link; {}: replace it with what it points to, or remove it",
                 root.name, root.linked
             ));
-        } else if kind.is_dir() && !owned {
+        } else if kind.is_dir() && owned == Some(false) {
             report.warn(format!(
                 "{}/{name} belongs to no deck in {}{}",
                 root.name,
@@ -1185,13 +1185,17 @@ fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
         }
     }
     if alix::workspace::is_workspace(dir) {
-        match alix::workspace::folder_owners(dir) {
-            Ok(owners) => audit_owned_roots(dir, &owners, &mut report),
-            Err(error) => report.warn(format!(
-                "cannot tell which decks in {} own their folders: {error}",
-                dir.display()
-            )),
-        }
+        let owners = match alix::workspace::folder_owners(dir) {
+            Ok(owners) => Some(owners),
+            Err(error) => {
+                report.warn(format!(
+                    "cannot tell which decks in {} own their folders: {error}",
+                    dir.display()
+                ));
+                None
+            }
+        };
+        audit_owned_roots(dir, owners.as_ref(), &mut report);
     }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {
@@ -3688,6 +3692,39 @@ mod tests {
             assert_eq!(1, links.len(), "{case}: {links:#?}");
             assert!(links[0].contains(named), "{case}: {links:?}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_member_does_not_hide_a_linked_sources_root() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        let decks = dir.path().join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        let member = decks.join("m.md");
+        w(
+            &decks,
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        std::fs::set_permissions(&member, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        symlink(elsewhere.path(), dir.path().join("sources")).unwrap();
+
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+
+        std::fs::set_permissions(&member, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|error| error.contains("sources") && error.contains("is a link")),
+            "an unreadable deck must not suppress the independent linked-root error: errors={:#?}, warnings={:#?}",
+            report.errors,
+            report.warnings
+        );
     }
 
     #[test]
