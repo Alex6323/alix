@@ -30,6 +30,7 @@ use crate::{
 /// The generic red-row line: the real failure detail belongs to `alix
 /// doctor`, not a picker row.
 const PROGRESS_ERROR_META: &str = "progress for this deck cannot be read; run alix doctor";
+pub(super) const DECK_ERROR_META: &str = "this deck cannot be read; run alix doctor";
 
 /// Per-deck IO routing, keyed by each deck's stable id, not its filename.
 pub(super) struct DeckFiles {
@@ -342,8 +343,8 @@ pub(super) fn deck_item_dto(
             name: e.name.clone(),
             selectable: true,
             label: e.label.clone(),
-            meta: None,
-            state: "new",
+            meta: Some(DECK_ERROR_META.to_string()),
+            state: "error",
             locked: false,
             reviewable: false,
             reviewable_recognize: false,
@@ -580,14 +581,20 @@ pub(super) fn workspace_members(
                     track_confidence,
                 },
                 // Mirrors deck_item_dto's failed-load fallback: still
-                // selectable, nothing reviewable. Whole-root store damage
-                // reds the member instead of faking a fresh one.
+                // selectable, nothing reviewable.
                 None => MemberDto {
                     name: m.name.clone(),
                     selectable: true,
                     label: m.label.clone(),
-                    meta: root_failed.then(|| PROGRESS_ERROR_META.to_string()),
-                    state: if root_failed { "error" } else { "new" },
+                    meta: Some(
+                        if root_failed {
+                            PROGRESS_ERROR_META
+                        } else {
+                            DECK_ERROR_META
+                        }
+                        .to_string(),
+                    ),
+                    state: "error",
                     locked: false,
                     reviewable: false,
                     reviewable_recognize: false,

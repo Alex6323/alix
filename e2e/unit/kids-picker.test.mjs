@@ -149,3 +149,43 @@ test("a box with damaged progress does not tell a kid it is all caught up", asyn
     "a healthy ready sibling keeps the existing box-level readiness behavior",
   );
 });
+
+test("a box with a deck that fails to load asks for a grown-up on every surface", async () => {
+  const run = pickerHarness({
+    workspaces: [{
+      name: "animals",
+      label: "Animals",
+      state: "workspace",
+      reviewable: false,
+      members: [{
+        name: "animals/broken.md",
+        label: "Broken",
+        state: "error",
+        meta: "this deck cannot be read; run alix doctor",
+        selectable: true,
+        reviewable: false,
+        reviewable_recognize: false,
+        reviewable_recall: false,
+      }],
+    }],
+  });
+
+  await run.picker.load();
+  const homeClaim = findClass(run.stage, "box-ready").textContent;
+  findClass(run.stage, "box").listeners.get("click")();
+  const deckClaim = findClass(run.stage, "pill-new").textContent;
+  findClass(run.stage, "deck-row").listeners.get("click")();
+  const launchClaim = findClass(run.stage, "soft").textContent;
+  const depthButtons = findClass(run.stage, "depth-btn");
+
+  assert.deepEqual(
+    [homeClaim, deckClaim, launchClaim, depthButtons],
+    [
+      "needs a grown-up 🔧",
+      "needs a grown-up 🔧",
+      "This one needs a grown-up's help before practising. 🔧",
+      null,
+    ],
+    "an unreadable deck document must not look complete, new, or launchable",
+  );
+});

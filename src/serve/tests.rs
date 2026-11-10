@@ -1612,10 +1612,78 @@ fn a_deck_that_fails_to_load_reports_nothing_reviewable_but_stays_selectable() {
     );
 
     assert!(dto.selectable, "row: {dto:?}");
+    assert_eq!(
+        "error", dto.state,
+        "a failed load must not read as new: {dto:?}"
+    );
+    assert_eq!(Some(DECK_ERROR_META), dto.meta.as_deref(), "row: {dto:?}");
     assert!(!dto.reviewable, "row: {dto:?}");
     assert!(!dto.reviewable_recognize, "row: {dto:?}");
     assert!(!dto.reviewable_recall, "row: {dto:?}");
     assert!(!dto.reviewable_reconstruct, "row: {dto:?}");
+}
+
+#[test]
+fn a_workspace_member_that_fails_to_load_reds_out_but_stays_selectable() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = dir.path().join("animals");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "title = \"Animals\"\n").unwrap();
+    write_initialized(
+        &ws.join("decks/good.md"),
+        "## q1\na1\n<!-- id: card-qa -->\n",
+    );
+    write_initialized(
+        &ws.join("decks/broken.md"),
+        "## front\nanswer\n<!-- blank: span hidden=\"missing\" -->\n",
+    );
+    assert!(
+        Deck::load(ws.join("decks/broken.md")).is_err(),
+        "fixture must actually fail to load"
+    );
+
+    let global_store = Store::open(dir.path().join("global.json")).unwrap();
+    let recent = RecentDecks::load(dir.path().join("recent.json"));
+    let dto = deck_catalog(
+        dir.path(),
+        &recent,
+        &global_store,
+        &HashMap::new(),
+        true,
+        &mut HashMap::new(),
+        ReviewConfig::default(),
+        &mut DeckCache::default(),
+    )
+    .unwrap();
+
+    let animals = dto
+        .workspaces
+        .iter()
+        .find(|row| row.name == "animals")
+        .expect("animals workspace row");
+    let member_named = |stem: &str| {
+        animals
+            .members
+            .iter()
+            .find(|m| m.name.ends_with(stem))
+            .unwrap_or_else(|| panic!("{stem} member row: {animals:#?}"))
+    };
+    let broken = member_named("broken.md");
+    assert_eq!(
+        ("error", true, false, Some(DECK_ERROR_META)),
+        (
+            broken.state,
+            broken.selectable,
+            broken.reviewable,
+            broken.meta.as_deref()
+        ),
+        "a member whose deck fails to load must red out, stay selectable: {broken:#?}"
+    );
+    let good = member_named("good.md");
+    assert_ne!(
+        "error", good.state,
+        "a healthy sibling stays healthy: {good:#?}"
+    );
 }
 
 #[test]

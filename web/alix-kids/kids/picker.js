@@ -150,7 +150,7 @@ function renderDeckLaunch() {
   sub.appendChild(masteryEl(m));
   wrap.appendChild(sub);
   if (m.state === "error") {
-    // An unreadable progress document: honest and calm, no alarm, and no
+    // An unreadable deck or progress document: honest and calm, no alarm, and no
     // buttons that the server would refuse anyway.
     wrap.appendChild(el("div", "soft", "This one needs a grown-up's help before practising. 🔧"));
   } else {

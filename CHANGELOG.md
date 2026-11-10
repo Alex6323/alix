@@ -936,6 +936,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on the home screen and inside the box, instead of "all caught up" and "This
   box has no decks yet".
 
+- A deck whose file fails to load (for example an unclosed cloze span) is an
+  `error` row in `/api/decks` with the line "this deck cannot be read; run
+  alix doctor", instead of a `new` row. Alix Kids shows it as "needs a
+  grown-up" on the box, the deck, and the launch screen, instead of "all
+  caught up", "New", and two disabled practice buttons.
+
 - Remediation saves the progress store only when it revives a retired card,
   so it no longer advances the store's sync revision otherwise. A new
   remediation card lives in the deck's personal sidecar and gains a progress
