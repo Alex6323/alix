@@ -89,8 +89,9 @@ class ExamScreen extends StatefulWidget {
 
   /// Records a settled sitting, whatever its outcome, in the phone's own
   /// store (a closure over `applyExamResult`). Called at most once per
-  /// sitting, with the terminal DTO.
-  final ({String text, bool examChanged})? Function(RemoteExam exam, BigInt nowMs)
+  /// sitting, with the terminal DTO. Null when this phone no longer holds
+  /// the sitting's start, so its result cannot be recorded.
+  final ({String text, bool examChanged})? Function(RemoteExam exam, BigInt nowMs)?
   applyResult;
 
   /// The card ids whose topics to examine; null sits the full deck.
@@ -257,11 +258,17 @@ class _ExamScreenState extends State<ExamScreen> {
     if (dto.phase == 'results' && !_resultApplied) {
       final ideas = dto.ideas;
       if (ideas != null) widget.saveIdeas?.call(ideas);
-      try {
-        _examHighMark = widget.applyResult(dto, widget.nowMs());
-      } catch (error) {
+      final applyResult = widget.applyResult;
+      if (applyResult == null) {
         _resultRefused = true;
-        _snack(bridgeErrorText(error));
+        _snack('This phone did not start this exam since the app opened, so its result was not recorded.');
+      } else {
+        try {
+          _examHighMark = applyResult(dto, widget.nowMs());
+        } catch (error) {
+          _resultRefused = true;
+          _snack(bridgeErrorText(error));
+        }
       }
       _resultApplied = true;
       widget.clearAnswers?.call();

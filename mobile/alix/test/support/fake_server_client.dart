@@ -37,6 +37,7 @@ class FakeServerClient implements ServerClient {
     this.expireOnExamGet = false,
     Map<int, Completer<RemoteExam?>>? examGetGates,
     this.nullFirstExamGetCalls = 0,
+    this.noSittingBeforeStart = false,
     List<bool>? examGradeReplies,
     this.expireOnExamGrade = false,
     List<bool>? examRemediateReplies,
@@ -112,6 +113,10 @@ class FakeServerClient implements ServerClient {
   /// [examGetReplies], simulating a slow sitting start before the real
   /// replies begin.
   final int nullFirstExamGetCalls;
+
+  /// `examGet()` answers null, without consuming a reply, until `examStart`
+  /// has been called: the desktop holds no sitting the phone did not start.
+  final bool noSittingBeforeStart;
   final List<bool> examGradeReplies;
   final bool expireOnExamGrade;
   final List<bool> examRemediateReplies;
@@ -251,6 +256,7 @@ class FakeServerClient implements ServerClient {
   @override
   Future<RemoteExam?> examGet() async {
     if (expireOnExamGet) throw const PairingExpired();
+    if (noSittingBeforeStart && startedDeck == null) return null;
     if (_remediateCall > 0 && examGetRepliesAfterRemediate.isNotEmpty) {
       final call = _examGetAfterRemediateCall++;
       return examGetRepliesAfterRemediate[call.clamp(

@@ -390,6 +390,7 @@ void main() {
     (tester) async {
       final client = FakeServerClient(
         versionReply: '0.8.0',
+        noSittingBeforeStart: true,
         examGetReplies: [_failedExam],
         examGetRepliesAfterRemediate: [_remediatedExam],
       );
@@ -413,7 +414,7 @@ void main() {
       await tester.tap(find.text('Deck'));
       await tester.pumpAndSettle();
       writeVerifiedTestSources('${syncController.workspace.path}/decks/deck.md');
-      await tester.tap(find.text('Take exam'));
+      await tester.tap(find.text('Generate exam'));
       await tester.pumpAndSettle();
       expect(find.text('0 / 1'), findsOneWidget);
       expect(find.textContaining('the exam material changed'), findsNothing);

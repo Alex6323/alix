@@ -190,7 +190,11 @@ page or a restarted server, and your answers are saved into it as you give
 them. On the phone, the desktop holds the prepared exam in memory and the
 phone saves each answer as you move on from it; a restarted desktop loses
 the phone's prepared exam, and the **End exam** button under each question
-discards it. Either way, an
+discards it. The phone records a result against the material as it stood
+when the phone started that sitting, and it remembers that starting point
+only while the app runs: a sitting reopened after the app restarted, or
+one this phone did not start, shows its result but records nothing. Either
+way, an
 answer locks once you move on from it, and leaving returns you to the first
 unanswered question next time. Grading uses the exam up. In the browser,
 editing cards, topic prose or a topic's heading leaves a prepared exam

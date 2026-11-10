@@ -33,6 +33,8 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
+({String deckPath, exam_bridge.ExamSittingStart start})? _startedSitting;
+
 class PickerScreen extends StatefulWidget {
   const PickerScreen({
     super.key,
@@ -580,18 +582,20 @@ class _PickerScreenState extends State<PickerScreen> {
     final support = await _support();
     final config = readActivePairing(support);
     if (config == null || !mounted) return;
-    final exam_bridge.ExamSittingStart start;
+    final exam_bridge.ExamSittingStart? start;
     final List<String>? cards;
     Map<String, dynamic>? ideas;
     try {
-      start = exam_bridge.examSittingStart(
-        deckPath: entry.path,
-        rootDir: root,
-        needsWorkOnly: needsWorkOnly,
-        nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
-      );
       if (initialExam == null) {
-        cards = start.cards;
+        final fresh = exam_bridge.examSittingStart(
+          deckPath: entry.path,
+          rootDir: root,
+          needsWorkOnly: needsWorkOnly,
+          nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+        );
+        _startedSitting = (deckPath: entry.path, start: fresh);
+        start = fresh;
+        cards = fresh.cards;
         final encoded = exam_bridge.examIdeasLoad(
           deckPath: entry.path,
           rootDir: root,
@@ -600,6 +604,8 @@ class _PickerScreenState extends State<PickerScreen> {
           ideas = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
         }
       } else {
+        final started = _startedSitting;
+        start = started?.deckPath == entry.path ? started?.start : null;
         cards = null;
       }
     } on Object catch (error) {
@@ -616,7 +622,7 @@ class _PickerScreenState extends State<PickerScreen> {
           support: support,
           buildClient: widget.buildClient ?? HttpServerClient.new,
           cards: cards,
-          unsourcedTopics: start.unsourcedTopics,
+          unsourcedTopics: start?.unsourcedTopics ?? const [],
           initialExam: initialExam,
           ideas: ideas,
           loadAnswers: (questions) => exam_bridge.examAnswersLoad(
@@ -637,14 +643,17 @@ class _PickerScreenState extends State<PickerScreen> {
             rootDir: root,
             json: jsonEncode(ideas),
           ),
-          applyResult: (exam, nowMs) => exam_bridge.applyExamResult(
-            deckPath: entry.path,
-            rootDir: root,
-            exam: exam,
-            start: start,
-            nowMs: nowMs,
-            device: widget.device,
-          ),
+          applyResult: switch (start) {
+            null => null,
+            final kept => (exam, nowMs) => exam_bridge.applyExamResult(
+              deckPath: entry.path,
+              rootDir: root,
+              exam: exam,
+              start: kept,
+              nowMs: nowMs,
+              device: widget.device,
+            ),
+          },
           applyRemediation: (topicId, cardsText) => exam_bridge.applyExamRemediation(
             deckPath: entry.path,
             rootDir: root,

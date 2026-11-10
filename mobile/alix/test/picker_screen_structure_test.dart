@@ -43,6 +43,7 @@ void main() {
     String? dir,
     String? title,
     SyncPort Function(ServerConfig config, String rootDir)? buildSyncPort,
+    bool isPairedSubtree = false,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -59,6 +60,7 @@ void main() {
           buildClient: buildClient,
           generatePollInterval: pollInterval,
           buildSyncPort: buildSyncPort,
+          isPairedSubtree: isPairedSubtree,
         ),
       ),
     );
@@ -381,6 +383,142 @@ void main() {
       await tester.tap(find.text('Remote exam'));
       await tester.pumpAndSettle();
       expect(find.text('Take exam'), findsOneWidget);
+    },
+  );
+
+  Future<({Directory root, Directory support, String deck})> examFixture(
+    String prefix,
+  ) async {
+    final root = tempDir('alix-picker-$prefix-');
+    final support = tempDir('alix-picker-$prefix-support-');
+    Directory('${root.path}/ws/decks').createSync(recursive: true);
+    File('${root.path}/ws/alix.toml').writeAsStringSync('');
+    File('${root.path}/ws/decks/source.txt').writeAsStringSync('alpha\nbeta\n');
+    final deck = '${root.path}/ws/decks/exam.md';
+    writeTestDeck(deck, '---\ntitle: Remote exam\n---\n## q?\na\n');
+    writeVerifiedTestSources(deck);
+    await savePairing(
+      const ServerConfig(
+        host: '127.0.0.1',
+        port: 7777,
+        token: 'abc',
+        rootId: 'root-test0000000000000000000000',
+      ),
+      support: support,
+    );
+    return (root: root, support: support, deck: deck);
+  }
+
+  const failedRemoteExam = RemoteExam(
+    phase: 'results',
+    deck: 'ws/exam.md',
+    strictness: 'balanced',
+    questions: ['Why?'],
+    verdicts: ExamVerdicts(pass: 0, partial: 0, total: 1),
+    full: true,
+    grades: [],
+    gaps: ['the tested idea'],
+    canRemediate: true,
+    thinking: false,
+  );
+
+  Future<void> takeFinishedExam(WidgetTester tester) async {
+    await tester.tap(find.text('Remote exam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take exam'));
+    await tester.pumpAndSettle();
+    expect(find.text('0 / 1'), findsOneWidget, reason: 'the finished result opens');
+  }
+
+  testWidgets(
+    'a reopened sitting is recorded against the stamp taken when it started',
+    (tester) async {
+      final fixture = await examFixture('exam-reopen');
+      const generatingExam = RemoteExam(
+        phase: 'generating',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: [],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: true,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examGetReplies: const [generatingExam, failedRemoteExam],
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(client.startedDeck, 'ws/exam.md', reason: 'step 1: the sitting starts');
+      expect(client.examGetCalls, 1, reason: 'step 1: one poll, still generating');
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(client.examCloseCalls, 0, reason: 'step 2: leaving keeps the sitting');
+
+      File(fixture.deck).writeAsStringSync(
+        '\n# Extra\n\n## q2\na2\n',
+        mode: FileMode.append,
+      );
+      await takeFinishedExam(tester);
+
+      expect(
+        find.text('Turn the gaps into cards'),
+        findsNothing,
+        reason: 'step 3: material added since the sitting started voids it',
+      );
+      expect(find.textContaining('the exam material changed'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a finished sitting this phone did not start is not recorded and offers no remediation',
+    (tester) async {
+      final fixture = await examFixture('exam-unstarted');
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [failedRemoteExam],
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await takeFinishedExam(tester);
+
+      expect(find.text('Turn the gaps into cards'), findsNothing);
+      expect(
+        find.textContaining('not recorded'),
+        findsOneWidget,
+        reason: 'the phone says the result was not recorded',
+      );
     },
   );
 
