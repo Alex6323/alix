@@ -5931,6 +5931,54 @@ fn forcing_a_sourced_generation_removes_the_replaced_decks_source_folder() {
 }
 
 #[test]
+fn forcing_an_unsourced_generation_over_a_sourced_deck_removes_old_sources() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "a.md", "alpha evidence\n");
+    let reply = "# Alpha\n\n## Alpha?\nAlpha.\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]}]\n";
+    let cli = fake_claude(dir.path(), reply);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    let args = [
+        "deck",
+        "generate",
+        source.to_str().unwrap(),
+        "--config",
+        &config,
+        "--into",
+        workspace.to_str().unwrap(),
+        "--output",
+        "forced",
+    ];
+
+    let first = alix(&args);
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let original = alix::deck::Deck::load(workspace.join("decks/forced.md"))
+        .unwrap()
+        .deck_token
+        .unwrap();
+    let original_sources = workspace.join("sources").join(&original);
+    assert!(original_sources.is_dir());
+
+    let mut forced = args.to_vec();
+    forced[2] = "https://example.com/replacement";
+    forced.push("--force");
+    let second = alix(&forced);
+    assert!(second.status.success(), "stderr: {}", stderr(&second));
+    assert!(
+        !original_sources.exists(),
+        "forcing a URL generation must retire the replaced deck's source folder"
+    );
+}
+
+#[test]
 fn generate_print_normalizes_exactly_one_trailing_newline() {
     for reply in [
         "## Generated Q\nGenerated A",

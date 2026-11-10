@@ -418,7 +418,7 @@ fn generate_single_deck(
                 warn_sources(&added);
                 report
             }
-            None => library::replace_deck(&dir, &name, &text, &mut store)?,
+            None => library::replace_deck_dropping_old_sources(&dir, &name, &text, &mut store)?,
         };
         if Path::new(&source).exists() {
             alix::source::stamp_citations(&target)?;
