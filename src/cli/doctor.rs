@@ -1066,7 +1066,11 @@ fn audit_owned_root(
         };
         let name = name.to_string_lossy().into_owned();
         let owned = known_deck_ids.map(|ids| ids.contains(&name));
-        if kind.is_symlink() && !(root.owner_reports_links && owned != Some(false)) {
+        if kind.is_symlink() && root.owner_reports_links {
+            if owned != Some(true) {
+                report.linked_folder(&folder.join(&name), root.linked);
+            }
+        } else if kind.is_symlink() {
             report.error(format!(
                 "{}/{name} is a link; {}: replace it with what it points to, or remove it",
                 root.name, root.linked
@@ -3722,6 +3726,39 @@ mod tests {
                 .iter()
                 .any(|error| error.contains("sources") && error.contains("is a link")),
             "an unreadable deck must not suppress the independent linked-root error: errors={:#?}, warnings={:#?}",
+            report.errors,
+            report.warnings
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_unreadable_member_does_not_hide_an_unowned_linked_sources_directory() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let dir = tempfile::tempdir().unwrap();
+        w(dir.path(), "alix.toml", "title = \"W\"\n");
+        let decks = dir.path().join("decks");
+        std::fs::create_dir(&decks).unwrap();
+        let member = decks.join("m.md");
+        w(
+            &decks,
+            "m.md",
+            "---\nformat-version: 1\nid: \"deck-m1\"\n---\n## q\na\n<!-- id: card-m1c1 -->\n",
+        );
+        std::fs::set_permissions(&member, std::fs::Permissions::from_mode(0o000)).unwrap();
+        std::fs::create_dir(dir.path().join("sources")).unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        symlink(elsewhere.path(), dir.path().join("sources/deck-unowned")).unwrap();
+
+        let report = workspace_findings(dir.path(), DriftChecks::default(), &ExamConfig::default());
+
+        std::fs::set_permissions(&member, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(
+            report.errors.iter().any(|error| {
+                error.contains("sources/deck-unowned") && error.contains("is a link")
+            }),
+            "unknown owners must not suppress an independently visible child link: errors={:#?}, warnings={:#?}",
             report.errors,
             report.warnings
         );
