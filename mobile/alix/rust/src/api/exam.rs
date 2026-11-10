@@ -268,6 +268,8 @@ pub fn apply_exam_remediation(
         .collect();
     let deck_token = deck.deck_token.unwrap_or_default();
     let mut store = open_store(&path, &root_dir, device)?;
+    let retire_after_days =
+        alix::exam_status::retire_after_days_for(alix::config::ReviewConfig::default(), &path);
     let count = alix::store::store_remediation_cards(
         &mut store,
         Some(&path),
@@ -275,7 +277,7 @@ pub fn apply_exam_remediation(
         &topic_id,
         &fingerprints,
         &cards_text,
-        None,
+        retire_after_days,
     )
     .into_result()?;
     Ok(count as u32)
@@ -849,6 +851,91 @@ mod tests {
             1,
             first_reported + retry_reported,
             "after Try again clears the error, the phone must acknowledge the card the operation committed"
+        );
+    }
+
+    fn retire_personal_card(path: &Path, root: &Path) {
+        let id = alix::personal::read(path, "deck-d").cards[0]
+            .card
+            .id()
+            .unwrap();
+        let mut store = reopened(path, root);
+        store.get_or_insert(&id).recall = Some(alix::store::FsrsState {
+            state: 2,
+            scheduled_days: 400,
+            ..Default::default()
+        });
+        store.save().unwrap();
+    }
+
+    #[test]
+    fn apply_exam_remediation_revives_a_card_retired_under_the_phone_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let gap = "## Old gap?\nold answer\n".to_string();
+        let apply = || {
+            apply_exam_remediation(
+                deck_path.clone(),
+                root_arg(root),
+                "topic-a".to_string(),
+                gap.clone(),
+                None,
+            )
+            .unwrap()
+        };
+        assert_eq!(1, apply(), "the card is created");
+        retire_personal_card(&path, root);
+
+        assert_eq!(1, apply(), "a gap matching a retired card revives it");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retry_reports_both_cards_committed_before_a_mixed_save_failed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let deck_path = path.to_string_lossy().into_owned();
+        let root_dir = root_arg(root);
+        let retired = "## Old gap?\nold answer\n";
+        let mixed = format!("{retired}\n## New gap?\nnew answer\n");
+        let apply = |text: &str| {
+            apply_exam_remediation(
+                deck_path.clone(),
+                root_dir.clone(),
+                "topic-a".to_string(),
+                text.to_string(),
+                None,
+            )
+        };
+        assert_eq!(1, apply(retired).unwrap());
+        retire_personal_card(&path, root);
+
+        let progress = alix::state::UserFiles::new(root).progress();
+        std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let first = apply(&mixed);
+        std::fs::set_permissions(&progress, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let first_reported = match first {
+            Ok(count) => count,
+            Err(error) => {
+                assert!(
+                    error.to_string().contains("progress"),
+                    "the fixture must fail the mixed progress save: {error:#}"
+                );
+                0
+            }
+        };
+        let retry_reported = apply(&mixed).unwrap();
+
+        assert_eq!(2, alix::personal::read(&path, "deck-d").cards.len());
+        assert_eq!(
+            2,
+            first_reported + retry_reported,
+            "after Try again clears the error, both the fresh and the revived card are acknowledged"
         );
     }
 
