@@ -1185,11 +1185,13 @@ fn findings_in(dir: &Path, drift: DriftChecks, exam: &ExamConfig) -> Report {
         }
     }
     if alix::workspace::is_workspace(dir) {
-        audit_owned_roots(
-            dir,
-            &alix::workspace::folder_owners(&deck_files),
-            &mut report,
-        );
+        match alix::workspace::folder_owners(dir) {
+            Ok(owners) => audit_owned_roots(dir, &owners, &mut report),
+            Err(error) => report.warn(format!(
+                "cannot tell which decks in {} own their folders: {error}",
+                dir.display()
+            )),
+        }
     }
     match alix::state::open_aggregate_store(&store_path) {
         Ok(store) => {

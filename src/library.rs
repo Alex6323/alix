@@ -179,10 +179,13 @@ impl ReplacedSources {
         let Some((files, backup_id)) = self.folder else {
             return Ok(());
         };
-        let members = workspace::classify_deck_files(files.root())
-            .with_context(|| format!("cannot list the decks in {}", files.root().display()))?
-            .initialized;
-        if workspace::folder_owners(&members).contains(&backup_id) {
+        let owners = workspace::folder_owners(files.root()).with_context(|| {
+            format!(
+                "cannot tell which decks in {} own their sources",
+                files.root().display()
+            )
+        })?;
+        if owners.contains(&backup_id) {
             return Ok(());
         }
         remove_folder(&files.sources_for(&backup_id))
@@ -2232,6 +2235,79 @@ mod tests {
         assert!(
             sources.join("source.md").exists(),
             "b.md still owns deck-da1, so replacing a.md must not retire its sources"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_replace_keeps_sources_when_a_member_cannot_be_read() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "").unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        let sources = WorkspaceFiles::new(&ws).sources_for("deck-da1");
+        std::fs::create_dir_all(&sources).unwrap();
+        std::fs::write(sources.join("source.md"), "irreplaceable frozen source").unwrap();
+        let mut store = crate::state::open_store(&members.join("a.md"), &ws).unwrap();
+        replace_deck(&members, "a", "## first q\nfirst ans\n", &mut store).unwrap();
+        let locked = members.join("locked.md");
+        write_deck(&members, "locked.md", "da1", "cl1");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let second = replace_deck(&members, "a", "## second q\nsecond ans\n", &mut store);
+
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(
+            second.is_err(),
+            "an unreadable member must fail the retirement: {second:?}"
+        );
+        assert!(
+            sources.join("source.md").exists(),
+            "locked.md may own deck-da1, so an unknowable inventory must keep its sources"
+        );
+    }
+
+    #[test]
+    fn a_second_replace_keeps_sources_owned_by_another_restorable_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("ws");
+        let members = ws.join("decks");
+        std::fs::create_dir_all(&members).unwrap();
+        std::fs::write(ws.join("alix.toml"), "").unwrap();
+        write_deck(&members, "a.md", "da1", "ca1");
+        write_deck(&members, "b.md", "da1", "cb1");
+        let sources = WorkspaceFiles::new(&ws).sources_for("deck-da1");
+        std::fs::create_dir_all(&sources).unwrap();
+        std::fs::write(sources.join("source.md"), "irreplaceable frozen source").unwrap();
+        let mut store = crate::state::open_store(&members.join("a.md"), &ws).unwrap();
+
+        replace_deck(
+            &members,
+            "b",
+            "## replacement q\nreplacement ans\n",
+            &mut store,
+        )
+        .unwrap();
+        std::fs::write(members.join("b.md"), "## unstamped q\nunstamped ans\n").unwrap();
+        replace_deck(&members, "a", "## first q\nfirst ans\n", &mut store).unwrap();
+        assert_eq!(
+            Some("deck-da1".to_string()),
+            parser::read_deck_identity(&members.join("b.md.bak")).unwrap()
+        );
+        replace_deck(&members, "a", "## second q\nsecond ans\n", &mut store).unwrap();
+
+        restore_deck(&members.join("b.md"), &ws).unwrap();
+        assert_eq!(
+            Some("deck-da1".to_string()),
+            parser::read_deck_identity(&members.join("b.md")).unwrap()
+        );
+        assert!(
+            sources.join("source.md").exists(),
+            "b.md.bak can still be restored as deck-da1, so replacing a.md must not retire its sources"
         );
     }
 

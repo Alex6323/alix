@@ -365,12 +365,23 @@ pub fn backup_of(deck: &Path) -> PathBuf {
     deck.with_file_name(format!("{name}.bak"))
 }
 
-pub fn folder_owners(deck_files: &[PathBuf]) -> HashSet<String> {
-    deck_files
-        .iter()
-        .flat_map(|deck| [deck.clone(), backup_of(deck)])
-        .filter_map(|deck| crate::parser::read_deck_identity(&deck).ok().flatten())
-        .collect()
+pub fn folder_owners(root: &Path) -> io::Result<HashSet<String>> {
+    let dir = member_dir(root);
+    let mut candidates: Vec<PathBuf> = members_where_in(&dir, |_| true)?
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    for entry in std::fs::read_dir(&dir)? {
+        let path = entry?.path();
+        if path.is_file() && path.to_string_lossy().ends_with(".md.bak") {
+            candidates.push(path);
+        }
+    }
+    let mut owners = HashSet::new();
+    for path in candidates {
+        owners.extend(crate::parser::read_deck_identity(&path)?);
+    }
+    Ok(owners)
 }
 
 pub fn deck_files(dir: &Path) -> Vec<PathBuf> {
