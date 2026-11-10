@@ -1848,6 +1848,19 @@ pub fn split_card_blocks(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// `created_or_revived` counts store entries touched even when `outcome` is
+/// an error, so a failed save still reports the in-memory mutation.
+pub struct RemediationStored {
+    pub created_or_revived: usize,
+    pub outcome: AnyResult<()>,
+}
+
+impl RemediationStored {
+    pub fn into_result(self) -> AnyResult<usize> {
+        self.outcome.map(|()| self.created_or_revived)
+    }
+}
+
 /// The deck file is never touched. Dedup is by content, not id: each block
 /// gets a fresh random token, so a rerun must match by canonical content.
 pub fn store_remediation_cards(
@@ -1858,7 +1871,38 @@ pub fn store_remediation_cards(
     deck_fingerprints: &std::collections::HashSet<u64>,
     cards_text: &str,
     retire_after_days: Option<u32>,
-) -> AnyResult<usize> {
+) -> RemediationStored {
+    let mut created_or_revived = 0;
+    let outcome = store_remediation_blocks(
+        store,
+        deck_path,
+        deck_id,
+        topic_id,
+        deck_fingerprints,
+        cards_text,
+        retire_after_days,
+        &mut created_or_revived,
+    );
+    RemediationStored {
+        created_or_revived,
+        outcome,
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the public entry's inputs plus its mutation counter"
+)]
+fn store_remediation_blocks(
+    store: &mut Store,
+    deck_path: Option<&Path>,
+    deck_id: &str,
+    topic_id: &str,
+    deck_fingerprints: &std::collections::HashSet<u64>,
+    cards_text: &str,
+    retire_after_days: Option<u32>,
+    created_or_revived: &mut usize,
+) -> AnyResult<()> {
     let Some(deck_path) = deck_path else {
         bail!("this sitting has no deck file to write personal cards beside");
     };
@@ -1868,7 +1912,6 @@ pub fn store_remediation_cards(
         bail!("remediation produced no cards to store");
     }
 
-    let mut created_or_revived = 0;
     for block in &blocks {
         // Stamped before storing so the text re-parses to the same id forever.
         let token = crate::token::format_card_id(
@@ -1903,7 +1946,7 @@ pub fn store_remediation_cards(
                     continue;
                 };
                 store.get_or_insert(&id);
-                created_or_revived += 1;
+                *created_or_revived += 1;
             }
         } else if existing
             .iter()
@@ -1913,15 +1956,15 @@ pub fn store_remediation_cards(
             crate::personal::rebind_topic(deck_path, &bases, topic_id)?;
             for id in &existing {
                 *store.get_or_insert(id) = CardState::new();
-                created_or_revived += 1;
+                *created_or_revived += 1;
             }
         }
         // Else at least one matching entry is still active: leave it, no reset.
     }
-    if created_or_revived > 0 {
+    if *created_or_revived > 0 {
         store.save()?;
     }
-    Ok(created_or_revived)
+    Ok(())
 }
 
 /// Ids of personal cards already in the sidecar whose content matches, so a
@@ -3081,6 +3124,7 @@ mod tests {
             "## Why?\nbecause\n",
             None,
         )
+        .into_result()
         .unwrap_err();
         assert_eq!(finding, remediation.to_string(), "remediation");
         let remote = mint_or_return_kept_card(
@@ -3241,6 +3285,7 @@ mod tests {
             "## Why?\nbecause\n",
             None,
         )
+        .into_result()
         .unwrap_err();
         assert_eq!(load_error, format!("{remediation:#}"), "remediation");
         assert!(
@@ -3267,6 +3312,7 @@ mod tests {
                 text,
                 cap,
             )
+            .into_result()
             .unwrap()
         };
         assert_eq!(1, store_for(&mut store, "topic-a"), "created under topic-a");
@@ -3752,6 +3798,7 @@ mod tests {
             cards_text,
             retire_after_days,
         )
+        .into_result()
     }
 
     #[test]
@@ -3892,6 +3939,7 @@ mod tests {
             "## Capital of France?\nParis\n",
             None,
         )
+        .into_result()
         .unwrap();
 
         assert_eq!(
@@ -3995,6 +4043,7 @@ mod tests {
             cloze,
             None,
         )
+        .into_result()
         .unwrap();
         assert_eq!(
             2, created,

@@ -1385,7 +1385,7 @@ impl Sitting {
             Some(Effect::RemediationCards(by_topic)) => {
                 let mut stored = 0;
                 for topic in &by_topic {
-                    match crate::store::store_remediation_cards(
+                    let remediation = crate::store::store_remediation_cards(
                         store,
                         self.deck_path.as_deref(),
                         &self.deck_token,
@@ -1393,10 +1393,11 @@ impl Sitting {
                         &self.deck_fingerprints,
                         &topic.cards,
                         retire_after_days,
-                    ) {
-                        Ok(n) => {
-                            stored += n;
-                            store_mutated |= n > 0;
+                    );
+                    store_mutated |= remediation.created_or_revived > 0;
+                    match remediation.outcome {
+                        Ok(()) => {
+                            stored += remediation.created_or_revived;
                             self.remediated_topics.insert(topic.topic_id.clone());
                         }
                         Err(e) => {
@@ -3836,6 +3837,66 @@ mod tests {
             before,
             revision(),
             "the browser poll must not flush a per-deck store when remediation created or revived nothing",
+        );
+    }
+
+    #[test]
+    fn a_remediation_save_failure_reports_the_partial_store_mutation() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            cli_dir.path(),
+            &["## Alpha gap?\nA\n", "## Beta gap?\nB\n"],
+        );
+        let progress = cli_dir.path().join("p.json");
+        let mut store = Store::open(&progress).unwrap();
+        let mut sitting = two_failed_topics(&ws, &cli);
+        let fault = crate::fsio::fault::fail_on_nth_operation(7);
+
+        sitting.remediate();
+        let outcome = loop {
+            let outcome = sitting.poll(
+                &mut store,
+                0,
+                Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
+            );
+            if outcome.advanced {
+                break outcome;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+
+        assert!(
+            sitting
+                .error()
+                .is_some_and(|error| error.contains("injected fault")),
+            "the injected one-shot write error must fail remediation persistence: {:?}",
+            sitting.error(),
+        );
+        assert_eq!(
+            Some(crate::fsio::fault::Operation::CreateTemp),
+            fault.triggered_operation(),
+            "the one-shot fault lands on the progress save after the sidecar write",
+        );
+        drop(fault);
+        assert_eq!(
+            1,
+            sidecar_cards(&ws.deck(), DECK).len(),
+            "the personal card was appended before the progress save failed",
+        );
+        assert!(
+            !progress.exists(),
+            "the injected progress save did not land"
+        );
+        assert!(
+            outcome.store_mutated,
+            "the caller must invalidate and backstop a store already mutated before save failed",
+        );
+        store.save().unwrap();
+        assert!(
+            progress.exists(),
+            "the same in-memory mutation is retryable after the one-shot fault"
         );
     }
 

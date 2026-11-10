@@ -276,7 +276,8 @@ pub fn apply_exam_remediation(
         &fingerprints,
         &cards_text,
         None,
-    )?;
+    )
+    .into_result()?;
     Ok(count as u32)
 }
 
