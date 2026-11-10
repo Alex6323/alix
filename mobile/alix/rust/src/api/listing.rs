@@ -59,7 +59,7 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             exam_due: s.exam_due,
             examable: s.examable,
             locked: s.locked,
-            progress_error: s.progress_error || s.manifest_error.is_some(),
+            progress_error: s.progress_error || s.load_error || s.manifest_error.is_some(),
             icon: s.icon.map(|p| p.to_string_lossy().into_owned()),
             indent: s.indent as u32,
             tree: s.tree,
@@ -273,6 +273,35 @@ mod tests {
             Some(1_000_000), false).entries;
         assert_eq!(members.len(), 1);
         assert!(!members[0].is_workspace);
+    }
+
+    #[test]
+    fn a_deck_that_fails_to_load_crosses_to_the_phone_as_an_error_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let broken = dir.path().join("broken.md");
+        write(
+            &broken,
+            "---\nformat-version: 1\nid: \"deck-broken\"\n---\n\
+             ## front\nanswer\n<!-- blank: span hidden=\"missing\" -->\n",
+        );
+        assert!(
+            alix::deck::Deck::load(&broken).is_err(),
+            "fixture must fail to load"
+        );
+
+        let entries = list_root(
+            dir.path().to_string_lossy().into_owned(),
+            Some(T0),
+            false,
+        )
+        .entries;
+
+        assert_eq!(1, entries.len(), "the initialized deck stays listed");
+        assert!(
+            entries[0].progress_error,
+            "the phone must show a diagnostic row and refuse its launch: {}",
+            entries[0].title
+        );
     }
 
     const T0: u64 = 1_000_000;

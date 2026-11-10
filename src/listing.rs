@@ -42,6 +42,7 @@ pub struct DeckSummary {
     /// progress-derived claim here is suppressed and review is refused;
     /// siblings are unaffected (per-document read granularity).
     pub progress_error: bool,
+    pub load_error: bool,
     pub manifest_error: Option<String>,
     pub icon: Option<PathBuf>,
     pub indent: usize,
@@ -470,6 +471,7 @@ fn folder_summary(
         exam_prepared: false,
         locked: false,
         progress_error: false,
+        load_error: false,
         manifest_error,
         icon,
         indent: 0,
@@ -566,6 +568,7 @@ fn deck_summary(
         exam_prepared,
         locked,
         progress_error,
+        load_error: !loaded,
         manifest_error: None,
         icon: None,
         indent: 0,
@@ -1208,6 +1211,40 @@ mod tests {
             "the bad later document must not erase the healthy sibling's loaded progress"
         );
         assert!(b.progress_error);
+    }
+
+    #[test]
+    fn a_deck_that_fails_to_load_is_an_error_row_at_the_root_and_in_a_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let ws = root.join("ws");
+        std::fs::create_dir_all(ws.join("decks")).unwrap();
+        std::fs::write(ws.join("alix.toml"), "title = \"W\"\n").unwrap();
+        let broken = "## front\nanswer\n<!-- blank: span hidden=\"missing\" -->\n";
+        for path in [root.join("broken.md"), ws.join("decks").join("broken.md")] {
+            write(&path, broken);
+            assert!(
+                Deck::load(&path).is_err(),
+                "fixture must fail to load: {path:?}"
+            );
+        }
+        write(&ws.join("decks").join("fine.md"), "## q\na\n");
+
+        let root_rows = list_root(root, &ReviewConfig::default(), T0);
+        let member_rows = list_members(root, &ws, &ReviewConfig::default(), T0).rows;
+        for (listing, rows) in [("root", &root_rows), ("workspace", &member_rows)] {
+            let row = rows.iter().find(|r| r.title == "broken").unwrap();
+            assert!(
+                row.load_error,
+                "{listing}: the unloadable deck is an error row"
+            );
+            assert!(
+                !row.progress_error,
+                "{listing}: its progress is not the cause"
+            );
+        }
+        let fine = member_rows.iter().find(|r| r.title == "fine").unwrap();
+        assert!(!fine.load_error, "a loadable sibling is not an error row");
     }
 
     #[test]

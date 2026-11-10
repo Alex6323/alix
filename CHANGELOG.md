@@ -942,6 +942,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grown-up" on the box, the deck, and the launch screen, instead of "all
   caught up", "New", and two disabled practice buttons.
 
+- Mobile: a deck whose file fails to load is marked `error` in the deck list
+  and does not open, instead of showing as a quiet deck with nothing due.
+
 - Remediation saves the progress store only when it revives a retired card,
   so it no longer advances the store's sync revision otherwise. A new
   remediation card lives in the deck's personal sidecar and gains a progress
