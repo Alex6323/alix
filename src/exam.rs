@@ -1383,7 +1383,6 @@ impl Sitting {
                 }
             }
             Some(Effect::RemediationCards(by_topic)) => {
-                store_mutated = true;
                 let mut stored = 0;
                 for topic in &by_topic {
                     match crate::store::store_remediation_cards(
@@ -1397,6 +1396,7 @@ impl Sitting {
                     ) {
                         Ok(n) => {
                             stored += n;
+                            store_mutated |= n > 0;
                             self.remediated_topics.insert(topic.topic_id.clone());
                         }
                         Err(e) => {
@@ -3784,6 +3784,58 @@ mod tests {
                 .map(|card| (card.front.clone(), topic_ids[card.topic].clone()))
                 .collect::<Vec<_>>(),
             "retry: alpha is not remediated again"
+        );
+    }
+
+    #[test]
+    fn a_second_sitting_with_the_same_remediation_does_not_advance_progress_revision() {
+        let _lock = exec_lock();
+        let ws = two_sourced_topics();
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            cli_dir.path(),
+            &[
+                "## Alpha gap?\nA\n",
+                "## Beta gap?\nB\n",
+                "## Alpha gap?\nA\n",
+                "## Beta gap?\nB\n",
+            ],
+        );
+        let progress = cli_dir.path().join("p.json");
+        let mut store = Store::open(&progress).unwrap();
+
+        let mut first = two_failed_topics(&ws, &cli);
+        first.remediate();
+        drain(&mut first, &mut store);
+        let revision = || {
+            let file: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&progress).unwrap()).unwrap();
+            file["revision"].as_u64().unwrap()
+        };
+        let before = revision();
+
+        let mut second = two_failed_topics(&ws, &cli);
+        second.remediate();
+        let outcome = loop {
+            let outcome = second.poll(
+                &mut store,
+                0,
+                Some(crate::session::DEFAULT_RETIRE_AFTER_DAYS),
+            );
+            if outcome.advanced {
+                break outcome;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(Some(0), second.remediated_count());
+
+        if outcome.store_mutated {
+            store.save().unwrap();
+        }
+        assert_eq!(
+            before,
+            revision(),
+            "the browser poll must not flush a per-deck store when remediation created or revived nothing",
         );
     }
 
