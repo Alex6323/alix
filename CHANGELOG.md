@@ -937,9 +937,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remembers the remediation it applied for the exam sitting it keeps, and a
   reopened sitting shows that count instead of applying the cards again.
 
-- A remediation card written before its progress save failed no longer stays
-  without progress: running the remediation again restores its entry. The
-  phone shows the save error and offers Try again instead of failing silently.
+- The phone shows a remediation's progress save error and offers Try again
+  instead of failing silently.
 
 - Long prompts no longer fail to start on Codex and Copilot: every backend now
   receives the prompt on stdin, where those two took it as one command-line

@@ -792,7 +792,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn apply_exam_remediation_keeps_progress_for_a_card_written_before_save_failed() {
+    fn apply_exam_remediation_keeps_a_card_written_before_save_failed() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
@@ -824,7 +824,7 @@ mod tests {
             .id()
             .expect("the sidecar card is stamped");
         assert_eq!(
-            1,
+            0,
             apply_exam_remediation(
                 deck_path,
                 root_dir,
@@ -833,13 +833,68 @@ mod tests {
                 None,
             )
             .unwrap(),
-            "a retry restores the lost progress entry without a second block"
-        );
-        assert!(
-            reopened(&path, root).get(&id).is_some(),
-            "a card which escaped to the sidecar must retain its matching progress entry"
+            "a retry reports no new card for the block the failed run wrote"
         );
         assert_eq!(1, alix::personal::read(&path, "deck-d").cards.len());
+        let deck = alix::deck::Deck::load(&path).unwrap();
+        assert!(
+            alix::assemble::personal_cards(&deck)
+                .cards
+                .iter()
+                .any(|card| card.id().as_deref() == Some(id.as_str())),
+            "the card written before the failed save is still loaded for review"
+        );
+    }
+
+    #[test]
+    fn apply_exam_remediation_does_not_call_a_preexisting_sidecar_card_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let remediation = "## Why b?\nbecause\n";
+        let mut other_device = alix::store::Store::open(root.join("other-device.json")).unwrap();
+        assert_eq!(
+            1,
+            alix::store::store_remediation_cards(
+                &mut other_device,
+                Some(&path),
+                "deck-d",
+                "topic-a",
+                &std::collections::HashSet::new(),
+                remediation,
+                None,
+            )
+            .into_result()
+            .unwrap(),
+            "another device creates the shared personal card"
+        );
+        let id = alix::personal::read(&path, "deck-d").cards[0]
+            .card
+            .id()
+            .expect("the shared sidecar card is stamped");
+
+        let displayed_as_new = apply_exam_remediation(
+            path.to_string_lossy().into_owned(),
+            root_arg(root),
+            "topic-a".to_string(),
+            remediation.to_string(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            0, displayed_as_new,
+            "the phone must not tell the user an already-shared card is new"
+        );
+        assert_eq!(
+            1,
+            alix::personal::read(&path, "deck-d").cards.len(),
+            "the retry writes no card"
+        );
+        assert!(
+            reopened(&path, root).progress(&id).is_none(),
+            "the retry schedules nothing for the card"
+        );
     }
 
     #[test]
