@@ -403,12 +403,17 @@ fn material_unchanged(deck: &Deck, record: &SittingRecord, stamp: &ExamStamp) ->
     let Ok(Some(sources)) = deck.sources() else {
         return false;
     };
-    let (_, pairs) = topic_sourcing(deck, Some(&sources.manifest));
+    let personal = crate::assemble::personal_cards(deck).cards;
+    let (sourced_by_index, pairs) = topic_sourcing(deck, Some(&sources.manifest));
     let current: BTreeMap<&str, &str> = pairs
         .iter()
         .map(|(topic_id, fingerprint)| (topic_id.as_str(), fingerprint.as_str()))
         .collect();
-    stamp_of(&pairs, Vec::new()).sourced == stamp.sourced
+    let present = stamp_of(
+        &pairs,
+        unsourced_card_ids(deck, &personal, &sourced_by_index),
+    );
+    !exam_changed(&present, stamp)
         && record
             .topics
             .iter()
