@@ -286,6 +286,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Phone: **End exam** under each exam question is now **Continue later**. It
+  leaves the exam open with its answers kept, so **Take exam** on the deck's
+  sheet resumes at the first unanswered question; it no longer discards the
+  exam.
+
 - A blank (cloze) card keeps its question at the top, where a plain card has
   it, on the phone and in the browser; it no longer sits vertically centered
   and shifts upward when the answer and note appear.

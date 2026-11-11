@@ -192,8 +192,9 @@ deck's store (`.alix/exam/<deck-id>.prepared.json`), so it survives a closed
 page or a restarted server, and your answers are saved into it as you give
 them. On the phone, the desktop holds the prepared exam in memory and the
 phone saves each answer as you move on from it; a restarted desktop loses
-the phone's prepared exam, and the **End exam** button under each question
-discards it. The phone records a result against the material as it stood
+the phone's prepared exam. **Continue later** under each question (or the
+close button) leaves the exam open: reopen the deck's sheet and **Take exam**
+returns to the first unanswered question. The phone records a result against the material as it stood
 when the phone started that sitting, and it keeps that starting point on
 the phone, so the result is recorded even after the app restarted. A
 sitting this phone did not start (another client's, even on the same deck)

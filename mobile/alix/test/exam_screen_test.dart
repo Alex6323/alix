@@ -1146,7 +1146,6 @@ void main() {
   ) async {
     for (final (exam, closeControl) in [
       (resultsFailed, find.byIcon(Icons.close)),
-      (answering2, find.text('End exam')),
     ]) {
     final closeGate = Completer<void>();
     final client = FakeServerClient(
@@ -1208,17 +1207,39 @@ void main() {
     expect(clears, 1);
   });
 
-  testWidgets('explicitly ending an answering sitting closes and clears it', (tester) async {
+  testWidgets('Continue later leaves an answering sitting open with its answers kept', (tester) async {
     final client = FakeServerClient(examGetReplies: const [answering2]);
     var clears = 0;
-    await pumpExam(tester, client: client, clearAnswers: () => clears++);
-    await tester.pump();
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ExamScreen(
+              deckName: 'rust.md',
+              client: client,
+              support: tempSupport(),
+              buildClient: (_) => client,
+              clearAnswers: () => clears++,
+              applyResult: (exam, nowMs) => null,
+              applyRemediation: (_, _) => 0,
+              nowMs: () => BigInt.from(1000),
+              pollInterval: _pollInterval,
+            ),
+          )),
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('End exam'), findsNothing, reason: 'step 1: no control discards the sitting');
 
-    await tester.tap(find.text('End exam'));
+    await tester.tap(find.text('Continue later'));
     await tester.pumpAndSettle();
 
-    expect(client.examCloseCalls, 1);
-    expect(clears, 1);
+    expect(find.byType(ExamScreen), findsNothing, reason: 'step 2: the screen is left');
+    expect(client.examCloseCalls, 0, reason: 'step 3: the remote slot stays open');
+    expect(clears, 0, reason: 'step 4: saved answers stay');
   });
 
   testWidgets('results save ideas, apply the result, then clear answers', (tester) async {

@@ -539,6 +539,7 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
+      StartedSittings.forgetLoaded();
       await openPicker();
 
       expect(
@@ -550,7 +551,80 @@ void main() {
   );
 
   testWidgets(
-    'exam readiness uses the paired title when the phone has the same workspace and file name',
+    'two live pickers announce one phone-started preparation only once',
+    (tester) async {
+      final fixture = await examFixture('exam-ready-two-pickers');
+      const answeringExam = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'answering',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: false,
+      );
+      final starter = FakeServerClient(
+        versionReply: minServerVersion,
+        examStartSitting: 'sitting-1',
+        noSittingBeforeStart: true,
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => starter,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox.shrink());
+      StartedSittings.forgetLoaded();
+
+      final first = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [answeringExam],
+      );
+      final second = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [answeringExam],
+      );
+      Widget picker(FakeServerClient client) => Expanded(
+        child: ScaffoldMessenger(
+          child: PickerScreen(
+            root: fixture.root.path,
+            dir: '${fixture.root.path}/ws',
+            supportDir: fixture.support,
+            buildClient: (_) => client,
+            generatePollInterval: const Duration(seconds: 10),
+            isPairedSubtree: true,
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: alixDark(),
+          home: Column(children: [picker(first), picker(second)]),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Exam ready: Remote exam.'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'exam readiness names the desktop path when the phone has the same workspace and file name',
     (tester) async {
       final phone = tempDir('alix-picker-exam-title-phone-');
       final support = tempDir('alix-picker-exam-title-support-');

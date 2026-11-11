@@ -596,8 +596,8 @@ class _ExamScreenState extends State<ExamScreen> {
           ],
         ),
         TextButton(
-          onPressed: _closing ? null : _explicitClose,
-          child: const Text('End exam'),
+          onPressed: _closing ? null : () => Navigator.of(context).maybePop(),
+          child: const Text('Continue later'),
         ),
       ],
     );
