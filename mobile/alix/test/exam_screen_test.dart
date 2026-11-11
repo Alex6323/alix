@@ -1242,6 +1242,60 @@ void main() {
     expect(clears, 0, reason: 'step 4: saved answers stay');
   });
 
+  testWidgets('every way out of an answering exam saves the answer currently being edited', (tester) async {
+    for (final leave in ['Continue later', 'close button', 'system back']) {
+    final client = FakeServerClient(examGetReplies: const [answering2]);
+    final saved = <List<String>>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => ExamScreen(
+              deckName: 'rust.md',
+              client: client,
+              support: tempSupport(),
+              buildClient: (_) => client,
+              saveAnswers: (_, answers) => saved.add(List.of(answers)),
+              applyResult: (exam, nowMs) => null,
+              applyRemediation: (_, _) => 0,
+              nowMs: () => BigInt.from(1000),
+              pollInterval: _pollInterval,
+            ),
+          )),
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('exam-answer-field')),
+      'ownership prevents aliasing writes',
+    );
+
+    switch (leave) {
+      case 'Continue later':
+        await tester.tap(find.text('Continue later'));
+      case 'close button':
+        await tester.tap(find.byIcon(Icons.close));
+      default:
+        await tester.binding.handlePopRoute();
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ExamScreen), findsNothing, reason: '$leave step 1: the screen is left');
+    expect(
+      saved,
+      [
+        ['ownership prevents aliasing writes', ''],
+      ],
+      reason: '$leave step 2: the answer visible when the learner pauses must be available on resume',
+    );
+    expect(client.examCloseCalls, 0, reason: '$leave step 3: the remote slot stays open');
+    await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
   testWidgets('results save ideas, apply the result, then clear answers', (tester) async {
     final events = <String>[];
     final client = FakeServerClient(

@@ -378,6 +378,14 @@ class _ExamScreenState extends State<ExamScreen> {
     await _poll();
   }
 
+  bool get _isAnswering => _exam?.phase == 'answering';
+
+  void _continueLater() {
+    if (!_lockAndPersistCurrent()) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
   Future<void> _explicitClose() async {
     if (_closing) return;
     setState(() {
@@ -454,9 +462,14 @@ class _ExamScreenState extends State<ExamScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _keepsSitting && !_closing,
+      canPop: _keepsSitting && !_closing && !_isAnswering,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _explicitClose();
+        if (didPop) return;
+        if (_isAnswering && !_closing) {
+          _continueLater();
+        } else {
+          _explicitClose();
+        }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -596,7 +609,7 @@ class _ExamScreenState extends State<ExamScreen> {
           ],
         ),
         TextButton(
-          onPressed: _closing ? null : () => Navigator.of(context).maybePop(),
+          onPressed: _closing ? null : _continueLater,
           child: const Text('Continue later'),
         ),
       ],
