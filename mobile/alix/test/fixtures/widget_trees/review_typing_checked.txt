@@ -50,17 +50,17 @@ Scaffold
                   Material
                     CustomPaint
                       InkWell(tap=true, longPress=false)
-                        Padding(EdgeInsets(8.0, 11.0, 8.0, 11.0))
+                        Padding(EdgeInsets(6.0, 11.0, 6.0, 11.0))
                           Text("Missed it")
                   Material
                     CustomPaint
                       InkWell(tap=true, longPress=false)
-                        Padding(EdgeInsets(8.0, 11.0, 8.0, 11.0))
+                        Padding(EdgeInsets(6.0, 11.0, 6.0, 11.0))
                           Text("Partly")
                   Material
                     CustomPaint
                       InkWell(tap=true, longPress=false)
-                        Padding(EdgeInsets(8.0, 11.0, 8.0, 11.0))
+                        Padding(EdgeInsets(6.0, 11.0, 6.0, 11.0))
                           Text("Got it")
                 SizedBox(width=0.0, height=0.0)
     ConstrainedBox

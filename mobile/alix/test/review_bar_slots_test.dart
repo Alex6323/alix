@@ -165,4 +165,23 @@ void main() {
       }
     }
   });
+
+  testWidgets('Ask tutor keeps a 44 logical pixel tap target', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      openCard(_deck(topic: true, hint: true)),
+      revealed: true,
+      tutor: true,
+    );
+
+    final target = tester.getRect(find.byKey(const ValueKey('ask-glyph')));
+    expect(
+      target.width >= 44 && target.height >= 44,
+      isTrue,
+      reason: 'Ask tutor tap target $target must be at least 44 by 44',
+    );
+  });
 }

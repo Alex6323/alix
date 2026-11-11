@@ -81,7 +81,7 @@ Color badgeColour(ReviewBadge badge, Brightness brightness) {
   };
 }
 
-const double _sideSlot = 36;
+const double _sideSlot = 44;
 
 class ReviewCardView extends StatelessWidget {
   const ReviewCardView({
@@ -1547,7 +1547,7 @@ class ReviewCardView extends StatelessWidget {
       tooltip: 'Ask the tutor',
       onPressed: () => onOpenTutor(tutor),
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: _sideSlot, height: 40),
+      constraints: const BoxConstraints.tightFor(width: _sideSlot, height: _sideSlot),
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
@@ -1855,7 +1855,7 @@ class ReviewChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: dense ? 8 : 15, vertical: 11),
+          padding: EdgeInsets.symmetric(horizontal: dense ? 6 : 15, vertical: 11),
           child: Text(
             label,
             textAlign: TextAlign.center,
@@ -2751,7 +2751,7 @@ class _RenderEqualRow extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _EqualRowParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _EqualRowParentData> {
-  static const double _gap = 8;
+  static const double _gap = 6;
 
   @override
   void setupParentData(RenderBox child) {
