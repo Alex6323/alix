@@ -109,6 +109,8 @@
   @media (max-width: 640px) {
     .legend { grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; padding-left: 14px; padding-right: 14px; }
     .legend .keys .chip { white-space: nowrap; }
+    .legend .keys:has(> .slot) { display: flex; flex-wrap: wrap; justify-content: center; }
+    .legend .keys .slot { display: contents; }
     .legend:has(.keys > .chip:nth-child(4)) { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
     .legend:has(.keys > .chip:nth-child(4)) :is(.keys, .legend-side) { display: contents; }
     .legend:has(.keys > .chip:nth-child(4)) .score:empty { display: none; }

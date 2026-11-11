@@ -1499,21 +1499,24 @@ class ReviewCardView extends StatelessWidget {
         12,
         12 + MediaQuery.of(context).padding.bottom,
       ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: _sideSlot),
-            child: Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: centre,
+      child: LayoutBuilder(
+        builder: (context, box) => Row(
+          children: [
+            Expanded(child: _side(Alignment.centerLeft, left)),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: box.maxWidth - 2 * _sideSlot,
+              ),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: centre,
+              ),
             ),
-          ),
-          if (left != null) Align(alignment: Alignment.centerLeft, child: left),
-          if (right != null) Align(alignment: Alignment.centerRight, child: right),
-        ],
+            Expanded(child: _side(Alignment.centerRight, right)),
+          ],
+        ),
       ),
     );
   }
@@ -1525,6 +1528,13 @@ class ReviewCardView extends StatelessWidget {
     if (_isTyping) return checkFeedback != null;
     return revealed;
   }
+
+  Widget _side(Alignment alignment, Widget? chip) => Align(
+    alignment: alignment,
+    child: chip == null
+        ? null
+        : FittedBox(fit: BoxFit.scaleDown, alignment: alignment, child: chip),
+  );
 
   Widget? _leftSlot(ReviewCardModel card) {
     if (!card.hasTopic || _answered(card)) return null;

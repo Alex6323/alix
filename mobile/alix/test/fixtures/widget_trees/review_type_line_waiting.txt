@@ -47,14 +47,18 @@ Scaffold
                           Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
                             Text("⌵ more")
               Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
-                Stack
-                  Padding(EdgeInsets(40.0, 0.0, 40.0, 0.0))
+                Row
+                  Expanded
+                    Align
+                  ConstrainedBox
                     Wrap
                       Material
                         CustomPaint
                           InkWell(tap=true, longPress=false)
                             Padding(EdgeInsets(15.0, 11.0, 15.0, 11.0))
                               Text("Check")
+                  Expanded
+                    Align
     ConstrainedBox
       AppBar
         Material

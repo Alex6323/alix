@@ -78,3 +78,23 @@ for (const [n, topic, hint] of [[1, true, true], [2, true, false], [3, false, tr
     expect(Math.abs(at - centre), `Reveal centre ${at} sits on the footer centre ${centre}`).toBeLessThanOrEqual(1);
   });
 }
+
+test("a 360px footer keeps Context, Reveal, and Hint separate and on screen", async ({ page }) => {
+  await openAtRecall(page, 5, true, true);
+  await page.setViewportSize({ width: 360, height: 800 });
+  const footer = (await page.locator(".legend").boundingBox())!;
+  const context = (await page.getByRole("button", { name: /^Context/ }).boundingBox())!;
+  const reveal = (await page.getByRole("button", { name: /^Reveal/ }).boundingBox())!;
+  const hint = (await page.getByRole("button", { name: /^Hint/ }).boundingBox())!;
+  const disjoint = (a: typeof context, b: typeof context) =>
+    a.x + a.width <= b.x || b.x + b.width <= a.x
+      || a.y + a.height <= b.y || b.y + b.height <= a.y;
+  expect(
+    context.x >= footer.x
+      && disjoint(context, reveal)
+      && disjoint(reveal, hint)
+      && disjoint(context, hint)
+      && hint.x + hint.width <= footer.x + footer.width,
+    `footer ${JSON.stringify(footer)}, Context ${JSON.stringify(context)}, Reveal ${JSON.stringify(reveal)}, Hint ${JSON.stringify(hint)} must be separate and on screen`,
+  ).toBe(true);
+});
