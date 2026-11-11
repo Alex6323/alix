@@ -510,6 +510,109 @@ void main() {
     expect(tester.takeException(), isNull, reason: 'no layout overflow');
   });
 
+  RemoteExam longQuestions(int count) {
+    final prose = List.filled(40, 'This question is long enough to scroll on a phone.').join(' ');
+    return RemoteExam.fromJson({
+      'phase': 'answering',
+      'deck': 'rust.md',
+      'questions': [for (var i = 1; i <= count; i++) 'Start of question $i. $prose'],
+      'questions_units': [
+        for (var i = 1; i <= count; i++)
+          [
+            {
+              'kind': 'sentence',
+              'text': 'Start of question $i. $prose',
+              'runs': [
+                {'text': 'Start of question $i. $prose'},
+              ],
+            },
+          ],
+      ],
+      'thinking': false,
+    });
+  }
+
+  testWidgets('a long question shows a scrollbar and a hairline above the answer', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpExam(tester, client: FakeServerClient(examGetReplies: [longQuestions(1)]));
+    await tester.pump();
+
+    final scrollbar = tester.widget<Scrollbar>(
+      find.ancestor(of: find.byKey(const ValueKey('exam-question')), matching: find.byType(Scrollbar)),
+    );
+    expect(scrollbar.thumbVisibility, isTrue, reason: 'the scrollbar shows without a touch');
+    final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
+    final hairline = tester.getRect(find.byKey(const ValueKey('exam-question-hairline')));
+    final field = tester.getRect(find.byKey(const ValueKey('exam-answer-field')));
+    expect(hairline.top, greaterThanOrEqualTo(question.bottom), reason: 'hairline $hairline below question $question');
+    expect(hairline.bottom, lessThanOrEqualTo(field.top), reason: 'hairline $hairline above field $field');
+  });
+
+  testWidgets('the next question starts at its top, not at the last scroll offset', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpExam(tester, client: FakeServerClient(examGetReplies: [longQuestions(2)]));
+    await tester.pump();
+
+    await tester.drag(find.byKey(const ValueKey('exam-question')), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Start of question 1'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'an answer');
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+
+    final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
+    final start = tester.getRect(find.textContaining('Start of question 2'));
+    expect(start.top, greaterThanOrEqualTo(question.top),
+        reason: 'question 2 text $start must begin inside the question area $question');
+  });
+
+  testWidgets('an exam code block numbers its lines so a question can cite them', (tester) async {
+    final exam = RemoteExam.fromJson({
+      'phase': 'answering',
+      'deck': 'rust.md',
+      'questions': ['What does line 3 do?\n\n```\nfn main() {\n    let x;\n    x = 1;\n}\n```'],
+      'questions_units': [
+        [
+          {
+            'kind': 'sentence',
+            'text': 'What does line 3 do?',
+            'runs': [
+              {'text': 'What does line 3 do?'},
+            ],
+          },
+          {
+            'kind': 'code',
+            'lines': ['fn main() {', '    let x;', '    x = 1;', '}'],
+          },
+        ],
+      ],
+      'thinking': false,
+    });
+    final client = FakeServerClient(examGetReplies: [exam]);
+    await pumpExam(tester, client: client);
+    await tester.pump();
+
+    final lines = ['fn main() {', '    let x;', '    x = 1;', '}'];
+    for (final (index, line) in lines.indexed) {
+      final number = find.text('${index + 1}');
+      expect(number, findsOneWidget, reason: 'line ${index + 1} is numbered');
+      expect(
+        tester.getTopLeft(number).dy,
+        tester.getTopLeft(find.text(line)).dy,
+        reason: 'number ${index + 1} sits on the row of "$line"',
+      );
+      expect(
+        tester.getTopLeft(number).dx,
+        lessThan(tester.getTopLeft(find.text(line)).dx),
+        reason: 'number ${index + 1} sits left of its line',
+      );
+    }
+  });
+
   testWidgets('results identify each grade with its rendered question', (tester) async {
     final exam = RemoteExam.fromJson({
       'phase': 'results',
@@ -567,7 +670,9 @@ void main() {
 
     expect(find.text('Which validator has the largest stake?'), findsOneWidget,
         reason: 'each verdict must identify the question it grades');
-    expect(find.text('validator A: 4,000\nvalidator B: 3,000'), findsOneWidget,
+    expect(find.text('validator A: 4,000'), findsOneWidget,
+        reason: 'the grade question must use the server-provided content units');
+    expect(find.text('validator B: 3,000'), findsOneWidget,
         reason: 'the grade question must use the server-provided content units');
     expect(find.textContaining('```'), findsNothing,
         reason: 'results must not expose raw Markdown fences');

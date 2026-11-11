@@ -555,12 +555,19 @@ class _ExamScreenState extends State<ExamScreen> {
             style: TextStyle(color: tokens.dim, fontSize: 13)),
         const SizedBox(height: 12),
         Flexible(
-          child: SingleChildScrollView(
-            key: const ValueKey('exam-question'),
+          child: _QuestionScroll(
+            key: ValueKey('exam-question-scroll-$index'),
             child: _question(context, exam, index),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        Divider(
+          key: const ValueKey('exam-question-hairline'),
+          height: 1,
+          thickness: 1,
+          color: tokens.line,
+        ),
+        const SizedBox(height: 12),
         Expanded(
           child: TextField(
             key: const ValueKey('exam-answer-field'),
@@ -611,9 +618,42 @@ class _ExamScreenState extends State<ExamScreen> {
         for (final unit in units)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: unitWidget(unit, tokens, style, TextAlign.start),
+            child: switch (unit) {
+              ReviewCodeModel(:final lines) => _numberedCode(lines, style.color ?? tokens.text, tokens),
+              _ => unitWidget(unit, tokens, style, TextAlign.start),
+            },
           ),
       ],
+    );
+  }
+
+  Widget _numberedCode(List<String> lines, Color foreground, AlixTokens tokens) {
+    final style = TextStyle(fontFamily: monoFontFamily, fontSize: 13, height: 1.45, color: foreground);
+    final digits = '${lines.length}'.length;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (index, line) in lines.indexed)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 9.0 * digits + 4,
+                  child: Text('${index + 1}', textAlign: TextAlign.right, style: style.copyWith(color: tokens.faint)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(line, style: style)),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
@@ -768,6 +808,39 @@ class _ExamScreenState extends State<ExamScreen> {
             child: const Text('Close'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuestionScroll extends StatefulWidget {
+  const _QuestionScroll({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<_QuestionScroll> createState() => _QuestionScrollState();
+}
+
+class _QuestionScrollState extends State<_QuestionScroll> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scrollbar(
+      controller: _controller,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        key: const ValueKey('exam-question'),
+        controller: _controller,
+        padding: const EdgeInsets.only(right: 12),
+        child: widget.child,
       ),
     );
   }

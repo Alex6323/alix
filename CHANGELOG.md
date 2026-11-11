@@ -938,6 +938,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Phone exam: code blocks number their lines, as on the web, so a question
+  citing "line 3" can be followed. A long question shows its scrollbar, a
+  hairline separates it from the answer, and each question opens at its top
+  instead of the previous question's scroll position.
+
 - Phone exam: leaving a prepared exam on a deck inside a workspace folder no
   longer hides it. The picker offered "Generate exam" instead of "Take exam",
   and the desktop refused the new exam while the old one stayed open.
