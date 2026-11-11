@@ -286,6 +286,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The line between a review card's question and answer is now solid and
+  spans the text column, edge to edge with the text, on the phone and in the
+  browser; it was a centered, fading line at 70% width.
+
 - Phone: **End exam** under each exam question is now **Continue later**. It
   leaves the exam open with its answers kept, so **Take exam** on the deck's
   sheet resumes where you left off; it no longer discards the exam. The answer

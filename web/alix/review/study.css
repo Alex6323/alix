@@ -119,7 +119,7 @@
   .crumb-cell.locked { background: none;
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dim) 45%, transparent); }
 
-  .divider { flex: none; height: 1px; width: 70%; margin: 0 auto; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); }
+  .divider { flex: none; height: 1px; width: 100%; background: var(--line); }
 
   /* typing / typeline input fields */
   .inputs { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 520px; margin: 0 auto; }

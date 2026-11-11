@@ -229,6 +229,21 @@ void main() {
           }
         }
 
+        final divider = tester.getRect(find.byKey(const ValueKey('card-divider')));
+        final answerColumn = _column(tester, _regionPadding(_runs(answer)));
+        for (final (edge, line, text) in [
+          ('left', divider.left, answerColumn.left),
+          ('right', divider.right, answerColumn.right),
+        ]) {
+          expect(
+            (line - text).abs(),
+            lessThanOrEqualTo(1),
+            reason:
+                'the hairline $edge edge $line meets the text column $edge '
+                'edge $text',
+          );
+        }
+
         final note = _runs(_note);
         final noteRect = tester.getRect(note);
         final noteBlock = tester.getRect(

@@ -24,10 +24,11 @@ Scaffold
                   Center
                     ConstrainedBox
                       SizedBox(width=Infinity, height=null)
-                        Container
-                          ConstrainedBox
-                            Padding(EdgeInsets.zero)
-                              ConstrainedBox
+                        Padding(EdgeInsets(20.0, 0.0, 20.0, 0.0))
+                          Container key=[<'card-divider'>]
+                            ConstrainedBox
+                              Padding(EdgeInsets.zero)
+                                ConstrainedBox
                   Expanded
                     Stack
                       SingleChildScrollView

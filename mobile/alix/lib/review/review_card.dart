@@ -686,22 +686,12 @@ class ReviewCardView extends StatelessWidget {
       : CrossAxisAlignment.stretch;
 
   Widget _divider(AlixTokens tokens) {
-    return FractionallySizedBox(
-      key: const ValueKey('card-divider'),
-      widthFactor: 0.7,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
+        key: const ValueKey('card-divider'),
         height: 1,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.transparent,
-              tokens.line,
-              tokens.line,
-              Colors.transparent,
-            ],
-            stops: const [0, 0.18, 0.82, 1],
-          ),
-        ),
+        decoration: BoxDecoration(color: tokens.line),
       ),
     );
   }

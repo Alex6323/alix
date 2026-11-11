@@ -145,4 +145,12 @@ cache
   await page.getByRole("button", { name: "Next" }).click();
   await expect(page.locator(".card .region.q"), "browse moves to the plain card").toContainText("main memory");
   await expect(hairline, "the plain card keeps its hairline").toBeVisible();
+  const line = await hairline.boundingBox();
+  const column = await page.locator(".card .region.a").boundingBox();
+  for (const [edge, at, text] of [
+    ["left", line!.x, column!.x],
+    ["right", line!.x + line!.width, column!.x + column!.width],
+  ] as const) {
+    expect(Math.abs(at - text), `the hairline ${edge} edge ${at} meets the text column ${edge} edge ${text}`).toBeLessThanOrEqual(1);
+  }
 });
