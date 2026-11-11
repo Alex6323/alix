@@ -416,6 +416,10 @@ void main() {
       await tester.pumpAndSettle();
       writeVerifiedTestSources('${syncController.workspace.path}/decks/deck.md');
       await tester.tap(find.text('Generate exam'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+      await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
       expect(find.text('0 / 1'), findsOneWidget);
       expect(find.textContaining('the exam material changed'), findsNothing);

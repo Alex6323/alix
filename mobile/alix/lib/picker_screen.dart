@@ -10,6 +10,7 @@ import 'package:alix_mobile/bridge/exam_bridge.dart' as exam_bridge;
 import 'package:alix_mobile/bridge/picker_bridge.dart';
 import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/exam_sittings.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/pairing_sheet.dart';
 import 'package:alix_mobile/picker/generate_controller.dart';
@@ -33,33 +34,12 @@ import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 import 'package:alix_mobile/walk_screen.dart';
 
-class _StartedSitting {
-  _StartedSitting(this.deckPath, this.start);
-
-  final String deckPath;
-  final exam_bridge.ExamSittingStart start;
-  String? sitting;
-  bool recorded = false;
-  ({String text, bool examChanged})? standing;
-  final Map<String, int> remediated = {};
-}
-
-_StartedSitting? _startedSitting;
-
-_StartedSitting? _keptSitting(String deckPath, String? sitting) {
-  final kept = _startedSitting;
-  if (kept == null || kept.deckPath != deckPath) return null;
-  if (sitting == null || kept.sitting != sitting) return null;
-  return kept;
-}
-
 class _UnrecordableSitting implements Exception {
   const _UnrecordableSitting();
 
   @override
   String toString() =>
-      'This phone did not start this exam since the app opened, so its '
-      'result was not recorded.';
+      'This phone did not start this exam, so its result was not recorded.';
 }
 
 class PickerScreen extends StatefulWidget {
@@ -170,7 +150,12 @@ class _PickerScreenState extends State<PickerScreen> {
   Timer? _examPollTimer;
   bool _examPollInFlight = false;
   bool _examPollPaused = false;
-  RemoteExam? _remoteExam;
+  final _remoteExamSlot = ValueNotifier<({RemoteExam? exam, DateTime polledAt})>(
+    (exam: null, polledAt: DateTime.now()),
+  );
+  RemoteExam? get _remoteExam => _remoteExamSlot.value.exam;
+  set _remoteExam(RemoteExam? exam) =>
+      _remoteExamSlot.value = (exam: exam, polledAt: DateTime.now());
   String? _noticedReadyExam;
 
   @override
@@ -191,6 +176,7 @@ class _PickerScreenState extends State<PickerScreen> {
   @override
   void dispose() {
     _examPollTimer?.cancel();
+    _remoteExamSlot.dispose();
     _examStateClient?.close();
     _syncController?.removeListener(_controller.reload);
     _controller.dispose();
@@ -600,43 +586,106 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _openExam(
+  Future<void> _startExamGeneration(
     PickerEntry entry, {
     required String root,
     required bool needsWorkOnly,
-    RemoteExam? initialExam,
   }) async {
-    final support = await _support();
-    final config = readActivePairing(support);
-    if (config == null || !mounted) return;
-    final exam_bridge.ExamSittingStart? fresh;
-    final List<String>? cards;
+    final client = _examStateClient;
+    if (client == null) return;
+    final sittings = StartedSittings.load(await _support());
+    final exam_bridge.ExamSittingStart start;
     Map<String, dynamic>? ideas;
     try {
-      if (initialExam == null) {
-        fresh = exam_bridge.examSittingStart(
-          deckPath: entry.path,
-          rootDir: root,
-          needsWorkOnly: needsWorkOnly,
-          nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
-        );
-        _startedSitting = _StartedSitting(entry.path, fresh);
-        cards = fresh.cards;
-        final encoded = exam_bridge.examIdeasLoad(
-          deckPath: entry.path,
-          rootDir: root,
-        );
-        if (encoded != null) {
-          ideas = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
-        }
-      } else {
-        fresh = null;
-        cards = null;
+      start = exam_bridge.examSittingStart(
+        deckPath: entry.path,
+        rootDir: root,
+        needsWorkOnly: needsWorkOnly,
+        nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+      );
+      final encoded = exam_bridge.examIdeasLoad(
+        deckPath: entry.path,
+        rootDir: root,
+      );
+      if (encoded != null) {
+        ideas = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
       }
     } on Object catch (error) {
       _snack('could not prepare the exam: $error');
       return;
     }
+    RemoteExam? started;
+    try {
+      if (_remoteExam?.error != null) await client.examClose();
+      started = await client.examStart(
+        examDeckName(deckPath: entry.path, rootDir: root),
+        cards: start.cards,
+        ideas: ideas,
+      );
+    } on PairingExpired {
+      _controller.setServerReachable(false);
+      _stopExamPolling();
+      return;
+    } on Object {
+      started = null;
+    }
+    if (!mounted) return;
+    if (started == null) {
+      _snack('The desktop refused the exam.');
+      return;
+    }
+    sittings.put(
+      StartedSitting(deckPath: entry.path, start: start, sitting: started.sitting),
+    );
+    _remoteExam = started;
+    _noticedReadyExam = null;
+    _pollWhileGenerating(started);
+  }
+
+  Future<void> _cancelExamGeneration(
+    BuildContext sheet,
+    PickerEntry entry,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: sheet,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Cancel preparation?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(false),
+            child: const Text('Keep'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(true),
+            child: const Text('Cancel preparation'),
+          ),
+        ],
+      ),
+    );
+    final client = _examStateClient;
+    if (confirmed != true || client == null) return;
+    try {
+      await client.examClose();
+    } on Object {
+      _snack('Could not cancel the preparation.');
+      return;
+    }
+    StartedSittings.load(await _support()).remove(entry.path);
+    if (!mounted) return;
+    _remoteExam = null;
+    _pollWhileGenerating(null);
+    _controller.reload();
+  }
+
+  Future<void> _openExam(
+    PickerEntry entry, {
+    required String root,
+    required RemoteExam exam,
+  }) async {
+    final support = await _support();
+    final config = readActivePairing(support);
+    if (config == null || !mounted) return;
+    final sittings = StartedSittings.load(support);
     final client = (widget.buildClient ?? HttpServerClient.new)(config);
     _pauseExamPolling();
     await Navigator.of(context).push(
@@ -646,19 +695,10 @@ class _PickerScreenState extends State<PickerScreen> {
           client: client,
           support: support,
           buildClient: widget.buildClient ?? HttpServerClient.new,
-          cards: cards,
           unsourcedTopics:
-              (fresh ?? _keptSitting(entry.path, initialExam?.sitting)?.start)
-                  ?.unsourcedTopics ??
+              sittings.kept(entry.path, exam.sitting)?.start.unsourcedTopics ??
               const [],
-          initialExam: initialExam,
-          onStarted: (sitting) {
-            final kept = _startedSitting;
-            if (kept != null && identical(kept.start, fresh)) {
-              kept.sitting = sitting;
-            }
-          },
-          ideas: ideas,
+          initialExam: exam,
           loadAnswers: (questions) => exam_bridge.examAnswersLoad(
             deckPath: entry.path,
             rootDir: root,
@@ -678,7 +718,7 @@ class _PickerScreenState extends State<PickerScreen> {
             json: jsonEncode(ideas),
           ),
           applyResult: (exam, nowMs) {
-            final kept = _keptSitting(entry.path, exam.sitting);
+            final kept = sittings.kept(entry.path, exam.sitting);
             if (kept == null) throw const _UnrecordableSitting();
             if (kept.recorded) return kept.standing;
             kept.standing = exam_bridge.applyExamResult(
@@ -690,10 +730,11 @@ class _PickerScreenState extends State<PickerScreen> {
               device: widget.device,
             );
             kept.recorded = true;
+            sittings.save();
             return kept.standing;
           },
           applyRemediation: (exam, topic) {
-            final kept = _keptSitting(entry.path, exam.sitting);
+            final kept = sittings.kept(entry.path, exam.sitting);
             if (kept == null) return null;
             final applied = kept.remediated[topic.topicId];
             if (applied != null) return applied;
@@ -705,6 +746,7 @@ class _PickerScreenState extends State<PickerScreen> {
               device: widget.device,
             );
             kept.remediated[topic.topicId] = count;
+            sittings.save();
             return count;
           },
           nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
@@ -747,42 +789,55 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     if (!mounted) return;
     var walk = false;
-    bool? examNeedsWorkOnly;
-    RemoteExam? examInitial;
+    RemoteExam? examToTake;
     final deckName = examDeckName(deckPath: entry.path, rootDir: root);
-    final slot = _remoteExam?.deck == deckName ? _remoteExam : null;
-    final examAction = slot == null
-        ? PickerExamAction.generate
-        : slot.phase == 'generating'
-        ? PickerExamAction.preparing
-        : PickerExamAction.take;
     final launch = await showModalBottomSheet<PickerLaunch>(
       context: context,
       isScrollControlled: true,
-      builder: (sheet) => PickerDepthSheet(
-        canRecognize: entry.canRecognize,
-        onChoose: (launch) => Navigator.of(sheet).pop(launch),
-        onWalk: () {
-          walk = true;
-          Navigator.of(sheet).pop();
+      builder: (sheet) => ValueListenableBuilder(
+        valueListenable: _remoteExamSlot,
+        builder: (_, polled, _) {
+          final slot = polled.exam?.deck == deckName ? polled.exam : null;
+          final generating = slot?.phase == 'generating';
+          final failed = generating && slot?.error != null;
+          final elapsed = Duration(seconds: slot?.elapsed ?? 0);
+          return PickerDepthSheet(
+            canRecognize: entry.canRecognize,
+            onChoose: (launch) => Navigator.of(sheet).pop(launch),
+            onWalk: () {
+              walk = true;
+              Navigator.of(sheet).pop();
+            },
+            exam: entry.examable
+                ? PickerExamOffer(
+                    locked: entry.locked,
+                    serverLive: isPaired && _controller.serverReachable,
+                    due: entry.examDue,
+                    filterable: entry.examFilter != 'none',
+                    action: slot == null || failed
+                        ? PickerExamAction.generate
+                        : generating
+                        ? PickerExamAction.preparing
+                        : PickerExamAction.take,
+                    failed: failed,
+                    preparingSince: polled.polledAt.subtract(elapsed),
+                    onStart: (needsWorkOnly) {
+                      if (slot != null && !generating) {
+                        examToTake = slot;
+                        Navigator.of(sheet).pop();
+                        return;
+                      }
+                      _startExamGeneration(
+                        entry,
+                        root: root,
+                        needsWorkOnly: needsWorkOnly,
+                      );
+                    },
+                    onCancel: () => _cancelExamGeneration(sheet, entry),
+                  )
+                : null,
+          );
         },
-        exam: entry.examable
-            ? PickerExamOffer(
-                locked: entry.locked,
-                serverLive: isPaired && _controller.serverReachable,
-                due: entry.examDue,
-                filterable: entry.examFilter != 'none',
-                action: examAction,
-                estimate: slot?.estimate,
-                onStart: (needsWorkOnly) {
-                  examNeedsWorkOnly = needsWorkOnly;
-                  examInitial = examAction == PickerExamAction.take
-                      ? slot
-                      : null;
-                  Navigator.of(sheet).pop();
-                },
-              )
-            : null,
       ),
     );
     if (!mounted) return;
@@ -799,13 +854,8 @@ class _PickerScreenState extends State<PickerScreen> {
       await _openWalk(entry, root: root);
       return;
     }
-    if (examNeedsWorkOnly case final needsWorkOnly?) {
-      await _openExam(
-        entry,
-        root: root,
-        needsWorkOnly: needsWorkOnly,
-        initialExam: examInitial,
-      );
+    if (examToTake case final exam?) {
+      await _openExam(entry, root: root, exam: exam);
       return;
     }
     if (launch == null) return;

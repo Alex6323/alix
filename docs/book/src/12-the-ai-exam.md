@@ -172,9 +172,12 @@ and you can sit it at any time as practice, before drilling too:
   passed. Choosing an exam-due deck itself drills; it never starts the exam.
 - **On the phone:** the deck's launch sheet, which opens when you tap a deck
   (see [The deck list](18-the-mobile-app.md#the-deck-list)), has an exam row
-  below Walk that
-  reads **Generate exam**, then **Preparing** with the rough wait, then
-  **Take exam**; the picker says when the exam is ready. The phone sits the
+  below Walk. Tapping **Generate exam** starts writing the exam and leaves
+  you on the sheet: the row keeps its name and counts the time so far, and
+  you can review, walk, or close the app meanwhile. Tapping the row while it
+  runs asks whether to cancel the preparation. When the exam is ready the
+  picker says so and the row reads **Take exam**, filled; the exam opens
+  only when you tap it. The phone sits the
   exam through a [paired](19-pairing.md) desktop, so the row is disabled
   while no desktop is reachable.
 
@@ -191,9 +194,9 @@ them. On the phone, the desktop holds the prepared exam in memory and the
 phone saves each answer as you move on from it; a restarted desktop loses
 the phone's prepared exam, and the **End exam** button under each question
 discards it. The phone records a result against the material as it stood
-when the phone started that sitting, and it remembers that starting point
-only while the app runs: a sitting reopened after the app restarted, or
-one this phone did not start (another client's, even on the same deck),
+when the phone started that sitting, and it keeps that starting point on
+the phone, so the result is recorded even after the app restarted. A
+sitting this phone did not start (another client's, even on the same deck)
 shows its result but records nothing. A result the phone already recorded
 shows again, if the desktop still holds it, without being recorded twice,
 and its remediation cards are not applied a second time. Either

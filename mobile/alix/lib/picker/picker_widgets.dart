@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
@@ -558,8 +559,11 @@ class PickerExamOffer {
     required this.due,
     required this.filterable,
     this.action = PickerExamAction.generate,
-    this.estimate,
+    this.failed = false,
+    this.preparingSince,
     required this.onStart,
+    this.onCancel,
+    this.now = DateTime.now,
   });
 
   final bool locked;
@@ -567,11 +571,24 @@ class PickerExamOffer {
   final bool due;
   final bool filterable;
   final PickerExamAction action;
-  final String? estimate;
-  final ValueChanged<bool> onStart;
 
-  bool get enabled =>
-      !locked && serverLive && action != PickerExamAction.preparing;
+  /// The last preparation failed; generating again replaces it.
+  final bool failed;
+  final DateTime? preparingSince;
+  final ValueChanged<bool> onStart;
+  final VoidCallback? onCancel;
+  final DateTime Function() now;
+
+  bool get enabled => !locked && serverLive;
+}
+
+String _preparingFor(DateTime? since, DateTime now) {
+  final elapsed = since == null ? Duration.zero : now.difference(since);
+  final seconds = elapsed.inSeconds < 0 ? 0 : elapsed.inSeconds;
+  final minutes = seconds ~/ 60;
+  return minutes == 0
+      ? 'preparing… ${seconds}s'
+      : 'preparing… ${minutes}m ${seconds % 60}s';
 }
 
 enum PickerExamAction { generate, preparing, take }
@@ -598,6 +615,38 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
   bool _cram = false;
   bool _skipIntroduction = false;
   bool _needsWorkOnly = true;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTick();
+  }
+
+  @override
+  void didUpdateWidget(PickerDepthSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTick();
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  void _syncTick() {
+    final preparing = widget.exam?.action == PickerExamAction.preparing;
+    if (!preparing) {
+      _tick?.cancel();
+      _tick = null;
+    } else {
+      _tick ??= Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => setState(() {}),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -683,26 +732,32 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                 title: const Text('Only what needs work'),
               ),
               _PickerLaunchRow(
-                label: switch (exam.action) {
-                  PickerExamAction.generate => 'Generate exam',
-                  PickerExamAction.preparing => 'Preparing',
-                  PickerExamAction.take => 'Take exam',
-                },
-                hint: exam.action == PickerExamAction.preparing
-                    ? exam.estimate ?? 'preparing on your paired desktop'
-                    : exam.locked
+                label: exam.action == PickerExamAction.take
+                    ? 'Take exam'
+                    : 'Generate exam',
+                hint: exam.locked
                     ? 'locked'
                     : !exam.serverLive
                     ? 'needs a paired desktop'
-                    : exam.action == PickerExamAction.take
-                    ? 'ready on your paired desktop'
-                    : 'graded by your paired desktop',
+                    : switch (exam.action) {
+                        PickerExamAction.preparing => _preparingFor(
+                          exam.preparingSince,
+                          exam.now(),
+                        ),
+                        PickerExamAction.take => 'ready on your paired desktop',
+                        PickerExamAction.generate =>
+                          exam.failed
+                              ? 'the last preparation failed'
+                              : 'graded by your paired desktop',
+                      },
                 filled:
                     exam.enabled &&
                     (exam.due || exam.action == PickerExamAction.take),
-                onTap: exam.enabled
-                    ? () => exam.onStart(exam.filterable && _needsWorkOnly)
-                    : null,
+                onTap: !exam.enabled
+                    ? null
+                    : exam.action == PickerExamAction.preparing
+                    ? exam.onCancel
+                    : () => exam.onStart(exam.filterable && _needsWorkOnly),
               ),
             ],
           ],
@@ -742,7 +797,7 @@ class _PickerLaunchRow extends StatelessWidget {
               constraints: const BoxConstraints(minHeight: 54),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
               decoration: BoxDecoration(
-                color: filled ? tokens.bolt.withValues(alpha: 0.2) : null,
+                color: filled ? theme.colorScheme.onSurface : null,
                 border: Border.all(
                   color: filled ? Colors.transparent : tokens.line,
                 ),
@@ -760,18 +815,26 @@ class _PickerLaunchRow extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
+                            color: filled ? theme.colorScheme.surface : null,
                           ),
                         ),
                         Text(
                           hint,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: tokens.dim),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: filled ? theme.colorScheme.surface : tokens.dim,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, size: 22, color: tokens.dim),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 22,
+                    color: filled ? theme.colorScheme.surface : tokens.dim,
+                  ),
                 ],
               ),
             ),

@@ -286,6 +286,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Phone exam: **Generate exam** prepares the exam from the deck's launch sheet
+  instead of a waiting screen. The row counts the time so far while you keep
+  studying or close the app, a tap on it offers to cancel, and it turns into a
+  filled **Take exam** when ready; the exam no longer opens by itself. A result
+  is now recorded even when the app restarted after the sitting began.
+
 - The phone's **SYNC** button pulls every entry the paired desktop lists,
   including ones not yet on the phone, so SYNC on a freshly paired phone
   lands the desktop's workspaces instead of doing nothing. Tapping one

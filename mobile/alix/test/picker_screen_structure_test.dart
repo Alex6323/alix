@@ -8,6 +8,8 @@ import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
+import 'package:alix_mobile/exam_screen.dart';
+import 'package:alix_mobile/exam_sittings.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/settings_screen.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
@@ -353,13 +355,13 @@ void main() {
         buildSyncPort: (_, _) => FakeSyncPort(
           rootId: 'root-test0000000000000000000000',
           rootDir: root.path,
-        ),
+        ),        isPairedSubtree: true,
       );
 
       await tester.tap(find.text('Remote exam'));
       await tester.pumpAndSettle();
-      expect(find.text('Preparing'), findsOneWidget);
-      expect(find.text('about 20 to 30 minutes'), findsOneWidget);
+      expect(find.text('Generate exam'), findsOneWidget);
+      expect(find.textContaining('preparing…'), findsOneWidget);
 
       // Polling pauses while another route covers the picker, but it must
       // resume when that route closes: writing the exam is explicitly a
@@ -423,6 +425,20 @@ void main() {
     thinking: false,
   );
 
+  Future<void> generateThenTake(WidgetTester tester) async {
+    await tester.tap(find.text('Generate exam'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 10));
+    await tester.pump();
+    expect(
+      find.byType(ExamScreen),
+      findsNothing,
+      reason: 'a finished preparation never opens the exam by itself',
+    );
+    await tester.tap(find.text('Take exam'));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> takeFinishedExam(WidgetTester tester) async {
     await tester.tap(find.text('Remote exam'));
     await tester.pumpAndSettle();
@@ -471,7 +487,11 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
       expect(client.startedDeck, 'ws/exam.md', reason: 'step 1: the sitting starts');
-      expect(client.examGetCalls, 1, reason: 'step 1: one poll, still generating');
+      expect(
+        find.textContaining('preparing…'),
+        findsOneWidget,
+        reason: 'step 1: the sheet stays open and shows the preparation',
+      );
 
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
@@ -492,6 +512,106 @@ void main() {
         reason: 'step 3: material added since the sitting started voids it',
       );
       expect(find.textContaining('the exam material changed'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a preparing exam is cancelled from its row after confirmation',
+    (tester) async {
+      final fixture = await examFixture('exam-cancel');
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.textContaining('preparing…'), findsOneWidget, reason: 'step 1');
+
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Keep'));
+      await tester.pumpAndSettle();
+      expect(client.examCloseCalls, 0, reason: 'step 2: Keep keeps it');
+      expect(find.textContaining('preparing…'), findsOneWidget, reason: 'step 2');
+
+      // The version probe shares this fake and closed it; the picker's exam
+      // client is its own instance in production.
+      client.closed = false;
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel preparation'));
+      await tester.pumpAndSettle();
+      expect(client.examCloseCalls, 1, reason: 'step 3: the desktop is told');
+      expect(
+        find.text('graded by your paired desktop'),
+        findsOneWidget,
+        reason: 'step 3: the row offers a fresh generation',
+      );
+    },
+  );
+
+  testWidgets(
+    'a sitting started before an app restart is still recorded',
+    (tester) async {
+      final fixture = await examFixture('exam-restart');
+      final before = FakeServerClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
+      );
+      Future<void> pump(FakeServerClient client) => pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await pump(before);
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pump();
+      await tester.pump();
+      expect(before.startedDeck, 'ws/exam.md', reason: 'step 1: started');
+
+      await tester.pumpWidget(const SizedBox());
+      StartedSittings.forgetLoaded();
+      final after = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [failedRemoteExam],
+      );
+      await pump(after);
+      await takeFinishedExam(tester);
+
+      expect(
+        find.textContaining('not recorded'),
+        findsNothing,
+        reason: 'step 2: the restarted app still knows it started this sitting',
+      );
+      expect(find.text('Turn the gaps into cards'), findsOneWidget);
     },
   );
 
@@ -658,6 +778,8 @@ void main() {
       ));
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
       await takeFinishedExam(tester);
 
       expect(
@@ -696,8 +818,7 @@ void main() {
       );
       await tester.tap(find.text('Remote exam'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Generate exam'));
-      await tester.pumpAndSettle();
+      await generateThenTake(tester);
       expect(
         find.text('0 / 1'),
         findsOneWidget,
@@ -774,8 +895,7 @@ void main() {
       );
       await tester.tap(find.text('Remote exam'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Generate exam'));
-      await tester.pumpAndSettle();
+      await generateThenTake(tester);
       await tester.tap(find.text('Turn the gaps into cards'));
       await tester.pump(const Duration(seconds: 10));
       await tester.pumpAndSettle();

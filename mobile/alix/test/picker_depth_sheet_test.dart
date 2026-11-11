@@ -237,16 +237,22 @@ void main() {
     bool due = false,
     bool filterable = false,
     PickerExamAction action = PickerExamAction.generate,
-    String? estimate,
+    bool failed = false,
+    DateTime? preparingSince,
     ValueChanged<bool>? onStart,
+    VoidCallback? onCancel,
+    DateTime Function()? now,
   }) => PickerExamOffer(
     locked: locked,
     serverLive: serverLive,
     due: due,
     filterable: filterable,
     action: action,
-    estimate: estimate,
+    failed: failed,
+    preparingSince: preparingSince,
     onStart: onStart ?? (_) {},
+    onCancel: onCancel,
+    now: now ?? DateTime.now,
   );
 
   BoxDecoration examFrame(
@@ -361,25 +367,56 @@ void main() {
     expect(starts, [true, false]);
   });
 
-  testWidgets('Preparing shows the estimate and cannot be started again', (
+  testWidgets(
+    'a preparing exam keeps its Generate exam row, ticks its timer, and a tap '
+    'asks to cancel instead of starting again',
+    (tester) async {
+      final starts = <bool>[];
+      var cancels = 0;
+      final since = DateTime(2026, 11, 11, 1, 0, 0);
+      var now = since.add(const Duration(seconds: 20));
+      await tester.pumpWidget(
+        _sheet(
+          (_) {},
+          exam: offer(
+            action: PickerExamAction.preparing,
+            preparingSince: since,
+            now: () => now,
+            onStart: starts.add,
+            onCancel: () => cancels++,
+          ),
+        ),
+      );
+
+      expect(find.text('Generate exam'), findsOneWidget, reason: 'step 1: label kept');
+      expect(find.text('preparing… 20s'), findsOneWidget, reason: 'step 1: timer');
+      expect(fill(tester), isNull, reason: 'step 1: a preparing row is not filled');
+
+      now = since.add(const Duration(seconds: 81));
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        find.text('preparing… 1m 21s'),
+        findsOneWidget,
+        reason: 'step 2: the row ticks every second',
+      );
+
+      await tester.tap(find.text('Generate exam'));
+      expect(starts, isEmpty, reason: 'step 3: no second start');
+      expect(cancels, 1, reason: 'step 3: the tap asks to cancel');
+    },
+  );
+
+  testWidgets('a failed preparation offers to generate again and says why', (
     tester,
   ) async {
     final starts = <bool>[];
     await tester.pumpWidget(
-      _sheet(
-        (_) {},
-        exam: offer(
-          action: PickerExamAction.preparing,
-          estimate: 'about 20 to 30 minutes',
-          onStart: starts.add,
-        ),
-      ),
+      _sheet((_) {}, exam: offer(failed: true, onStart: starts.add)),
     );
 
-    expect(find.text('Preparing'), findsOneWidget);
-    expect(find.text('about 20 to 30 minutes'), findsOneWidget);
-    await tester.tap(find.text('Preparing'));
-    expect(starts, isEmpty);
+    expect(find.text('the last preparation failed'), findsOneWidget);
+    await tester.tap(find.text('Generate exam'));
+    expect(starts, [false]);
   });
 
   testWidgets('Take exam opens the ready sitting and is filled', (
@@ -394,7 +431,12 @@ void main() {
     );
 
     expect(find.text('Take exam'), findsOneWidget);
-    expect(examFrame(tester, label: 'Take exam').color, isNotNull);
+    final context = tester.element(find.text('Take exam'));
+    expect(
+      examFrame(tester, label: 'Take exam').color,
+      Theme.of(context).colorScheme.onSurface,
+      reason: 'a ready exam is filled with the theme ink, not the accent',
+    );
     await tester.tap(find.text('Take exam'));
     expect(starts, [false]);
   });
