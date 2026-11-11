@@ -404,6 +404,10 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   bool get _isAnswering => _exam?.phase == 'answering';
 
   void _continueLater() {
+    if (!_isAnswering) {
+      _explicitClose();
+      return;
+    }
     if (!_saveDraft()) return;
     final navigator = Navigator.of(context);
     if (navigator.canPop()) navigator.pop();

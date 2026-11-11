@@ -1341,6 +1341,72 @@ void main() {
     expect(field.readOnly, isFalse, reason: 'step 4: a draft stays editable');
   });
 
+  testWidgets('a result landing during Continue later cannot resume the opener before close', (tester) async {
+    final resultGate = Completer<RemoteExam?>();
+    final closeGate = Completer<void>();
+    addTearDown(() {
+      if (!resultGate.isCompleted) resultGate.complete();
+      if (!closeGate.isCompleted) closeGate.complete();
+    });
+    final client = FakeServerClient(
+      examGetReplies: const [answering2],
+      examGetGates: {1: resultGate},
+      examCloseGate: closeGate,
+    );
+    var clears = 0;
+    var resumed = false;
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => TextButton(
+          onPressed: () async {
+            await Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ExamScreen(
+                deckName: 'rust.md',
+                client: client,
+                support: tempSupport(),
+                buildClient: (_) => client,
+                clearAnswers: () => clears++,
+                applyResult: (exam, nowMs) => null,
+                applyRemediation: (_, _) => 0,
+                nowMs: () => BigInt.from(1000),
+                pollInterval: _pollInterval,
+              ),
+            ));
+            resumed = true;
+          },
+          child: const Text('open'),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.tap(find.text('Submit'));
+    await tester.pump();
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Continue later')),
+    );
+
+    resultGate.complete(resultsFailed);
+    await tester.idle();
+    expect(clears, 1, reason: 'step 1: the result lands after pointer-down');
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(client.examCloseCalls, 1, reason: 'step 2: terminal close starts');
+    expect(
+      resumed,
+      isFalse,
+      reason: 'step 3: a terminal sitting cannot resume its opener before close finishes',
+    );
+    closeGate.complete();
+    if (find.byType(ExamScreen).evaluate().isNotEmpty) {
+      await tester.tap(find.byIcon(Icons.close));
+    }
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('results save ideas, apply the result, then clear answers', (tester) async {
     final events = <String>[];
     final client = FakeServerClient(
