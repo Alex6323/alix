@@ -148,6 +148,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   bool _acceptedStart = false;
   bool _explicitlyClosed = false;
   bool _closing = false;
+  bool _foreground = true;
 
   /// Guards against a sitting recording its result more than once: a stray
   /// extra poll landing on the same terminal `results` DTO (e.g. two
@@ -313,9 +314,8 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _saveDraft();
-    }
+    if (_foreground && state != AppLifecycleState.resumed) _saveDraft();
+    _foreground = state == AppLifecycleState.resumed;
   }
 
   void _installAnswers(List<String> questions) {

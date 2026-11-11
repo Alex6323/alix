@@ -1341,6 +1341,40 @@ void main() {
     expect(field.readOnly, isFalse, reason: 'step 4: a draft stays editable');
   });
 
+  testWidgets('Android Recents saves the draft before a task-manager kill can skip paused', (
+    tester,
+  ) async {
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    final saved = <ExamAnswers>[];
+    await pumpExam(
+      tester,
+      client: FakeServerClient(examGetReplies: const [answering2]),
+      saveAnswers: (_, answers) => saved.add(answers),
+    );
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('exam-answer-field')),
+      'draft visible before opening Recents',
+    );
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    expect(
+      saved.map(_plain),
+      [
+        [
+          ['draft visible before opening Recents', ''],
+          [false, false],
+        ],
+      ],
+      reason: 'Android reports Recents as inactive, and a task-manager kill may skip paused',
+    );
+  });
+
   testWidgets('a result landing during Continue later cannot resume the opener before close', (tester) async {
     final resultGate = Completer<RemoteExam?>();
     final closeGate = Completer<void>();
