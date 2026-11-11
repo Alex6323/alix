@@ -631,10 +631,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Opening Settings shows only the row's label, not the ask copy/link.
-      expect(find.text('Support alix'), findsOneWidget);
+      expect(find.text('Support Alix'), findsOneWidget);
       expect(find.textContaining('sponsors/Alex6323'), findsNothing);
 
-      await tester.tap(find.text('Support alix'));
+      await tester.tap(find.text('Support Alix'));
       await tester.pumpAndSettle();
 
       expect(

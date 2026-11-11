@@ -51,7 +51,7 @@ class SettingsScreen extends StatelessWidget {
           children: [
             ListTile(
               leading: Icon(Icons.favorite, color: theme.colorScheme.primary),
-              title: const Text('Support alix'),
+              title: const Text('Support Alix'),
               onTap: onSupport,
             ),
             ListTile(

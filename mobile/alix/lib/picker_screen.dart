@@ -156,7 +156,6 @@ class _PickerScreenState extends State<PickerScreen> {
   RemoteExam? get _remoteExam => _remoteExamSlot.value.exam;
   set _remoteExam(RemoteExam? exam) =>
       _remoteExamSlot.value = (exam: exam, polledAt: DateTime.now());
-  String? _noticedReadyExam;
   int _examSlotEpoch = 0;
 
   @override
@@ -329,7 +328,6 @@ class _PickerScreenState extends State<PickerScreen> {
     _examStateClient = null;
     _examClientKey = null;
     _remoteExam = null;
-    _noticedReadyExam = null;
   }
 
   void _configureExamPolling(ServerConfig config, {required bool live}) {
@@ -405,17 +403,27 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     final before = _remoteExamKey(_remoteExam);
     final after = _remoteExamKey(next);
+    final previous = _remoteExam;
     _remoteExam = next;
     _pollWhileGenerating(next);
-    if (next?.phase == 'generating') _noticedReadyExam = null;
-    if (next?.phase == 'answering') {
-      final ready = '${next!.deck}\u0000${next.questions.join('\u0001')}';
-      if (_noticedReadyExam != ready) {
-        _noticedReadyExam = ready;
-        _snack('Exam ready: ${next.deck}.');
-      }
+    if (previous?.phase == 'generating' &&
+        next?.phase == 'answering' &&
+        previous?.deck == next?.deck) {
+      _snack('Exam ready: ${_deckTitle(next!.deck)}.');
     }
     if (before != after) _controller.reload();
+  }
+
+  String _deckTitle(String deckName) {
+    final roots = [widget.root, ?_pairedDir];
+    for (final entry in _controller.entries) {
+      for (final root in roots) {
+        if (examDeckName(deckPath: entry.path, rootDir: root) == deckName) {
+          return entry.title;
+        }
+      }
+    }
+    return deckName;
   }
 
   void _syncAll() {
@@ -646,7 +654,6 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     _examSlotEpoch++;
     _remoteExam = started;
-    _noticedReadyExam = null;
     _pollWhileGenerating(started);
   }
 

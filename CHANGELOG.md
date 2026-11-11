@@ -286,6 +286,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A blank (cloze) card keeps its question at the top, where a plain card has
+  it, on the phone and in the browser; it no longer sits vertically centered
+  and shifts upward when the answer and note appear.
+
+- Phone: the **Take exam** hint reads "graded by your paired desktop", like
+  **Generate exam**, and the Support row reads "Support Alix" (also on the
+  site).
+
 - Phone exam: **Generate exam** prepares the exam from the deck's launch sheet
   instead of a waiting screen. The row counts the time so far while you keep
   studying or close the app, a tap on it offers to cancel, and it turns into a
@@ -937,6 +945,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Pre-1.0: re-pair once after upgrading.
 
 ### Fixed
+
+- Phone: "Exam ready" shows once, when the preparation finishes, and names
+  the deck by its title; it no longer reappears each time a workspace opens.
 
 - Phone exam: code blocks number their lines, as on the web, so a question
   citing "line 3" can be followed. A long question shows its scrollbar, a

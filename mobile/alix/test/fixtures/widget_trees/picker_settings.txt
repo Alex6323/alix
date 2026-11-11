@@ -11,7 +11,7 @@ Scaffold
                     Icon(e25b)
                       SizedBox(width=24.0, height=24.0)
                         Center
-                    Text("Support alix")
+                    Text("Support Alix")
           ListTile(enabled=true, tap=true)
             InkWell(tap=true, longPress=false)
               Padding(EdgeInsets.zero) key=[GlobalKey#<id>]

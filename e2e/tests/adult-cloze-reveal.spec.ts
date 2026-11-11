@@ -198,3 +198,19 @@ test("line reveal lifts a rect-first mixed group's rect on the first press", asy
   await expect(page.locator("#card .region.q .blank-filled"), "(f) the first press is the rect step").toHaveCount(0);
   await expect(rect, "(f) the first press uncovers the rect").toBeHidden();
 });
+
+test("a cloze question starts at the top of the card and stays put on reveal", async ({ page }) => {
+  await openDeck(page, "siblings.md", SIBLINGS, "Carpal Siblings");
+  const card = page.locator("#card");
+  const question = page.locator("#card .region.q");
+  await expect(question).toContainText("Carpal bones");
+
+  const cardTop = (await card.boundingBox())!.y;
+  const before = (await question.boundingBox())!.y;
+  expect(before - cardTop, "(a) the question sits at the top of the card, not centered").toBeLessThan(60);
+
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(question.locator(".blank-filled"), "(b) the blank filled").toHaveCount(1);
+  const after = (await question.boundingBox())!.y;
+  expect(after, "(b) revealing does not move the question").toBe(before);
+});

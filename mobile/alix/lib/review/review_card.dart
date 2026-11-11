@@ -334,7 +334,8 @@ class ReviewCardView extends StatelessWidget {
               primary: true,
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: box.maxHeight),
-                child: Center(
+                child: Align(
+                  alignment: Alignment.topCenter,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [

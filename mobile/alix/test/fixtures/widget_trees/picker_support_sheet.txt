@@ -92,7 +92,7 @@ CustomPaint
                       Icon(e25b)
                         SizedBox(width=24.0, height=24.0)
                           Center
-                      Text("Support alix")
+                      Text("Support Alix")
             ListTile(enabled=true, tap=true)
               InkWell(tap=true, longPress=false)
                 Padding(EdgeInsets.zero) key=[GlobalKey#<id>]
@@ -170,7 +170,7 @@ CustomPaint
               Padding(EdgeInsets.zero)
                 Padding(EdgeInsets.all(24.0))
                   Column
-                    Text("Support alix")
+                    Text("Support Alix")
                     SizedBox(width=null, height=12.0)
                     Text("Free and open source. Telling someone who studies is the best support.")
                     SizedBox(width=null, height=8.0)

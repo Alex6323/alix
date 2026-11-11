@@ -649,6 +649,39 @@ void main() {
     );
   });
 
+  testWidgets('wrapped code keeps each number aligned with its logical source line', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final wrapped = List.filled(20, 'wrapped source words').join(' ');
+    final exam = RemoteExam.fromJson({
+      'phase': 'answering',
+      'deck': 'rust.md',
+      'questions': ['What do these lines do?'],
+      'questions_units': [
+        [
+          {
+            'kind': 'code',
+            'lines': [wrapped, 'short second line'],
+          },
+        ],
+      ],
+      'thinking': false,
+    });
+    await pumpExam(tester, client: FakeServerClient(examGetReplies: [exam]));
+    await tester.pump();
+
+    final firstNumber = tester.getRect(find.text('1'));
+    final firstLine = tester.getRect(find.text(wrapped));
+    final secondNumber = tester.getRect(find.text('2'));
+    final secondLine = tester.getRect(find.text('short second line'));
+    expect(firstNumber.top, firstLine.top, reason: 'line 1 starts beside its number');
+    expect(firstLine.height, greaterThan(secondLine.height), reason: 'line 1 actually wraps');
+    expect(secondNumber.top, greaterThanOrEqualTo(firstLine.bottom), reason: 'line 2 follows all of line 1');
+    expect(secondNumber.top, secondLine.top, reason: 'line 2 starts beside its number');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('results identify each grade with its rendered question', (tester) async {
     final exam = RemoteExam.fromJson({
       'phase': 'results',

@@ -92,8 +92,8 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:806',
-        'lib/picker_screen.dart:1023',
+        'lib/picker_screen.dart:813',
+        'lib/picker_screen.dart:1030',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:222',
@@ -127,7 +127,7 @@ void main() {
           'the remediation refusal for an unkept sitting added a line above '
           'it; '
           'the launch sheet rebuilds from the remote exam slot through a '
-          'second, ValueListenableBuilder, site (806), and moving exam '
+          'second, ValueListenableBuilder, site (813), and moving exam '
           'generation into the sheet added the start and cancel methods '
           'above build(); '
           'generate_sheet.dart is unchanged',
@@ -148,7 +148,7 @@ void main() {
           ..._sites(path, 'Timer.periodic('),
         ],
       ],
-      ['lib/picker_screen.dart:372', 'lib/picker/generate_controller.dart:142'],
+      ['lib/picker_screen.dart:370', 'lib/picker/generate_controller.dart:142'],
     );
     expect([
       for (final path in paths) ..._sites(path, 'StreamSubscription'),

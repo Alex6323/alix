@@ -488,7 +488,7 @@ class PickerSupportSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Support alix',
+              'Support Alix',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 12),
@@ -744,7 +744,7 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                           exam.preparingSince,
                           exam.now(),
                         ),
-                        PickerExamAction.take => 'ready on your paired desktop',
+                        PickerExamAction.take => 'graded by your paired desktop',
                         PickerExamAction.generate =>
                           exam.failed
                               ? 'the last preparation failed'

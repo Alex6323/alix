@@ -152,6 +152,44 @@ Iterable<TextSpan> spansOf(WidgetTester tester) sync* {
 void main() {
   setUpAll(() async => RustLib.init());
 
+  testWidgets(
+    'a blank card keeps its question at the top, where a plain card has it, '
+    'and revealing never moves it',
+    (tester) async {
+      final cloze = openCard(
+        '## carpals\n'
+        'The scaphoid sits at the base of the thumb.\n'
+        '<!-- blank: span hidden="scaphoid" b:a1b2c3 -->\n'
+        '> [!NOTE]\n'
+        '> The most often fractured carpal bone.\n'
+        '<!-- id: card-cloze -->\n',
+      );
+      final plain = openCard(
+        '## Which carpal sits at the base of the thumb?\n'
+        'The scaphoid.\n'
+        '> [!NOTE]\n'
+        '> The most often fractured carpal bone.\n'
+        '<!-- id: card-plain -->\n',
+      );
+      double questionTop() =>
+          tester.getTopLeft(find.byKey(const ValueKey('question-region'))).dy;
+
+      await pumpRow(tester, plain, const RevealRow('plain', ReviewMode.flip, filled: 0));
+      final plainTop = questionTop();
+      await pumpRow(tester, cloze, const RevealRow('cloze', ReviewMode.flip, filled: 0));
+      final before = questionTop();
+      await pumpRow(
+        tester,
+        cloze,
+        const RevealRow('cloze revealed', ReviewMode.flip, revealed: true, filled: 1),
+      );
+      final after = questionTop();
+
+      expect(before, plainTop, reason: 'a blank card question starts where a plain one does');
+      expect(after, before, reason: 'revealing the answer and note does not move the question');
+    },
+  );
+
   testWidgets('every mode fills the question in place and never repeats it', (
     tester,
   ) async {

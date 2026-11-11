@@ -619,7 +619,7 @@ class _ExamScreenState extends State<ExamScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: switch (unit) {
-              ReviewCodeModel(:final lines) => _numberedCode(context, lines, style.color ?? tokens.text, tokens),
+              ReviewCodeModel(:final lines) => _numberedCode(lines, style.color ?? tokens.text, tokens),
               _ => unitWidget(unit, tokens, style, TextAlign.start),
             },
           ),
@@ -627,7 +627,7 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
-  Widget _numberedCode(BuildContext context, List<String> lines, Color foreground, AlixTokens tokens) {
+  Widget _numberedCode(List<String> lines, Color foreground, AlixTokens tokens) {
     final style = TextStyle(fontFamily: monoFontFamily, fontSize: 13, height: 1.45, color: foreground);
     return Container(
       width: double.infinity,

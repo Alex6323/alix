@@ -139,9 +139,9 @@
   .blank-filled.pass { color: var(--good); }
   .blank-typed { color: var(--again); margin-right: 0.35em; }
 
-  /* A cloze card: no hairline; the question and its response center as one group. */
+  /* A cloze card: no hairline; the question stays at the top, as on a plain card. */
   .card.cloze > .region.q + .divider { display: none; }
-  .card.cloze > .region.q { flex: 0 1 auto; max-height: none; margin-top: auto; }
+  .card.cloze > .region.q { flex: 0 1 auto; max-height: none; }
   .card.cloze > .region.a { flex: 0 0 auto; margin-bottom: auto; }
   /* type badge — the small bordered-mono pill at the top-left of the card,
      naming the check you're doing (flip / choice / typing…); see renderCard. */
