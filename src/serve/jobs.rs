@@ -2025,8 +2025,7 @@ mod tests {
     fn frozen_deck_sources_count_as_source_context_for_the_tutor_warning() {
         let dir = tempfile::tempdir().unwrap();
         let card = augmentation_card();
-        let cli = dir.path().join("no-cli");
-        let cfg = crate::testutil::ask_config(&cli);
+        let cfg = crate::config::AskConfig::default();
         let text = crate::sources::SourceText {
             display: "ownership.rs".to_string(),
             text: "fn main() {}".to_string(),
