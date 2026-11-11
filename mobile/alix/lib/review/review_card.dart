@@ -81,6 +81,9 @@ Color badgeColour(ReviewBadge badge, Brightness brightness) {
   };
 }
 
+const double _sideSlot = 40;
+const double _gradeWidth = 76;
+
 class ReviewCardView extends StatelessWidget {
   const ReviewCardView({
     super.key,
@@ -1483,8 +1486,10 @@ class ReviewCardView extends StatelessWidget {
   }
 
   Widget _legend(BuildContext context, ReviewCardModel card) {
-    final chips = _legendChips(card);
-    if (chips.isEmpty) {
+    final left = _leftSlot(card);
+    final centre = _modeChips(card);
+    final right = _rightSlot(context, card);
+    if (left == null && centre.isEmpty && right == null) {
       return SizedBox(height: 12 + MediaQuery.of(context).padding.bottom);
     }
     return Padding(
@@ -1494,11 +1499,21 @@ class ReviewCardView extends StatelessWidget {
         12,
         12 + MediaQuery.of(context).padding.bottom,
       ),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 10,
-        runSpacing: 8,
-        children: chips,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: _sideSlot),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: centre,
+            ),
+          ),
+          if (left != null) Align(alignment: Alignment.centerLeft, child: left),
+          if (right != null) Align(alignment: Alignment.centerRight, child: right),
+        ],
       ),
     );
   }
@@ -1511,37 +1526,44 @@ class ReviewCardView extends StatelessWidget {
     return revealed;
   }
 
-  List<Widget> _legendChips(ReviewCardModel card) {
+  Widget? _leftSlot(ReviewCardModel card) {
+    if (!card.hasTopic || _answered(card)) return null;
+    return ReviewChip(
+      label: 'Context',
+      kind: ReviewChipKind.quiet,
+      onTap: () => onOpenTopic(card),
+    );
+  }
+
+  Widget? _rightSlot(BuildContext context, ReviewCardModel card) {
     final openHint = onOpenHint;
-    final chips = [
-      if (card.hasTopic && !_answered(card))
-        ReviewChip(
-          label: 'Context',
-          kind: ReviewChipKind.quiet,
-          onTap: () => onOpenTopic(card),
-        ),
-      ..._modeChips(card),
-      if (openHint != null &&
-          !state.introducing &&
-          card.hints.isNotEmpty &&
-          !_answered(card))
-        ReviewChip(
-          label: 'Hint',
-          kind: ReviewChipKind.quiet,
-          onTap: () => openHint(card),
-        ),
-    ];
-    final tutor = tutorCard;
-    if (serverLive && tutor != null && _attempted(card)) {
-      chips.add(
-        ReviewChip(
-          label: 'Ask',
-          kind: ReviewChipKind.quiet,
-          onTap: () => onOpenTutor(tutor),
-        ),
+    if (!_answered(card)) {
+      if (openHint == null || state.introducing || card.hints.isEmpty) {
+        return null;
+      }
+      return ReviewChip(
+        label: 'Hint',
+        kind: ReviewChipKind.quiet,
+        onTap: () => openHint(card),
       );
     }
-    return chips;
+    final tutor = tutorCard;
+    if (!serverLive || tutor == null || !_attempted(card)) return null;
+    return IconButton(
+      key: const ValueKey('ask-glyph'),
+      tooltip: 'Ask the tutor',
+      onPressed: () => onOpenTutor(tutor),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: _sideSlot, height: 44),
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(
+        Icons.chat_bubble_outline,
+        size: 22,
+        color: Theme.of(context).alix.dim,
+      ),
+    );
   }
 
   List<Widget> _modeChips(ReviewCardModel card) {
@@ -1704,16 +1726,19 @@ class ReviewCardView extends StatelessWidget {
     ReviewChip(
       label: 'Missed it',
       kind: ReviewChipKind.failed,
+      width: _gradeWidth,
       onTap: () => onGrade(ReviewGrade.fail),
     ),
     ReviewChip(
       label: 'Partly',
       kind: ReviewChipKind.partly,
+      width: _gradeWidth,
       onTap: () => onGrade(ReviewGrade.partial),
     ),
     ReviewChip(
       label: 'Got it',
       kind: ReviewChipKind.passed,
+      width: _gradeWidth,
       onTap: () => onGrade(ReviewGrade.pass),
     ),
   ];
@@ -1771,11 +1796,15 @@ class ReviewChip extends StatelessWidget {
     required this.label,
     required this.kind,
     this.onTap,
+    this.width,
   });
 
   final String label;
   final ReviewChipKind kind;
   final VoidCallback? onTap;
+
+  /// A fixed width centres the label and ellipsizes it instead of growing.
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
@@ -1821,7 +1850,8 @@ class ReviewChip extends StatelessWidget {
         borderColor = tokens.good;
         foreground = theme.colorScheme.surface;
     }
-    return Material(
+    final fixed = width;
+    final chip = Material(
       color: fill ?? Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
@@ -1831,9 +1861,12 @@ class ReviewChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+          padding: EdgeInsets.symmetric(horizontal: fixed == null ? 15 : 4, vertical: 11),
           child: Text(
             label,
+            textAlign: TextAlign.center,
+            maxLines: fixed == null ? null : 1,
+            overflow: fixed == null ? null : TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: _sans,
               fontWeight: weight,
@@ -1844,6 +1877,7 @@ class ReviewChip extends StatelessWidget {
         ),
       ),
     );
+    return fixed == null ? chip : SizedBox(width: fixed, child: chip);
   }
 }
 

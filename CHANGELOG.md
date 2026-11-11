@@ -286,6 +286,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Review and walk keep the action (Reveal, Check, Submit) at the center of
+  the bottom bar whatever else the card offers: **Context** takes a fixed
+  slot on its left and **Hint** one on its right, and an absent one leaves
+  its slot blank, on the phone and in the browser. On the phone the three
+  grade buttons have equal widths, centered as a group, and **Ask** is a
+  speech-bubble button at their right.
+
 - The line between a review card's question and answer is now solid and
   spans the text column, edge to edge with the text, on the phone and in the
   browser; it was a centered, fading line at 70% width.

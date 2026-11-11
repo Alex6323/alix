@@ -377,6 +377,20 @@ export function createStudy({
   // row's centre, whatever the side chips' widths.
   let contextChip = null;
   let confidenceRight = null;
+  let hintChip = null;
+  // Context and Hint take fixed side slots around the action, so an absent
+  // one leaves a blank of equal width and the action never moves.
+  function slotSides() {
+    const side = (chipEl) => chipEl && chipEl.parentElement === legend;
+    if (!side(contextChip) && !side(hintChip)) return;
+    const left = el("div", "slot left");
+    const mid = el("div", "slot mid");
+    const right = el("div", "slot right");
+    if (side(contextChip)) left.appendChild(contextChip);
+    if (side(hintChip)) right.appendChild(hintChip);
+    mid.append(...legend.children);
+    legend.append(left, mid, right);
+  }
   function confidenceChips(action, shifted, disabled) {
     const left = el("div", "half left");
     const right = el("div", "half right");
@@ -1774,7 +1788,7 @@ export function createStudy({
 
   function renderLegend() {
     legend.innerHTML = "";
-    contextChip = confidenceRight = null;
+    contextChip = confidenceRight = hintChip = null;
     clearLegendSides();
     if (state.card) setMenuContext(isWalking() ? "walk" : "review");
     if (contextOffered()) contextChip = chip("Context", "quiet", openTopic, label(keys.context));
@@ -1880,7 +1894,8 @@ export function createStudy({
       chip("Ask", "ask", openTutor, label(keys.ask), legendRight);
     }
     if (confidenceRight) chip("Hint", "quiet", openHints, label(keys.hint), confidenceRight).disabled = !hintsOffered();
-    else if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
+    else if (hintsOffered()) hintChip = chip("Hint", "quiet", openHints, label(keys.hint));
+    slotSides();
     chip("Leave", "", leaveSession, label(keys.quit), legendLeft); // pinned bottom-left; return to the deck picker
   }
 
@@ -1903,7 +1918,8 @@ export function createStudy({
       const next = state.mode === "line" && revealed > 0 && !effectiveDraw();
       chip(next ? "Reveal next" : "Reveal", "primary", effectiveDraw() ? walkDrawReveal : walkReveal, label(keys.reveal));
     }
-    if (hintsOffered()) chip("Hint", "quiet", openHints, label(keys.hint));
+    if (hintsOffered()) hintChip = chip("Hint", "quiet", openHints, label(keys.hint));
+    slotSides();
     chip("Leave", "", leaveWalk, label(keys.quit), legendLeft);
   }
 

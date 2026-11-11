@@ -72,7 +72,7 @@ void main() {
     await pumpReview(tester, support: tempSupport());
     await reveal(tester);
 
-    expect(find.text('Ask'), findsNothing);
+    expect(find.byKey(const ValueKey('ask-glyph')), findsNothing);
   });
 
   testWidgets('a paired, current-enough desktop: the Ask chip appears after an attempt', (tester) async {
@@ -88,10 +88,10 @@ void main() {
       buildClient: (_) => FakeServerClient(versionReply: '0.6.0'),
     );
 
-    expect(find.text('Ask'), findsNothing,
+    expect(find.byKey(const ValueKey('ask-glyph')), findsNothing,
         reason: 'attempt-first: no tutor before the learner has tried');
     await reveal(tester);
-    expect(find.text('Ask'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ask-glyph')), findsOneWidget);
   });
 
   testWidgets('a dead paired server: the Ask chip does not exist', (tester) async {
@@ -108,7 +108,7 @@ void main() {
     );
     await reveal(tester);
 
-    expect(find.text('Ask'), findsNothing);
+    expect(find.byKey(const ValueKey('ask-glyph')), findsNothing);
   });
 
   testWidgets('an older paired server: the Ask chip does not exist', (tester) async {
@@ -125,7 +125,7 @@ void main() {
     );
     await reveal(tester);
 
-    expect(find.text('Ask'), findsNothing);
+    expect(find.byKey(const ValueKey('ask-glyph')), findsNothing);
   });
 
   testWidgets(
@@ -150,7 +150,7 @@ void main() {
     versionGate.complete();
     await tester.pumpAndSettle();
 
-    expect(find.text('Ask'), findsNothing);
+    expect(find.byKey(const ValueKey('ask-glyph')), findsNothing);
     expect(
       find.text('Pairing expired. Pair again from Settings → Connected devices.'),
       findsOneWidget,

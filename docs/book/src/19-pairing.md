@@ -73,7 +73,8 @@ saved config, nothing else on the phone changes.
 
 Once paired, review gains things it doesn't have offline:
 
-- An **Ask** chip, shown once you've attempted the current card (revealed
+- An **Ask** button, a speech bubble at the right edge of the bottom bar,
+  shown once you've attempted the current card (revealed
   it, picked a choice, submitted a typed answer, or walked all its lines)
   but not before: the same attempt-first rule the web tutor follows. It opens
   the same question/answer flow as the desktop tutor: replies render with the
@@ -128,10 +129,10 @@ the same liveness rule as the two chips: the row
 appears only while the phone has confirmed the paired desktop is reachable
 and new enough, and is simply absent otherwise.
 
-The Ask chip and the Exam row both depend on the phone having
+The Ask button and the Exam row both depend on the phone having
 confirmed the paired desktop is reachable and
 running at least version 0.6.0; there is no retry chrome for a dead or
-too-old server: the Ask chip simply is not there, and the Exam row is
+too-old server: the Ask button simply is not there, and the Exam row is
 disabled with a short hint. The exam itself reads the frozen sources a pull
 carried to the phone (`sources/deck-<token>/`), never the desktop's files;
 the roots file beside them, `manifest.local.toml`, names folders on one

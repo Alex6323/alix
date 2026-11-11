@@ -224,7 +224,7 @@ void main() {
       await tester.ensureVisible(reveal);
       await tester.tap(reveal);
       await tester.pumpAndSettle();
-      final ask = find.widgetWithText(InkWell, 'Ask');
+      final ask = find.byKey(const ValueKey('ask-glyph'));
       expect(ask, findsOneWidget, reason: 'a live paired desktop offers Ask');
       await tester.ensureVisible(ask);
       await tester.tap(ask);
