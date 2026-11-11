@@ -406,24 +406,33 @@ class _PickerScreenState extends State<PickerScreen> {
     final previous = _remoteExam;
     _remoteExam = next;
     _pollWhileGenerating(next);
-    if (previous?.phase == 'generating' &&
-        next?.phase == 'answering' &&
-        previous?.deck == next?.deck) {
-      _snack('Exam ready: ${_deckTitle(next!.deck)}.');
+    if (next != null && next.phase == 'answering') {
+      unawaited(
+        _announceReady(
+          next,
+          observedTransition:
+              previous?.phase == 'generating' && previous?.deck == next.deck,
+        ),
+      );
     }
     if (before != after) _controller.reload();
   }
 
-  String _deckTitle(String deckName) {
-    final roots = [widget.root, ?_pairedDir];
-    for (final entry in _controller.entries) {
-      for (final root in roots) {
-        if (examDeckName(deckPath: entry.path, rootDir: root) == deckName) {
-          return entry.title;
-        }
-      }
+  /// A sitting this phone started is announced once, even when it became
+  /// ready while the app was closed; any other sitting only on a transition
+  /// this picker saw.
+  Future<void> _announceReady(RemoteExam exam, {required bool observedTransition}) async {
+    final sittings = StartedSittings.load(await _support());
+    if (!mounted) return;
+    final kept = sittings.bySitting(exam.sitting);
+    if (kept != null) {
+      if (kept.announced) return;
+      kept.announced = true;
+      sittings.save();
+      _snack('Exam ready: ${kept.title}.');
+    } else if (observedTransition) {
+      _snack('Exam ready: ${exam.deck}.');
     }
-    return deckName;
   }
 
   void _syncAll() {
@@ -650,7 +659,12 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
     sittings.put(
-      StartedSitting(deckPath: entry.path, start: start, sitting: started.sitting),
+      StartedSitting(
+        deckPath: entry.path,
+        title: entry.title,
+        start: start,
+        sitting: started.sitting,
+      ),
     );
     _examSlotEpoch++;
     _remoteExam = started;

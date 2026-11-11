@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/folder_browser.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
@@ -374,7 +375,7 @@ void main() {
 
       await tester.pump(const Duration(seconds: 10));
       await tester.pump();
-      expect(find.text('Exam ready: Remote exam.'), findsOneWidget);
+      expect(find.text('Exam ready: ws/exam.md.'), findsOneWidget);
       final pollsWhenReady = client.examGetCalls;
       await tester.pump(const Duration(seconds: 30));
       expect(
@@ -489,6 +490,142 @@ void main() {
       await tester.tap(find.text('Remote exam'));
       await tester.pumpAndSettle();
       expect(find.text('Take exam'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a phone-started preparation still announces readiness after an app restart',
+    (tester) async {
+      final fixture = await examFixture('exam-ready-after-restart');
+      const answeringExam = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'answering',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: false,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examStartSitting: 'sitting-1',
+        examGetReplies: const [answeringExam],
+        noSittingBeforeStart: true,
+      );
+      Future<void> openPicker() => pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+
+      await openPicker();
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pump();
+      await tester.pump();
+      expect(client.startedDeck, 'ws/exam.md', reason: 'the phone owns this preparation');
+      expect(find.textContaining('preparing…'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await openPicker();
+
+      expect(
+        find.text('Exam ready: Remote exam.'),
+        findsOneWidget,
+        reason: 'a restart must not lose the completion notice for the exam this phone started',
+      );
+    },
+  );
+
+  testWidgets(
+    'exam readiness uses the paired title when the phone has the same workspace and file name',
+    (tester) async {
+      final phone = tempDir('alix-picker-exam-title-phone-');
+      final support = tempDir('alix-picker-exam-title-support-');
+      Directory('${phone.path}/ws/decks').createSync(recursive: true);
+      File('${phone.path}/ws/alix.toml').writeAsStringSync('title = "Phone workspace"\n');
+      final phoneDeck = '${phone.path}/ws/decks/exam.md';
+      writeTestDeck(phoneDeck, '---\ntitle: Phone exam\n---\n## q?\na\n');
+      writeTestSources(phoneDeck);
+      await savePairing(
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'abc',
+          rootId: 'root-test0000000000000000000000',
+        ),
+        support: support,
+      );
+      final paired = Directory(
+        sync_bridge.pairedRootDirFor(
+          support: support.path,
+          rootId: 'root-test0000000000000000000000',
+        ),
+      );
+      Directory('${paired.path}/ws/decks').createSync(recursive: true);
+      File('${paired.path}/ws/alix.toml').writeAsStringSync('title = "Desktop workspace"\n');
+      final pairedDeck = '${paired.path}/ws/decks/exam.md';
+      writeTestDeck(pairedDeck, '---\ntitle: Desktop exam\n---\n## q?\na\n');
+      writeTestSources(pairedDeck);
+      const generatingExam = RemoteExam(
+        phase: 'generating',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: [],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: true,
+      );
+      const answeringExam = RemoteExam(
+        phase: 'answering',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: false,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [generatingExam, answeringExam],
+      );
+      await pumpPicker(
+        tester,
+        root: phone,
+        dir: '${phone.path}/ws',
+        support: support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+      );
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+
+      final messages = tester
+          .widgetList<Text>(find.textContaining('Exam ready:'))
+          .map((widget) => widget.data)
+          .whereType<String>()
+          .toList();
+      expect(
+        messages,
+        ['Exam ready: ws/exam.md.'],
+        reason: 'a sitting this phone did not start is named by its desktop path, '
+            'never by the same-named phone deck',
+      );
     },
   );
 

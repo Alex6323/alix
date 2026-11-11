@@ -46,6 +46,16 @@ the hamate is a bone
 <!-- id: card-clozerectfirst -->
 `);
 
+const LONG = deck("deck-00000000000000000000000045", "Long Carpal", "", `## Long carpal question
+the lunate sits beside the hamate
+<!-- blank: span hidden="lunate" b:e2c008 -->
+${Array.from(
+  { length: 60 },
+  (_, index) => `Paragraph ${index + 1} keeps the cloze question long enough to scroll.`,
+).join("\n\n")}
+<!-- id: card-clozelong -->
+`);
+
 const PIXEL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAAAAABVicqIAAAAPUlEQVR4nO3NAQkAAAwDoPUvvbU4HLSA6YFIJBKJRCKRSCQSiUQikUgkEolEIpFIJBKJRCKRSCQSiUTyPxkx2OsrwSn2FgAAAABJRU5ErkJggg==",
   "base64",
@@ -213,4 +223,25 @@ test("a cloze question starts at the top of the card and stays put on reveal", a
   await expect(question.locator(".blank-filled"), "(b) the blank filled").toHaveCount(1);
   const after = (await question.boundingBox())!.y;
   expect(after, "(b) revealing does not move the question").toBe(before);
+});
+
+test("a long top-aligned cloze question still scrolls from its first line", async ({ page }) => {
+  await openDeck(page, "long.md", LONG, "Long Carpal");
+  const card = page.locator("#card");
+  const question = page.locator("#card .region.q");
+  await expect(question).toContainText("Long carpal question");
+
+  const geometry = await question.evaluate((element) => ({
+    top: element.getBoundingClientRect().top,
+    content: element.scrollHeight,
+    viewport: element.clientHeight,
+    scrollTop: element.scrollTop,
+  }));
+  const cardTop = (await card.boundingBox())!.y;
+  expect(geometry.top - cardTop, "the long question starts at the card top").toBeLessThan(60);
+  expect(geometry.scrollTop, "the first line is initially visible").toBe(0);
+  expect(geometry.content, "the question keeps a scrollable viewport").toBeGreaterThan(geometry.viewport + 2);
+
+  await question.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  expect(await question.evaluate((element) => element.scrollTop), "the final paragraph is reachable").toBeGreaterThan(0);
 });

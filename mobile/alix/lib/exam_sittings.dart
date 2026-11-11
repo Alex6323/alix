@@ -9,23 +9,29 @@ import 'package:flutter/foundation.dart';
 class StartedSitting {
   StartedSitting({
     required this.deckPath,
+    required this.title,
     required this.start,
     this.sitting,
+    this.announced = false,
     this.recorded = false,
     this.standing,
     Map<String, int>? remediated,
   }) : remediated = remediated ?? {};
 
   final String deckPath;
+  final String title;
   final exam_bridge.ExamSittingStart start;
   String? sitting;
+  bool announced;
   bool recorded;
   ({String text, bool examChanged})? standing;
   final Map<String, int> remediated;
 
   Map<String, dynamic> toJson() => {
     'deck_path': deckPath,
+    'title': title,
     'sitting': sitting,
+    'announced': announced,
     'cards': start.cards,
     'eligible': start.eligible,
     'sourced': start.sourced,
@@ -44,7 +50,9 @@ class StartedSitting {
     final standing = json['standing'] as Map<String, dynamic>?;
     return StartedSitting(
       deckPath: json['deck_path'] as String,
+      title: json['title'] as String,
       sitting: json['sitting'] as String?,
+      announced: json['announced'] as bool,
       start: exam_bridge.ExamSittingStart(
         cards: json['cards'] == null ? null : strings(json['cards']),
         eligible: json['eligible'] as bool,
@@ -109,6 +117,15 @@ class StartedSittings {
     final kept = _byDeck[deckPath];
     if (kept == null || sitting == null || kept.sitting != sitting) return null;
     return kept;
+  }
+
+  /// The kept start whose desktop sitting id is [sitting].
+  StartedSitting? bySitting(String? sitting) {
+    if (sitting == null) return null;
+    for (final kept in _byDeck.values) {
+      if (kept.sitting == sitting) return kept;
+    }
+    return null;
   }
 
   void put(StartedSitting sitting) {
