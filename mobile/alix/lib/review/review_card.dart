@@ -81,8 +81,7 @@ Color badgeColour(ReviewBadge badge, Brightness brightness) {
   };
 }
 
-const double _sideSlot = 40;
-const double _gradeWidth = 76;
+const double _sideSlot = 36;
 
 class ReviewCardView extends StatelessWidget {
   const ReviewCardView({
@@ -1499,24 +1498,15 @@ class ReviewCardView extends StatelessWidget {
         12,
         12 + MediaQuery.of(context).padding.bottom,
       ),
-      child: LayoutBuilder(
-        builder: (context, box) => Row(
-          children: [
-            Expanded(child: _side(Alignment.centerLeft, left)),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: box.maxWidth - 2 * _sideSlot,
-              ),
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
-                children: centre,
-              ),
-            ),
-            Expanded(child: _side(Alignment.centerRight, right)),
-          ],
+      child: _SlotBar(
+        left: left ?? const SizedBox.shrink(),
+        centre: Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: centre,
         ),
+        right: right ?? const SizedBox.shrink(),
       ),
     );
   }
@@ -1528,13 +1518,6 @@ class ReviewCardView extends StatelessWidget {
     if (_isTyping) return checkFeedback != null;
     return revealed;
   }
-
-  Widget _side(Alignment alignment, Widget? chip) => Align(
-    alignment: alignment,
-    child: chip == null
-        ? null
-        : FittedBox(fit: BoxFit.scaleDown, alignment: alignment, child: chip),
-  );
 
   Widget? _leftSlot(ReviewCardModel card) {
     if (!card.hasTopic || _answered(card)) return null;
@@ -1564,7 +1547,7 @@ class ReviewCardView extends StatelessWidget {
       tooltip: 'Ask the tutor',
       onPressed: () => onOpenTutor(tutor),
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: _sideSlot, height: 44),
+      constraints: const BoxConstraints.tightFor(width: _sideSlot, height: 40),
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
@@ -1733,23 +1716,27 @@ class ReviewCardView extends StatelessWidget {
   }
 
   List<Widget> _gradeTrio() => [
+    _EqualRow(
+      children: [
     ReviewChip(
       label: 'Missed it',
       kind: ReviewChipKind.failed,
-      width: _gradeWidth,
+      dense: true,
       onTap: () => onGrade(ReviewGrade.fail),
     ),
     ReviewChip(
       label: 'Partly',
       kind: ReviewChipKind.partly,
-      width: _gradeWidth,
+      dense: true,
       onTap: () => onGrade(ReviewGrade.partial),
     ),
     ReviewChip(
       label: 'Got it',
       kind: ReviewChipKind.passed,
-      width: _gradeWidth,
+      dense: true,
       onTap: () => onGrade(ReviewGrade.pass),
+    ),
+      ],
     ),
   ];
 
@@ -1806,15 +1793,13 @@ class ReviewChip extends StatelessWidget {
     required this.label,
     required this.kind,
     this.onTap,
-    this.width,
+    this.dense = false,
   });
 
   final String label;
   final ReviewChipKind kind;
   final VoidCallback? onTap;
-
-  /// A fixed width centres the label and ellipsizes it instead of growing.
-  final double? width;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -1860,8 +1845,7 @@ class ReviewChip extends StatelessWidget {
         borderColor = tokens.good;
         foreground = theme.colorScheme.surface;
     }
-    final fixed = width;
-    final chip = Material(
+    return Material(
       color: fill ?? Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
@@ -1871,12 +1855,10 @@ class ReviewChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: fixed == null ? 15 : 4, vertical: 11),
+          padding: EdgeInsets.symmetric(horizontal: dense ? 8 : 15, vertical: 11),
           child: Text(
             label,
             textAlign: TextAlign.center,
-            maxLines: fixed == null ? null : 1,
-            overflow: fixed == null ? null : TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: _sans,
               fontWeight: weight,
@@ -1887,7 +1869,6 @@ class ReviewChip extends StatelessWidget {
         ),
       ),
     );
-    return fixed == null ? chip : SizedBox(width: fixed, child: chip);
   }
 }
 
@@ -2686,4 +2667,133 @@ class _SourceSheet extends StatelessWidget {
       rotatedExtent: rotatedExtent,
     );
   }
+}
+
+class _SlotBar extends MultiChildRenderObjectWidget {
+  _SlotBar({required Widget left, required Widget centre, required Widget right})
+    : super(children: [left, centre, right]);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderSlotBar();
+}
+
+class _SlotBarParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderSlotBar extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _SlotBarParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _SlotBarParentData> {
+  static const double _gap = 8;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _SlotBarParentData) {
+      child.parentData = _SlotBarParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final width = constraints.maxWidth;
+    final left = firstChild!;
+    final centre = childAfter(left)!;
+    final right = childAfter(centre)!;
+    centre.layout(BoxConstraints(maxWidth: width), parentUsesSize: true);
+    final sides = BoxConstraints(maxWidth: width / 2);
+    left.layout(sides, parentUsesSize: true);
+    right.layout(sides, parentUsesSize: true);
+    final share = (width - centre.size.width) / 2 - _gap;
+    bool fits(RenderBox side) => side.size.width == 0 || side.size.width <= share;
+    final inline = fits(left) && fits(right);
+    final sideHeight = left.size.height > right.size.height
+        ? left.size.height
+        : right.size.height;
+    double height;
+    double sideTop;
+    if (inline) {
+      height = centre.size.height > sideHeight ? centre.size.height : sideHeight;
+      sideTop = 0;
+      _place(centre, (width - centre.size.width) / 2, (height - centre.size.height) / 2);
+    } else {
+      _place(centre, (width - centre.size.width) / 2, 0);
+      sideTop = centre.size.height + _gap;
+      height = sideTop + sideHeight;
+    }
+    final band = inline ? height : sideHeight;
+    _place(left, 0, sideTop + (band - left.size.height) / 2);
+    _place(right, width - right.size.width, sideTop + (band - right.size.height) / 2);
+    size = constraints.constrain(Size(width, height));
+  }
+
+  void _place(RenderBox child, double x, double y) {
+    (child.parentData! as _SlotBarParentData).offset = Offset(x, y);
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
+class _EqualRow extends MultiChildRenderObjectWidget {
+  const _EqualRow({required super.children});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderEqualRow();
+}
+
+class _EqualRowParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderEqualRow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _EqualRowParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _EqualRowParentData> {
+  static const double _gap = 8;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _EqualRowParentData) {
+      child.parentData = _EqualRowParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final children = getChildrenAsList();
+    var widest = 0.0;
+    for (final child in children) {
+      final width = child.getMaxIntrinsicWidth(double.infinity);
+      if (width > widest) widest = width;
+    }
+    final row = widest * children.length + _gap * (children.length - 1);
+    final inRow = row <= constraints.maxWidth;
+    final cell = inRow ? widest : constraints.maxWidth;
+    var x = 0.0;
+    var y = 0.0;
+    var lineHeight = 0.0;
+    for (final child in children) {
+      child.layout(BoxConstraints.tightFor(width: cell), parentUsesSize: true);
+      (child.parentData! as _EqualRowParentData).offset = Offset(x, y);
+      if (inRow) {
+        x += cell + _gap;
+        if (child.size.height > lineHeight) lineHeight = child.size.height;
+      } else {
+        y += child.size.height + _gap;
+      }
+    }
+    size = constraints.constrain(
+      inRow ? Size(row, lineHeight) : Size(cell, y - _gap),
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }

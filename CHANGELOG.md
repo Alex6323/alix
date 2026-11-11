@@ -295,7 +295,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   slot on its left and **Hint** one on its right, and an absent one leaves
   its slot blank, on the phone and in the browser. On the phone the three
   grade buttons have equal widths, centered as a group, and **Ask** is a
-  speech-bubble button at their right.
+  speech-bubble button at their right. With large text, side chips move to
+  a line of their own and the grade buttons stack, at full size; a browser
+  narrower than 640px wraps the bar as before.
 
 - The line between a review card's question and answer is now solid and
   spans the text column, edge to edge with the text, on the phone and in the

@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/review/review_card.dart';
@@ -21,6 +24,7 @@ Future<void> _pump(
   ReviewCardModel card, {
   bool revealed = false,
   bool tutor = false,
+  double textScale = 1,
 }) async {
   final attempt = TextEditingController();
   addTearDown(attempt.dispose);
@@ -28,6 +32,10 @@ Future<void> _pump(
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: alixDark(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
       home: Scaffold(
         body: ReviewCardView(
           state: ReviewStateModel(
@@ -61,17 +69,38 @@ Future<void> _pump(
   await tester.pump();
 }
 
+Future<void> _loadFonts() async {
+  Future<ByteData> bytes(String path) async =>
+      (await File(path).readAsBytes()).buffer.asByteData();
+  final sans = FontLoader('IBM Plex Sans');
+  for (final weight in const ['400', '500', '600', '700']) {
+    sans.addFont(bytes('assets/fonts/ibm-plex-sans-$weight.ttf'));
+  }
+  final mono = FontLoader('IBM Plex Mono');
+  for (final weight in const ['400', '600']) {
+    mono.addFont(bytes('assets/fonts/ibm-plex-mono-$weight.ttf'));
+  }
+  await sans.load();
+  await mono.load();
+}
+
 void main() {
-  setUpAll(() async => RustLib.init());
+  setUpAll(() async {
+    await RustLib.init();
+    await _loadFonts();
+  });
 
   testWidgets('Reveal holds the centre whichever of Context and Hint the card has', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
     final centre = tester.view.physicalSize.width / tester.view.devicePixelRatio / 2;
-    for (final (topic, hint) in [(true, true), (true, false), (false, true), (false, false)]) {
-      final label = 'topic $topic, hint $hint';
-      await _pump(tester, openCard(_deck(topic: topic, hint: hint)));
+    for (final (topic, hint, scale) in [
+      for (final scale in [1.0, 2.0])
+        for (final (t, h) in [(true, true), (true, false), (false, true), (false, false)]) (t, h, scale),
+    ]) {
+      final label = 'topic $topic, hint $hint, text x$scale';
+      await _pump(tester, openCard(_deck(topic: topic, hint: hint)), textScale: scale);
       final reveal = tester.getCenter(find.text('Reveal'));
       expect((reveal.dx - centre).abs(), lessThanOrEqualTo(1),
           reason: '$label: Reveal ${reveal.dx} sits on the centre $centre');
@@ -80,11 +109,11 @@ void main() {
       expect(find.text('Hint'), hint ? findsOneWidget : findsNothing,
           reason: '$label: an absent Hint leaves its slot blank');
       if (topic) {
-        expect(tester.getCenter(find.text('Context')).dx, lessThan(centre / 2),
+        expect(tester.getRect(find.text('Context')).left, lessThan(centre / 2),
             reason: '$label: Context sits at the left edge');
       }
       if (hint) {
-        expect(tester.getCenter(find.text('Hint')).dx, greaterThan(centre * 1.5),
+        expect(tester.getRect(find.text('Hint')).right, greaterThan(centre * 1.5),
             reason: '$label: Hint sits at the right edge');
       }
     }
@@ -95,9 +124,9 @@ void main() {
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
     final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
-    for (final tutor in [true, false]) {
-      final label = 'tutor $tutor';
-      await _pump(tester, openCard(_deck(topic: true, hint: true)), revealed: true, tutor: tutor);
+    for (final (tutor, scale) in [(true, 1.0), (false, 1.0), (true, 2.0), (false, 2.0)]) {
+      final label = 'tutor $tutor, text x$scale';
+      await _pump(tester, openCard(_deck(topic: true, hint: true)), revealed: true, tutor: tutor, textScale: scale);
       final rects = [
         for (final grade in ['Missed it', 'Partly', 'Got it'])
           tester.getRect(find.ancestor(of: find.text(grade), matching: find.byType(ReviewChip))),
@@ -113,11 +142,26 @@ void main() {
       final ask = find.byKey(const ValueKey('ask-glyph'));
       expect(ask, tutor ? findsOneWidget : findsNothing,
           reason: '$label: the Ask glyph shows only with a live tutor');
+      for (final rect in rects) {
+        expect(rect.left >= 0 && rect.right <= width, isTrue,
+            reason: '$label: grade button $rect stays on screen');
+      }
+      if (!tutor) {
+        final height = tester.view.physicalSize.height / tester.view.devicePixelRatio;
+        expect((height - 12 - rects.last.bottom).abs(), lessThanOrEqualTo(1),
+            reason: '$label: with no side chips the bar is only the grade row, '
+                'no empty second line (grade bottom ${rects.last.bottom})');
+      }
       if (tutor) {
-        expect(tester.getRect(ask).left, greaterThan(rects.last.right),
-            reason: '$label: the Ask glyph sits right of the grade buttons');
-        expect(tester.getRect(ask).right, lessThanOrEqualTo(width),
+        final glyph = tester.getRect(ask);
+        expect(rects.any((rect) => rect.overlaps(glyph)), isFalse,
+            reason: '$label: the Ask glyph $glyph overlaps no grade button');
+        expect(glyph.right, lessThanOrEqualTo(width),
             reason: '$label: the Ask glyph stays on screen');
+        if (scale == 1.0) {
+          expect((glyph.center.dy - rects.last.center.dy).abs(), lessThanOrEqualTo(1),
+              reason: '$label: at normal text the Ask glyph shares the grade row');
+        }
       }
     }
   });

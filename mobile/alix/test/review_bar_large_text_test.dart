@@ -137,4 +137,31 @@ void main() {
           'Context $context, Reveal $reveal, and Hint $hint must be separate and on screen',
     );
   });
+
+  testWidgets(
+    'large text keeps each side action at least 44 logical pixels high',
+    (tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await _pump(
+        tester,
+        openCard(_deck(topic: true, hint: true)),
+        textScaler: const TextScaler.linear(2),
+      );
+
+      Rect tapTarget(String label) => tester.getRect(
+        find.ancestor(of: find.text(label), matching: find.byType(InkWell)),
+      );
+      final targets = {
+        for (final label in ['Context', 'Hint']) label: tapTarget(label),
+      };
+      expect(
+        targets.values.every((target) => target.height >= 44),
+        isTrue,
+        reason:
+            'side tap targets $targets must each remain at least 44 logical pixels high',
+      );
+    },
+  );
 }

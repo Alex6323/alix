@@ -44,31 +44,24 @@ Scaffold
                           Padding(EdgeInsets(11.0, 4.0, 11.0, 4.0))
                             Text("⌵ more")
               Padding(EdgeInsets(12.0, 10.0, 12.0, 12.0))
-                Row
-                  Expanded
-                    Align
-                  ConstrainedBox
-                    Wrap
-                      SizedBox(width=76.0, height=null)
-                        Material
-                          CustomPaint
-                            InkWell(tap=true, longPress=false)
-                              Padding(EdgeInsets(4.0, 11.0, 4.0, 11.0))
-                                Text("Missed it")
-                      SizedBox(width=76.0, height=null)
-                        Material
-                          CustomPaint
-                            InkWell(tap=true, longPress=false)
-                              Padding(EdgeInsets(4.0, 11.0, 4.0, 11.0))
-                                Text("Partly")
-                      SizedBox(width=76.0, height=null)
-                        Material
-                          CustomPaint
-                            InkWell(tap=true, longPress=false)
-                              Padding(EdgeInsets(4.0, 11.0, 4.0, 11.0))
-                                Text("Got it")
-                  Expanded
-                    Align
+                SizedBox(width=0.0, height=0.0)
+                Wrap
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(8.0, 11.0, 8.0, 11.0))
+                          Text("Missed it")
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(8.0, 11.0, 8.0, 11.0))
+                          Text("Partly")
+                  Material
+                    CustomPaint
+                      InkWell(tap=true, longPress=false)
+                        Padding(EdgeInsets(8.0, 11.0, 8.0, 11.0))
+                          Text("Got it")
+                SizedBox(width=0.0, height=0.0)
     ConstrainedBox
       AppBar
         Material
