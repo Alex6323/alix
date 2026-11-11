@@ -75,7 +75,12 @@ fn tutor_context_for(card: &Card, info: TutorInfo, cfg: &AskConfig) -> (TutorCon
         .filter(|path| path.exists())
         .filter(|_| !matches!(info.sources, ask::TutorSources::Browse { .. }));
     let has_url_source = info.links.iter().any(|link| crate::deck::is_url(link));
-    let has_source_context = root.is_some() || (has_url_source && can_fetch_url_sources(cfg));
+    let has_frozen_sources = matches!(
+        info.sources,
+        ask::TutorSources::Browse { .. } | ask::TutorSources::Pasted(_)
+    );
+    let has_source_context =
+        root.is_some() || has_frozen_sources || (has_url_source && can_fetch_url_sources(cfg));
     (
         TutorContextData {
             links: info.links,
@@ -2015,6 +2020,50 @@ mod tests {
     use std::sync::mpsc;
 
     use super::*;
+
+    #[test]
+    fn frozen_deck_sources_count_as_source_context_for_the_tutor_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let card = augmentation_card();
+        let cli = dir.path().join("no-cli");
+        let cfg = crate::testutil::ask_config(&cli);
+        let text = crate::sources::SourceText {
+            display: "ownership.rs".to_string(),
+            text: "fn main() {}".to_string(),
+        };
+        for (label, sources, expected) in [
+            ("none", ask::TutorSources::None, false),
+            (
+                "card only",
+                ask::TutorSources::CardOnly {
+                    line: "answering from the card alone".to_string(),
+                },
+                false,
+            ),
+            ("pasted", ask::TutorSources::Pasted(vec![text]), true),
+            (
+                "browse",
+                ask::TutorSources::Browse {
+                    dir: dir.path().to_path_buf(),
+                    listing: Vec::new(),
+                    focus: Vec::new(),
+                },
+                true,
+            ),
+        ] {
+            let info = TutorInfo {
+                links: Vec::new(),
+                sources,
+                root: None,
+                source_base: None,
+            };
+            let (_, has_source_context) = tutor_context_for(&card, info, &cfg);
+            assert_eq!(
+                expected, has_source_context,
+                "{label}: frozen deck sources decide whether the excerpts-only warning shows"
+            );
+        }
+    }
 
     fn augmentation_card() -> Card {
         let mut card = Card::plain(

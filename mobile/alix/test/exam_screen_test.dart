@@ -1375,6 +1375,73 @@ void main() {
     );
   });
 
+  testWidgets('a system overlay saves without locking and a later edit replaces the snapshot', (
+    tester,
+  ) async {
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    final saved = <ExamAnswers>[];
+    await pumpExam(
+      tester,
+      client: FakeServerClient(examGetReplies: const [answering2]),
+      saveAnswers: (_, answers) => saved.add(answers),
+    );
+    await tester.pump();
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'before system dialog');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    var field = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
+    expect(field.controller?.text, 'before system dialog', reason: 'step 1: inactive keeps the text');
+    expect(field.readOnly, isFalse, reason: 'step 2: inactive does not lock the draft');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'after system dialog');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+
+    expect(saved.map(_plain), [
+      [
+        ['before system dialog', ''],
+        [false, false],
+      ],
+      [
+        ['after system dialog', ''],
+        [false, false],
+      ],
+    ]);
+    field = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
+    expect(field.controller?.text, 'after system dialog', reason: 'step 3: later text stays visible');
+    expect(field.readOnly, isFalse, reason: 'step 4: the later snapshot stays editable');
+  });
+
+  testWidgets('an exam mounted while inactive resumes with its loaded draft still editable', (
+    tester,
+  ) async {
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    final saved = <ExamAnswers>[];
+    await pumpExam(
+      tester,
+      client: FakeServerClient(),
+      initialExam: answering2,
+      loadAnswers: (_) => (answers: ['loaded while inactive', ''], locked: [false, false]),
+      saveAnswers: (_, answers) => saved.add(answers),
+    );
+    await tester.pump();
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
+    expect(field.controller?.text, 'loaded while inactive');
+    expect(field.readOnly, isFalse, reason: 'the initial foreground assumption cannot lock a draft');
+    expect(saved, isEmpty, reason: 'resuming a screen mounted while inactive does not rewrite it');
+  });
+
   testWidgets('a result landing during Continue later cannot resume the opener before close', (tester) async {
     final resultGate = Completer<RemoteExam?>();
     final closeGate = Completer<void>();

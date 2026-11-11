@@ -954,6 +954,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The tutor no longer says it has only the frozen excerpts on a deck whose
+  sources are frozen: it reads those sources, so the warning now shows only
+  when no source material is available.
+
 - Phone: "Exam ready" shows once, when the preparation finishes, and names
   the deck by its title; it no longer reappears each time a workspace opens.
 
