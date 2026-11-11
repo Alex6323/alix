@@ -156,7 +156,7 @@ class PickerView extends StatelessWidget {
     return [
       if (deadline case final value? when !isRoot)
         PickerDeadlineLede(deadline: value),
-      if (isLoading)
+      if (isLoading || (entries.isEmpty && isRoot && pairedLabel != null))
         const SizedBox.shrink()
       else if (entries.isEmpty)
         PickerEmptyHint(

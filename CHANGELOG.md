@@ -286,6 +286,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Phone: while paired, the home screen no longer says the phone's own folder
+  has no decks; the desktop's decks are the listing. The Tutorial stays in
+  Settings.
+
 - Review and walk keep the action (Reveal, Check, Submit) at the center of
   the bottom bar whatever else the card offers: **Context** takes a fixed
   slot on its left and **Hint** one on its right, and an absent one leaves

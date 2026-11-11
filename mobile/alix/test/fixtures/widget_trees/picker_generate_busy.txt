@@ -3,22 +3,7 @@ CustomPaint
   Scaffold
     Material
       ListView
-        Column
-          Text("No decks here yet. Put Markdown (.md) decks in this folder.")
-          SizedBox(width=null, height=16.0)
-          OutlinedButton(enabled=true)
-            ConstrainedBox
-              Material
-                CustomPaint
-                  InkWell(tap=true, longPress=false)
-                    Padding(EdgeInsetsDirectional(16.0, 0.0, 24.0, 0.0))
-                      Align
-                        Row
-                          Icon(f33c)
-                            SizedBox(width=18.0, height=18.0)
-                              Center
-                          Flexible
-                            Text("Tutorial")
+        SizedBox(width=0.0, height=0.0)
         SizedBox(width=null, height=8.0)
         Padding(EdgeInsets(2.0, 0.0, 2.0, 10.0))
           Row
