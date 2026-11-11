@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart' show AnyhowException;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -611,6 +612,41 @@ void main() {
         reason: 'number ${index + 1} sits left of its line',
       );
     }
+  });
+
+  testWidgets('large accessibility text keeps three-digit code line numbers readable', (tester) async {
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    final lines = [for (var i = 1; i <= 100; i++) 'line $i'];
+    final exam = RemoteExam.fromJson({
+      'phase': 'answering',
+      'deck': 'rust.md',
+      'questions': ['What does line 100 do?'],
+      'questions_units': [
+        [
+          {
+            'kind': 'code',
+            'lines': lines,
+          },
+        ],
+      ],
+      'thinking': false,
+    });
+    await pumpExam(tester, client: FakeServerClient(examGetReplies: [exam]));
+    await tester.pump();
+
+    final paragraph = tester.renderObject<RenderParagraph>(find.text('100'));
+    final naturalSize = TextPainter(
+      text: paragraph.text,
+      textDirection: paragraph.textDirection,
+      textScaler: paragraph.textScaler,
+      locale: paragraph.locale,
+    )..layout();
+    expect(
+      paragraph.size.width,
+      greaterThanOrEqualTo(naturalSize.width),
+      reason: 'line 100 must fit on one line at the user text scale',
+    );
   });
 
   testWidgets('results identify each grade with its rendered question', (tester) async {

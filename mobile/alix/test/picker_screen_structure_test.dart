@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -566,6 +567,148 @@ void main() {
       );
     },
   );
+
+  testWidgets('an older picker poll cannot erase a newly started exam', (
+    tester,
+  ) async {
+    final fixture = await examFixture('exam-start-poll-race');
+    final stalePoll = Completer<RemoteExam?>();
+    final client = FakeServerClient(
+      versionReply: minServerVersion,
+      examStartSitting: 'sitting-1',
+      examGetGates: {0: stalePoll},
+    );
+    await pumpPicker(
+      tester,
+      root: fixture.root,
+      dir: '${fixture.root.path}/ws',
+      support: fixture.support,
+      buildClient: (_) => client,
+      pollInterval: const Duration(seconds: 10),
+      buildSyncPort: (_, _) => FakeSyncPort(
+        rootId: 'root-test0000000000000000000000',
+        rootDir: fixture.root.path,
+      ),
+      isPairedSubtree: true,
+    );
+    for (var i = 0; i < 20 && client.examGetCalls == 0; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(client.examGetCalls, 1, reason: 'the older empty-slot poll is in flight');
+
+    await tester.tap(find.text('Remote exam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Generate exam'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.textContaining('preparing…'), findsOneWidget);
+
+    stalePoll.complete(null);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.textContaining('preparing…'),
+      findsOneWidget,
+      reason: 'an older empty-slot reply must not hide the accepted sitting',
+    );
+  });
+
+  testWidgets('an older picker poll cannot resurrect a cancelled exam', (
+    tester,
+  ) async {
+    final fixture = await examFixture('exam-cancel-poll-race');
+    final stalePoll = Completer<RemoteExam?>();
+    final client = FakeServerClient(
+      versionReply: minServerVersion,
+      examStartSitting: 'sitting-1',
+      examGetGates: {1: stalePoll},
+    );
+    await pumpPicker(
+      tester,
+      root: fixture.root,
+      dir: '${fixture.root.path}/ws',
+      support: fixture.support,
+      buildClient: (_) => client,
+      pollInterval: const Duration(seconds: 10),
+      buildSyncPort: (_, _) => FakeSyncPort(
+        rootId: 'root-test0000000000000000000000',
+        rootDir: fixture.root.path,
+      ),
+      isPairedSubtree: true,
+    );
+    for (var i = 0; i < 20 && client.examGetCalls == 0; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    expect(client.examGetCalls, 1, reason: 'the initial empty-slot poll completed');
+
+    await tester.tap(find.text('Remote exam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Generate exam'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 10));
+    expect(client.examGetCalls, 2, reason: 'the pre-cancel poll is in flight');
+
+    client.closed = false;
+    await tester.tap(find.text('Generate exam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel preparation'));
+    await tester.pumpAndSettle();
+    expect(find.text('graded by your paired desktop'), findsOneWidget);
+
+    stalePoll.complete(const RemoteExam(
+      sitting: 'sitting-1',
+      phase: 'generating',
+      deck: 'ws/exam.md',
+      strictness: 'balanced',
+      questions: [],
+      grades: [],
+      gaps: [],
+      canRemediate: false,
+      thinking: true,
+    ));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.text('graded by your paired desktop'),
+      findsOneWidget,
+      reason: 'a reply issued before cancellation must not restore preparation',
+    );
+  });
+
+  testWidgets('an expired pairing at exam start explains how to recover', (
+    tester,
+  ) async {
+    final fixture = await examFixture('exam-start-expired');
+    final client = FakeServerClient(
+      versionReply: minServerVersion,
+      expireOnExamStart: true,
+    );
+    await pumpPicker(
+      tester,
+      root: fixture.root,
+      dir: '${fixture.root.path}/ws',
+      support: fixture.support,
+      buildClient: (_) => client,
+      buildSyncPort: (_, _) => FakeSyncPort(
+        rootId: 'root-test0000000000000000000000',
+        rootDir: fixture.root.path,
+      ),
+      isPairedSubtree: true,
+    );
+
+    await tester.tap(find.text('Remote exam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Generate exam'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Pairing expired. Pair again from Settings → Connected devices.',
+      ),
+      findsOneWidget,
+    );
+  });
 
   testWidgets(
     'a sitting started before an app restart is still recorded',

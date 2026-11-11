@@ -157,6 +157,7 @@ class _PickerScreenState extends State<PickerScreen> {
   set _remoteExam(RemoteExam? exam) =>
       _remoteExamSlot.value = (exam: exam, polledAt: DateTime.now());
   String? _noticedReadyExam;
+  int _examSlotEpoch = 0;
 
   @override
   void initState() {
@@ -380,6 +381,7 @@ class _PickerScreenState extends State<PickerScreen> {
     final client = _examStateClient;
     if (client == null || _examPollInFlight) return;
     _examPollInFlight = true;
+    final epoch = _examSlotEpoch;
     RemoteExam? next;
     var expired = false;
     try {
@@ -391,7 +393,11 @@ class _PickerScreenState extends State<PickerScreen> {
     } finally {
       _examPollInFlight = false;
     }
-    if (!mounted || !identical(client, _examStateClient)) return;
+    if (!mounted ||
+        !identical(client, _examStateClient) ||
+        epoch != _examSlotEpoch) {
+      return;
+    }
     if (expired) {
       _controller.setServerReachable(false);
       _stopExamPolling();
@@ -625,6 +631,7 @@ class _PickerScreenState extends State<PickerScreen> {
     } on PairingExpired {
       _controller.setServerReachable(false);
       _stopExamPolling();
+      _snack(pairingExpiredMessage);
       return;
     } on Object {
       started = null;
@@ -637,6 +644,7 @@ class _PickerScreenState extends State<PickerScreen> {
     sittings.put(
       StartedSitting(deckPath: entry.path, start: start, sitting: started.sitting),
     );
+    _examSlotEpoch++;
     _remoteExam = started;
     _noticedReadyExam = null;
     _pollWhileGenerating(started);
@@ -670,6 +678,7 @@ class _PickerScreenState extends State<PickerScreen> {
       _snack('Could not cancel the preparation.');
       return;
     }
+    _examSlotEpoch++;
     StartedSittings.load(await _support()).remove(entry.path);
     if (!mounted) return;
     _remoteExam = null;

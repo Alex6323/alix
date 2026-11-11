@@ -38,7 +38,7 @@ String examDeckName({required String deckPath, required String rootDir}) {
 /// there but rejects this app's token. Every [ServerClient] call can throw
 /// [PairingExpired]; every call site here catches it, shows exactly this
 /// line, and pops (there is nothing left to sit an exam against).
-const _pairingExpiredMessage =
+const pairingExpiredMessage =
     'Pairing expired. Pair again from Settings → Connected devices.';
 
 /// Phases `GET /api/remote/exam` cycles through while doing async work: the
@@ -426,7 +426,7 @@ class _ExamScreenState extends State<ExamScreen> {
     // down in between).
     final navigator = Navigator.of(context);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text(_pairingExpiredMessage),
+      content: const Text(pairingExpiredMessage),
       action: SnackBarAction(
         label: 'Re-pair',
         onPressed: () {
@@ -619,7 +619,7 @@ class _ExamScreenState extends State<ExamScreen> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: switch (unit) {
-              ReviewCodeModel(:final lines) => _numberedCode(lines, style.color ?? tokens.text, tokens),
+              ReviewCodeModel(:final lines) => _numberedCode(context, lines, style.color ?? tokens.text, tokens),
               _ => unitWidget(unit, tokens, style, TextAlign.start),
             },
           ),
@@ -627,9 +627,8 @@ class _ExamScreenState extends State<ExamScreen> {
     );
   }
 
-  Widget _numberedCode(List<String> lines, Color foreground, AlixTokens tokens) {
+  Widget _numberedCode(BuildContext context, List<String> lines, Color foreground, AlixTokens tokens) {
     final style = TextStyle(fontFamily: monoFontFamily, fontSize: 13, height: 1.45, color: foreground);
-    final digits = '${lines.length}'.length;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -637,25 +636,29 @@ class _ExamScreenState extends State<ExamScreen> {
         color: Colors.black.withValues(alpha: 0.32),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Table(
+        columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
         children: [
           for (final (index, line) in lines.indexed)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            TableRow(
               children: [
-                SizedBox(
-                  width: 9.0 * digits + 4,
-                  child: Text('${index + 1}', textAlign: TextAlign.right, style: style.copyWith(color: tokens.faint)),
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(
+                    '${index + 1}',
+                    textAlign: TextAlign.right,
+                    softWrap: false,
+                    style: style.copyWith(color: tokens.faint),
+                  ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(child: Text(line, style: style)),
+                Text(line, style: style),
               ],
             ),
         ],
       ),
     );
   }
+
 
   Widget _results(BuildContext context, RemoteExam exam) {
     final tokens = Theme.of(context).alix;
