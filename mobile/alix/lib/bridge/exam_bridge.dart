@@ -1,3 +1,4 @@
+import 'package:alix_mobile/exam_screen.dart' show ExamAnswers;
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/exam.dart' as bridge;
 
@@ -12,26 +13,29 @@ void examIdeasSave({
   required String json,
 }) => bridge.examIdeasSave(deckPath: deckPath, rootDir: rootDir, json: json);
 
-List<String> examAnswersLoad({
+ExamAnswers examAnswersLoad({
   required String deckPath,
   required String rootDir,
   required List<String> questions,
-}) => bridge.examAnswersLoad(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  questions: questions,
-);
+}) {
+  final loaded = bridge.examAnswersLoad(
+    deckPath: deckPath,
+    rootDir: rootDir,
+    questions: questions,
+  );
+  return (answers: loaded.answers, locked: loaded.locked);
+}
 
 void examAnswersSave({
   required String deckPath,
   required String rootDir,
   required List<String> questions,
-  required List<String> answers,
+  required ExamAnswers answers,
 }) => bridge.examAnswersSave(
   deckPath: deckPath,
   rootDir: rootDir,
   questions: questions,
-  answers: answers,
+  answers: bridge.PhoneExamAnswers(answers: answers.answers, locked: answers.locked),
 );
 
 void examAnswersClear({

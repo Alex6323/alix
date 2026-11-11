@@ -87,6 +87,22 @@ struct PhonePreparedExam {
     version: u32,
     questions: Vec<String>,
     answers: Vec<String>,
+    locked: Vec<bool>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct PhoneExamAnswers {
+    pub answers: Vec<String>,
+    pub locked: Vec<bool>,
+}
+
+impl PhoneExamAnswers {
+    fn empty(count: usize) -> Self {
+        Self {
+            answers: vec![String::new(); count],
+            locked: vec![false; count],
+        }
+    }
 }
 
 impl PhonePreparedExam {
@@ -95,6 +111,7 @@ impl PhonePreparedExam {
             serde_json::from_str(text).context("unreadable phone exam document")?;
         if document.version != PHONE_PREPARED_VERSION
             || document.questions.len() != document.answers.len()
+            || document.questions.len() != document.locked.len()
         {
             bail!("unreadable phone exam document");
         }
@@ -120,12 +137,12 @@ pub fn exam_answers_load(
     deck_path: String,
     root_dir: String,
     questions: Vec<String>,
-) -> Result<Vec<String>> {
+) -> Result<PhoneExamAnswers> {
     let path = exam_answers_path(Path::new(&deck_path), Path::new(&root_dir))?;
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(vec![String::new(); questions.len()]);
+            return Ok(PhoneExamAnswers::empty(questions.len()));
         }
         Err(error) => return Err(error).with_context(|| format!("cannot read {}", path.display())),
     };
@@ -134,9 +151,12 @@ pub fn exam_answers_load(
     if document.questions != questions {
         std::fs::remove_file(&path)
             .with_context(|| format!("cannot remove stale {}", path.display()))?;
-        return Ok(vec![String::new(); questions.len()]);
+        return Ok(PhoneExamAnswers::empty(questions.len()));
     }
-    Ok(document.answers)
+    Ok(PhoneExamAnswers {
+        answers: document.answers,
+        locked: document.locked,
+    })
 }
 
 #[flutter_rust_bridge::frb(sync)]
@@ -144,16 +164,17 @@ pub fn exam_answers_save(
     deck_path: String,
     root_dir: String,
     questions: Vec<String>,
-    answers: Vec<String>,
+    answers: PhoneExamAnswers,
 ) -> Result<()> {
-    if questions.len() != answers.len() {
-        bail!("one phone exam answer is required per question");
+    if questions.len() != answers.answers.len() || questions.len() != answers.locked.len() {
+        bail!("one phone exam answer and lock flag is required per question");
     }
     let path = exam_answers_path(Path::new(&deck_path), Path::new(&root_dir))?;
     PhonePreparedExam {
         version: PHONE_PREPARED_VERSION,
         questions,
-        answers,
+        answers: answers.answers,
+        locked: answers.locked,
     }
     .save(&path)
 }
@@ -351,6 +372,13 @@ mod tests {
         );
     }
 
+    fn answers(texts: &[&str], locked: &[bool]) -> PhoneExamAnswers {
+        PhoneExamAnswers {
+            answers: texts.iter().map(|text| text.to_string()).collect(),
+            locked: locked.to_vec(),
+        }
+    }
+
     #[test]
     fn phone_answers_resume_only_the_exact_question_set() {
         let dir = tempfile::tempdir().unwrap();
@@ -361,25 +389,26 @@ mod tests {
         let questions = vec!["one?".to_string(), "two?".to_string()];
 
         assert_eq!(
-            vec!["", ""],
+            answers(&["", ""], &[false, false]),
             exam_answers_load(deck_path.clone(), root_dir.clone(), questions.clone()).unwrap()
         );
         exam_answers_save(
             deck_path.clone(),
             root_dir.clone(),
             questions.clone(),
-            vec!["first".to_string(), String::new()],
+            answers(&["first", "half a dra"], &[true, false]),
         )
         .unwrap();
         assert_eq!(
-            vec!["first", ""],
-            exam_answers_load(deck_path.clone(), root_dir.clone(), questions).unwrap()
+            answers(&["first", "half a dra"], &[true, false]),
+            exam_answers_load(deck_path.clone(), root_dir.clone(), questions).unwrap(),
+            "a draft comes back unlocked beside a locked answer"
         );
         let prepared = root.join(".alix/exam/deck-d.prepared.json");
         assert!(prepared.is_file());
 
         assert_eq!(
-            vec![""],
+            answers(&[""], &[false]),
             exam_answers_load(
                 deck_path.clone(),
                 root_dir.clone(),
@@ -396,11 +425,22 @@ mod tests {
             deck_path.clone(),
             root_dir.clone(),
             vec!["replacement?".to_string()],
-            vec!["answer".to_string()],
+            answers(&["answer"], &[true]),
         )
         .unwrap();
-        exam_answers_clear(deck_path, root_dir).unwrap();
+        exam_answers_clear(deck_path.clone(), root_dir.clone()).unwrap();
         assert!(!prepared.exists());
+
+        assert!(
+            exam_answers_save(
+                deck_path,
+                root_dir,
+                vec!["one?".to_string()],
+                answers(&["answer"], &[true, false]),
+            )
+            .is_err(),
+            "one lock flag per answer"
+        );
     }
 
     #[test]
@@ -412,7 +452,7 @@ mod tests {
         std::fs::create_dir_all(prepared.parent().unwrap()).unwrap();
         std::fs::write(
             prepared,
-            r#"{"version":1,"questions":[],"answers":[],"unknown":true}"#,
+            r#"{"version":1,"questions":[],"answers":[],"locked":[],"unknown":true}"#,
         )
         .unwrap();
 

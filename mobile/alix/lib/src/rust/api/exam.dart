@@ -6,9 +6,9 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `exam_answers_path`, `exam_files`, `exam_ideas_path`, `open_store`, `parse`, `save`
+// These functions are ignored because they are not marked as `pub`: `empty`, `exam_answers_path`, `exam_files`, `exam_ideas_path`, `open_store`, `parse`, `save`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PhonePreparedExam`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 String? examIdeasLoad({required String deckPath, required String rootDir}) =>
     RustLib.instance.api.crateApiExamExamIdeasLoad(
@@ -26,7 +26,7 @@ void examIdeasSave({
   json: json,
 );
 
-List<String> examAnswersLoad({
+PhoneExamAnswers examAnswersLoad({
   required String deckPath,
   required String rootDir,
   required List<String> questions,
@@ -40,7 +40,7 @@ void examAnswersSave({
   required String deckPath,
   required String rootDir,
   required List<String> questions,
-  required List<String> answers,
+  required PhoneExamAnswers answers,
 }) => RustLib.instance.api.crateApiExamExamAnswersSave(
   deckPath: deckPath,
   rootDir: rootDir,
@@ -235,4 +235,22 @@ class ExamTopicOutcome {
           topicId == other.topicId &&
           fingerprint == other.fingerprint &&
           pass == other.pass;
+}
+
+class PhoneExamAnswers {
+  final List<String> answers;
+  final List<bool> locked;
+
+  const PhoneExamAnswers({required this.answers, required this.locked});
+
+  @override
+  int get hashCode => answers.hashCode ^ locked.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PhoneExamAnswers &&
+          runtimeType == other.runtimeType &&
+          answers == other.answers &&
+          locked == other.locked;
 }

@@ -47,6 +47,8 @@ const pairingExpiredMessage =
 /// `results`/`remediated`/`error` are terminal for their stage.
 const _pollingPhases = {'generating', 'grading', 'remediating'};
 
+typedef ExamAnswers = ({List<String> answers, List<bool> locked});
+
 /// A full-screen AI exam sitting on the paired desktop: one immersive flow,
 /// mirroring how review_screen.dart structures itself (a plain header, the
 /// deck name truncating, a Close affordance). Phase-driven off
@@ -109,9 +111,9 @@ class ExamScreen extends StatefulWidget {
 
   final Map<String, dynamic>? ideas;
 
-  final List<String> Function(List<String> questions)? loadAnswers;
+  final ExamAnswers Function(List<String> questions)? loadAnswers;
 
-  final void Function(List<String> questions, List<String> answers)? saveAnswers;
+  final void Function(List<String> questions, ExamAnswers answers)? saveAnswers;
 
   final VoidCallback? clearAnswers;
 
@@ -134,7 +136,7 @@ class ExamScreen extends StatefulWidget {
   State<ExamScreen> createState() => _ExamScreenState();
 }
 
-class _ExamScreenState extends State<ExamScreen> {
+class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   RemoteExam? _exam;
   Timer? _pollTimer;
 
@@ -167,6 +169,7 @@ class _ExamScreenState extends State<ExamScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final initialExam = widget.initialExam;
     if (initialExam == null) {
       _start();
@@ -185,6 +188,7 @@ class _ExamScreenState extends State<ExamScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     final leaving = !_explicitlyClosed && !_keepsSitting
         ? widget.client.examClose()
@@ -307,19 +311,46 @@ class _ExamScreenState extends State<ExamScreen> {
     if (!refused) _snack('$count new cards to drill.');
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _saveDraft();
+    }
+  }
+
   void _installAnswers(List<String> questions) {
     final loaded = widget.loadAnswers?.call(questions);
-    final answers = loaded != null && loaded.length == questions.length
-        ? loaded
-        : List.filled(questions.length, '');
+    final fits = loaded != null &&
+        loaded.answers.length == questions.length &&
+        loaded.locked.length == questions.length;
+    final answers = fits ? loaded.answers : List.filled(questions.length, '');
     _answerControllers.addAll([
       for (final answer in answers) TextEditingController(text: answer),
     ]);
-    _answerLocked.addAll([for (final answer in answers) answer.isNotEmpty]);
-    final firstEmpty = answers.indexWhere((answer) => answer.isEmpty);
-    _currentQuestion = firstEmpty >= 0
-        ? firstEmpty
+    _answerLocked.addAll(fits ? loaded.locked : List.filled(questions.length, false));
+    final firstOpen = _answerLocked.indexWhere((locked) => !locked);
+    _currentQuestion = firstOpen >= 0
+        ? firstOpen
         : (questions.isEmpty ? 0 : questions.length - 1);
+  }
+
+  bool _persistAnswers() {
+    try {
+      widget.saveAnswers?.call(_exam!.questions, (
+        answers: [for (final controller in _answerControllers) controller.text],
+        locked: List.of(_answerLocked),
+      ));
+    } on Object catch (error) {
+      _snack('Could not save the answer: $error');
+      return false;
+    }
+    return true;
+  }
+
+  bool _saveDraft() {
+    if (!_isAnswering || _answerControllers.isEmpty) return true;
+    if (_answerLocked[_currentQuestion]) return true;
+    return _persistAnswers();
   }
 
   bool _lockAndPersistCurrent() {
@@ -329,17 +360,9 @@ class _ExamScreenState extends State<ExamScreen> {
       return true;
     }
     _answerLocked[index] = true;
-    try {
-      widget.saveAnswers?.call(
-        _exam!.questions,
-        [for (final controller in _answerControllers) controller.text],
-      );
-    } on Object catch (error) {
-      _answerLocked[index] = false;
-      _snack('Could not save the answer: $error');
-      return false;
-    }
-    return true;
+    if (_persistAnswers()) return true;
+    _answerLocked[index] = false;
+    return false;
   }
 
   void _nextQuestion() {
@@ -381,7 +404,7 @@ class _ExamScreenState extends State<ExamScreen> {
   bool get _isAnswering => _exam?.phase == 'answering';
 
   void _continueLater() {
-    if (!_lockAndPersistCurrent()) return;
+    if (!_saveDraft()) return;
     final navigator = Navigator.of(context);
     if (navigator.canPop()) navigator.pop();
   }

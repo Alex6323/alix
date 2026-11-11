@@ -43,8 +43,8 @@ void main() {
     List<String> unsourcedTopics = const [],
     RemoteExam? initialExam,
     Map<String, dynamic>? ideas,
-    List<String> Function(List<String>)? loadAnswers,
-    void Function(List<String>, List<String>)? saveAnswers,
+    ExamAnswers Function(List<String>)? loadAnswers,
+    void Function(List<String>, ExamAnswers)? saveAnswers,
     VoidCallback? clearAnswers,
     void Function(Map<String, dynamic>)? saveIdeas,
     ({String text, bool examChanged})? Function(RemoteExam, BigInt)? applyResult,
@@ -1037,20 +1037,20 @@ void main() {
   testWidgets('moving on persists and locks an answer, and reopening starts at the first empty one', (
     tester,
   ) async {
-    final saved = <List<String>>[];
+    final saved = <ExamAnswers>[];
     final firstClient = FakeServerClient(examGetReplies: const [answering2]);
     await pumpExam(
       tester,
       client: firstClient,
-      saveAnswers: (_, answers) => saved.add(List.of(answers)),
+      saveAnswers: (_, answers) => saved.add(answers),
     );
     await tester.pump();
 
     await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'first answer');
     await tester.tap(find.text('Next'));
     await tester.pump();
-    expect(saved, [
-      ['first answer', ''],
+    expect(saved.map(_plain), [
+      [['first answer', ''], [true, false]],
     ]);
     await tester.tap(find.text('Back'));
     await tester.pump();
@@ -1063,7 +1063,7 @@ void main() {
       tester,
       client: resumedClient,
       initialExam: answering2,
-      loadAnswers: (_) => const ['first answer', ''],
+      loadAnswers: (_) => (answers: const ['first answer', ''], locked: const [true, false]),
     );
     await tester.pump();
 
@@ -1245,7 +1245,7 @@ void main() {
   testWidgets('every way out of an answering exam saves the answer currently being edited', (tester) async {
     for (final leave in ['Continue later', 'close button', 'system back']) {
     final client = FakeServerClient(examGetReplies: const [answering2]);
-    final saved = <List<String>>[];
+    final saved = <ExamAnswers>[];
     await tester.pumpWidget(MaterialApp(
       home: Builder(
         builder: (context) => TextButton(
@@ -1255,7 +1255,7 @@ void main() {
               client: client,
               support: tempSupport(),
               buildClient: (_) => client,
-              saveAnswers: (_, answers) => saved.add(List.of(answers)),
+              saveAnswers: (_, answers) => saved.add(answers),
               applyResult: (exam, nowMs) => null,
               applyRemediation: (_, _) => 0,
               nowMs: () => BigInt.from(1000),
@@ -1285,15 +1285,60 @@ void main() {
 
     expect(find.byType(ExamScreen), findsNothing, reason: '$leave step 1: the screen is left');
     expect(
-      saved,
+      saved.map(_plain),
       [
-        ['ownership prevents aliasing writes', ''],
+        [['ownership prevents aliasing writes', ''], [false, false]],
       ],
-      reason: '$leave step 2: the answer visible when the learner pauses must be available on resume',
+      reason: '$leave step 2: the answer visible when the learner pauses is saved as an editable draft',
     );
     expect(client.examCloseCalls, 0, reason: '$leave step 3: the remote slot stays open');
     await tester.pumpWidget(const SizedBox.shrink());
     }
+  });
+
+  testWidgets('backgrounding the app saves the typed answer as a draft that resumes editable', (tester) async {
+    final saved = <ExamAnswers>[];
+    await pumpExam(
+      tester,
+      client: FakeServerClient(examGetReplies: const [answering2]),
+      saveAnswers: (_, answers) => saved.add(answers),
+    );
+    await tester.pump();
+    await tester.enterText(find.byKey(const ValueKey('exam-answer-field')), 'half a sent');
+
+    for (final state in const [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump();
+
+    expect(
+      saved.map(_plain),
+      [
+        [['half a sent', ''], [false, false]],
+      ],
+      reason: 'step 1: suspend saves the current text unlocked',
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpExam(
+      tester,
+      client: FakeServerClient(),
+      initialExam: answering2,
+      loadAnswers: (_) => saved.last,
+    );
+    await tester.pump();
+
+    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'step 2: resume opens the draft question');
+    final field = tester.widget<TextField>(find.byKey(const ValueKey('exam-answer-field')));
+    expect(field.controller?.text, 'half a sent', reason: 'step 3: the draft text is back');
+    expect(field.readOnly, isFalse, reason: 'step 4: a draft stays editable');
   });
 
   testWidgets('results save ideas, apply the result, then clear answers', (tester) async {
@@ -1541,3 +1586,5 @@ void main() {
     expect(examDeckName(deckPath: '/r/rust.md', rootDir: '/r'), 'rust.md');
   });
 }
+
+List<Object> _plain(ExamAnswers answers) => [answers.answers, answers.locked];

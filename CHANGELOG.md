@@ -288,8 +288,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Phone: **End exam** under each exam question is now **Continue later**. It
   leaves the exam open with its answers kept, so **Take exam** on the deck's
-  sheet resumes at the first unanswered question; it no longer discards the
-  exam.
+  sheet resumes where you left off; it no longer discards the exam. The answer
+  being typed is saved as an editable draft when you leave (Continue later,
+  close, back) or when the app goes to the background, so a paused or killed
+  app no longer loses it. The phone's saved-answers file gains a per-answer
+  `locked` flag; a file written by an earlier build is unreadable.
 
 - A blank (cloze) card keeps its question at the top, where a plain card has
   it, on the phone and in the browser; it no longer sits vertically centered

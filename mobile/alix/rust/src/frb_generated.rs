@@ -2038,7 +2038,7 @@ fn wire__crate__api__exam__exam_answers_save_impl(
             let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
             let api_questions = <Vec<String>>::sse_decode(&mut deserializer);
-            let api_answers = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_answers = <crate::api::exam::PhoneExamAnswers>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -3776,6 +3776,18 @@ impl SseDecode for Vec<crate::api::review::AnswerStep> {
     }
 }
 
+impl SseDecode for Vec<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<bool>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::review::CellAlign> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4585,6 +4597,18 @@ impl SseDecode for crate::api::sync::PairedWriter {
         return crate::api::sync::PairedWriter {
             device: var_device,
             at_ms: var_atMs,
+        };
+    }
+}
+
+impl SseDecode for crate::api::exam::PhoneExamAnswers {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_answers = <Vec<String>>::sse_decode(deserializer);
+        let mut var_locked = <Vec<bool>>::sse_decode(deserializer);
+        return crate::api::exam::PhoneExamAnswers {
+            answers: var_answers,
+            locked: var_locked,
         };
     }
 }
@@ -6189,6 +6213,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::sync::PairedWriter>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::exam::PhoneExamAnswers {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.answers.into_into_dart().into_dart(),
+            self.locked.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::exam::PhoneExamAnswers
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::PhoneExamAnswers>
+    for crate::api::exam::PhoneExamAnswers
+{
+    fn into_into_dart(self) -> crate::api::exam::PhoneExamAnswers {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::sync::PullReportDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -7263,6 +7308,16 @@ impl SseEncode for Vec<crate::api::review::AnswerStep> {
     }
 }
 
+impl SseEncode for Vec<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <bool>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::review::CellAlign> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7912,6 +7967,14 @@ impl SseEncode for crate::api::sync::PairedWriter {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.device, serializer);
         <u64>::sse_encode(self.at_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::api::exam::PhoneExamAnswers {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<String>>::sse_encode(self.answers, serializer);
+        <Vec<bool>>::sse_encode(self.locked, serializer);
     }
 }
 

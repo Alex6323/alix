@@ -170,6 +170,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PairedWriter dco_decode_box_autoadd_paired_writer(dynamic raw);
 
   @protected
+  PhoneExamAnswers dco_decode_box_autoadd_phone_exam_answers(dynamic raw);
+
+  @protected
   PushOutcomeDto dco_decode_box_autoadd_push_outcome_dto(dynamic raw);
 
   @protected
@@ -282,6 +285,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AnswerStep> dco_decode_list_answer_step(dynamic raw);
+
+  @protected
+  List<bool> dco_decode_list_bool(dynamic raw);
 
   @protected
   List<CellAlign> dco_decode_list_cell_align(dynamic raw);
@@ -477,6 +483,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PairedWriter dco_decode_paired_writer(dynamic raw);
+
+  @protected
+  PhoneExamAnswers dco_decode_phone_exam_answers(dynamic raw);
 
   @protected
   PullReportDto dco_decode_pull_report_dto(dynamic raw);
@@ -702,6 +711,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PhoneExamAnswers sse_decode_box_autoadd_phone_exam_answers(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PushOutcomeDto sse_decode_box_autoadd_push_outcome_dto(
     SseDeserializer deserializer,
   );
@@ -824,6 +838,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<AnswerStep> sse_decode_list_answer_step(SseDeserializer deserializer);
+
+  @protected
+  List<bool> sse_decode_list_bool(SseDeserializer deserializer);
 
   @protected
   List<CellAlign> sse_decode_list_cell_align(SseDeserializer deserializer);
@@ -1065,6 +1082,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PairedWriter sse_decode_paired_writer(SseDeserializer deserializer);
+
+  @protected
+  PhoneExamAnswers sse_decode_phone_exam_answers(SseDeserializer deserializer);
 
   @protected
   PullReportDto sse_decode_pull_report_dto(SseDeserializer deserializer);
@@ -1341,6 +1361,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_phone_exam_answers(
+    PhoneExamAnswers self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_push_outcome_dto(
     PushOutcomeDto self,
     SseSerializer serializer,
@@ -1483,6 +1509,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<AnswerStep> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_bool(List<bool> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_cell_align(
@@ -1825,6 +1854,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_paired_writer(PairedWriter self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_phone_exam_answers(
+    PhoneExamAnswers self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_pull_report_dto(PullReportDto self, SseSerializer serializer);

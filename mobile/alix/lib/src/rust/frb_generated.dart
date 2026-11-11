@@ -287,7 +287,7 @@ abstract class RustLibApi extends BaseApi {
     required String rootDir,
   });
 
-  List<String> crateApiExamExamAnswersLoad({
+  PhoneExamAnswers crateApiExamExamAnswersLoad({
     required String deckPath,
     required String rootDir,
     required List<String> questions,
@@ -297,7 +297,7 @@ abstract class RustLibApi extends BaseApi {
     required String deckPath,
     required String rootDir,
     required List<String> questions,
-    required List<String> answers,
+    required PhoneExamAnswers answers,
   });
 
   String? crateApiExamExamIdeasLoad({
@@ -1777,7 +1777,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  List<String> crateApiExamExamAnswersLoad({
+  PhoneExamAnswers crateApiExamExamAnswersLoad({
     required String deckPath,
     required String rootDir,
     required List<String> questions,
@@ -1792,7 +1792,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
+          decodeSuccessData: sse_decode_phone_exam_answers,
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamExamAnswersLoadConstMeta,
@@ -1813,7 +1813,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String deckPath,
     required String rootDir,
     required List<String> questions,
-    required List<String> answers,
+    required PhoneExamAnswers answers,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -1822,7 +1822,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
           sse_encode_list_String(questions, serializer);
-          sse_encode_list_String(answers, serializer);
+          sse_encode_box_autoadd_phone_exam_answers(answers, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
         },
         codec: SseCodec(
@@ -2811,6 +2811,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PhoneExamAnswers dco_decode_box_autoadd_phone_exam_answers(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_phone_exam_answers(raw);
+  }
+
+  @protected
   PushOutcomeDto dco_decode_box_autoadd_push_outcome_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_push_outcome_dto(raw);
@@ -3257,6 +3263,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<AnswerStep> dco_decode_list_answer_step(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_answer_step).toList();
+  }
+
+  @protected
+  List<bool> dco_decode_list_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_bool).toList();
   }
 
   @protected
@@ -3729,6 +3741,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PairedWriter(
       device: dco_decode_String(arr[0]),
       atMs: dco_decode_u_64(arr[1]),
+    );
+  }
+
+  @protected
+  PhoneExamAnswers dco_decode_phone_exam_answers(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return PhoneExamAnswers(
+      answers: dco_decode_list_String(arr[0]),
+      locked: dco_decode_list_bool(arr[1]),
     );
   }
 
@@ -4396,6 +4420,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PhoneExamAnswers sse_decode_box_autoadd_phone_exam_answers(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_phone_exam_answers(deserializer));
+  }
+
+  @protected
   PushOutcomeDto sse_decode_box_autoadd_push_outcome_dto(
     SseDeserializer deserializer,
   ) {
@@ -4906,6 +4938,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <AnswerStep>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_answer_step(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<bool> sse_decode_list_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <bool>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_bool(deserializer));
     }
     return ans_;
   }
@@ -5710,6 +5754,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PhoneExamAnswers sse_decode_phone_exam_answers(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_answers = sse_decode_list_String(deserializer);
+    var var_locked = sse_decode_list_bool(deserializer);
+    return PhoneExamAnswers(answers: var_answers, locked: var_locked);
+  }
+
+  @protected
   PullReportDto sse_decode_pull_report_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_entry = sse_decode_String(deserializer);
@@ -6481,6 +6533,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_phone_exam_answers(
+    PhoneExamAnswers self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_phone_exam_answers(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_push_outcome_dto(
     PushOutcomeDto self,
     SseSerializer serializer,
@@ -6865,6 +6926,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_answer_step(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_bool(List<bool> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_bool(item, serializer);
     }
   }
 
@@ -7625,6 +7695,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.device, serializer);
     sse_encode_u_64(self.atMs, serializer);
+  }
+
+  @protected
+  void sse_encode_phone_exam_answers(
+    PhoneExamAnswers self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_String(self.answers, serializer);
+    sse_encode_list_bool(self.locked, serializer);
   }
 
   @protected

@@ -1,3 +1,4 @@
+import 'package:alix_mobile/exam_screen.dart' show ExamAnswers;
 import 'dart:convert';
 import 'dart:io';
 
@@ -67,37 +68,38 @@ void main() {
     const questions = ['Why ownership?', 'What is borrowing?'];
 
     expect(
-      exam_bridge.examAnswersLoad(
+      _plain(exam_bridge.examAnswersLoad(
         deckPath: deck.path,
         rootDir: root.path,
         questions: questions,
-      ),
-      ['', ''],
+      )),
+      [['', ''], [false, false]],
     );
     exam_bridge.examAnswersSave(
       deckPath: deck.path,
       rootDir: root.path,
       questions: questions,
-      answers: const ['ownership controls destruction', ''],
+      answers: (answers: const ['ownership controls destruction', 'a dra'], locked: const [true, false]),
     );
     expect(
-      exam_bridge.examAnswersLoad(
+      _plain(exam_bridge.examAnswersLoad(
         deckPath: deck.path,
         rootDir: root.path,
         questions: questions,
-      ),
-      ['ownership controls destruction', ''],
+      )),
+      [['ownership controls destruction', 'a dra'], [true, false]],
+      reason: 'a draft round-trips unlocked beside a locked answer',
     );
 
     final prepared = File('${root.path}/.alix/exam/deck-rust.prepared.json');
     expect(prepared.existsSync(), isTrue);
     expect(
-      exam_bridge.examAnswersLoad(
+      _plain(exam_bridge.examAnswersLoad(
         deckPath: deck.path,
         rootDir: root.path,
         questions: const ['Replacement?'],
-      ),
-      [''],
+      )),
+      [[''], [false]],
     );
     expect(prepared.existsSync(), isFalse);
 
@@ -105,9 +107,11 @@ void main() {
       deckPath: deck.path,
       rootDir: root.path,
       questions: const ['Replacement?'],
-      answers: const ['answer'],
+      answers: (answers: const ['answer'], locked: const [true]),
     );
     exam_bridge.examAnswersClear(deckPath: deck.path, rootDir: root.path);
     expect(prepared.existsSync(), isFalse);
   });
 }
+
+List<Object> _plain(ExamAnswers answers) => [answers.answers, answers.locked];
