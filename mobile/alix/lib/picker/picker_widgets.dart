@@ -608,7 +608,7 @@ class PickerDepthSheet extends StatefulWidget {
 
   final bool canRecognize;
   final ValueChanged<PickerLaunch> onChoose;
-  final VoidCallback? onWalk;
+  final ValueChanged<bool>? onWalk;
   final PickerExamOffer? exam;
 
   @override
@@ -669,7 +669,7 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
               title: const Text('Cram'),
               subtitle: Text(
                 _cram
-                    ? 'now pick a depth to start'
+                    ? 'now pick a depth or walk'
                     : "also cards that aren't due yet",
               ),
             ),
@@ -720,8 +720,10 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
               ),
               _PickerLaunchRow(
                 label: 'Walk',
-                hint: 'every card once, unscheduled',
-                onTap: onWalk,
+                hint: _cram
+                    ? 'every card, from where you stopped'
+                    : 'every card once, unscheduled',
+                onTap: () => onWalk(_cram),
               ),
             ],
             if (widget.exam case final exam?) ...[

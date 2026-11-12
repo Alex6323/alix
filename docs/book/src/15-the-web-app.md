@@ -99,6 +99,10 @@ ago first. At the end, **Next walk** (`r`) starts the next walk. Walking
 counts for the drill too: the drill grades a walked card at first sight
 instead of introducing it.
 
+With **cram** ticked in the Depth menu, **Walk** serves every card in deck
+order instead, starting after the card you walked last and wrapping around to
+the start, whatever its grade.
+
 ## The tutorial
 
 **Tutorial** in the deck picker's ☰ menu, or the **Tutorial** button the

@@ -221,6 +221,7 @@ abstract class RustLibApi extends BaseApi {
     required String rootDir,
     BigInt? nowMs,
     String? device,
+    required bool cram,
   });
 
   bool crateApiReviewWalkSessionOpenHint({
@@ -1319,6 +1320,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String rootDir,
     BigInt? nowMs,
     String? device,
+    required bool cram,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -1328,6 +1330,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_opt_box_autoadd_u_64(nowMs, serializer);
           sse_encode_opt_String(device, serializer);
+          sse_encode_bool(cram, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 27)!;
         },
         codec: SseCodec(
@@ -1336,7 +1339,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiReviewWalkSessionOpenConstMeta,
-        argValues: [deckPath, rootDir, nowMs, device],
+        argValues: [deckPath, rootDir, nowMs, device, cram],
         apiImpl: this,
       ),
     );
@@ -1345,7 +1348,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiReviewWalkSessionOpenConstMeta =>
       const TaskConstMeta(
         debugName: "WalkSession_open",
-        argNames: ["deckPath", "rootDir", "nowMs", "device"],
+        argNames: ["deckPath", "rootDir", "nowMs", "device", "cram"],
       );
 
   @override

@@ -26,6 +26,7 @@ class WalkScreen extends StatefulWidget {
     this.supportDir,
     this.buildClient,
     this.factory = const WalkBridgeFactory(),
+    this.cram = false,
   }) : tutorialBase = null;
 
   const WalkScreen.tutorial({
@@ -37,7 +38,8 @@ class WalkScreen extends StatefulWidget {
     this.factory = const WalkBridgeFactory(),
   }) : tutorialBase = baseDir,
        deckPath = null,
-       rootDir = null;
+       rootDir = null,
+       cram = false;
 
   final String? deckPath;
   final String? rootDir;
@@ -46,6 +48,7 @@ class WalkScreen extends StatefulWidget {
   final Directory? supportDir;
   final ServerClient Function(ServerConfig)? buildClient;
   final WalkPortFactory factory;
+  final bool cram;
 
   @override
   State<WalkScreen> createState() => _WalkScreenState();
@@ -78,6 +81,7 @@ class _WalkScreenState extends State<WalkScreen> {
             deckPath: widget.deckPath!,
             rootDir: widget.rootDir!,
             device: widget.device,
+            cram: widget.cram,
           );
     if (_controller.openError == null) _probeServer();
   }

@@ -733,6 +733,7 @@ pub fn walk(
     store: &mut Store,
     cfg: &AssembleConfig,
     now_ms: u64,
+    cram: bool,
 ) -> Result<WalkBuild> {
     if !selectable(path) {
         bail!(
@@ -751,7 +752,7 @@ pub fn walk(
     let TutorDeck {
         cards, info, label, ..
     } = tutor_deck(path, cfg)?;
-    let session = WalkSession::new(cards, store, now_ms);
+    let session = WalkSession::new(cards, store, now_ms, cram);
     store.set_last_launch(info.deck_token.as_deref().unwrap_or_default(), Launch::Walk);
     if let Err(e) = store.save() {
         eprintln!("warning: could not save progress: {e}");
@@ -2144,7 +2145,9 @@ it reads line two\n\
         let mut store = store_for(std::slice::from_ref(&path), None).unwrap();
         write_personal_card(&mut store, &path, "deck-rust");
 
-        let walk = walk(&path, &mut store, &test_config(), 0).unwrap().session;
+        let walk = walk(&path, &mut store, &test_config(), 0, false)
+            .unwrap()
+            .session;
         let Selected::Review(build) = select(
             vec![path],
             &mut store,
@@ -2186,7 +2189,7 @@ it reads line two\n\
         )
         .unwrap();
         let mut store = store_for(std::slice::from_ref(&trace), None).unwrap();
-        let refused = walk(&trace, &mut store, &test_config(), 0)
+        let refused = walk(&trace, &mut store, &test_config(), 0, false)
             .err()
             .map(|error| error.to_string());
         assert_eq!(
@@ -2202,7 +2205,7 @@ it reads line two\n\
              ## q\na\n<!-- id: card-q1 -->\n",
         )
         .unwrap();
-        let build = walk(&fact, &mut store, &test_config(), 0).unwrap();
+        let build = walk(&fact, &mut store, &test_config(), 0, false).unwrap();
         assert_eq!(
             (
                 1,
@@ -2706,7 +2709,7 @@ it reads line two\n\
         };
         select(vec![deck.clone()], &mut store, &cfg, &recall).unwrap();
 
-        walk(&deck, &mut store, &cfg, 0).unwrap();
+        walk(&deck, &mut store, &cfg, 0, false).unwrap();
 
         assert_eq!(Some(Launch::Walk), store.last_launch("deck-d"), "in memory");
         let reopened = store_for(std::slice::from_ref(&deck), None).unwrap();

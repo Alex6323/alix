@@ -600,12 +600,17 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<void> _openWalk(PickerEntry entry, {required String root}) async {
+  Future<void> _openWalk(
+    PickerEntry entry, {
+    required String root,
+    bool cram = false,
+  }) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => WalkScreen(
           deckPath: entry.path,
           rootDir: root,
+          cram: cram,
           device: widget.device,
           supportDir: widget.supportDir,
           buildClient: widget.buildClient,
@@ -833,7 +838,7 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
     if (!mounted) return;
-    var walk = false;
+    bool? walkCram;
     RemoteExam? examToTake;
     final deckName = examDeckName(deckPath: entry.path, rootDir: root);
     _examNotice.value = null;
@@ -852,8 +857,8 @@ class _PickerScreenState extends State<PickerScreen> {
           return PickerDepthSheet(
             canRecognize: entry.canRecognize,
             onChoose: (launch) => Navigator.of(sheet).pop(launch),
-            onWalk: () {
-              walk = true;
+            onWalk: (cram) {
+              walkCram = cram;
               Navigator.of(sheet).pop();
             },
             exam: entry.examable
@@ -899,8 +904,8 @@ class _PickerScreenState extends State<PickerScreen> {
       await _openConflictChoice(lateConflict);
       return;
     }
-    if (walk) {
-      await _openWalk(entry, root: root);
+    if (walkCram case final cram?) {
+      await _openWalk(entry, root: root, cram: cram);
       return;
     }
     if (examToTake case final exam?) {

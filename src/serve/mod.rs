@@ -1725,14 +1725,20 @@ pub fn run_review(
                 #[derive(Deserialize)]
                 struct Body {
                     deck: String,
+                    #[serde(default)]
+                    cram: bool,
                 }
-                let path = json_body::<Body>(&mut request)
-                    .and_then(|body| catalog.resolve_path(body.deck).flatten());
-                let Some(path) = path else {
+                let opened = json_body::<Body>(&mut request).and_then(|body| {
+                    catalog
+                        .resolve_path(body.deck)
+                        .flatten()
+                        .map(|path| (path, body.cram))
+                });
+                let Some((path, cram)) = opened else {
                     respond_status(request, 400);
                     continue;
                 };
-                match study.walk_open(path.clone()) {
+                match study.walk_open(path.clone(), cram) {
                     None => respond_status(request, 503),
                     Some(Transition::Rejected) => respond_status(request, 400),
                     Some(Transition::FlushFailed) => respond_status(request, 500),

@@ -12,9 +12,15 @@ class WalkController extends ChangeNotifier {
     required String deckPath,
     required String rootDir,
     String? device,
+    bool cram = false,
   }) {
     return WalkController._(
-      () => factory.open(deckPath: deckPath, rootDir: rootDir, device: device),
+      () => factory.open(
+        deckPath: deckPath,
+        rootDir: rootDir,
+        device: device,
+        cram: cram,
+      ),
     );
   }
 

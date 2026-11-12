@@ -77,7 +77,9 @@ authored choice or **Reveal** (one line at a time on a `reveal: line` card),
 then grade it as in a session: **Missed it**, **Partly** or **Got it** after a
 reveal, **Next** or **I guessed** after a correct pick, **Continue** after a
 wrong one. **Hint** opens a card's authored hint on its front. Missed and
-partly cards come back first in the next walk. The topic sheet opens by itself the first time each walk
+partly cards come back in the next walk, after the cards not yet walked. With
+**Cram** on, **Walk** serves every card instead, starting after the one you
+walked last. The topic sheet opens by itself the first time each walk
 reaches a topic, **Ask** reaches the tutor once an answer shows (when paired
 with a desktop that can run it), and the done screen's **Next walk** starts
 the next pass.

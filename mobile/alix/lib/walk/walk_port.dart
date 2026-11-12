@@ -6,6 +6,7 @@ abstract interface class WalkPortFactory {
     required String deckPath,
     required String rootDir,
     String? device,
+    bool cram = false,
   });
 
   WalkPort openTutorial({required String baseDir, String? device});

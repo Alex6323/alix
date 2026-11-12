@@ -356,7 +356,7 @@ export function createPicker({
       if (!canWalk(it)) return;
       lastWorkspace = wsName || null;
       rememberLaunch(it.name);
-      openWalk(it.name).catch(() => notice("could not start the walk: the server log has details"));
+      openWalk(it.name, cramOn).catch(() => notice("could not start the walk: the server log has details"));
     }
 
     // The workspace's emblem if it has one, else the chevron. An SVG renders as a

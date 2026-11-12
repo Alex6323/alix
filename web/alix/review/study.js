@@ -157,9 +157,9 @@ export function createStudy({
       else sessionStorage.removeItem(WALK_MARKER);
     } catch (error) {}
   }
-  function openWalk(deck) {
+  function openWalk(deck, cram) {
     autoOpenedTopic = null;
-    return api("/api/walk", post({ deck })).then(apply);
+    return api("/api/walk", post({ deck, cram: !!cram })).then(apply);
   }
   function openTutorial() {
     autoOpenedTopic = null;

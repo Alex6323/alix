@@ -8156,6 +8156,41 @@ fn correct_index(dto: &serde_json::Value) -> usize {
 }
 
 #[test]
+fn a_cram_walk_opens_after_the_last_walked_item_and_serves_every_item() {
+    let (base, guard) = spawn_full_server_fixture(None, write_walk_deck, |_| {});
+    let dto = json_of(&post_json(&base, "/api/walk", r#"{"deck":"walk.md"}"#));
+    let index = correct_index(&dto);
+    post_walk(
+        &base,
+        "/api/walk/choose",
+        &format!(r#"{{"index":{index}}}"#),
+    );
+    post_walk(&base, "/api/walk/grade", r#"{"grade":"passed"}"#);
+    assert!(
+        walked_ms(guard.dir(), "card-w1").is_some(),
+        "setup: card-w1 is walked and got"
+    );
+
+    let opened = |body: &str| {
+        let dto = json_of(&post_json(&base, "/api/walk", body));
+        (
+            dto["card"]["id"].as_str().unwrap_or_default().to_string(),
+            dto["total"].as_u64().unwrap_or(9),
+        )
+    };
+    assert_eq!(
+        ("card-w2".to_string(), 2),
+        opened(r#"{"deck":"walk.md","cram":true}"#),
+        "cram: starts after card-w1 and serves both items"
+    );
+    assert_eq!(
+        ("card-w2".to_string(), 1),
+        opened(r#"{"deck":"walk.md"}"#),
+        "no cram: serves only the item still waiting"
+    );
+}
+
+#[test]
 fn a_walk_picks_flips_saves_each_step_restarts_where_it_stopped_and_yields_to_other_sessions() {
     let (base, guard) = spawn_full_server_fixture(
         None,
@@ -8621,7 +8656,7 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
 
     dto = json_of(&post_json(&base, "/api/tutorial", ""));
     assert_eq!(
-        (3, true, true),
+        (6, true, true),
         (
             tutorial_number(&dto, &ids),
             dto["topic_first"] == true,
@@ -8644,9 +8679,9 @@ fn the_menu_tutorial_is_a_walk_outside_the_library() {
         dto = walk_item(&base, &dto, "passed");
     }
     assert_eq!(
-        vec![3, 6, 7, 8, 9],
+        vec![6, 7, 8, 9, 3],
         served,
-        "resume: the waiting cards, in deck order"
+        "resume: the never-walked cards in deck order, then the partly card"
     );
     post_json(&base, "/api/walk/leave", "{}");
 

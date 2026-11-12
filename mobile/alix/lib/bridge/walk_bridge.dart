@@ -14,6 +14,7 @@ class WalkBridgeFactory implements WalkPortFactory {
     required String deckPath,
     required String rootDir,
     String? device,
+    bool cram = false,
   }) {
     try {
       return WalkBridgePort(
@@ -21,6 +22,7 @@ class WalkBridgeFactory implements WalkPortFactory {
           deckPath: deckPath,
           rootDir: rootDir,
           device: device,
+          cram: cram,
         ),
       );
     } catch (error) {

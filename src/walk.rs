@@ -29,10 +29,11 @@ pub struct WalkSession {
     pick: Option<bool>,
     hint_opened: bool,
     tutorial: bool,
+    cram: bool,
 }
 
 impl WalkSession {
-    pub fn new(cards: Vec<Card>, store: &Store, now_ms: u64) -> WalkSession {
+    pub fn new(cards: Vec<Card>, store: &Store, now_ms: u64, cram: bool) -> WalkSession {
         let mut walk = WalkSession {
             cards,
             order: Vec::new(),
@@ -44,13 +45,18 @@ impl WalkSession {
             pick: None,
             hint_opened: false,
             tutorial: false,
+            cram,
         };
         walk.restart(store, now_ms);
         walk
     }
 
     pub fn restart(&mut self, store: &Store, now_ms: u64) {
-        self.order = walk_order(&self.cards, store);
+        self.order = if self.cram {
+            cram_order(&self.cards, store)
+        } else {
+            walk_order(&self.cards, store)
+        };
         self.position = 0;
         self.shown_topics.clear();
         self.choice_seed = now_ms;
@@ -216,6 +222,21 @@ fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
     spaced
 }
 
+fn cram_order(cards: &[Card], store: &Store) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..cards.len())
+        .filter(|&i| cards[i].id().is_some())
+        .collect();
+    let last = order
+        .iter()
+        .enumerate()
+        .filter_map(|(at, &i)| last_walked(&cards[i], store).map(|ms| (ms, at)))
+        .max();
+    if let Some((_, at)) = last {
+        order.rotate_left(at + 1);
+    }
+    order
+}
+
 fn got(card: &Card, store: &Store) -> bool {
     walk_grade(card, store) == Some(Grade::Pass)
 }
@@ -304,7 +325,7 @@ mod tests {
     #[test]
     fn a_walk_allows_personal_writes_until_marked_tutorial() {
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(vec![card(1, &[]), card(2, &[])], &store, 1);
+        let mut walk = WalkSession::new(vec![card(1, &[]), card(2, &[])], &store, 1, false);
         assert!(
             walk.allows_personal_writes(),
             "new: an ordinary walk allows personal writes"
@@ -365,7 +386,7 @@ mod tests {
                     state.walk_grade = *grade;
                 }
             }
-            let walk = WalkSession::new(cards, &store, 0);
+            let walk = WalkSession::new(cards, &store, 0, false);
             let waiting: Vec<usize> = (0..states.len())
                 .filter(|&i| states[i].1 != Some(Pass))
                 .collect();
@@ -396,7 +417,7 @@ mod tests {
         let state = store.get_or_insert(&id(&b));
         state.walked_ms = Some(5);
         state.walk_grade = Some(Grade::Pass);
-        let walk = WalkSession::new(cards, &store, 0);
+        let walk = WalkSession::new(cards, &store, 0, false);
         assert_eq!(
             vec![id(&a), id(&reversed(&a))],
             order_ids(&walk),
@@ -410,7 +431,7 @@ mod tests {
             .map(|line| card(line, if line < 2 { &["# S1"] } else { &["# S2"] }))
             .collect();
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(cards.clone(), &store, 0);
+        let mut walk = WalkSession::new(cards.clone(), &store, 0, false);
         for at in 0..4 {
             step(&mut walk, &mut store, 10 + at);
         }
@@ -428,7 +449,7 @@ mod tests {
     fn law_a_missed_item_is_not_served_again_in_the_same_walk() {
         let cards: Vec<Card> = (0..3).map(|line| card(line, &[])).collect();
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(cards, &store, 0);
+        let mut walk = WalkSession::new(cards, &store, 0, false);
         let mut served = Vec::new();
         while walk.phase() != Phase::Done {
             served.push(id(walk.current().unwrap()));
@@ -450,7 +471,7 @@ mod tests {
         let cards: Vec<Card> = (0..5).map(|line| card(line, &[])).collect();
         for stopped_after in 0..=cards.len() {
             let (mut store, _dir) = store();
-            let mut walk = WalkSession::new(cards.clone(), &store, 0);
+            let mut walk = WalkSession::new(cards.clone(), &store, 0, false);
             let first = order_ids(&walk);
             for step_at in 0..stopped_after {
                 step(&mut walk, &mut store, 100 + step_at as u64);
@@ -478,7 +499,7 @@ mod tests {
     fn law_a_new_walk_serves_never_walked_items_before_earlier_misses() {
         let cards: Vec<Card> = (0..6).map(|line| card(line, &[])).collect();
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(cards.clone(), &store, 0);
+        let mut walk = WalkSession::new(cards.clone(), &store, 0, false);
         for (at, grade) in [Grade::Pass, Grade::Fail, Grade::Pass, Grade::Partial]
             .into_iter()
             .enumerate()
@@ -496,10 +517,40 @@ mod tests {
     }
 
     #[test]
+    fn law_a_cram_walk_resumes_after_the_last_walked_item_and_wraps() {
+        let cards: Vec<Card> = (0..6).map(|line| card(line, &[])).collect();
+        let (mut store, _dir) = store();
+        let fresh = WalkSession::new(cards.clone(), &store, 0, true);
+        let deck_order: Vec<String> = cards.iter().map(id).collect();
+        assert_eq!(
+            deck_order,
+            order_ids(&fresh),
+            "an unwalked deck crams from its first item"
+        );
+        let mut walk = WalkSession::new(cards.clone(), &store, 0, false);
+        for (at, grade) in [Grade::Pass, Grade::Fail, Grade::Pass, Grade::Partial]
+            .into_iter()
+            .enumerate()
+        {
+            walk.reveal();
+            walk.grade(&mut store, grade, 10 + at as u64);
+        }
+        let mut cram = WalkSession::new(cards.clone(), &store, 100, true);
+        let expected: Vec<String> = [4, 5, 0, 1, 2, 3].iter().map(|&i| id(&cards[i])).collect();
+        assert_eq!(
+            expected,
+            order_ids(&cram),
+            "items 0 to 3 walked in order: the cram walk starts at 4 and wraps to 3"
+        );
+        cram.restart(&store, 200);
+        assert_eq!(expected, order_ids(&cram), "a restart keeps the cram order");
+    }
+
+    #[test]
     fn law_a_walk_is_one_pass_then_done() {
         let cards: Vec<Card> = (0..3).map(|line| card(line, &[])).collect();
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(cards, &store, 0);
+        let mut walk = WalkSession::new(cards, &store, 0, false);
         let mut served = Vec::new();
         for at in 0..walk.total() {
             served.push(id(walk.current().unwrap()));
@@ -520,7 +571,7 @@ mod tests {
             ),
             "reveal and grade past the end change nothing"
         );
-        let empty = WalkSession::new(Vec::new(), &store, 0);
+        let empty = WalkSession::new(Vec::new(), &store, 0, false);
         assert_eq!(
             (Phase::Done, 0),
             (empty.phase(), empty.total()),
@@ -548,7 +599,7 @@ mod tests {
             e,
         ];
         let (store, _dir) = store();
-        let walk = WalkSession::new(cards.clone(), &store, 0);
+        let walk = WalkSession::new(cards.clone(), &store, 0, false);
         let served: Vec<&Card> = walk.order.iter().map(|&i| &walk.cards[i]).collect();
         let mut sorted = order_ids(&walk);
         sorted.sort();
@@ -587,7 +638,7 @@ mod tests {
             card(5, &two),
         ];
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(cards, &store, 0);
+        let mut walk = WalkSession::new(cards, &store, 0, false);
         let expected = vec![true, false, false, true, false];
         for round in 0..2 {
             let mut flags = Vec::new();
@@ -661,7 +712,7 @@ mod tests {
                 .collect()
         };
 
-        let mut walk = WalkSession::new(cards.clone(), &store, 0);
+        let mut walk = WalkSession::new(cards.clone(), &store, 0, false);
         let mut at = 1_000;
         while walk.phase() != Phase::Done {
             let current = id(walk.current().unwrap());
@@ -806,7 +857,7 @@ mod tests {
                         card.hints = vec!["a hint".to_string()];
                         let card_id = id(&card);
                         let (mut store, _dir) = store();
-                        let mut walk = WalkSession::new(vec![card], &store, 3);
+                        let mut walk = WalkSession::new(vec![card], &store, 3, false);
                         let picked = walk.mode() == Mode::Choice;
                         if hinted {
                             assert!(
@@ -862,7 +913,7 @@ mod tests {
         let bare = card(2, &[]);
         let (hinted_id, bare_id) = (id(&hinted), id(&bare));
         let (mut store, _dir) = store();
-        let mut walk = WalkSession::new(vec![hinted, bare], &store, 0);
+        let mut walk = WalkSession::new(vec![hinted, bare], &store, 0, false);
         assert_eq!(
             (false, true),
             (walk.open_hint(&bare_id), walk.open_hint(&hinted_id)),
@@ -907,7 +958,7 @@ mod tests {
             cards.iter().filter_map(Card::id).count(),
             "the fixture expands its directions and blanks into stamped items"
         );
-        let mut walk = WalkSession::new(cards, &store, 7);
+        let mut walk = WalkSession::new(cards, &store, 7, false);
         let mut at = 1;
         while walk.phase() != Phase::Done {
             let card = walk.current().unwrap().clone();

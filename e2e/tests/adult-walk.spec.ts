@@ -138,6 +138,37 @@ test("a walk serves the unwalked rest, then a full pass, with the topic sheet ea
   await expect(walked.locator("span"), "every item walked: no hint").toHaveCount(1);
 });
 
+test("a cram walk starts after the last walked item and serves every item", async ({ page }) => {
+  await adultDeckRow(page, "Walk Tour").click();
+  const walk = await openWalkMenu(page);
+  await walk.click();
+  await closeTopicSheet(page, "first walk");
+  const octopus = page.locator(".option").filter({ has: page.locator(".opt", { hasText: "Octopus", exact: true }) });
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/choose") && r.ok()),
+    octopus.click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/grade") && r.ok()),
+    page.getByRole("button", { name: /^Next/ }).click(),
+  ]);
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/leave") && r.ok()),
+    page.keyboard.press("Escape"),
+  ]);
+
+  const cramWalk = await openWalkMenu(page);
+  await page.getByRole("button", { name: /cram/i }).click();
+  const [opened] = await Promise.all([
+    page.waitForRequest((r) => r.url().endsWith("/api/walk") && r.method() === "POST"),
+    cramWalk.click(),
+  ]);
+  expect(opened.postDataJSON(), "cram walk: the request asks for cram").toMatchObject({ cram: true });
+  await closeTopicSheet(page, "cram walk");
+  await expect(page.locator(".front-text"), "cram walk: starts after the walked choice item").toHaveText(FLIP_FRONT);
+  await expect(page.locator("#hist"), "cram walk: serves both items").toHaveText("2 left");
+});
+
 test("the tutor on an ordinary walk offers Make a note and Make a card", async ({ page }) => {
   await adultDeckRow(page, "Walk Tour").click();
   const walk = await openWalkMenu(page);
@@ -158,7 +189,7 @@ test("the tutor on an ordinary walk offers Make a note and Make a card", async (
   await page.keyboard.press("Escape");
 });
 
-test("a wrong pick survives a reload with only Continue, and the missed item leads the next walk", async ({ page }) => {
+test("a wrong pick survives a reload with only Continue, and the next walk serves the unwalked item before the miss", async ({ page }) => {
   await adultDeckRow(page, "Walk Tour").click();
   const walk = await openWalkMenu(page);
   await walk.click();
@@ -181,7 +212,8 @@ test("a wrong pick survives a reload with only Continue, and the missed item lea
   const again = await openWalkMenu(page);
   await again.click();
   await closeTopicSheet(page, "after the miss");
-  await expect(page.locator(".front-text"), "the missed choice item leads").toHaveText(CHOICE_FRONT);
+  await expect(page.locator(".front-text"), "the never-walked flip item leads").toHaveText(FLIP_FRONT);
+  await expect(page.locator("#hist"), "the missed choice item still follows").toHaveText("2 left");
 });
 
 const HINTED_FRONT = "Where does a sea anemone hold on?";

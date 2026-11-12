@@ -134,7 +134,14 @@ mod tests {
         assert_eq!(base.join(TUTORIAL_FILE), deck);
         let sample = base.join(SAMPLE_FILE);
         let mut store = assemble::store_for(std::slice::from_ref(&deck), None).unwrap();
-        assemble::walk(&deck, &mut store, &test_config(), crate::time::now_ms()).unwrap();
+        assemble::walk(
+            &deck,
+            &mut store,
+            &test_config(),
+            crate::time::now_ms(),
+            false,
+        )
+        .unwrap();
         assert_eq!(TUTORIAL_DECK, read(&deck), "the walk rewrote the deck");
         assert_eq!(
             TUTORIAL_SAMPLE,
@@ -174,7 +181,7 @@ mod tests {
         let roots = CitationRoots::for_deck(&deck);
         let mut store = assemble::store_for(std::slice::from_ref(&deck_path), None).unwrap();
         let now = crate::time::now_ms();
-        let mut walk = assemble::walk(&deck_path, &mut store, &test_config(), now)
+        let mut walk = assemble::walk(&deck_path, &mut store, &test_config(), now, false)
             .unwrap()
             .session;
         assert_eq!(9, walk.total(), "the tutorial serves nine cards");

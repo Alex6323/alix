@@ -115,11 +115,13 @@ abstract class WalkSession implements RustOpaqueInterface {
     required String rootDir,
     BigInt? nowMs,
     String? device,
+    required bool cram,
   }) => RustLib.instance.api.crateApiReviewWalkSessionOpen(
     deckPath: deckPath,
     rootDir: rootDir,
     nowMs: nowMs,
     device: device,
+    cram: cram,
   );
 
   bool openHint({required String cardId});

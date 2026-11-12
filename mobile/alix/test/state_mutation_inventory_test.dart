@@ -73,8 +73,8 @@ void main() {
     expect(
       _linesContaining('lib/walk/walk_controller.dart', 'notifyListeners();'),
       [
-        70, 77, 82, 89, 94, 104, 109, 119, 127,
-        132, 137, 142, 147, 152, 157, 162, 177,
+        76, 83, 88, 95, 100, 110, 115, 125, 133,
+        138, 143, 148, 153, 158, 163, 168, 183,
       ],
       reason:
           'setServerLive, choose, toggleChoice, submitChoices, reveal, '
@@ -92,11 +92,11 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:843',
-        'lib/picker_screen.dart:1063',
+        'lib/picker_screen.dart:848',
+        'lib/picker_screen.dart:1068',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
-        'lib/walk_screen.dart:222',
+        'lib/walk_screen.dart:226',
       ],
       reason:
           'sync wiring added imports, fields, and methods above build() in '
@@ -134,6 +134,8 @@ void main() {
           'it; '
           'the exam notice added a field and lines above both sites; '
           'an unanswered poll keeping the timer added lines above both; '
+          'the cram walk widened _openWalk above both and added a field to '
+          'walk_screen.dart; '
           'generate_sheet.dart is unchanged',
     );
   });

@@ -1376,6 +1376,7 @@ fn wire__crate__api__review__WalkSession_open_impl(
             let api_root_dir = <String>::sse_decode(&mut deserializer);
             let api_now_ms = <Option<u64>>::sse_decode(&mut deserializer);
             let api_device = <Option<String>>::sse_decode(&mut deserializer);
+            let api_cram = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -1384,6 +1385,7 @@ fn wire__crate__api__review__WalkSession_open_impl(
                         api_root_dir,
                         api_now_ms,
                         api_device,
+                        api_cram,
                     )?;
                     Ok(output_ok)
                 })(),

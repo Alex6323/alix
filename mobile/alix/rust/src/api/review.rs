@@ -942,9 +942,10 @@ impl WalkSession {
         root_dir: String,
         now_ms: Option<u64>,
         device: Option<String>,
+        cram: bool,
     ) -> Result<WalkSession> {
         let root_store = alix::workspace::root_store_path(Path::new(&root_dir));
-        Self::open_deck(PathBuf::from(deck_path), Some(&root_store), now_ms, device)
+        Self::open_deck(PathBuf::from(deck_path), Some(&root_store), now_ms, device, cram)
     }
 
     #[flutter_rust_bridge::frb(sync)]
@@ -954,7 +955,7 @@ impl WalkSession {
         device: Option<String>,
     ) -> Result<WalkSession> {
         let deck = alix::tutorial::materialize(Path::new(&base_dir))?;
-        let mut walk = Self::open_deck(deck, None, now_ms, device)?;
+        let mut walk = Self::open_deck(deck, None, now_ms, device, false)?;
         walk.session.mark_tutorial();
         Ok(walk)
     }
@@ -969,6 +970,7 @@ impl WalkSession {
         root_store: Option<&Path>,
         now_ms: Option<u64>,
         device: Option<String>,
+        cram: bool,
     ) -> Result<WalkSession> {
         let mut store = alix::assemble::store_for(std::slice::from_ref(&deck), root_store)?;
         if device.is_some() {
@@ -984,7 +986,7 @@ impl WalkSession {
             instance_store: None,
         };
         let now = now_ms.unwrap_or_else(alix::time::now_ms);
-        let build = alix::assemble::walk(&deck, &mut store, &cfg, now)?;
+        let build = alix::assemble::walk(&deck, &mut store, &cfg, now, cram)?;
         let deck_token = build.info.deck_token.unwrap_or_default();
         Ok(WalkSession {
             session: build.session,
@@ -2724,6 +2726,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             Some(T0),
             None,
+            false,
         )
         .unwrap()
     }
@@ -2994,6 +2997,7 @@ mod tests {
             root.to_string_lossy().into_owned(),
             Some(T0),
             None,
+            false,
         )
         .err()
         .expect("a trace deck has its own session");

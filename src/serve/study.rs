@@ -425,6 +425,7 @@ pub(super) enum StudyCommand {
     TraceLeave(Reply<Transition<StateDto>>),
     WalkOpen {
         path: PathBuf,
+        cram: bool,
         reply: Reply<Transition<WalkDto>>,
     },
     TutorialOpen(Reply<TutorialOpened>),
@@ -773,8 +774,8 @@ impl StudyHandle {
     pub(super) fn trace_leave(&self) -> Option<Transition<StateDto>> {
         self.call(StudyCommand::TraceLeave)
     }
-    pub(super) fn walk_open(&self, path: PathBuf) -> Option<Transition<WalkDto>> {
-        self.call(|reply| StudyCommand::WalkOpen { path, reply })
+    pub(super) fn walk_open(&self, path: PathBuf, cram: bool) -> Option<Transition<WalkDto>> {
+        self.call(|reply| StudyCommand::WalkOpen { path, cram, reply })
     }
     pub(super) fn tutorial_open(&self) -> Option<TutorialOpened> {
         self.call(StudyCommand::TutorialOpen)
@@ -1429,8 +1430,8 @@ impl StudyState {
                 };
                 let _ = reply.send(out);
             }
-            StudyCommand::WalkOpen { path, reply } => {
-                let _ = reply.send(self.walk_open(path, false));
+            StudyCommand::WalkOpen { path, cram, reply } => {
+                let _ = reply.send(self.walk_open(path, false, cram));
             }
             StudyCommand::TutorialOpen(reply) => {
                 let _ = reply.send(self.tutorial_open());
@@ -1790,7 +1791,7 @@ impl StudyState {
             return TutorialOpened::NoBase;
         };
         match crate::tutorial::materialize(&base) {
-            Ok(path) => match self.walk_open(path, true) {
+            Ok(path) => match self.walk_open(path, true, false) {
                 Transition::Done(dto) => TutorialOpened::Opened(Box::new(dto)),
                 Transition::Rejected => {
                     TutorialOpened::Failed(anyhow::anyhow!("the tutorial walk was rejected"))
@@ -1803,7 +1804,7 @@ impl StudyState {
         }
     }
 
-    fn walk_open(&mut self, path: PathBuf, tutorial: bool) -> Transition<WalkDto> {
+    fn walk_open(&mut self, path: PathBuf, tutorial: bool, cram: bool) -> Transition<WalkDto> {
         if !flush_store(&self.store, &mut self.store_dirty, &mut self.save_error) {
             return Transition::FlushFailed;
         }
@@ -1817,7 +1818,7 @@ impl StudyState {
                 return Transition::Rejected;
             }
         };
-        match assemble::walk(&path, &mut candidate, &self.config.cfg, now_ms()) {
+        match assemble::walk(&path, &mut candidate, &self.config.cfg, now_ms(), cram) {
             Ok(build) => {
                 self.install_store(candidate);
                 self.writes = self.writes.wrapping_add(1);

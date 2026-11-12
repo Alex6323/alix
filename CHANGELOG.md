@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Walk with cram: with cram ticked (web Depth menu, phone deck sheet), a walk
+  serves every card in deck order, starting after the card walked last and
+  wrapping around. `POST /api/walk` takes an optional `cram`.
 - `RemoteExamDto.sitting` names the open remote exam sitting, minted at
   its start and new for a replacement on the same deck. The phone records a
   result only for the sitting it started in this run of the app: another

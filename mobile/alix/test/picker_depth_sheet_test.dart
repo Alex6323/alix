@@ -7,7 +7,7 @@ import 'package:alix_mobile/theme.dart';
 
 Widget _sheet(
   ValueChanged<PickerLaunch> onChoose, {
-  VoidCallback? onWalk,
+  ValueChanged<bool>? onWalk,
   PickerExamOffer? exam,
 }) {
   return MaterialApp(
@@ -71,12 +71,12 @@ void main() {
 
   testWidgets('switching cram on says what to do next', (tester) async {
     await tester.pumpWidget(_sheet((_) {}));
-    expect(find.text('now pick a depth to start'), findsNothing);
+    expect(find.text('now pick a depth or walk'), findsNothing);
 
     await tester.tap(find.text('Cram'));
     await tester.pump();
 
-    expect(find.text('now pick a depth to start'), findsOneWidget);
+    expect(find.text('now pick a depth or walk'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('Cram')).dy,
       lessThan(tester.getTopLeft(find.text('Skip introduction')).dy),
@@ -113,7 +113,7 @@ void main() {
     (tester) async {
       final choices = <PickerLaunch>[];
       var walks = 0;
-      await tester.pumpWidget(_sheet(choices.add, onWalk: () => walks++));
+      await tester.pumpWidget(_sheet(choices.add, onWalk: (_) => walks++));
 
       final walk = find.widgetWithText(InkWell, 'Walk');
       expect(walk, findsOneWidget, reason: 'the row is offered');
@@ -136,9 +136,30 @@ void main() {
     },
   );
 
+  testWidgets('with Cram on, Walk says it resumes and launches a cram walk', (
+    tester,
+  ) async {
+    final walks = <bool>[];
+    await tester.pumpWidget(_sheet((_) {}, onWalk: walks.add));
+    await tester.tap(find.text('Cram'));
+    await tester.pump();
+
+    final walk = find.widgetWithText(InkWell, 'Walk');
+    expect(
+      find.descendant(
+        of: walk,
+        matching: find.text('every card, from where you stopped'),
+      ),
+      findsOneWidget,
+      reason: 'the row says a cram walk resumes',
+    );
+    await tester.tap(walk);
+    expect(walks, [true], reason: 'the walk launches with cram');
+  });
+
   testWidgets('a hairline separates the walk from the switches and depths it '
       'ignores', (tester) async {
-    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+    await tester.pumpWidget(_sheet((_) {}, onWalk: (_) {}));
 
     final divider = find.byType(Divider);
     expect(divider, findsOneWidget, reason: 'one separator in the sheet');
@@ -163,7 +184,7 @@ void main() {
 
   testWidgets('the hairline is short, centered, and equally far from both '
       'rows', (tester) async {
-    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+    await tester.pumpWidget(_sheet((_) {}, onWalk: (_) {}));
 
     Rect frame(String label) => tester.getRect(
       find.descendant(
@@ -208,7 +229,7 @@ void main() {
 
   testWidgets('every launch is a bordered row with a chevron, like the '
       "picker's deck rows", (tester) async {
-    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+    await tester.pumpWidget(_sheet((_) {}, onWalk: (_) {}));
 
     for (final launch in ['Recognize', 'Recall', 'Reconstruct', 'Walk']) {
       final row = find.widgetWithText(InkWell, launch);
@@ -276,7 +297,7 @@ void main() {
   testWidgets('without an exam offer the sheet has no Exam row or filter', (
     tester,
   ) async {
-    await tester.pumpWidget(_sheet((_) {}, onWalk: () {}));
+    await tester.pumpWidget(_sheet((_) {}, onWalk: (_) {}));
     expect(find.text('Generate exam'), findsNothing);
     expect(find.text('Only what needs work'), findsNothing);
   });
@@ -288,7 +309,7 @@ void main() {
       await tester.pumpWidget(
         _sheet(
           (_) {},
-          onWalk: () {},
+          onWalk: (_) {},
           exam: offer(onStart: starts.add),
         ),
       );

@@ -599,15 +599,18 @@ flush its own progress before the comparison.
 
 A walk reads one fact deck once, item by item, without drilling it: the
 learner grades each item, but nothing is scheduled or introduced and no
-review history is written. `POST /api/walk {deck}` opens it and returns a
+review history is written. `POST /api/walk {deck, cram?}` opens it and returns a
 `WalkDto` (`kind: "walk"`). The items are the ones a review of the deck would
 serve, every direction and every cloze blank its own item, locked and personal
 cards included. An item is waiting unless its last walk grade is a pass. While
-any item waits, a walk holds only the waiting items, in deck order with a
-card's sibling items spread apart within their topic, so `total` is what is
+any item waits, a walk holds only the waiting items: those never walked, then
+those whose last walk grade was a miss or partly, each group in deck order with
+a card's sibling items spread apart within their topic, so `total` is what is
 left of the pass and a walk left early continues where it stopped. Once none
 waits, a walk holds them all, least recently walked first, ties in deck
-order.
+order. With `cram: true` (default `false`) a walk holds every item in deck
+order, starting after the most recently walked item and wrapping around;
+`POST /api/walk/restart` keeps the walk's cram choice.
 
 Each item cycles `phase` `"front"` → `"answer"` *(closed, with `"done"`)*.
 An item whose card has authored choices (`mode: "choice"`) is answered with
