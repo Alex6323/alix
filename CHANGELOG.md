@@ -971,6 +971,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mobile: an exam being prepared on the paired desktop no longer vanishes from
+  the deck sheet when one status check goes unanswered (for example while the
+  phone sleeps); the sheet keeps showing the preparation and offers Take exam
+  once it is ready.
 - The tutor no longer says it has only the frozen excerpts on a deck whose
   sources are frozen: it reads those sources, so the warning now shows only
   when no source material is available.

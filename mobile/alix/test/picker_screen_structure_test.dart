@@ -823,6 +823,72 @@ void main() {
     },
   );
 
+  testWidgets(
+    'an unanswered poll while preparing keeps the exam and keeps polling',
+    (tester) async {
+      final fixture = await examFixture('exam-unanswered-poll');
+      final unanswered = Completer<RemoteExam?>();
+      const generating = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'generating',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: [],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: true,
+      );
+      const answering = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'answering',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: false,
+      );
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examGetReplies: const [generating, generating, answering],
+        examGetGates: {1: unanswered},
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      await tester.pump(const Duration(seconds: 10));
+      expect(client.examGetCalls, 2, reason: 'step 1: the second poll is in flight');
+      unanswered.complete(null);
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('preparing…'),
+        findsOneWidget,
+        reason: 'step 2: a poll the desktop did not answer is not an empty slot',
+      );
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(client.examGetCalls, 3, reason: 'step 3: polling continues');
+      expect(find.text('Take exam'), findsOneWidget, reason: 'step 3: the ready exam shows');
+    },
+  );
+
   testWidgets('an older picker poll cannot erase a newly started exam', (
     tester,
   ) async {

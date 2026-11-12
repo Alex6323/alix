@@ -401,12 +401,13 @@ class _PickerScreenState extends State<PickerScreen> {
       _stopExamPolling();
       return;
     }
+    if (next == null) return;
     final before = _remoteExamKey(_remoteExam);
     final after = _remoteExamKey(next);
     final previous = _remoteExam;
     _remoteExam = next;
     _pollWhileGenerating(next);
-    if (next != null && next.phase == 'answering') {
+    if (next.phase == 'answering') {
       unawaited(
         _announceReady(
           next,
