@@ -134,8 +134,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The phone shows a cited card's source. Tapping a revealed answer on a card
   with `<!-- at: ... -->` citations opens the Hide sheet with a Hide / Source
   switch; Source lists each cited path with numbered lines, or the reason the
-  excerpt is unavailable, and turns the code sideways when a line is too wide
-  for the portrait screen.
+  excerpt is unavailable; code never wraps, and a line wider than the screen
+  scrolls sideways.
 
 - Staged hints: a `> [!TIP]` block between a card's question and its `---`
   divider is a hint. Several are offered one at a time while you answer, from

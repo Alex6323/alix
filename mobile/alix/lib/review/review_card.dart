@@ -2582,12 +2582,7 @@ class _HideSheetState extends State<HideSheet> {
                         semanticLabel: 'Answer hidden',
                       ),
                     )
-                  : _SourceSheet(
-                      citations: widget.citations,
-                      rotatedExtent: (widget.sourceHeight - 150)
-                          .clamp(160, 520)
-                          .toDouble(),
-                    ),
+                  : _SourceSheet(citations: widget.citations),
             ),
           ],
         ),
@@ -2626,10 +2621,9 @@ class _AnswerSheetChoice extends StatelessWidget {
 }
 
 class _SourceSheet extends StatelessWidget {
-  const _SourceSheet({required this.citations, required this.rotatedExtent});
+  const _SourceSheet({required this.citations});
 
   final List<ReviewCitationModel> citations;
-  final double rotatedExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -2663,8 +2657,6 @@ class _SourceSheet extends StatelessWidget {
       path: excerpt.path,
       lines: [for (final line in excerpt.lines) (line.number, line.text)],
       truncated: excerpt.truncated,
-      rotateWhenOverflow: true,
-      rotatedExtent: rotatedExtent,
     );
   }
 }

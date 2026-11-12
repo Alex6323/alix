@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -34,8 +33,6 @@ Widget sourceExcerptBlock(
   required List<(int, String)> lines,
   required bool truncated,
   SourceLineSpans? spansForLine,
-  bool rotateWhenOverflow = false,
-  double rotatedExtent = 480,
 }) {
   return Container(
     decoration: BoxDecoration(
@@ -61,66 +58,21 @@ Widget sourceExcerptBlock(
         Divider(height: 1, color: tokens.line),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final codeStyle = TextStyle(
-                fontFamily: _mono,
-                fontSize: 13,
-                color: tokens.text,
-              );
-              final available = math.max(0.0, constraints.maxWidth - 32);
-              final overflow =
-                  rotateWhenOverflow &&
-                  lines.any(
-                    (line) =>
-                        _textWidth(
-                          line.$2,
-                          codeStyle,
-                          Directionality.of(context),
-                        ) >
-                        available,
-                  );
-              final code = _sourceLines(
-                lines,
-                truncated,
-                tokens,
-                codeStyle,
-                spansForLine,
-              );
-              if (!overflow) {
-                return KeyedSubtree(
-                  key: const ValueKey('source-code-upright'),
-                  child: code,
-                );
-              }
-              return SizedBox(
-                key: const ValueKey('source-code-rotated'),
-                width: constraints.maxWidth,
-                height: rotatedExtent,
-                child: RotatedBox(
-                  quarterTurns: 1,
-                  child: SizedBox(
-                    width: rotatedExtent,
-                    height: constraints.maxWidth,
-                    child: SingleChildScrollView(child: code),
-                  ),
-                ),
-              );
-            },
+          child: SingleChildScrollView(
+            key: const ValueKey('source-code'),
+            scrollDirection: Axis.horizontal,
+            child: _sourceLines(
+              lines,
+              truncated,
+              tokens,
+              TextStyle(fontFamily: _mono, fontSize: 13, color: tokens.text),
+              spansForLine,
+            ),
           ),
         ),
       ],
     ),
   );
-}
-
-double _textWidth(String text, TextStyle style, TextDirection direction) {
-  final painter = TextPainter(
-    text: TextSpan(text: text, style: style),
-    textDirection: direction,
-    maxLines: 1,
-  )..layout();
-  return painter.width;
 }
 
 Widget _sourceLines(
@@ -165,8 +117,8 @@ Widget _gutterLine(
   List<TextSpan>? spans,
 ) {
   final body = spans == null
-      ? Text(text, style: style)
-      : Text.rich(TextSpan(style: style, children: spans));
+      ? Text(text, style: style, softWrap: false)
+      : Text.rich(TextSpan(style: style, children: spans), softWrap: false);
   return Padding(
     padding: const EdgeInsets.symmetric(vertical: 1),
     child: Row(
@@ -183,7 +135,7 @@ Widget _gutterLine(
             ),
           ),
         ),
-        Expanded(child: body),
+        body,
       ],
     ),
   );

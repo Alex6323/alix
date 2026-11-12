@@ -266,105 +266,43 @@ void main() {
     expect(find.text('source excerpt changed or disappeared'), findsOneWidget);
   });
 
-  testWidgets('Source rotates only code whose longest line overflows portrait', (
+  testWidgets('Source keeps code upright and scrolls a long line sideways, never wrapping', (
     tester,
   ) async {
     addTearDown(tester.view.reset);
     final attempt = TextEditingController();
     addTearDown(attempt.dispose);
-
-    await _pump(tester, _card(citations: [_citation('return ok;')]), attempt);
-    await _open(tester);
-    await _source(tester);
-    expect(find.byKey(const ValueKey('source-code-upright')), findsOneWidget);
-    expect(find.byKey(const ValueKey('source-code-rotated')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('hide-sheet-close')));
-    await tester.pumpAndSettle();
-
+    const long =
+        'final resolvedEvidence = repository.readEveryRelevantSourceLineWithoutTruncatingTheResult();';
     await _pump(
       tester,
-      _card(
-        citations: [
-          _citation(
-            'final resolvedEvidence = repository.readEveryRelevantSourceLineWithoutTruncatingTheResult();',
-          ),
-        ],
-      ),
+      _card(citations: [_citation(long), _citation('return ok;')]),
       attempt,
     );
     await _open(tester);
     await _source(tester);
-    expect(find.byKey(const ValueKey('source-code-rotated')), findsOneWidget);
-    expect(find.byKey(const ValueKey('source-code-upright')), findsNothing);
+
+    expect(find.byType(RotatedBox), findsNothing, reason: 'step 1: nothing turns sideways');
+    final longLine = find.text(long);
+    final shortLine = find.text('return ok;');
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('source-code-rotated')),
-        matching: find.byType(RotatedBox),
-      ),
-      findsOneWidget,
-      reason: 'the overflowing code turns sideways',
+      tester.getSize(longLine).height,
+      tester.getSize(shortLine).height,
+      reason: 'step 2: the long line keeps one line height (no wrap)',
     );
+    final before = tester.getTopLeft(longLine).dx;
+    await tester.dragFrom(
+      tester.getTopLeft(longLine) + const Offset(20, 5),
+      const Offset(-300, 0),
+    );
+    await tester.pumpAndSettle();
     expect(
-      find.ancestor(
-        of: find.byKey(const ValueKey('answer-sheet-header')),
-        matching: find.byType(RotatedBox),
-      ),
-      findsNothing,
-      reason: 'the source header stays upright',
+      tester.getTopLeft(longLine).dx < before,
+      isTrue,
+      reason: 'step 3: a sideways drag scrolls the code',
     );
-    expect(
-      find.ancestor(
-        of: find.text('source.rs'),
-        matching: find.byType(RotatedBox),
-      ),
-      findsNothing,
-      reason: 'the source path stays upright',
-    );
+    expect(tester.takeException(), isNull, reason: 'step 4: no layout overflow');
   });
-
-  testWidgets(
-    'a rotated excerpt with more lines than the portrait width scrolls to '
-    'its last line without overflowing',
-    (tester) async {
-      addTearDown(tester.view.reset);
-      final attempt = TextEditingController();
-      addTearDown(attempt.dispose);
-      const wide =
-          'final resolvedEvidence = repository.readEveryRelevantSourceLine();';
-      final card = _card(
-        citations: [
-          ReviewCitationModel(
-            locator: 'src:source.rs:1-40',
-            excerpt: ReviewExcerptModel(
-              path: 'source.rs',
-              lines: [
-                for (var n = 1; n <= 40; n++)
-                  ReviewExcerptLineModel(number: n, text: '$wide // $n'),
-              ],
-              truncated: false,
-            ),
-          ),
-        ],
-      );
-
-      await _pump(tester, card, attempt);
-      await _open(tester);
-      await _source(tester);
-      expect(find.byKey(const ValueKey('source-code-rotated')), findsOneWidget);
-      expect(tester.takeException(), isNull, reason: 'no layout overflow');
-      final last = find.textContaining('// 40');
-      await tester.dragUntilVisible(
-        last,
-        find.byKey(const ValueKey('source-code-rotated')),
-        const Offset(200, 0),
-      );
-      expect(
-        last.hitTestable(),
-        findsOneWidget,
-        reason: 'a sideways drag brings the last line into view',
-      );
-    },
-  );
 
   for (final (name, citation, showSource) in [
     ('hide-cited', _citation('return evidence;'), false),
