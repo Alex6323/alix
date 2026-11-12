@@ -389,7 +389,7 @@ class _PickerScreenState extends State<PickerScreen> {
     } on PairingExpired {
       expired = true;
     } on Object {
-      return;
+      next = null;
     } finally {
       _examPollInFlight = false;
     }
@@ -403,7 +403,10 @@ class _PickerScreenState extends State<PickerScreen> {
       _stopExamPolling();
       return;
     }
-    if (next == null) return;
+    if (next == null) {
+      _pollWhileGenerating(_remoteExam);
+      return;
+    }
     final before = _remoteExamKey(_remoteExam);
     final after = _remoteExamKey(next);
     final previous = _remoteExam;

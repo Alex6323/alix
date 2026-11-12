@@ -92,8 +92,8 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:840',
-        'lib/picker_screen.dart:1060',
+        'lib/picker_screen.dart:843',
+        'lib/picker_screen.dart:1063',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:222',
@@ -133,6 +133,7 @@ void main() {
           'an unanswered exam poll keeping the last slot added a line above '
           'it; '
           'the exam notice added a field and lines above both sites; '
+          'an unanswered poll keeping the timer added lines above both; '
           'generate_sheet.dart is unchanged',
     );
   });

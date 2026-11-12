@@ -890,6 +890,79 @@ void main() {
     },
   );
 
+  testWidgets(
+    'an unanswered resume poll while preparing restarts periodic polling',
+    (tester) async {
+      final fixture = await examFixture('exam-unanswered-resume-poll');
+      File('${fixture.root.path}/ws/alix.toml')
+          .writeAsStringSync('title = "Workspace"\n');
+      final unanswered = Completer<RemoteExam?>();
+      const generating = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'generating',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: [],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: true,
+      );
+      const answering = RemoteExam(
+        sitting: 'sitting-1',
+        phase: 'answering',
+        deck: 'ws/exam.md',
+        strictness: 'balanced',
+        questions: ['Why?'],
+        grades: [],
+        gaps: [],
+        canRemediate: false,
+        thinking: false,
+      );
+      final rootExamClient = FakeServerClient(
+        examGetReplies: const [generating, answering],
+        examGetGates: {1: unanswered},
+      );
+      final clients = <FakeServerClient>[
+        FakeServerClient(versionReply: minServerVersion),
+        rootExamClient,
+        FakeServerClient(versionReply: minServerVersion),
+        FakeServerClient(),
+        FakeServerClient(versionReply: minServerVersion),
+      ];
+      var clientIndex = 0;
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        support: fixture.support,
+        buildClient: (_) => clients[clientIndex++],
+        pollInterval: const Duration(seconds: 10),
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+      expect(rootExamClient.examGetCalls, 1, reason: 'step 1: preparing');
+
+      await tester.tap(find.text('Workspace'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(rootExamClient.examGetCalls, 2, reason: 'step 2: resume poll');
+
+      unanswered.complete(null);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(
+        rootExamClient.examGetCalls,
+        3,
+        reason: 'step 3: unanswered resume poll must restart the timer',
+      );
+    },
+  );
+
   testWidgets('an older picker poll cannot erase a newly started exam', (
     tester,
   ) async {
