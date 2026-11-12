@@ -2697,9 +2697,11 @@ class _RenderSlotBar extends RenderBox
     final share = (width - centre.size.width) / 2 - _gap;
     bool fits(RenderBox side) => side.size.width == 0 || side.size.width <= share;
     final inline = fits(left) && fits(right);
-    final sideHeight = left.size.height > right.size.height
-        ? left.size.height
-        : right.size.height;
+    final sideHeight = [
+      left.size.height,
+      right.size.height,
+      _sideSlot,
+    ].reduce((a, b) => a > b ? a : b);
     double height;
     double sideTop;
     if (inline) {

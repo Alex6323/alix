@@ -985,6 +985,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Mobile: when the paired desktop refuses an exam, or the phone cannot prepare
   or cancel one, the deck sheet's exam row says so; the message used to appear
   beneath the open sheet, where it could not be seen.
+- Mobile: the review bar keeps one height whether or not the tutor's Ask
+  button is offered, so the card above it no longer shifts by two pixels.
 - The tutor no longer says it has only the frozen excerpts on a deck whose
   sources are frozen: it reads those sources, so the warning now shows only
   when no source material is available.
