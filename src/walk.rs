@@ -203,19 +203,27 @@ fn walk_order(cards: &[Card], store: &Store) -> Vec<usize> {
         order.sort_by_cached_key(|&i| last_walked(&cards[i], store));
         return order;
     }
-    order = waiting;
-    let mut spaced = Vec::with_capacity(order.len());
-    for run in order.chunk_by(|&a, &b| cards[a].topic_context == cards[b].topic_context) {
-        let run = session::round_robin_siblings(run.to_vec(), cards);
-        spaced.extend(session::separate_siblings(run, cards));
+    let (unwalked, missed): (Vec<usize>, Vec<usize>) = waiting
+        .into_iter()
+        .partition(|&i| walk_grade(&cards[i], store).is_none());
+    let mut spaced = Vec::with_capacity(unwalked.len() + missed.len());
+    for group in [unwalked, missed] {
+        for run in group.chunk_by(|&a, &b| cards[a].topic_context == cards[b].topic_context) {
+            let run = session::round_robin_siblings(run.to_vec(), cards);
+            spaced.extend(session::separate_siblings(run, cards));
+        }
     }
     spaced
 }
 
 fn got(card: &Card, store: &Store) -> bool {
+    walk_grade(card, store) == Some(Grade::Pass)
+}
+
+fn walk_grade(card: &Card, store: &Store) -> Option<Grade> {
     card.id()
         .and_then(|id| store.get(&id))
-        .is_some_and(|state| state.walk_grade == Some(Grade::Pass))
+        .and_then(|state| state.walk_grade)
 }
 
 fn last_walked(card: &Card, store: &Store) -> Option<u64> {
@@ -315,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn law_a_walk_serves_waiting_items_in_deck_order_else_every_item_oldest_first() {
+    fn law_a_walk_serves_ungraded_then_missed_items_in_deck_order_else_every_item_oldest_first() {
         use Grade::{Fail, Partial, Pass};
         let got = |at: u64| (Some(at), Some(Pass));
         let cases: [[(Option<u64>, Option<Grade>); 6]; 6] = [
@@ -366,12 +374,14 @@ mod tests {
                 all.sort_by_key(|&i| (states[i].0.unwrap_or(0), i));
                 all
             } else {
-                waiting
+                let (ungraded, missed): (Vec<usize>, Vec<usize>) =
+                    waiting.into_iter().partition(|&i| states[i].1.is_none());
+                [ungraded, missed].concat()
             };
             assert_eq!(
                 (expected.len(), expected),
                 (walk.total(), walk.order.clone()),
-                "case {case} ({states:?}): the waiting items in deck order while any wait, else all oldest first, ties in deck order"
+                "case {case} ({states:?}): while any wait, the never-graded items then the missed ones, each in deck order; else all oldest first, ties in deck order"
             );
         }
     }
@@ -462,6 +472,27 @@ mod tests {
                 "after stopping at {stopped_after}: the next walk starts at its first item"
             );
         }
+    }
+
+    #[test]
+    fn law_a_new_walk_serves_never_walked_items_before_earlier_misses() {
+        let cards: Vec<Card> = (0..6).map(|line| card(line, &[])).collect();
+        let (mut store, _dir) = store();
+        let mut walk = WalkSession::new(cards.clone(), &store, 0);
+        for (at, grade) in [Grade::Pass, Grade::Fail, Grade::Pass, Grade::Partial]
+            .into_iter()
+            .enumerate()
+        {
+            walk.reveal();
+            walk.grade(&mut store, grade, 10 + at as u64);
+        }
+        walk.restart(&store, 100);
+        let expected: Vec<String> = [4, 5, 1, 3].iter().map(|&i| id(&cards[i])).collect();
+        assert_eq!(
+            expected,
+            order_ids(&walk),
+            "after Pass, Fail, Pass, Partial on items 0 to 3: the unwalked 4 and 5 first, then the misses in deck order"
+        );
     }
 
     #[test]

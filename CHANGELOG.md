@@ -286,6 +286,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- A walk serves the cards you have never walked before the ones you missed,
+  each in deck order, so coming back to a walk continues with new cards
+  instead of repeating earlier misses first.
+
 - Phone: while paired, the home screen no longer says the phone's own folder
   has no decks; the desktop's decks are the listing. The Tutorial stays in
   Settings.

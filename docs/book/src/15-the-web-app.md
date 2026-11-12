@@ -90,9 +90,10 @@ the tutor is available once an answer shows.
 A walk keeps only the time each item was walked and its last walk grade; it
 never touches the schedule or the review history. An item is waiting until
 its last walk grade is Got it (or Next on a pick). While any item waits, a
-walk serves only the waiting items, in deck order, so a missed card comes
-back in the next walk, leaving early and coming back continues where you
-stopped, and the counter shows what is left. Adding a card to a deck makes it
+walk serves only the waiting items: first those never walked, then the
+missed ones, each in deck order. Leaving early and coming back continues
+with the cards you have not seen yet, a missed card comes back after them,
+and the counter shows what is left. Adding a card to a deck makes it
 waiting. Once nothing waits, a walk is a full pass, the items walked longest
 ago first. At the end, **Next walk** (`r`) starts the next walk. Walking
 counts for the drill too: the drill grades a walked card at first sight
