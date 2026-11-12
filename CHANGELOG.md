@@ -982,6 +982,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the deck sheet when one status check goes unanswered (for example while the
   phone sleeps); the sheet keeps showing the preparation and offers Take exam
   once it is ready.
+- Mobile: when the paired desktop refuses an exam, or the phone cannot prepare
+  or cancel one, the deck sheet's exam row says so; the message used to appear
+  beneath the open sheet, where it could not be seen.
 - The tutor no longer says it has only the frozen excerpts on a deck whose
   sources are frozen: it reads those sources, so the warning now shows only
   when no source material is available.

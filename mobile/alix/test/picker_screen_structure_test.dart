@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
 import 'package:alix_mobile/folder_browser.dart';
+import 'package:alix_mobile/picker/picker_widgets.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/platform_access.dart';
 import 'package:alix_mobile/exam_screen.dart';
@@ -1088,6 +1089,53 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'a refused exam start shows in the open deck sheet, not under it',
+    (tester) async {
+      final fixture = await examFixture('exam-start-refused');
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        examStartReply: false,
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byType(PickerDepthSheet),
+          matching: find.text('the desktop refused the exam'),
+        ),
+        findsOneWidget,
+        reason: 'a root SnackBar renders beneath the modal sheet',
+      );
+
+      Navigator.of(tester.element(find.byType(PickerDepthSheet))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('the desktop refused the exam'),
+        findsNothing,
+        reason: 'reopening the sheet starts without the old refusal',
+      );
+    },
+  );
 
   testWidgets(
     'a sitting started before an app restart is still recorded',

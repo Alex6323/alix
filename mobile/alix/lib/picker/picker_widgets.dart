@@ -560,6 +560,7 @@ class PickerExamOffer {
     required this.filterable,
     this.action = PickerExamAction.generate,
     this.failed = false,
+    this.notice,
     this.preparingSince,
     required this.onStart,
     this.onCancel,
@@ -574,6 +575,9 @@ class PickerExamOffer {
 
   /// The last preparation failed; generating again replaces it.
   final bool failed;
+
+  /// This phone's last start or cancel attempt failed.
+  final String? notice;
   final DateTime? preparingSince;
   final ValueChanged<bool> onStart;
   final VoidCallback? onCancel;
@@ -739,17 +743,19 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     ? 'locked'
                     : !exam.serverLive
                     ? 'needs a paired desktop'
-                    : switch (exam.action) {
-                        PickerExamAction.preparing => _preparingFor(
-                          exam.preparingSince,
-                          exam.now(),
-                        ),
-                        PickerExamAction.take => 'graded by your paired desktop',
-                        PickerExamAction.generate =>
-                          exam.failed
-                              ? 'the last preparation failed'
-                              : 'graded by your paired desktop',
-                      },
+                    : exam.notice ??
+                          switch (exam.action) {
+                            PickerExamAction.preparing => _preparingFor(
+                              exam.preparingSince,
+                              exam.now(),
+                            ),
+                            PickerExamAction.take =>
+                              'graded by your paired desktop',
+                            PickerExamAction.generate =>
+                              exam.failed
+                                  ? 'the last preparation failed'
+                                  : 'graded by your paired desktop',
+                          },
                 filled:
                     exam.enabled &&
                     (exam.due || exam.action == PickerExamAction.take),

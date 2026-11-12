@@ -153,6 +153,7 @@ class _PickerScreenState extends State<PickerScreen> {
   final _remoteExamSlot = ValueNotifier<({RemoteExam? exam, DateTime polledAt})>(
     (exam: null, polledAt: DateTime.now()),
   );
+  final _examNotice = ValueNotifier<({String deck, String text})?>(null);
   RemoteExam? get _remoteExam => _remoteExamSlot.value.exam;
   set _remoteExam(RemoteExam? exam) =>
       _remoteExamSlot.value = (exam: exam, polledAt: DateTime.now());
@@ -177,6 +178,7 @@ class _PickerScreenState extends State<PickerScreen> {
   void dispose() {
     _examPollTimer?.cancel();
     _remoteExamSlot.dispose();
+    _examNotice.dispose();
     _examStateClient?.close();
     _syncController?.removeListener(_controller.reload);
     _controller.dispose();
@@ -617,6 +619,9 @@ class _PickerScreenState extends State<PickerScreen> {
   }) async {
     final client = _examStateClient;
     if (client == null) return;
+    final deckName = examDeckName(deckPath: entry.path, rootDir: root);
+    void notice(String text) =>
+        _examNotice.value = (deck: deckName, text: text);
     final sittings = StartedSittings.load(await _support());
     final exam_bridge.ExamSittingStart start;
     Map<String, dynamic>? ideas;
@@ -635,20 +640,21 @@ class _PickerScreenState extends State<PickerScreen> {
         ideas = Map<String, dynamic>.from(jsonDecode(encoded) as Map);
       }
     } on Object catch (error) {
-      _snack('could not prepare the exam: $error');
+      notice('could not prepare the exam: $error');
       return;
     }
     RemoteExam? started;
     try {
       if (_remoteExam?.error != null) await client.examClose();
       started = await client.examStart(
-        examDeckName(deckPath: entry.path, rootDir: root),
+        deckName,
         cards: start.cards,
         ideas: ideas,
       );
     } on PairingExpired {
       _controller.setServerReachable(false);
       _stopExamPolling();
+      notice('pairing expired');
       _snack(pairingExpiredMessage);
       return;
     } on Object {
@@ -656,9 +662,10 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     if (!mounted) return;
     if (started == null) {
-      _snack('The desktop refused the exam.');
+      notice('the desktop refused the exam');
       return;
     }
+    _examNotice.value = null;
     sittings.put(
       StartedSitting(
         deckPath: entry.path,
@@ -675,6 +682,7 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _cancelExamGeneration(
     BuildContext sheet,
     PickerEntry entry,
+    String deckName,
   ) async {
     final confirmed = await showDialog<bool>(
       context: sheet,
@@ -697,7 +705,10 @@ class _PickerScreenState extends State<PickerScreen> {
     try {
       await client.examClose();
     } on Object {
-      _snack('Could not cancel the preparation.');
+      _examNotice.value = (
+        deck: deckName,
+        text: 'could not cancel the preparation',
+      );
       return;
     }
     _examSlotEpoch++;
@@ -822,12 +833,15 @@ class _PickerScreenState extends State<PickerScreen> {
     var walk = false;
     RemoteExam? examToTake;
     final deckName = examDeckName(deckPath: entry.path, rootDir: root);
+    _examNotice.value = null;
     final launch = await showModalBottomSheet<PickerLaunch>(
       context: context,
       isScrollControlled: true,
-      builder: (sheet) => ValueListenableBuilder(
-        valueListenable: _remoteExamSlot,
-        builder: (_, polled, _) {
+      builder: (sheet) => ListenableBuilder(
+        listenable: Listenable.merge([_remoteExamSlot, _examNotice]),
+        builder: (_, _) {
+          final polled = _remoteExamSlot.value;
+          final notice = _examNotice.value;
           final slot = polled.exam?.deck == deckName ? polled.exam : null;
           final generating = slot?.phase == 'generating';
           final failed = generating && slot?.error != null;
@@ -851,6 +865,7 @@ class _PickerScreenState extends State<PickerScreen> {
                         ? PickerExamAction.preparing
                         : PickerExamAction.take,
                     failed: failed,
+                    notice: notice?.deck == deckName ? notice?.text : null,
                     preparingSince: polled.polledAt.subtract(elapsed),
                     onStart: (needsWorkOnly) {
                       if (slot != null && !generating) {
@@ -864,7 +879,7 @@ class _PickerScreenState extends State<PickerScreen> {
                         needsWorkOnly: needsWorkOnly,
                       );
                     },
-                    onCancel: () => _cancelExamGeneration(sheet, entry),
+                    onCancel: () => _cancelExamGeneration(sheet, entry, deckName),
                   )
                 : null,
           );
