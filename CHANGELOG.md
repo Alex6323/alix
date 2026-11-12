@@ -971,6 +971,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mobile: the exam's Continue later sits between Back and Next instead of on
+  a row of its own, leaving more room for the question, above all in
+  landscape.
 - Mobile: an exam being prepared on the paired desktop no longer vanishes from
   the deck sheet when one status check goes unanswered (for example while the
   phone sleeps); the sheet keeps showing the preparation and offers Take exam

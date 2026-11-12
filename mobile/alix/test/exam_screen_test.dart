@@ -1207,6 +1207,32 @@ void main() {
     expect(clears, 1);
   });
 
+  testWidgets('Back, Continue later and Next share one footer row in both orientations', (tester) async {
+    for (final size in const [Size(1080, 2280), Size(2280, 1080)]) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final client = FakeServerClient(examGetReplies: const [answering2]);
+      await pumpExam(tester, client: client);
+      await tester.pumpAndSettle();
+      final back = tester.getRect(find.text('Back'));
+      final later = tester.getRect(find.text('Continue later'));
+      final next = tester.getRect(find.text('Next'));
+      expect(
+        (later.center.dy - next.center.dy).abs() < 1 &&
+            (back.center.dy - next.center.dy).abs() < 1,
+        isTrue,
+        reason: '$size: one row (back $back, later $later, next $next)',
+      );
+      expect(
+        back.right < later.left && later.right < next.left,
+        isTrue,
+        reason: '$size: Back, Continue later, Next in that order without overlap',
+      );
+      expect(tester.takeException(), isNull, reason: '$size: no overflow');
+    }
+  });
+
   testWidgets('Continue later leaves an answering sitting open with its answers kept', (tester) async {
     final client = FakeServerClient(examGetReplies: const [answering2]);
     var clears = 0;

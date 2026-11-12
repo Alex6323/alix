@@ -627,6 +627,16 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
               onPressed: index > 0 ? () => setState(() => _currentQuestion--) : null,
               child: const Text('Back'),
             ),
+            Flexible(
+              child: TextButton(
+                onPressed: _closing ? null : _continueLater,
+                child: const Text(
+                  'Continue later',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
             FilledButton(
               onPressed: last
                   ? (_submitting ? null : _submit)
@@ -634,10 +644,6 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
               child: Text(last ? 'Submit' : 'Next'),
             ),
           ],
-        ),
-        TextButton(
-          onPressed: _closing ? null : _continueLater,
-          child: const Text('Continue later'),
         ),
       ],
     );
