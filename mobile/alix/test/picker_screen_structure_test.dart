@@ -1211,6 +1211,58 @@ void main() {
   );
 
   testWidgets(
+    'a successful cancel retry clears its earlier row failure',
+    (tester) async {
+      final fixture = await examFixture('exam-cancel-retry');
+      final client = _FailFirstExamCloseClient(
+        versionReply: minServerVersion,
+        noSittingBeforeStart: true,
+        examStartSitting: 'sitting-1',
+      );
+      await pumpPicker(
+        tester,
+        root: fixture.root,
+        dir: '${fixture.root.path}/ws',
+        support: fixture.support,
+        buildClient: (_) => client,
+        buildSyncPort: (_, _) => FakeSyncPort(
+          rootId: 'root-test0000000000000000000000',
+          rootDir: fixture.root.path,
+        ),
+        isPairedSubtree: true,
+      );
+
+      await tester.tap(find.text('Remote exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Generate exam'));
+      await tester.pump();
+      await tester.pump();
+
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel preparation'));
+      await tester.pumpAndSettle();
+      expect(find.text('could not cancel the preparation'), findsOneWidget);
+
+      await tester.tap(find.text('Generate exam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel preparation'));
+      await tester.pumpAndSettle();
+      expect(client.examCloseCalls, 2, reason: 'the retry reached the desktop');
+      expect(
+        find.text('could not cancel the preparation'),
+        findsNothing,
+        reason: 'the successful retry must clear the obsolete failure',
+      );
+      expect(
+        find.text('graded by your paired desktop'),
+        findsOneWidget,
+        reason: 'a successful retry must clear the obsolete failure',
+      );
+    },
+  );
+
+  testWidgets(
     'a sitting started before an app restart is still recorded',
     (tester) async {
       final fixture = await examFixture('exam-restart');
@@ -1681,4 +1733,23 @@ class _FakeAccess implements PlatformAccess {
 
   @override
   Future<String?> appVersion() async => '0.2.0+3';
+}
+
+class _FailFirstExamCloseClient extends FakeServerClient {
+  _FailFirstExamCloseClient({
+    required super.versionReply,
+    required super.noSittingBeforeStart,
+    required super.examStartSitting,
+  });
+
+  var _failed = false;
+
+  @override
+  Future<void> examClose() async {
+    examCloseCalls++;
+    if (!_failed) {
+      _failed = true;
+      throw StateError('transient exam close failure');
+    }
+  }
 }

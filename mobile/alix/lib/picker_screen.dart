@@ -719,6 +719,7 @@ class _PickerScreenState extends State<PickerScreen> {
       );
       return;
     }
+    _examNotice.value = null;
     _examSlotEpoch++;
     StartedSittings.load(await _support()).remove(entry.path);
     if (!mounted) return;

@@ -92,8 +92,8 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:848',
-        'lib/picker_screen.dart:1068',
+        'lib/picker_screen.dart:849',
+        'lib/picker_screen.dart:1069',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:226',
@@ -135,7 +135,8 @@ void main() {
           'the exam notice added a field and lines above both sites; '
           'an unanswered poll keeping the timer added lines above both; '
           'the cram walk widened _openWalk above both and added a field to '
-          'walk_screen.dart; '
+          'walk_screen.dart; a successful cancel clearing the notice added a '
+          'line above both; '
           'generate_sheet.dart is unchanged',
     );
   });
