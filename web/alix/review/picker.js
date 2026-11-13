@@ -352,11 +352,11 @@ export function createPicker({
       select(it.name, sel.topology, sel.region, depth, cramOn, trackOn, skipIntroOn);
     }
 
-    function launchWalk(it, wsName) {
+    function launchWalk(it, wsName, cram) {
       if (!canWalk(it)) return;
       lastWorkspace = wsName || null;
       rememberLaunch(it.name);
-      openWalk(it.name, cramOn).catch(() => notice("could not start the walk: the server log has details"));
+      openWalk(it.name, cram).catch(() => notice("could not start the walk: the server log has details"));
     }
 
     // The workspace's emblem if it has one, else the chevron. An SVG renders as a
@@ -600,7 +600,7 @@ export function createPicker({
           walk.appendChild(el("span", "k", "w"));
           walk.disabled = !canWalk(it);
           walk.addEventListener("mousedown", e => e.preventDefault());
-          walk.addEventListener("click", () => { depthMenuOpen = false; launchWalk(it, f._wsName); });
+          walk.addEventListener("click", () => { depthMenuOpen = false; launchWalk(it, f._wsName, cramOn); });
           legend.appendChild(walk);
           // The cram tick-box: include cards that aren't due (a due card still
           // grades as a normal review; an early pass only re-anchors).
@@ -1053,7 +1053,7 @@ export function createPicker({
           } else if (e.key === "w" && !e.ctrlKey && f && f._item && canWalk(f._item)) {
             e.preventDefault(); e.stopPropagation();
             depthMenuOpen = false;
-            launchWalk(f._item, f._wsName);
+            launchWalk(f._item, f._wsName, cramOn);
           } else if (hit(e, keys.cram)) {
             e.preventDefault(); e.stopPropagation(); cramOn = !cramOn; syncPrimary();
           } else if (hit(e, keys.skip_introduction)) {

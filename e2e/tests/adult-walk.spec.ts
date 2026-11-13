@@ -167,6 +167,17 @@ test("a cram walk starts after the last walked item and serves every item", asyn
   await closeTopicSheet(page, "cram walk");
   await expect(page.locator(".front-text"), "cram walk: starts after the walked choice item").toHaveText(FLIP_FRONT);
   await expect(page.locator("#hist"), "cram walk: serves both items").toHaveText("2 left");
+
+  await Promise.all([
+    page.waitForResponse((r) => r.url().endsWith("/api/walk/leave") && r.ok()),
+    page.keyboard.press("Escape"),
+  ]);
+  await adultDeckRow(page, "Tide pools").click();
+  const [plain] = await Promise.all([
+    page.waitForRequest((r) => r.url().endsWith("/api/walk") && r.method() === "POST"),
+    page.locator(".legend .chip.primary", { hasText: /^Walk/ }).click(),
+  ]);
+  expect(plain.postDataJSON(), "a later primary Walk is plain").toMatchObject({ cram: false });
 });
 
 test("the tutor on an ordinary walk offers Make a note and Make a card", async ({ page }) => {
