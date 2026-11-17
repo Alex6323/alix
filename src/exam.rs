@@ -694,7 +694,7 @@ pub fn spawn_generation(
         )
         .and_then(|questions| {
             if let Some((path, kept)) = keep {
-                #[cfg(test)]
+                #[cfg(all(test, unix))]
                 tests::hold_before_keeping(&path);
                 KeptSitting {
                     questions: questions
