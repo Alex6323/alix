@@ -412,9 +412,14 @@ backend for the tutor, the AI exam, and deck generation over
 no endpoint under `/api/remote/*` ever writes the server's own store,
 session, decks, or recent list.** These handlers only compute an answer and
 hand it back: a result leaves the server only as the HTTP response, never
-onto disk, with one exception: a remote note whose card the desktop serves
-is also appended to that deck's personal sidecar (see the note call below),
-so the desktop holds it and the next sync pull carries it to the phone.
+onto disk, with three bounded exceptions. A remote note whose card the
+desktop serves is also appended to that deck's personal sidecar (see the note
+call below), so the desktop holds it and the next sync pull carries it to the
+phone. A card created through `POST /api/remote/ask/card` on a served deck is
+appended to the same sidecar. An open remote exam is kept in the served
+folder's private state (`.alix/exam/remote.json`) from the moment its
+questions exist until the phone closes it (see the exam calls below), so a
+restarted server still holds it.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the card's required stable `deck_id` and

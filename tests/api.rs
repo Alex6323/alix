@@ -9596,8 +9596,8 @@ fn workspace_deadline_returns_500_when_the_local_manifest_has_a_non_table_review
 // The desktop plays model backend for a paired phone's tutor and AI exam; the
 // phone owns all state (transcript, mastery, cards) and resends it every
 // call. THE IRON RULE this family exists to pin: nothing under
-// `/api/remote/*` ever touches the server's own store
-// (`remote_endpoints_never_write_the_server_store`).
+// `/api/remote/*` ever touches the server's own store beyond the bounded
+// writes `remote_endpoints_never_write_the_server_store` names.
 
 /// A fact deck with frozen sources alongside
 /// `spawn_full_server`'s other fixtures: enough for the AI exam's
@@ -10752,7 +10752,9 @@ fn snapshot_dir(dir: &Path) -> HashMap<PathBuf, Vec<u8>> {
 /// decks dir before and after: a passing exam must not mark the deck
 /// mastered, a remediation must not create server-side virtual cards, a
 /// generation must not save the deck it returns: any of those would show up
-/// here as changed bytes or a new file.
+/// here as changed bytes or a new file. The bounded writes are asserted where
+/// they happen: an open exam's kept sitting, gone again at its close, and
+/// the sidecar a card create appends.
 #[test]
 fn remote_endpoints_never_write_the_server_store() {
     let _lock = exec_lock();
@@ -10777,6 +10779,18 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"deck":"examws/examdeck.md"}"#,
     );
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    let kept = alix::state::UserFiles::new(state_root(guard.dir())).exam_kept();
+    let mut decks_open = snapshot_dir(guard.dir());
+    assert!(
+        decks_open
+            .remove(kept.strip_prefix(guard.dir()).unwrap())
+            .is_some(),
+        "(a) an open remote exam is kept in the store until its close"
+    );
+    assert_eq!(
+        decks_before, decks_open,
+        "(a) an open remote exam writes no file but its kept sitting"
+    );
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
     assert_eq!(true, body["topics"][0]["pass"], "body: {body}");

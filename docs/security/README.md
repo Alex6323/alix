@@ -290,6 +290,24 @@ web URLs rather than a client-selected desktop path. The remote exam handlers
 deliberately avoid the poll path that writes progress. These controls do not
 turn pairing into a multi-user authorization system.
 
+A remote exam writes one more desktop file (ADR 0066). Once its questions
+exist, the server keeps the sitting at a fixed path in the served folder's
+private state (`.alix/exam/remote.json`) until the phone closes the exam, so
+a restarted server reopens it. The file holds the generated questions with
+their key points, the topics and their fingerprints, and the sitting's ideas
+document, which starts from the one the phone sent with the start request
+(parsed into its typed shape, inside the remote body cap). No path in it or
+to it is phone-supplied. A pairing-token holder can therefore make the
+desktop hold one such file at a time: a second start is refused while a
+sitting is open, and closing removes the file. A kept file that cannot be
+read, or that the deck can no longer carry, is reported on stderr at start
+and left in place; the slot starts idle. No progress, mastery, or card is
+written. Regression evidence:
+`a_paused_remote_exam_survives_a_server_restart_until_it_is_closed`,
+`an_unreadable_kept_remote_exam_leaves_the_slot_idle_and_the_file_in_place`,
+`a_remote_exam_that_cannot_be_kept_reports_the_failure_instead_of_its_questions`
+and `remote_endpoints_never_write_the_server_store` (`tests/api.rs`).
+
 ### Local server log
 
 Each running server writes its own size-capped log under the platform state
