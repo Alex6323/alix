@@ -98,9 +98,12 @@ sitting and the restart behavior.
 ## Security
 
 A pairing-token holder can make the desktop write this one file at a fixed
-path. The desktop generates its content, except the ideas document, which
-starts from the one the phone sent: it is parsed into its typed shape and
-bounded by the remote body cap. Nothing in the file is used as a path.
+path. The desktop generates its questions and key points. Three values in it
+come from the phone's start request, inside the remote body cap: the ideas
+document it starts from, parsed into its typed shape; the deck's catalog
+name, kept only when the catalog resolved it; and the names of requested
+cards the deck does not hold, kept as given. A restore resolves the deck name
+through the catalog again; nothing else in the file is used to find a file.
 `docs/security/README.md` records the write and its regression evidence.
 
 ## Verification
