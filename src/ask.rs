@@ -654,6 +654,12 @@ impl AskJob {
         }
         *slot = ChildSlot::Cancelled;
     }
+
+    /// A cancel arriving while `work` runs waits for it to return.
+    pub fn unless_cancelled<T>(&self, work: impl FnOnce() -> T) -> Option<T> {
+        let slot = self.child.lock().unwrap_or_else(|p| p.into_inner());
+        (!matches!(*slot, ChildSlot::Cancelled)).then(work)
+    }
 }
 
 fn json_body(raw: &str) -> &str {
@@ -2723,5 +2729,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn unless_cancelled_runs_the_work_only_for_a_job_that_was_not_cancelled() {
+        let job = AskJob::default();
+        assert_eq!(
+            Some(1),
+            job.unless_cancelled(|| 1),
+            "a job nobody cancelled runs the work"
+        );
+        job.cancel();
+        assert_eq!(
+            None,
+            job.unless_cancelled(|| 1),
+            "a cancelled job runs nothing"
+        );
     }
 }

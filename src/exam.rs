@@ -387,6 +387,11 @@ impl KeptSitting {
         let json = serde_json::to_string_pretty(self).context("encoding the kept exam")?;
         crate::exam_ideas::write_atomic(path, json.as_bytes())
     }
+
+    fn keep_for(&self, path: &Path, job: &ask::AskJob) -> Result<()> {
+        job.unless_cancelled(|| self.save(path))
+            .context("the exam was cancelled before it could be kept")?
+    }
 }
 
 /// Where a sitting started for another device is kept, and what names it there.
@@ -689,6 +694,8 @@ pub fn spawn_generation(
         )
         .and_then(|questions| {
             if let Some((path, kept)) = keep {
+                #[cfg(test)]
+                tests::hold_before_keeping(&path);
                 KeptSitting {
                     questions: questions
                         .iter()
@@ -697,7 +704,7 @@ pub fn spawn_generation(
                     ideas: ideas.clone(),
                     ..kept
                 }
-                .save(&path)
+                .keep_for(&path, &worker)
                 .context("keeping the exam for the other device")?;
             }
             Ok(Generated { questions, ideas })
@@ -4688,6 +4695,81 @@ mod tests {
         json["extra"] = true.into();
         std::fs::write(&path, json.to_string()).unwrap();
         assert!(KeptSitting::load(&path).is_err(), "an unknown field");
+    }
+
+    struct KeepHold {
+        path: PathBuf,
+        reached: std::sync::mpsc::Sender<()>,
+        release: Receiver<()>,
+    }
+
+    static KEEP_HOLD: std::sync::Mutex<Option<KeepHold>> = std::sync::Mutex::new(None);
+
+    pub(super) fn hold_before_keeping(path: &Path) {
+        let hold = {
+            let mut slot = KEEP_HOLD.lock().unwrap_or_else(|p| p.into_inner());
+            if slot.as_ref().is_some_and(|hold| hold.path == path) {
+                slot.take()
+            } else {
+                None
+            }
+        };
+        if let Some(hold) = hold {
+            let _ = hold.reached.send(());
+            let _ = hold.release.recv();
+        }
+    }
+
+    #[test]
+    fn closing_after_generation_but_before_its_keep_write_cannot_resurrect_the_exam() {
+        let _lock = exec_lock();
+        let ws = workspace_with("# Alpha\n<!-- id: topic-alpha -->\n\n## a1?\none\n");
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
+        let deck = opened(&ws);
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
+        let keep_dir = tempfile::tempdir().unwrap();
+        let path = keep_dir.path().join("remote.json");
+        let kept = kept_over(&[("topic-alpha", "written-earlier")], &[]);
+        let (reached, at_the_keep) = channel();
+        let (let_it_keep, release) = channel();
+        *KEEP_HOLD.lock().unwrap() = Some(KeepHold {
+            path: path.clone(),
+            reached,
+            release,
+        });
+        let (rx, job) = spawn_generation(
+            examined_topics(&deck),
+            deck.sources().unwrap().unwrap(),
+            None,
+            ExamConfig::default(),
+            ask_config(&cli),
+            Some((path.clone(), kept)),
+        );
+        at_the_keep
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("setup: generation reached the final keep write");
+
+        // RemoteExamClose drops the sitting (cancelling its AskJob), then
+        // removes the kept file if it exists. At this instant it does not.
+        job.cancel();
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        let_it_keep.send(()).unwrap();
+        let generated = rx.recv().unwrap();
+
+        assert!(
+            generated
+                .as_ref()
+                .is_err_and(|error| error.contains("cancelled before it could be kept")),
+            "a generation closed before its keep write reports that, got {:?}",
+            generated.map(|_| "questions")
+        );
+        assert!(
+            !path.exists(),
+            "a completed close must not be followed by a late keep write that restores the exam"
+        );
     }
 
     #[test]
