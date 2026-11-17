@@ -195,7 +195,9 @@ them. On the phone, the desktop keeps the prepared exam on disk
 exist until the exam is closed, so it survives a restarted desktop, and the
 phone saves each answer as you move on from it. The desktop finds the exam's
 deck by its name: renaming or moving the deck file while its exam is paused
-leaves a restarted desktop unable to reopen that exam.
+leaves a restarted desktop unable to reopen that exam. A file the desktop
+cannot remove when the exam is closed stays behind, and a restarted desktop
+then offers that closed exam again.
 **Continue later** under each question (or the
 close button) leaves the exam open: reopen the deck's sheet and **Take exam**
 returns to where you left off. The answer you were typing is kept as an
