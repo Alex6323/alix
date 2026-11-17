@@ -1201,6 +1201,46 @@ mod tests {
         }
     }
 
+    #[test]
+    fn json_fault_keeps_utf8_whole_at_both_span_edges() {
+        let raw = format!(
+            "preamble before first brace\n{{\"a\":1,\"left\":\"{}\" ? \"right\":\"{}\"}}",
+            "€".repeat(30),
+            "€".repeat(30),
+        );
+        let error = parse_json::<Probe>(&raw).unwrap_err();
+        let fault = json_fault(&raw, &error).unwrap();
+        let near = fault
+            .split_once("near >>>")
+            .and_then(|(_, text)| text.strip_suffix("<<<"))
+            .unwrap();
+        assert_eq!(Some('€'), near.chars().next());
+        assert_eq!(Some('€'), near.chars().last());
+        assert!(near.contains("\" ? \"right\":\""), "{near}");
+    }
+
+    #[test]
+    fn json_fault_clamps_a_reported_column_past_the_line_end() {
+        let serde_error =
+            <serde_json::Error as serde::de::Error>::custom("synthetic fault at line 1 column 999");
+        let error = anyhow::Error::new(serde_error);
+        assert_eq!(
+            Some("synthetic fault at line 1 column 999, near >>>{}<<<".to_string()),
+            json_fault("{}", &error)
+        );
+    }
+
+    #[test]
+    fn json_fault_uses_the_json_body_for_serde_line_and_column() {
+        let raw = "text before the first brace\nand another line\n{\"a\":1x}";
+        let error = parse_json::<Probe>(raw).unwrap_err();
+        let fault = json_fault(raw, &error).unwrap();
+        assert_eq!(
+            "expected `,` or `}` at line 1 column 7, near >>>{\"a\":1x}<<<",
+            fault
+        );
+    }
+
     fn card() -> Card {
         Card::plain(
             Arc::from("deck.txt"),
