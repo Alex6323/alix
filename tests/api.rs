@@ -10791,9 +10791,15 @@ fn remote_endpoints_never_write_the_server_store() {
         decks_before, decks_open,
         "(a) an open remote exam writes no file but its kept sitting"
     );
+    let kept_at_answering = std::fs::read(&kept).unwrap();
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
     assert_eq!(true, body["topics"][0]["pass"], "body: {body}");
+    assert_eq!(
+        kept_at_answering,
+        std::fs::read(&kept).unwrap(),
+        "(a) grading writes nothing into the kept sitting"
+    );
     post_json(&base, "/api/remote/exam/close", "{}");
 
     // (b) a full remote exam that FAILS and remediates through to cards.
@@ -10808,9 +10814,15 @@ fn remote_endpoints_never_write_the_server_store() {
         r#"{"deck":"examws/examdeck.md"}"#,
     );
     poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    let kept_at_answering = std::fs::read(&kept).unwrap();
     post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
     assert_eq!(false, body["topics"][0]["pass"], "body: {body}");
+    assert_eq!(
+        kept_at_answering,
+        std::fs::read(&kept).unwrap(),
+        "(b) a failed grading writes nothing into the kept sitting"
+    );
     post_json(&base, "/api/remote/exam/remediate", "{}");
     let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
     assert!(
@@ -10818,6 +10830,17 @@ fn remote_endpoints_never_write_the_server_store() {
             .as_str()
             .is_some_and(|c| c.trim_start().starts_with('#')),
         "body: {body}"
+    );
+    assert_eq!(
+        kept_at_answering,
+        std::fs::read(&kept).unwrap(),
+        "(b) remediation writes nothing into the kept sitting"
+    );
+    let mut decks_remediated = snapshot_dir(guard.dir());
+    decks_remediated.remove(kept.strip_prefix(guard.dir()).unwrap());
+    assert_eq!(
+        decks_before, decks_remediated,
+        "(b) a graded and remediated remote exam writes no file but its kept sitting"
     );
     post_json(&base, "/api/remote/exam/close", "{}");
 

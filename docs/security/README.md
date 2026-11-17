@@ -299,10 +299,15 @@ document, which starts from the one the phone sent with the start request
 (parsed into its typed shape, inside the remote body cap). No path in it or
 to it is phone-supplied. A pairing-token holder can therefore make the
 desktop hold one such file at a time: a second start is refused while a
-sitting is open, and closing removes the file. A kept file that cannot be
-read, or that the deck can no longer carry, is reported on stderr at start
+sitting is open, and closing removes the file. A generation that finishes
+after its exam was closed writes no file. A removal that fails is reported on
+stderr while the close still answers 200: the key points then stay on disk
+and the next start reopens that exam. A kept file that cannot be
+read, or that the deck can no longer carry, or whose deck is no longer found
+under the name it was started with, is reported on stderr at start
 and left in place; the slot starts idle. No progress, mastery, or card is
 written. Regression evidence:
+`closing_after_generation_but_before_its_keep_write_cannot_resurrect_the_exam`,
 `a_paused_remote_exam_survives_a_server_restart_until_it_is_closed`,
 `an_unreadable_kept_remote_exam_leaves_the_slot_idle_and_the_file_in_place`,
 `a_remote_exam_that_cannot_be_kept_reports_the_failure_instead_of_its_questions`

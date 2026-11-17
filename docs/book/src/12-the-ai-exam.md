@@ -193,7 +193,9 @@ page or a restarted server, and your answers are saved into it as you give
 them. On the phone, the desktop keeps the prepared exam on disk
 (`.alix/exam/remote.json` in the served folder) from the moment its questions
 exist until the exam is closed, so it survives a restarted desktop, and the
-phone saves each answer as you move on from it.
+phone saves each answer as you move on from it. The desktop finds the exam's
+deck by its name: renaming or moving the deck file while its exam is paused
+leaves a restarted desktop unable to reopen that exam.
 **Continue later** under each question (or the
 close button) leaves the exam open: reopen the deck's sheet and **Take exam**
 returns to where you left off. The answer you were typing is kept as an

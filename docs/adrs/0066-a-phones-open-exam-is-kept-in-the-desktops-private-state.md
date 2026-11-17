@@ -58,9 +58,10 @@ results, and progress.
   control without an ignore rule) copies it too, as it copies progress.
 - Grading still needs the desktop that holds the file.
 - Not covered: a server stopped during generation loses that generation; a
-  server restarted after grading reopens the exam unanswered; a close that
-  arrives between the last generation call and the write is undone by the
-  write.
+  server restarted after grading reopens the exam unanswered; a close whose
+  file cannot be removed still succeeds, and the next start reopens that
+  exam; a deck renamed or moved while its exam is open is no longer found
+  under the kept name, so the file stays and the slot starts idle.
 
 ## Alternatives considered
 
@@ -110,8 +111,10 @@ bounded by the remote body cap. Nothing in the file is used as a path.
 - `tests/api.rs` leaves an unreadable kept file in place with the slot idle,
   and fails a generation whose sitting cannot be written.
 - `remote_endpoints_never_write_the_server_store` asserts that an open exam
-  adds no file but the kept sitting, and that the folder is unchanged after
-  the close.
+  adds no file but the kept sitting, that grading and remediation leave that
+  file's bytes unchanged, and that the folder is unchanged after the close.
+- `src/exam.rs` holds a generation at its keep write, cancels it as a close
+  does, and checks that no file is written afterwards.
 - `src/exam.rs` tests reopening over the kept topics and fingerprints, the
   refusals, and an unreadable or missing file.
 

@@ -419,7 +419,11 @@ phone. A card created through `POST /api/remote/ask/card` on a served deck is
 appended to the same sidecar. An open remote exam is kept in the served
 folder's private state (`.alix/exam/remote.json`) from the moment its
 questions exist until the phone closes it (see the exam calls below), so a
-restarted server still holds it.
+restarted server still holds it. Two conditions bound that: the kept exam
+names its deck by the catalog name it was started under, so a deck renamed or
+moved meanwhile leaves the file in place and the slot `idle` after a restart;
+and a close whose file cannot be removed still answers 200, logs the failure,
+and leaves an exam that the next start reopens.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the card's required stable `deck_id` and
