@@ -491,9 +491,13 @@ fn with_one_retry<T>(
     }
 }
 
+fn not_the_json_asked_for(raw: &str, error: &anyhow::Error) -> String {
+    let fault = ask::json_fault(raw, error).unwrap_or_else(|| format!("{error:#}"));
+    format!("it was not the JSON asked for: {fault}")
+}
+
 pub(crate) fn checked_ideas(raw: &str) -> std::result::Result<Vec<String>, String> {
-    let dto: IdeasDto =
-        parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
+    let dto: IdeasDto = parse_json(raw).map_err(|error| not_the_json_asked_for(raw, &error))?;
     let mut ideas: Vec<String> = Vec::new();
     for idea in dto
         .ideas
@@ -514,8 +518,7 @@ pub(crate) fn checked_questions(
     ideas: &[String],
     raw: &str,
 ) -> std::result::Result<Vec<ExamQuestion>, String> {
-    let dto: QuestionsDto =
-        parse_json(raw).map_err(|error| format!("it was not the JSON asked for ({error:#})"))?;
+    let dto: QuestionsDto = parse_json(raw).map_err(|error| not_the_json_asked_for(raw, &error))?;
     let mut covered = vec![false; ideas.len()];
     let mut questions = Vec::new();
     for generated in dto.questions {
@@ -4366,6 +4369,56 @@ mod tests {
     }
 
     #[test]
+    fn a_reply_that_is_not_the_json_asked_for_is_rejected_naming_the_complaint_and_the_spot() {
+        let cap = crate::exam_prompt::RETRY_REASON_MAX_CHARS;
+        let filler = "x".repeat(cap);
+        let question = |prompt: &str, rest: &str| {
+            format!(
+                "{{\"questions\": [{{\"shape\": \"instance\", \"idea\": 1, \
+                 \"prompt\": \"{prompt}\"{rest}}}]}}"
+            )
+        };
+        let one_idea = ["m".to_string()];
+        let cases = [
+            (
+                "an unescaped quote inside a question",
+                checked_questions(
+                    &one_idea,
+                    &question(
+                        &format!("{filler} names.push(String::from(\"zed\")); done"),
+                        ", \"points\": [\"p\"]",
+                    ),
+                )
+                .err(),
+                "expected `,` or `}`",
+                "String::from(\"zed\")",
+            ),
+            (
+                "a question without key points",
+                checked_questions(&one_idea, &question(&format!("{filler} end"), "")).err(),
+                "missing field `points`",
+                "x end\"}",
+            ),
+            (
+                "ideas with a comma missing",
+                checked_ideas(&format!("{{\"ideas\": [\"{filler}\", \"b\" \"c\"]}}")).err(),
+                "expected `,` or `]`",
+                "\"b\" \"c\"",
+            ),
+        ];
+        for (label, reason, complaint, spot) in cases {
+            let reason = reason.unwrap_or_else(|| panic!("{label}: setup, the reply is rejected"));
+            let sent = truncate_chars(&reason, cap);
+            for needed in ["it was not the JSON asked for", complaint, spot] {
+                assert!(
+                    sent.contains(needed),
+                    "{label}: `{needed}` reaches the model within the retry cap: {sent}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn resuming_a_prepared_exam_refuses_a_missing_frozen_copy_like_a_fresh_sitting() {
         let ws = two_sourced_topics();
         let deck = opened(&ws);
@@ -5200,10 +5253,13 @@ mod tests {
         let idea = idea_char.to_string().repeat(400);
         let long_ideas = format!("{{\"ideas\":[\"{idea}\",\"2{idea}\",\"3{idea}\"]}}");
         let rejected = "not the JSON asked for. ".repeat(400);
+        let third_idea_unasked = "{\"questions\":[\
+            {\"shape\":\"instance\",\"idea\":1,\"prompt\":\"Why move?\",\"points\":[\"p\"]},\
+            {\"shape\":\"boundary\",\"idea\":2,\"prompt\":\"When not?\",\"points\":[\"p\"]}]}";
         let cli_dir = tempfile::tempdir().unwrap();
         let cli = crate::testutil::fake_replies(
             cli_dir.path(),
-            &[&long_ideas, &rejected, THREE_QUESTIONS],
+            &[&long_ideas, third_idea_unasked, THREE_QUESTIONS],
         );
         let (rx, _job) = spawn_prepare(
             &deck,

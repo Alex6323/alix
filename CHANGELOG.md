@@ -11,6 +11,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Walk with cram: with cram ticked (web Depth menu, phone deck sheet), a walk
   serves every card in deck order, starting after the card walked last and
   wrapping around. `POST /api/walk` takes an optional `cram`.
+
 - `RemoteExamDto.sitting` names the open remote exam sitting, minted at
   its start and new for a replacement on the same deck. The phone records a
   result only for the sitting it started in this run of the app: another
@@ -981,15 +982,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Mobile: the exam's Continue later sits between Back and Next instead of on
   a row of its own, leaving more room for the question, above all in
   landscape.
+
 - Mobile: an exam being prepared on the paired desktop no longer vanishes from
   the deck sheet when one status check goes unanswered (for example while the
   phone sleeps); the sheet keeps showing the preparation and offers Take exam
   once it is ready.
+
 - Mobile: when the paired desktop refuses an exam, or the phone cannot prepare
   or cancel one, the deck sheet's exam row says so; the message used to appear
   beneath the open sheet, where it could not be seen.
+
 - Mobile: the review bar keeps one height whether or not the tutor's Ask
   button is offered, so the card above it no longer shifts by two pixels.
+
 - The tutor no longer says it has only the frozen excerpts on a deck whose
   sources are frozen: it reads those sources, so the warning now shows only
   when no source material is available.
@@ -1372,6 +1377,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Adult web review keeps several formulas and question images visible together
   instead of clipping a later formula or shrinking an image to a speck.
+
+- A rejected exam reply is retried with the parser's complaint and the reply
+  text around the fault. The retry reason used to start with a copy of the
+  reply, so its size cap cut the complaint off and the model was told nothing
+  about what to correct.
 
 ## [0.8.0] - 2026-09-02
 

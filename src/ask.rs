@@ -656,8 +656,38 @@ impl AskJob {
     }
 }
 
+fn json_body(raw: &str) -> &str {
+    &raw[raw.find('{').unwrap_or(0)..]
+}
+
+const FAULT_SPAN_BYTES: usize = 40;
+
+/// The parser's complaint about `raw` and the reply text around that spot,
+/// short enough to send back to the model that wrote it.
+pub(crate) fn json_fault(raw: &str, error: &anyhow::Error) -> Option<String> {
+    let fault = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<serde_json::Error>())?;
+    let body = json_body(raw);
+    let line_start: usize = body
+        .split_inclusive('\n')
+        .take(fault.line().saturating_sub(1))
+        .map(str::len)
+        .sum();
+    let at = (line_start + fault.column().saturating_sub(1)).min(body.len());
+    let mut from = at.saturating_sub(FAULT_SPAN_BYTES);
+    while !body.is_char_boundary(from) {
+        from -= 1;
+    }
+    let mut to = (at + FAULT_SPAN_BYTES).min(body.len());
+    while !body.is_char_boundary(to) {
+        to += 1;
+    }
+    Some(format!("{fault}, near >>>{}<<<", &body[from..to]))
+}
+
 pub(crate) fn parse_json<T: for<'de> serde::Deserialize<'de>>(raw: &str) -> Result<T> {
-    let body = &raw[raw.find('{').unwrap_or(0)..];
+    let body = json_body(raw);
     let mut values = serde_json::Deserializer::from_str(body).into_iter::<T>();
     let Some(result) = values.next() else {
         bail!("the model did not return valid JSON:\n{body}");
