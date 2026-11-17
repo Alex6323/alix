@@ -8,7 +8,7 @@
 
 use std::{path::PathBuf, sync::mpsc, thread, time::Instant};
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 
 use super::{catalog_owner::CatalogHandle, dto::*, jobs::*};
 use crate::{
@@ -635,6 +635,12 @@ impl JobsState {
             // gone and its send fails harmlessly.
             JobsCommand::RemoteExamClose(reply) => {
                 self.remote_exam = None;
+                if let Some(path) = exam_kept_path(&self.config)
+                    && path.exists()
+                    && let Err(error) = crate::fsio::remove_file(&path)
+                {
+                    eprintln!("warning: could not remove the kept exam: {error}");
+                }
                 let _ = reply.send(());
             }
             JobsCommand::RemoteGenerateStart {
@@ -940,6 +946,12 @@ impl JobsState {
             return Started::Conflict;
         };
         let estimate = exam::wait_estimate(&ask_cfg);
+        let keep = exam_kept_path(&self.config).map(|path| exam::Keep {
+            path,
+            sitting: id.clone(),
+            deck: deck_name.clone(),
+            unknown_cards: selection.unknown_cards.clone(),
+        });
         let sitting = exam::Sitting::start_with(
             &deck,
             selection.topics,
@@ -949,6 +961,7 @@ impl JobsState {
             strictness,
             exam_cfg,
             ask_cfg,
+            keep,
         );
         let ex = RemoteExamining {
             id,
@@ -962,6 +975,52 @@ impl JobsState {
         self.remote_exam = Some(ex);
         Started::Dto(dto)
     }
+}
+
+pub(super) fn exam_kept_path(config: &AssembleConfig) -> Option<PathBuf> {
+    config
+        .instance_store
+        .as_ref()
+        .map(|root| crate::state::UserFiles::new(root).exam_kept())
+}
+
+/// The exam a phone left unfinished before the server last stopped.
+pub(super) fn kept_remote_exam(
+    catalog: &CatalogHandle,
+    config: &AssembleConfig,
+    exam_cfg: &ExamConfig,
+    ask_cfg: &AskConfig,
+) -> Option<RemoteExamining> {
+    let path = exam_kept_path(config)?;
+    let restored = (|| -> anyhow::Result<Option<RemoteExamining>> {
+        let Some(kept) = exam::KeptSitting::load(&path)? else {
+            return Ok(None);
+        };
+        let deck_path = catalog
+            .resolve_path(kept.deck.clone())
+            .flatten()
+            .with_context(|| format!("no deck is named `{}`", kept.deck))?;
+        let deck = exam::open_for_exam(&deck_path)?;
+        let exam_cfg = exam_cfg
+            .clone()
+            .for_workspace(&crate::workspace::content_root(&deck_path));
+        let sitting = exam::Sitting::from_kept(&deck, &kept, exam_cfg, ask_cfg.clone())?;
+        Ok(Some(RemoteExamining {
+            id: kept.sitting,
+            deck: kept.deck,
+            sitting,
+            estimate: None,
+            cards_by_topic: Vec::new(),
+            unknown_cards: kept.unknown_cards,
+        }))
+    })();
+    restored.unwrap_or_else(|error| {
+        eprintln!(
+            "warning: could not reopen the kept exam {}: {error:#}",
+            path.display()
+        );
+        None
+    })
 }
 
 #[cfg(test)]

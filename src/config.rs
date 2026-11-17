@@ -424,7 +424,8 @@ impl GenerateCardStyle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 #[cfg_attr(feature = "full", derive(clap::ValueEnum))]
 pub enum Strictness {
     Strict,

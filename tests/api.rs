@@ -172,6 +172,12 @@ impl Guard {
 
 impl Drop for Guard {
     fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+impl Guard {
+    fn stop(&mut self) {
         self.server.unblock();
         if let Some(handle) = self.handle.take() {
             // Propagate a server-thread panic instead of swallowing it —
@@ -518,9 +524,25 @@ fn spawn_full_server_fixture(
         aug.save().unwrap();
     }
 
-    let store = open_instance_store(dir.path());
-    let recent = RecentDecks::load(recent_path(dir.path()));
-    let decks_dir = dir.path().to_path_buf();
+    let (base, server, handle) = launch_full_server(dir.path(), ask_command, tune);
+    (
+        base,
+        Guard {
+            server,
+            handle: Some(handle),
+            dir,
+        },
+    )
+}
+
+fn launch_full_server(
+    dir: &Path,
+    ask_command: Option<&Path>,
+    tune: impl FnOnce(&mut ReviewOptions),
+) -> (String, Arc<Server>, thread::JoinHandle<()>) {
+    let store = open_instance_store(dir);
+    let recent = RecentDecks::load(recent_path(dir));
+    let decks_dir = dir.to_path_buf();
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let server = Arc::new(serve::bind(addr).unwrap());
@@ -543,7 +565,7 @@ fn spawn_full_server_fixture(
                 max_session: 10,
                 new_cards_percent: 30,
             },
-            instance_store: Some(store_path),
+            instance_store: Some(state_root(dir)),
             ..opts.cfg
         },
         ..opts
@@ -554,15 +576,15 @@ fn spawn_full_server_fixture(
     let handle = thread::spawn(move || {
         let _ = serve::run_review(store, recent, decks_dir, server, opts);
     });
+    (base, stop_handle, handle)
+}
 
-    (
-        base,
-        Guard {
-            server: stop_handle,
-            handle: Some(handle),
-            dir,
-        },
-    )
+fn restart_full_server(mut guard: Guard, ask_command: Option<&Path>) -> (String, Guard) {
+    guard.stop();
+    let (base, server, handle) = launch_full_server(guard.dir(), ask_command, |_opts| {});
+    guard.server = server;
+    guard.handle = Some(handle);
+    (base, guard)
 }
 
 /// Serializes tests that write + exec a fake CLI: a concurrent fork would
@@ -10431,6 +10453,142 @@ fn a_remote_exam_sitting_carries_one_id_from_start_until_close() {
     assert_ne!(
         first, replaced["sitting"],
         "step 4: a replacement sitting on the same deck has its own id: {replaced}"
+    );
+}
+
+#[test]
+fn a_paused_remote_exam_survives_a_server_restart_until_it_is_closed() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
+
+    let kept = alix::state::UserFiles::new(state_root(guard.dir())).exam_kept();
+    let resp = post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md","cards":["card-e1","card-unknown"]}"#,
+    );
+    assert_eq!(200, resp.status, "step 1: start");
+    let paused = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    assert_eq!(
+        serde_json::json!(["card-unknown"]),
+        paused["unknown_cards"],
+        "step 1: setup, the sitting carries an unknown card: {paused}"
+    );
+
+    let (base, guard) = restart_full_server(guard, Some(&fake));
+    let restored = get_json(&base, "/api/remote/exam");
+    for key in [
+        "phase",
+        "sitting",
+        "deck",
+        "strictness",
+        "questions",
+        "questions_units",
+        "full",
+        "unknown_cards",
+        "error",
+    ] {
+        assert_eq!(
+            paused[key], restored[key],
+            "step 2: the restarted server still holds the paused exam's `{key}`: {restored}"
+        );
+    }
+
+    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a"]}"#);
+    assert_eq!(
+        200, resp.status,
+        "step 3: the restored exam accepts answers"
+    );
+    let results = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
+    assert_eq!(
+        true, results["topics"][0]["pass"],
+        "step 3: the restored exam grades against its kept answer key: {results}"
+    );
+    assert!(
+        results["ideas"].is_object(),
+        "step 3: the restored exam still returns its idea list: {results}"
+    );
+    assert!(
+        kept.is_file(),
+        "step 3: a graded exam stays kept until the phone closes it"
+    );
+
+    assert_eq!(
+        200,
+        post_json(&base, "/api/remote/exam/close", "{}").status,
+        "step 4: close"
+    );
+    let (base, _guard) = restart_full_server(guard, Some(&fake));
+    let idle = get_json(&base, "/api/remote/exam");
+    assert_eq!(
+        "idle", idle["phase"],
+        "step 4: a closed exam does not come back after a restart: {idle}"
+    );
+    assert!(!kept.exists(), "step 4: close removes the kept exam");
+}
+
+#[test]
+fn an_unreadable_kept_remote_exam_leaves_the_slot_idle_and_the_file_in_place() {
+    let (base, guard) = spawn_full_server_fixture(
+        None,
+        |dir| {
+            let kept = alix::state::UserFiles::new(state_root(dir)).exam_kept();
+            std::fs::create_dir_all(kept.parent().unwrap()).unwrap();
+            std::fs::write(kept, "not a kept exam").unwrap();
+        },
+        |_opts| {},
+    );
+    let idle = get_json(&base, "/api/remote/exam");
+    assert_eq!("idle", idle["phase"], "the server starts idle: {idle}");
+    let kept = alix::state::UserFiles::new(state_root(guard.dir())).exam_kept();
+    assert_eq!(
+        "not a kept exam",
+        std::fs::read_to_string(kept).unwrap(),
+        "the unreadable file is not discarded"
+    );
+}
+
+#[test]
+fn a_remote_exam_that_cannot_be_kept_reports_the_failure_instead_of_its_questions() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let fake = branching_exam_cli(scripts.path(), &scripts.path().join("grades"));
+    let (base, _guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |dir| {
+            write_exam_deck_fixture(dir);
+            let kept = alix::state::UserFiles::new(state_root(dir)).exam_kept();
+            let blocked = kept.parent().unwrap();
+            std::fs::create_dir_all(blocked.parent().unwrap()).unwrap();
+            std::fs::write(blocked, "a file where the exam folder belongs").unwrap();
+        },
+        |_opts| {},
+    );
+    let resp = post_json(
+        &base,
+        "/api/remote/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
+    assert_eq!(200, resp.status, "start");
+    let failed = poll_until(&base, "/api/remote/exam", |b| b["error"].is_string());
+    assert!(
+        failed["error"]
+            .as_str()
+            .is_some_and(|error| error.starts_with("keeping the exam for the other device")),
+        "the failure names the keep: {failed}"
+    );
+    assert_eq!(
+        serde_json::json!([]),
+        failed["questions"],
+        "no questions are handed out for an exam that would not survive: {failed}"
     );
 }
 

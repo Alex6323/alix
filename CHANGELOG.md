@@ -1378,6 +1378,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Adult web review keeps several formulas and question images visible together
   instead of clipping a later formula or shrinking an image to a speck.
 
+- A phone exam survives a desktop restart. Once its questions exist, the
+  desktop keeps the exam on disk until the phone closes it, and a restarted
+  server reopens it unanswered under the same `sitting` id; the phone still
+  holds the answers. Before, the exam lived only in the server's memory and a
+  restart or shutdown lost it. An exam that cannot be kept now fails its
+  generation with a message instead of handing out questions that would not
+  survive.
+
 - A rejected exam reply is retried with the parser's complaint and the reply
   text around the fault. The retry reason used to start with a copy of the
   reply, so its size cap cut the complaint off and the model was told nothing

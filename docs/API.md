@@ -493,12 +493,16 @@ call. A failed, remediable result's cards come back as deck-format text on
 server generates them but never keeps them. Generation takes minutes, so the
 sitting stays in the server's slot while the phone is away; the phone polls
 `GET /api/remote/exam` when it returns and closes the slot explicitly
-(closing cancels a running generation). Each exam asks three questions per
+(closing cancels a running generation). Once its questions exist, the sitting
+is also kept on disk until that close: a restarted server reopens it in
+`answering`, unanswered, under the same `sitting` id, and the phone submits
+its answers again. A generation still running when the server stops is lost.
+Each exam asks three questions per
 topic, aimed at ideas the phone's `ideas` document picks (never asked, then
 last failed, then oldest); for a topic the document lacks, or whose sources
 changed, the server lists the ideas first. The updated document comes back on
-`RemoteExamDto.ideas` after grading for the phone to keep; the server keeps
-no copy.
+`RemoteExamDto.ideas` after grading for the phone to keep; the server's own
+copy goes with the kept sitting when the phone closes it.
 
 `POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
 minus everything the iron rule forbids: there is no `dest` (a phone chooses

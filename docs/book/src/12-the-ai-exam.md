@@ -190,9 +190,10 @@ every topic whether the control is on or off.
 A prepared exam is kept until it is graded. In the browser it lives in the
 deck's store (`.alix/exam/<deck-id>.prepared.json`), so it survives a closed
 page or a restarted server, and your answers are saved into it as you give
-them. On the phone, the desktop holds the prepared exam in memory and the
-phone saves each answer as you move on from it; a restarted desktop loses
-the phone's prepared exam. **Continue later** under each question (or the
+them. On the phone, the desktop keeps the prepared exam on disk from the
+moment its questions exist until the exam is closed, so it survives a
+restarted desktop, and the phone saves each answer as you move on from it.
+**Continue later** under each question (or the
 close button) leaves the exam open: reopen the deck's sheet and **Take exam**
 returns to where you left off. The answer you were typing is kept as an
 editable draft, also when the app goes to the background. The phone records a result against the material as it stood

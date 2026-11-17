@@ -345,6 +345,59 @@ impl Prepared {
     }
 }
 
+/// A sitting another device is taking, on disk from the moment its questions
+/// exist until it is closed.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeptSitting {
+    pub version: u32,
+    pub sitting: String,
+    pub deck: String,
+    pub strictness: Strictness,
+    pub topics: Vec<KeptTopic>,
+    pub unknown_cards: Vec<String>,
+    pub questions: Vec<PreparedQuestion>,
+    pub ideas: IdeasDocument,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeptTopic {
+    pub topic_id: String,
+    pub fingerprint: String,
+}
+
+impl KeptSitting {
+    pub fn load(path: &Path) -> Result<Option<Self>> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                let kept: Self = serde_json::from_str(&text)
+                    .with_context(|| format!("reading {}", path.display()))?;
+                if kept.version != 1 {
+                    bail!("unreadable kept exam {}", path.display());
+                }
+                Ok(Some(kept))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+
+    fn save(&self, path: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(self).context("encoding the kept exam")?;
+        crate::exam_ideas::write_atomic(path, json.as_bytes())
+    }
+}
+
+/// Where a sitting started for another device is kept, and what names it there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Keep {
+    pub path: PathBuf,
+    pub sitting: String,
+    pub deck: String,
+    pub unknown_cards: Vec<String>,
+}
+
 pub fn open_for_exam(path: &Path) -> Result<Deck> {
     crate::assemble::stamp_for_session(path)?;
     let mut deck = Deck::load(path).with_context(|| format!("loading {}", path.display()))?;
@@ -616,6 +669,7 @@ pub fn spawn_generation(
     ideas: Option<IdeasDocument>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
+    keep: Option<(PathBuf, KeptSitting)>,
 ) -> (Receiver<Result<Generated, String>>, ask::AskJob) {
     #[cfg(test)]
     GENERATION_SPAWNS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -633,7 +687,21 @@ pub fn spawn_generation(
             &worker,
             &mut |_| Ok(()),
         )
-        .map(|questions| Generated { questions, ideas })
+        .and_then(|questions| {
+            if let Some((path, kept)) = keep {
+                KeptSitting {
+                    questions: questions
+                        .iter()
+                        .filter_map(|q| PreparedQuestion::of(q, &topics))
+                        .collect(),
+                    ideas: ideas.clone(),
+                    ..kept
+                }
+                .save(&path)
+                .context("keeping the exam for the other device")?;
+            }
+            Ok(Generated { questions, ideas })
+        })
         .map_err(|e| format!("{e:#}"));
         let _ = tx.send(r);
     });
@@ -921,6 +989,7 @@ impl Sitting {
                 strictness,
                 cfg,
                 ask_cfg,
+                None,
             ),
             Ok(None) => Self::refused(
                 deck,
@@ -968,6 +1037,7 @@ impl Sitting {
         strictness: Strictness,
         cfg: ExamConfig,
         ask_cfg: AskConfig,
+        keep: Option<Keep>,
     ) -> Self {
         let sourced = sources.sourced_topics();
         let topics: Vec<ExamTopic> = topics
@@ -990,12 +1060,33 @@ impl Sitting {
             return Self::refused(deck, error, strictness, cfg, ask_cfg);
         }
         let mut sitting = Self::idle(deck, topics, start, strictness, cfg, ask_cfg);
+        let keep = keep.map(|keep| {
+            let kept = KeptSitting {
+                version: 1,
+                sitting: keep.sitting,
+                deck: keep.deck,
+                strictness,
+                topics: sitting
+                    .topics
+                    .iter()
+                    .map(|topic| KeptTopic {
+                        topic_id: topic.topic_id.clone(),
+                        fingerprint: topic.fingerprint.clone(),
+                    })
+                    .collect(),
+                unknown_cards: keep.unknown_cards,
+                questions: Vec::new(),
+                ideas: IdeasDocument::default(),
+            };
+            (keep.path, kept)
+        });
         let (rx, job) = spawn_generation(
             sitting.topics.clone(),
             sources,
             ideas,
             sitting.cfg.clone(),
             sitting.ask_cfg.clone(),
+            keep,
         );
         sitting.job = job;
         sitting.pending = Some(Pending::Questions(rx));
@@ -1073,6 +1164,68 @@ impl Sitting {
         sitting.questions = questions;
         sitting.ideas = Some(ideas);
         sitting
+    }
+
+    /// A kept sitting reopened unanswered, over the topics and fingerprints
+    /// it was written for.
+    pub fn from_kept(
+        deck: &Deck,
+        kept: &KeptSitting,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Result<Self> {
+        let current = examined_topics(deck);
+        let topics = kept
+            .topics
+            .iter()
+            .map(|kept_topic| {
+                let topic = current
+                    .iter()
+                    .find(|topic| topic.topic_id == kept_topic.topic_id)
+                    .with_context(|| {
+                        format!("the deck no longer has topic `{}`", kept_topic.topic_id)
+                    })?;
+                Ok(ExamTopic {
+                    fingerprint: kept_topic.fingerprint.clone(),
+                    ..topic.clone()
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let questions = kept
+            .questions
+            .iter()
+            .map(|question| {
+                let at = topics
+                    .iter()
+                    .position(|topic| topic.topic_id == question.topic)
+                    .with_context(|| {
+                        format!(
+                            "the kept exam asks about unknown topic `{}`",
+                            question.topic
+                        )
+                    })?;
+                Ok(question.at(at))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if questions.is_empty() {
+            bail!("the kept exam has no questions");
+        }
+        let answers = vec![String::new(); questions.len()];
+        let sitting = Self::from_prepared(
+            deck,
+            topics,
+            questions,
+            answers,
+            kept.ideas.clone(),
+            SittingStart::default(),
+            kept.strictness,
+            cfg,
+            ask_cfg,
+        );
+        if let Some(error) = sitting.error() {
+            bail!("{error}");
+        }
+        Ok(sitting)
     }
 
     pub fn ideas(&self) -> Option<&crate::exam_ideas::IdeasDocument> {
@@ -4418,6 +4571,125 @@ mod tests {
         }
     }
 
+    fn kept_over(topics: &[(&str, &str)], question_topics: &[&str]) -> KeptSitting {
+        KeptSitting {
+            version: 1,
+            sitting: "sitting-one".to_string(),
+            deck: "ws/deck.md".to_string(),
+            strictness: Strictness::Strict,
+            topics: topics
+                .iter()
+                .map(|(topic_id, fingerprint)| KeptTopic {
+                    topic_id: topic_id.to_string(),
+                    fingerprint: fingerprint.to_string(),
+                })
+                .collect(),
+            unknown_cards: Vec::new(),
+            questions: question_topics
+                .iter()
+                .map(|topic| PreparedQuestion {
+                    topic: topic.to_string(),
+                    idea: 1,
+                    prompt: format!("about {topic}?"),
+                    points: vec!["a point".to_string()],
+                    shape: Shape::Instance,
+                    mental_model: String::new(),
+                })
+                .collect(),
+            ideas: IdeasDocument::default(),
+        }
+    }
+
+    #[test]
+    fn a_kept_sitting_reopens_unanswered_over_the_topics_and_fingerprints_it_was_written_for() {
+        let ws = two_sourced_topics();
+        let deck = opened(&ws);
+        let kept = kept_over(&[("topic-beta", "written-earlier")], &["topic-beta"]);
+
+        let sitting =
+            Sitting::from_kept(&deck, &kept, ExamConfig::default(), AskConfig::default()).unwrap();
+
+        assert_eq!(
+            (&Phase::Answering, false, Strictness::Strict),
+            (sitting.phase(), sitting.thinking(), sitting.strictness()),
+            "answering, nothing pending, at the kept strictness"
+        );
+        assert_eq!(
+            vec![("topic-beta", "written-earlier")],
+            sitting
+                .topics()
+                .iter()
+                .map(|topic| (topic.topic_id.as_str(), topic.fingerprint.as_str()))
+                .collect::<Vec<_>>(),
+            "only the kept topic, at the fingerprint the questions were written for"
+        );
+        assert!(!sitting.full(), "one of the deck's two topics is not full");
+        assert_eq!(
+            vec![("about topic-beta?", 0)],
+            sitting
+                .questions()
+                .iter()
+                .map(|q| (q.prompt.as_str(), q.topic))
+                .collect::<Vec<_>>(),
+            "the question points at its topic's place in the sitting"
+        );
+        assert_eq!(vec![String::new()], sitting.answers(), "unanswered");
+    }
+
+    #[test]
+    fn a_kept_sitting_the_deck_can_no_longer_carry_is_refused() {
+        let ws = two_sourced_topics();
+        let deck = opened(&ws);
+        for (label, kept, expected) in [
+            (
+                "a topic the deck lost",
+                kept_over(&[("topic-gone", "f")], &["topic-gone"]),
+                "the deck no longer has topic `topic-gone`",
+            ),
+            (
+                "a question outside the kept topics",
+                kept_over(&[("topic-alpha", "f")], &["topic-beta"]),
+                "the kept exam asks about unknown topic `topic-beta`",
+            ),
+            (
+                "no questions",
+                kept_over(&[("topic-alpha", "f")], &[]),
+                "the kept exam has no questions",
+            ),
+        ] {
+            let error =
+                Sitting::from_kept(&deck, &kept, ExamConfig::default(), AskConfig::default())
+                    .err()
+                    .map(|error| format!("{error:#}"));
+            assert_eq!(Some(expected.to_string()), error, "{label}");
+        }
+    }
+
+    #[test]
+    fn a_kept_exam_of_another_version_or_shape_is_unreadable_and_a_missing_one_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remote.json");
+        assert_eq!(None, KeptSitting::load(&path).unwrap(), "missing");
+
+        let kept = kept_over(&[("topic-alpha", "f")], &["topic-alpha"]);
+        kept.save(&path).unwrap();
+        assert_eq!(
+            Some(kept.clone()),
+            KeptSitting::load(&path).unwrap(),
+            "round trip"
+        );
+
+        let mut json = serde_json::to_value(&kept).unwrap();
+        json["version"] = 2.into();
+        std::fs::write(&path, json.to_string()).unwrap();
+        assert!(KeptSitting::load(&path).is_err(), "another version");
+
+        json["version"] = 1.into();
+        json["extra"] = true.into();
+        std::fs::write(&path, json.to_string()).unwrap();
+        assert!(KeptSitting::load(&path).is_err(), "an unknown field");
+    }
+
     #[test]
     fn resuming_a_prepared_exam_refuses_a_missing_frozen_copy_like_a_fresh_sitting() {
         let ws = two_sourced_topics();
@@ -4864,6 +5136,7 @@ mod tests {
             Strictness::Balanced,
             ExamConfig::default(),
             ask_config(&cli),
+            None,
         );
         advance_until_idle(&mut sitting);
         assert_eq!(None, sitting.error());
@@ -4911,6 +5184,7 @@ mod tests {
                 Strictness::Balanced,
                 ExamConfig::default(),
                 ask_config(&cli),
+                None,
             );
             let findings = crate::topic::duplicated_topics(&deck, Some(ws.root()))
                 .iter()

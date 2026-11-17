@@ -317,6 +317,7 @@ pub fn run_review(
         ),
     );
 
+    let kept_exam = jobs_owner::kept_remote_exam(&catalog, &jobs_cfg, &exam_cfg, &ask_cfg);
     let (jobs, jobs_thread) = jobs_owner::spawn(
         failure.clone(),
         JobsState {
@@ -327,7 +328,7 @@ pub fn run_review(
             sharing: None,
             receiving: None,
             remote_ask: None,
-            remote_exam: None,
+            remote_exam: kept_exam,
             remote_generate: None,
             preparing: Vec::new(),
             preparing_sequence: crate::time::now_ms(),
