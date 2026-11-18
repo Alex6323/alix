@@ -3748,28 +3748,35 @@ mod tests {
                 break pid.trim().to_string();
             }
             if let Ok(early) = rx.try_recv() {
+                job.cancel();
                 panic!("the grade ended before the model started: {early:?}");
             }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the model never wrote its pid"
-            );
+            if std::time::Instant::now() >= deadline {
+                job.cancel();
+                panic!("the model never wrote its pid");
+            }
             std::thread::yield_now();
         };
         job.cancel();
         let answered = rx.recv_timeout(std::time::Duration::from_secs(20));
         let survived = Path::new("/proc").join(&pid).exists();
-        let _ = std::process::Command::new("pkill")
-            .args(["-KILL", "-P", &pid])
-            .status();
-        let _ = std::process::Command::new("kill")
-            .args(["-KILL", &pid])
-            .status();
+        let _release = survived.then(|| release_fifo(&fifo));
         assert!(
             matches!(answered, Ok(Err(_))),
             "a cancelled grade answers an error: {answered:?}"
         );
         assert!(!survived, "the model process {pid} survived the cancel");
+    }
+
+    fn release_fifo(fifo: &Path) -> std::fs::File {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(fifo)
+            .unwrap();
+        file.write_all(b"go\n").unwrap();
+        file
     }
 
     fn remediation_request(topics: &[(usize, &str)]) -> RemediationRequest {
