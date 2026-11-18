@@ -184,6 +184,12 @@ impl CarriedExam {
         if self.version != VERSION {
             bail!("unreadable carried exam: version {}", self.version);
         }
+        if !self.ideas.has_current_version() {
+            bail!(
+                "unreadable carried exam: ideas document version {}",
+                self.ideas.version
+            );
+        }
         let mut ids = HashSet::new();
         for topic in &self.topics {
             if !ids.insert(topic.topic_id.as_str()) {
@@ -1960,6 +1966,43 @@ mod tests {
                 vec![true, true],
             )
             .expect("the blank answer counts 0");
+    }
+
+    #[test]
+    fn an_embedded_ideas_document_of_another_version_is_refused_at_every_entry() {
+        let mut carried = exam(&["a"], &["a"]);
+        carried.ideas.version = 2;
+        let units = carried.questions_units();
+        let mut held_file = serde_json::to_value(held()).unwrap();
+        held_file["exam"]["ideas"]["version"] = 2.into();
+        let rows: [(&str, Result<()>); 3] = [
+            (
+                "CarriedExam::parse",
+                CarriedExam::parse(&serde_json::to_string(&carried).unwrap()).map(drop),
+            ),
+            (
+                "HeldExam::received",
+                HeldExam::received(&received_text(&carried, &units), start()).map(drop),
+            ),
+            (
+                "HeldExam::load",
+                load_text(&held_file.to_string()).map(drop),
+            ),
+        ];
+        let mut accepted = Vec::new();
+        for (row, outcome) in rows {
+            match outcome {
+                Ok(()) => accepted.push(row),
+                Err(error) => assert!(
+                    format!("{error:#}").contains("ideas"),
+                    "{row}: error was: {error:#}"
+                ),
+            }
+        }
+        assert!(
+            accepted.is_empty(),
+            "accepted ideas version 2: {accepted:?}"
+        );
     }
 
     #[test]

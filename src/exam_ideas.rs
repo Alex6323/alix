@@ -47,10 +47,14 @@ impl Default for IdeasDocument {
 impl IdeasDocument {
     pub fn parse(text: &str) -> Result<Self> {
         let doc: Self = serde_json::from_str(text).context("unreadable exam ideas document")?;
-        if doc.version != VERSION {
+        if !doc.has_current_version() {
             bail!("unreadable exam ideas document");
         }
         Ok(doc)
+    }
+
+    pub(crate) fn has_current_version(&self) -> bool {
+        self.version == VERSION
     }
 
     pub fn to_json(&self) -> Result<String> {
