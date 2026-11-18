@@ -12,13 +12,13 @@ fn is_false(value: &bool) -> bool {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct InlineRun {
     pub text: String,
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub bold: bool,
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub italic: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub strike: bool,
-    #[serde(skip_serializing_if = "is_false")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub code: bool,
     /// An inert autolink: the URL is both label and content; clients
     /// style it as a link but attach no navigation.
@@ -1486,6 +1486,53 @@ fn emphasis_delimiters(glyphs: &[Glyph]) -> Vec<Delimiter> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn every_run_reads_back_the_json_it_writes() {
+        let plain = InlineRun {
+            text: "t".into(),
+            ..Default::default()
+        };
+        let set = |edit: fn(&mut InlineRun)| {
+            let mut run = plain.clone();
+            edit(&mut run);
+            run
+        };
+        let rows = [
+            ("every flag false", plain.clone()),
+            ("bold", set(|r| r.bold = true)),
+            ("italic", set(|r| r.italic = true)),
+            ("strike", set(|r| r.strike = true)),
+            ("code", set(|r| r.code = true)),
+            ("link", set(|r| r.link = true)),
+            ("sub", set(|r| r.sub = true)),
+            ("sup", set(|r| r.sup = true)),
+            ("ins", set(|r| r.ins = true)),
+            ("answer", set(|r| r.answer = true)),
+            (
+                "math",
+                set(|r| {
+                    r.math = Some(MathView {
+                        display: true,
+                        svg: Some("<svg/>".into()),
+                        error: None,
+                    })
+                }),
+            ),
+        ];
+        for (row, run) in rows {
+            let json = serde_json::to_string(&run).unwrap();
+            let read = serde_json::from_str::<InlineRun>(&json).map_err(|e| e.to_string());
+            assert_eq!(read, Ok(run), "row {row}: read back {json}");
+        }
+        let written = serde_json::to_value(&plain).unwrap();
+        for key in ["bold", "italic", "code"] {
+            assert!(
+                written.get(key).is_none(),
+                "every flag false: {key} was written in {written}"
+            );
+        }
+    }
 
     #[test]
     fn line_pieces_map_plain_text_identically() {
