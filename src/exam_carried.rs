@@ -242,8 +242,22 @@ mod tests {
 
     #[test]
     fn a_document_with_an_unknown_field_is_unreadable() {
-        let text = with_field(&exam(&["a"], &[]), |v| v["extra"] = true.into());
-        assert_unreadable(&text);
+        let carried = exam(&["a"], &["a"]);
+        for (place, parent) in [
+            ("top level", ""),
+            ("topics[0]", "/topics/0"),
+            ("questions[0]", "/questions/0"),
+        ] {
+            let text = with_field(&carried, |v| {
+                v.pointer_mut(parent).unwrap()["extra"] = true.into();
+            });
+            let error = CarriedExam::parse(&text)
+                .expect_err(&format!("an unknown field at {place} was accepted"));
+            assert!(
+                error.to_string().contains("unreadable carried exam"),
+                "unknown field at {place}: error was: {error}"
+            );
+        }
     }
 
     #[test]
