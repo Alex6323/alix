@@ -411,6 +411,17 @@ pub struct HeldExam {
     pub remediated: BTreeMap<String, u32>,
 }
 
+fn check_verdicts(grades: &[GradedAnswer]) -> Result<()> {
+    let known = [Verdict::Pass, Verdict::Partial, Verdict::Fail].map(Verdict::label);
+    match grades
+        .iter()
+        .find(|grade| !known.contains(&grade.verdict.as_str()))
+    {
+        Some(grade) => bail!("unknown verdict {}", grade.verdict),
+        None => Ok(()),
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReceivedExam {
@@ -513,6 +524,8 @@ impl HeldExam {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
+        self.check()
+            .context("refusing to save an unreadable held exam")?;
         let json = serde_json::to_string_pretty(self).context("encoding the held exam")?;
         crate::exam_ideas::write_atomic(path, json.as_bytes())
     }
@@ -540,6 +553,20 @@ impl HeldExam {
         }
         if let Some(result) = &self.result {
             self.check_counts(result.grades.len(), result.topics.len())?;
+            check_verdicts(&result.grades)?;
+        }
+        let recorded = match (&self.result, &self.outcome) {
+            (None, Some(_)) => bail!("an outcome without a result"),
+            (Some(result), Some(outcome)) => {
+                if outcome.recorded && !result.recorded {
+                    bail!("a recorded outcome for a result not chosen to be recorded");
+                }
+                outcome.recorded
+            }
+            (_, None) => false,
+        };
+        if !recorded && !self.remediated.is_empty() {
+            bail!("remediated topics without a recorded outcome");
         }
         Ok(())
     }
@@ -588,7 +615,11 @@ impl HeldExam {
 
     pub fn grade_request(&self) -> Result<GradeRequest> {
         self.refuse_once_graded()?;
-        Ok(self.exam.grade_request(&self.answers))
+        let request = self.exam.grade_request(&self.answers);
+        if answers_bytes(&request.answers) > MAX_ANSWERS_BYTES {
+            bail!(ANSWER_TOO_LONG);
+        }
+        Ok(request)
     }
 
     fn refuse_once_graded(&self) -> Result<()> {
@@ -622,6 +653,7 @@ impl HeldExam {
         if !numbered_alike {
             bail!("the grading reply numbers a grade's topic unlike its question");
         }
+        check_verdicts(&reply.grades)?;
         let Some(verdicts) = reply.verdicts else {
             bail!("the grading reply has no verdicts");
         };
@@ -1186,7 +1218,7 @@ mod tests {
     }
 
     fn held() -> HeldExam {
-        held_from(exam(&["a", "b", "c"], &["b", "a"]))
+        held_from(exam(&["a", "b", "c"], &["c", "a"]))
     }
 
     fn units(text: &str) -> Vec<ContentUnit> {
@@ -1465,36 +1497,40 @@ mod tests {
 
     #[test]
     fn l11_sitting_record_names_each_asked_topic_with_its_fingerprint_and_pass() {
-        let mut value = held();
-        assert_eq!(value.sitting_record(), None, "no result");
-        let mut reply = fitting_reply(&value);
-        reply.topics = vec![graded_topic(true, &[]), graded_topic(false, &["g"])];
-        reply.verdicts = Some(Verdicts {
-            pass: 3,
-            partial: 1,
-            total: 5,
-        });
-        value.store_result(&reply, 1, true).unwrap();
-        let topic = |id: &str, pass| crate::store::TopicRecord {
-            topic_id: id.into(),
-            fingerprint: format!("fp-{id}"),
-            pass,
-        };
-        assert_eq!(
-            value.sitting_record(),
-            Some(crate::store::SittingRecord {
-                topics: vec![topic("a", true), topic("b", false)],
-                full: true,
+        for full in [true, false] {
+            let mut value = held();
+            value.exam.full = full;
+            assert_eq!(value.sitting_record(), None, "full {full}: no result");
+            let mut reply = fitting_reply(&value);
+            reply.topics = vec![graded_topic(true, &[]), graded_topic(false, &["g"])];
+            reply.verdicts = Some(Verdicts {
                 pass: 3,
                 partial: 1,
                 total: 5,
-            })
-        );
+            });
+            value.store_result(&reply, 1, true).unwrap();
+            let topic = |id: &str, pass| crate::store::TopicRecord {
+                topic_id: id.into(),
+                fingerprint: format!("fp-{id}"),
+                pass,
+            };
+            assert_eq!(
+                value.sitting_record(),
+                Some(crate::store::SittingRecord {
+                    topics: vec![topic("a", true), topic("c", false)],
+                    full,
+                    pass: 3,
+                    partial: 1,
+                    total: 5,
+                }),
+                "full {full}"
+            );
+        }
     }
 
     #[test]
     fn l12_remediation_request_holds_only_unpassed_topics_with_gaps_not_yet_remediated() {
-        let mut value = held_from(exam(&["a", "b", "c", "d"], &["a", "b", "c", "d"]));
+        let mut value = held_from(exam(&["a", "b", "x", "c", "d"], &["a", "b", "c", "d"]));
         let mut reply = fitting_reply(&value);
         reply.topics = vec![
             graded_topic(true, &["partial gap"]),
@@ -1568,6 +1604,9 @@ mod tests {
                 r.grades[0].topic = r.grades[1].topic
             }),
             ("no verdicts", |r| r.verdicts = None),
+            ("a verdict outside the three labels", |r| {
+                r.grades[0].verdict = "pass".into()
+            }),
         ];
         for (row, edit) in rows {
             let mut reply = fitting_reply(&value);
@@ -1587,10 +1626,11 @@ mod tests {
 
     #[test]
     fn l15_the_view_joins_each_grade_with_its_question_points_answer_and_topic() {
-        let mut carried = exam(&["a", "b", "c"], &["b", "a"]);
+        let mut carried = exam(&["a", "b", "c"], &["c", "a"]);
+        carried.full = false;
         carried.questions[0].shape = Shape::Fix;
-        carried.questions[0].mental_model = "model b".into();
-        carried.questions[0].points = strings(&["point b"]);
+        carried.questions[0].mental_model = "model c".into();
+        carried.questions[0].points = strings(&["point c"]);
         let mut value = held_from(carried);
         let fresh = serde_json::to_value(value.view()).unwrap();
         assert_eq!(fresh["result"], serde_json::Value::Null, "no result");
@@ -1633,8 +1673,8 @@ mod tests {
             sitting: "s1".into(),
             deck: "deck-1".into(),
             strictness: Strictness::default(),
-            full: true,
-            questions: strings(&["Why `b`?", "Why `a`?"]),
+            full: false,
+            questions: strings(&["Why `c`?", "Why `a`?"]),
             questions_units: value.questions_units.clone(),
             answers: strings(&["answer 0", "answer 1"]),
             locked: vec![true, false],
@@ -1644,7 +1684,7 @@ mod tests {
             can_remediate: true,
             result: Some(JoinedResult {
                 grades: vec![joined(0, 1, "fix"), joined(1, 0, "boundary")],
-                topics: vec![topic("a", &reply.topics[0]), topic("b", &reply.topics[1])],
+                topics: vec![topic("a", &reply.topics[0]), topic("c", &reply.topics[1])],
                 verdicts: reply.verdicts.unwrap(),
                 mastered: true,
             }),
@@ -1665,6 +1705,9 @@ mod tests {
         let rows: Vec<(&str, FileEdit)> = vec![
             ("version 2", |v| v["version"] = 2.into()),
             ("a question naming no topic", |v| {
+                v["result"] = serde_json::Value::Null;
+                v["outcome"] = serde_json::Value::Null;
+                v["remediated"] = serde_json::json!({});
                 v["exam"]["questions"][0]["topic_id"] = "z".into()
             }),
             ("one answer too few", |v| {
@@ -1682,6 +1725,9 @@ mod tests {
             ("one topic too few", |v| {
                 v["result"]["topics"].as_array_mut().unwrap().pop();
             }),
+            ("a verdict outside the three labels", |v| {
+                v["result"]["grades"][0]["verdict"] = "pass".into()
+            }),
         ];
         for (row, edit) in rows {
             let mut value = base.clone();
@@ -1697,7 +1743,12 @@ mod tests {
 
     #[test]
     fn an_unknown_field_inside_any_held_struct_makes_the_held_file_unreadable() {
-        let base = serde_json::to_value(recorded(graded_held())).unwrap();
+        let mut held = recorded(graded_held());
+        if let Some(result) = held.result.as_mut() {
+            result.grades[0].missed_units = vec![rendered_of_every_type()];
+        }
+        let base = serde_json::to_value(&held).unwrap();
+        load_text(&base.to_string()).expect("control: the unedited file");
         for place in [
             "",
             "/start",
@@ -1707,6 +1758,12 @@ mod tests {
             "/result/topics/0",
             "/outcome",
             "/outcome/standing",
+            "/questions_units/0/0",
+            "/questions_units/0/0/runs/0",
+            "/result/grades/0/feedback_units/0",
+            "/result/grades/0/missed_units/0/0/items/0",
+            "/result/grades/0/missed_units/0/1/regions/0",
+            "/result/grades/0/missed_units/0/2/runs/0/math",
         ] {
             let mut value = base.clone();
             value.pointer_mut(place).unwrap()["extra"] = true.into();
@@ -1717,6 +1774,192 @@ mod tests {
                 "unknown field at {place:?}: error was: {error:#}"
             );
         }
+    }
+
+    fn rendered_of_every_type() -> Vec<ContentUnit> {
+        let run = crate::inline::InlineRun {
+            text: "t".into(),
+            ..Default::default()
+        };
+        vec![
+            ContentUnit::Checklist {
+                items: vec![crate::render::ChecklistItem {
+                    checked: false,
+                    text: "t".into(),
+                    runs: vec![run.clone()],
+                }],
+            },
+            ContentUnit::Diagram {
+                src: "d.png".into(),
+                width: 1,
+                height: 1,
+                alt: "d".into(),
+                regions: vec![crate::review::RegionView {
+                    role: crate::review::RegionRole::Asked,
+                    reveal_on_answer: true,
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 1.0,
+                    unit: "px".into(),
+                }],
+                revealed_alt: None,
+            },
+            ContentUnit::Sentence {
+                text: "t".into(),
+                runs: vec![crate::inline::InlineRun {
+                    math: Some(crate::math::MathView {
+                        display: false,
+                        svg: None,
+                        error: None,
+                    }),
+                    ..run
+                }],
+            },
+        ]
+    }
+
+    #[test]
+    fn grade_request_refuses_answers_over_the_limit_and_sends_answers_at_it() {
+        let mut over = held();
+        over.set_answers(
+            strings(&[&"x".repeat(MAX_ANSWERS_BYTES), "y"]),
+            vec![false, false],
+        )
+        .unwrap();
+        let error = over.grade_request().unwrap_err();
+        assert_eq!(error.to_string(), ANSWER_TOO_LONG, "one byte over");
+        let mut at = held();
+        at.set_answers(
+            strings(&[&"x".repeat(MAX_ANSWERS_BYTES - 1), "y"]),
+            vec![false, false],
+        )
+        .unwrap();
+        let request = at.grade_request().expect("at the limit");
+        GradeRequest::parse(request.to_json().unwrap().as_bytes())
+            .expect("the desktop reads the request at the limit");
+    }
+
+    #[test]
+    fn an_outcome_or_remediation_no_flow_produces_is_neither_loaded_nor_saved() {
+        let mut legal = recorded(graded_held());
+        legal.remediated.insert("a".into(), 1);
+        type HeldEdit = fn(&mut HeldExam);
+        let rows: Vec<(&str, HeldEdit)> = vec![
+            ("an outcome without a result", |h| {
+                h.result = None;
+                h.remediated.clear();
+            }),
+            (
+                "a recorded outcome over a result not chosen to be recorded",
+                |h| {
+                    if let Some(result) = h.result.as_mut() {
+                        result.recorded = false;
+                    }
+                },
+            ),
+            ("remediation without a recorded outcome", |h| {
+                h.outcome = Some(HeldOutcome {
+                    recorded: false,
+                    standing: None,
+                })
+            }),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        for (row, edit) in rows {
+            let mut value = legal.clone();
+            edit(&mut value);
+            let path = dir.path().join(format!("{row}.json"));
+            let error = value.save(&path).expect_err(row);
+            assert!(!path.exists(), "row {row}: save wrote a file ({error:#})");
+            let error = load_text(&serde_json::to_string(&value).unwrap()).expect_err(row);
+            assert!(
+                format!("{error:#}").contains("unreadable held exam"),
+                "row {row}: load error was: {error:#}"
+            );
+        }
+        let path = dir.path().join("legal.json");
+        legal.save(&path).expect("control: save");
+        assert_eq!(
+            HeldExam::load(&path).expect("control: load"),
+            Some(legal),
+            "control: round trip"
+        );
+    }
+
+    #[test]
+    fn received_refuses_a_failing_exam_and_an_unknown_key() {
+        let carried = exam(&["a"], &["a"]);
+        let units = carried.questions_units();
+        let mut failing = carried.clone();
+        failing.version = 2;
+        let mut extended: serde_json::Value =
+            serde_json::from_str(&received_text(&carried, &units)).unwrap();
+        extended["extra"] = true.into();
+        for (row, text) in [
+            ("a failing nested exam", received_text(&failing, &units)),
+            ("an unknown key", extended.to_string()),
+        ] {
+            let error = HeldExam::received(&text, start()).expect_err(row);
+            assert!(
+                format!("{error:#}").contains("unreadable carried exam"),
+                "row {row}: error was: {error:#}"
+            );
+        }
+        HeldExam::received(&received_text(&carried, &units), start()).expect("control");
+    }
+
+    #[test]
+    fn set_answers_refuses_a_graded_exam_and_lists_of_the_wrong_length() {
+        let graded = graded_held();
+        let fresh = held();
+        let rows = [
+            (
+                "a graded exam",
+                &graded,
+                strings(&["a", "b"]),
+                vec![true, true],
+            ),
+            (
+                "one answer too few",
+                &fresh,
+                strings(&["a"]),
+                vec![true, true],
+            ),
+            (
+                "one lock too many",
+                &fresh,
+                strings(&["a", "b"]),
+                vec![true, true, true],
+            ),
+        ];
+        for (row, value, answers, locked) in rows {
+            let mut changed = value.clone();
+            assert!(
+                changed.set_answers(answers, locked).is_err(),
+                "row {row}: accepted"
+            );
+            assert_eq!(&changed, value, "row {row}: value after the refusal");
+        }
+    }
+
+    #[test]
+    fn topic_id_of_maps_request_numbers_to_asked_topics_and_nothing_past_the_end() {
+        let value = held();
+        assert_eq!(value.topic_id_of(0), Some("a"), "number 0");
+        assert_eq!(value.topic_id_of(1), Some("c"), "number 1");
+        assert_eq!(value.topic_id_of(2), None, "past the end");
+    }
+
+    #[test]
+    fn a_locked_whitespace_only_answer_counts_nothing_toward_the_limit() {
+        let mut value = held();
+        value
+            .set_answers(
+                strings(&[&"x".repeat(MAX_ANSWERS_BYTES), " \n "]),
+                vec![true, true],
+            )
+            .expect("the blank answer counts 0");
     }
 
     #[test]
