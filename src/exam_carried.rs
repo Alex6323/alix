@@ -1318,7 +1318,7 @@ mod tests {
     }
 
     #[test]
-    fn l1_a_received_document_becomes_a_held_exam_with_empty_unlocked_answers() {
+    fn a_received_document_becomes_a_held_exam_with_empty_unlocked_answers() {
         let carried = exam(&["a", "b", "c"], &["b", "a"]);
         let value = held_from(carried.clone());
         assert_eq!(value.version, HELD_EXAM_VERSION, "version");
@@ -1333,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    fn l2_a_received_document_with_a_units_count_unlike_its_questions_is_refused() {
+    fn a_received_document_with_a_units_count_unlike_its_questions_is_refused() {
         let carried = exam(&["a", "b"], &["a", "b"]);
         let mut short = carried.questions_units();
         short.pop();
@@ -1348,7 +1348,7 @@ mod tests {
     }
 
     #[test]
-    fn l3_create_refuses_to_replace_a_held_file_and_leaves_it_byte_identical() {
+    fn create_refuses_to_replace_a_held_file_and_leaves_it_byte_identical() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("held.json");
         held().create(&path).expect("the first create");
@@ -1365,7 +1365,7 @@ mod tests {
     }
 
     #[test]
-    fn l4_a_held_exam_round_trips_through_its_file_in_every_state() {
+    fn a_held_exam_round_trips_through_its_file_in_every_state() {
         let fresh = held();
         let mut answered = held();
         answered
@@ -1400,7 +1400,7 @@ mod tests {
     }
 
     #[test]
-    fn l5_set_answers_refuses_a_lock_that_takes_the_locked_answers_over_the_limit() {
+    fn set_answers_refuses_a_lock_that_takes_the_locked_answers_over_the_limit() {
         let mut value = held();
         let long = strings(&[&"x".repeat(MAX_ANSWERS_BYTES), "y"]);
         let before = value.clone();
@@ -1420,7 +1420,7 @@ mod tests {
     }
 
     #[test]
-    fn l6_three_byte_characters_are_counted_alike_by_the_lock_and_by_parse() {
+    fn three_byte_characters_are_counted_alike_by_the_lock_and_by_parse() {
         let at_limit = format!("{}x", "€".repeat(MAX_ANSWERS_BYTES / 3));
         assert_eq!(at_limit.len(), MAX_ANSWERS_BYTES, "fixture length");
         let over = "€".repeat(MAX_ANSWERS_BYTES / 3 + 1);
@@ -1435,7 +1435,7 @@ mod tests {
     }
 
     #[test]
-    fn l7_grade_request_is_refused_once_a_result_is_stored() {
+    fn grade_request_is_refused_once_a_result_is_stored() {
         let mut value = held();
         value.grade_request().expect("before a result");
         let reply = fitting_reply(&value);
@@ -1448,7 +1448,7 @@ mod tests {
     }
 
     #[test]
-    fn l8_store_result_keeps_the_time_and_the_choice() {
+    fn store_result_keeps_the_time_and_the_choice() {
         for (received_ms, choice) in [(1234, false), (5678, true)] {
             let mut value = held();
             let reply = fitting_reply(&value);
@@ -1464,7 +1464,7 @@ mod tests {
     }
 
     #[test]
-    fn l9_a_second_store_result_is_refused_and_the_first_stays() {
+    fn a_second_store_result_is_refused_and_the_first_stays() {
         let mut value = held();
         let first = fitting_reply(&value);
         value.store_result(&first, 1, true).unwrap();
@@ -1479,7 +1479,7 @@ mod tests {
     }
 
     #[test]
-    fn l10_asked_marks_an_idea_passed_only_for_a_pass_verdict() {
+    fn asked_marks_an_idea_passed_only_for_a_pass_verdict() {
         let mut carried = exam(&["a", "b", "c"], &["b", "a", "c"]);
         carried.questions[1].idea = 2;
         carried.questions[2].idea = 5;
@@ -1502,7 +1502,7 @@ mod tests {
     }
 
     #[test]
-    fn l11_sitting_record_names_each_asked_topic_with_its_fingerprint_and_pass() {
+    fn sitting_record_names_each_asked_topic_with_its_fingerprint_and_pass() {
         for full in [true, false] {
             let mut value = held();
             value.exam.full = full;
@@ -1535,7 +1535,7 @@ mod tests {
     }
 
     #[test]
-    fn l12_remediation_request_holds_only_unpassed_topics_with_gaps_not_yet_remediated() {
+    fn remediation_request_holds_only_unpassed_topics_with_gaps_not_yet_remediated() {
         let mut value = held_from(exam(&["a", "b", "x", "c", "d"], &["a", "b", "c", "d"]));
         let mut reply = fitting_reply(&value);
         reply.topics = vec![
@@ -1563,7 +1563,7 @@ mod tests {
     }
 
     #[test]
-    fn l13_remediation_request_is_none_without_a_recorded_outcome() {
+    fn remediation_request_is_none_without_a_recorded_outcome() {
         let unrecorded = {
             let mut value = recorded(graded_held());
             value.outcome = Some(HeldOutcome {
@@ -1594,7 +1594,7 @@ mod tests {
     }
 
     #[test]
-    fn l14_a_reply_that_does_not_fit_the_exam_is_refused_and_the_value_is_unchanged() {
+    fn a_reply_that_does_not_fit_the_exam_is_refused_and_the_value_is_unchanged() {
         let value = held();
         type ReplyEdit = fn(&mut GradingReply);
         let rows: Vec<(&str, ReplyEdit)> = vec![
@@ -1631,7 +1631,7 @@ mod tests {
     }
 
     #[test]
-    fn l15_the_view_joins_each_grade_with_its_question_points_answer_and_topic() {
+    fn the_view_joins_each_grade_with_its_question_points_answer_and_topic() {
         let mut carried = exam(&["a", "b", "c"], &["c", "a"]);
         carried.full = false;
         carried.questions[0].shape = Shape::Fix;
