@@ -3739,6 +3739,7 @@ mod tests {
             ExamConfig::default(),
             ask_config(&cli),
         );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         let pid = loop {
             if let Some(pid) = std::fs::read_to_string(&pid)
                 .ok()
@@ -3746,14 +3747,29 @@ mod tests {
             {
                 break pid.trim().to_string();
             }
+            if let Ok(early) = rx.try_recv() {
+                panic!("the grade ended before the model started: {early:?}");
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the model never wrote its pid"
+            );
             std::thread::yield_now();
         };
         job.cancel();
-        assert!(receive(&rx).is_err(), "a cancelled grade answers an error");
+        let answered = rx.recv_timeout(std::time::Duration::from_secs(20));
+        let survived = Path::new("/proc").join(&pid).exists();
+        let _ = std::process::Command::new("pkill")
+            .args(["-KILL", "-P", &pid])
+            .status();
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", &pid])
+            .status();
         assert!(
-            !Path::new("/proc").join(&pid).exists(),
-            "the model process {pid} survived the cancel"
+            matches!(answered, Ok(Err(_))),
+            "a cancelled grade answers an error: {answered:?}"
         );
+        assert!(!survived, "the model process {pid} survived the cancel");
     }
 
     fn remediation_request(topics: &[(usize, &str)]) -> RemediationRequest {
