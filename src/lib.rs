@@ -61,6 +61,7 @@ pub mod doctor;
 mod entities;
 #[cfg(feature = "full")]
 pub mod exam;
+pub mod exam_carried;
 pub mod exam_ideas;
 pub mod exam_prompt;
 pub mod exam_status;

@@ -21,6 +21,7 @@ use crate::{
     workspace,
 };
 pub use crate::{
+    exam_carried::{AnswerGrade, Shape, Verdict},
     exam_status::{
         ExamFilter, ExamScope, ExamStatus, ExamTopic, SittingStart, TOPIC_NUDGE_CARDS, TopicStatus,
         TopicTally, exam_status, exam_topics, examined_topics, oversized_topics,
@@ -49,51 +50,6 @@ pub struct Generated {
 pub struct GeneratedTopic {
     pub ideas: Vec<Idea>,
     pub questions: Vec<ExamQuestion>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Shape {
-    #[default]
-    Instance,
-    Boundary,
-    Fix,
-}
-
-impl Shape {
-    pub fn label(self) -> &'static str {
-        match self {
-            Shape::Instance => "instance",
-            Shape::Boundary => "boundary",
-            Shape::Fix => "fix",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Verdict {
-    Pass,
-    Partial,
-    Fail,
-}
-
-impl Verdict {
-    pub fn label(self) -> &'static str {
-        match self {
-            Verdict::Pass => "PASS",
-            Verdict::Partial => "PARTIAL",
-            Verdict::Fail => "FAIL",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct AnswerGrade {
-    pub verdict: Verdict,
-    pub feedback: String,
-    #[serde(default)]
-    pub missed: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

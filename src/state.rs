@@ -61,6 +61,12 @@ impl UserFiles {
             .join(format!("{deck_id}.prepared.json"))
     }
 
+    pub fn exam_carried_for(&self, deck_id: &str) -> PathBuf {
+        self.private_root()
+            .join("exam")
+            .join(format!("{deck_id}.carried.json"))
+    }
+
     pub fn exam_kept(&self) -> PathBuf {
         self.private_root().join("exam").join("remote.json")
     }
