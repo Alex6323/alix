@@ -399,14 +399,19 @@ pub fn record_sitting_checked(
     eligible: bool,
     stamp: &ExamStamp,
 ) -> anyhow::Result<bool> {
-    if !material_unchanged(deck, record, stamp) {
+    let examined: Vec<(String, String)> = record
+        .topics
+        .iter()
+        .map(|topic| (topic.topic_id.clone(), topic.fingerprint.clone()))
+        .collect();
+    if !material_unchanged(deck, &examined, stamp) {
         anyhow::bail!(MATERIAL_CHANGED);
     }
     let deck_id = deck.deck_token.as_deref().unwrap_or_default();
     Ok(store.record_sitting(deck_id, deck_topics, record, now_ms, eligible, stamp))
 }
 
-fn material_unchanged(deck: &Deck, record: &SittingRecord, stamp: &ExamStamp) -> bool {
+pub fn material_unchanged(deck: &Deck, examined: &[(String, String)], stamp: &ExamStamp) -> bool {
     let Ok(Some(sources)) = deck.sources() else {
         return false;
     };
@@ -422,10 +427,9 @@ fn material_unchanged(deck: &Deck, record: &SittingRecord, stamp: &ExamStamp) ->
     );
     !exam_changed(&present, stamp)
         && unsourced_cards(deck, &personal, &sourced_by_index).all(|card| card.id().is_some())
-        && record
-            .topics
-            .iter()
-            .all(|topic| current.get(topic.topic_id.as_str()) == Some(&topic.fingerprint.as_str()))
+        && examined.iter().all(|(topic_id, fingerprint)| {
+            current.get(topic_id.as_str()) == Some(&fingerprint.as_str())
+        })
 }
 
 pub fn current_stamp(deck: &Deck, personal: &[Card], manifest: Option<&Manifest>) -> ExamStamp {

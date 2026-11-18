@@ -11,11 +11,15 @@ use crate::{
     ask::{self, parse_json},
     config::{AskConfig, ExamConfig, Strictness},
     deck::Deck,
+    exam_carried::{
+        GradeRequest, GradedAnswer, GradedTopic, RemediationRequest, TopicNumberCards, Verdicts,
+    },
     exam_ideas::{Idea, IdeaTopic, IdeasDocument},
     exam_prompt::{
         IDEA_LINE_MAX_CHARS, PreflightError, ideas_prompt, measure_topic, questions_prompt,
         retry_prompt, truncate_chars,
     },
+    render::exam_text_units,
     sources::DeckSources,
     store::Store,
     workspace,
@@ -582,6 +586,24 @@ pub fn grade_answers(
     cfg: &ExamConfig,
     ask_cfg: &AskConfig,
 ) -> Result<ExamResult> {
+    grade_answers_in(
+        &ask::AskJob::default(),
+        questions,
+        answers,
+        strictness,
+        cfg,
+        ask_cfg,
+    )
+}
+
+fn grade_answers_in(
+    job: &ask::AskJob,
+    questions: &[ExamQuestion],
+    answers: &[String],
+    strictness: Strictness,
+    cfg: &ExamConfig,
+    ask_cfg: &AskConfig,
+) -> Result<ExamResult> {
     if questions.len() != answers.len() {
         bail!(
             "expected {} answers, got {}",
@@ -590,7 +612,9 @@ pub fn grade_answers(
         );
     }
     let prompt = grade_prompt(questions, answers, strictness);
-    let raw = ask::run(&run_config(cfg, ask_cfg), &prompt, &[])?;
+    let mut cfg_run = run_config(cfg, ask_cfg);
+    cfg_run.allowed_tools.clear();
+    let raw = ask::run_in(job, &cfg_run, &prompt)?;
     let parsed: GradesDto = parse_json(&raw).context("parsing the grades")?;
     if parsed.grades.len() != questions.len() {
         bail!(
@@ -607,18 +631,163 @@ pub fn grade_answers(
 }
 
 pub fn remediation_cards(gaps: &[String], cfg: &ExamConfig, ask_cfg: &AskConfig) -> Result<String> {
+    remediation_cards_in(&ask::AskJob::default(), gaps, cfg, ask_cfg)
+}
+
+fn remediation_cards_in(
+    job: &ask::AskJob,
+    gaps: &[String],
+    cfg: &ExamConfig,
+    ask_cfg: &AskConfig,
+) -> Result<String> {
     if gaps.is_empty() {
         bail!("no gaps to remediate");
     }
     let prompt = remediation_prompt(gaps);
     let mut cfg_run = run_config(cfg, ask_cfg);
     cfg_run.allowed_tools.clear(); // no web access needed, so it can't wander off
-    let raw = ask::run(&cfg_run, &prompt, &[])?;
+    let raw = ask::run_in(job, &cfg_run, &prompt)?;
     let cards = clean_deck_output(&raw);
     if !has_card_fronts(&cards) {
         bail!("the model replied without any cards — try remediating again");
     }
     Ok(cards)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GradedExam {
+    pub grades: Vec<GradedAnswer>,
+    pub topics: Vec<GradedTopic>,
+    pub verdicts: Verdicts,
+    pub mastered: bool,
+}
+
+fn graded_exam(request: &GradeRequest, result: &ExamResult) -> GradedExam {
+    let grades = request
+        .questions
+        .iter()
+        .zip(&result.grades)
+        .map(|(question, grade)| GradedAnswer {
+            topic: question.topic,
+            verdict: grade.verdict.label().to_string(),
+            feedback: grade.feedback.clone(),
+            feedback_units: exam_text_units(&grade.feedback),
+            missed: grade.missed.clone(),
+            missed_units: grade.missed.iter().map(|m| exam_text_units(m)).collect(),
+            points_units: question.points.iter().map(|p| exam_text_units(p)).collect(),
+        })
+        .collect();
+    let topics = result
+        .topics
+        .iter()
+        .enumerate()
+        .map(|(topic, score)| GradedTopic {
+            pass: score.passed,
+            verdicts: Verdicts {
+                pass: score.pass,
+                partial: score.partial,
+                total: score.total,
+            },
+            gaps: if score.passed {
+                Vec::new()
+            } else {
+                topic_gaps(request, result, topic)
+            },
+        })
+        .collect();
+    let count = result.count();
+    GradedExam {
+        grades,
+        topics,
+        verdicts: Verdicts {
+            pass: count.pass,
+            partial: count.partial,
+            total: count.total,
+        },
+        mastered: request.full && count.passed,
+    }
+}
+
+fn topic_gaps(request: &GradeRequest, result: &ExamResult, topic: usize) -> Vec<String> {
+    let mut gaps: Vec<String> = Vec::new();
+    for (question, grade) in request.questions.iter().zip(&result.grades) {
+        if question.topic != topic || grade.verdict == Verdict::Pass {
+            continue;
+        }
+        for point in grade.missed.iter().map(|m| m.trim()) {
+            if !point.is_empty() && !gaps.iter().any(|g| g == point) {
+                gaps.push(point.to_string());
+            }
+        }
+    }
+    gaps
+}
+
+fn grade_carried(
+    request: &GradeRequest,
+    cfg: &ExamConfig,
+    ask_cfg: &AskConfig,
+    job: &ask::AskJob,
+) -> Result<GradedExam> {
+    let questions: Vec<ExamQuestion> = request
+        .questions
+        .iter()
+        .map(|question| ExamQuestion {
+            prompt: question.prompt.clone(),
+            points: question.points.clone(),
+            topic: question.topic,
+            ..Default::default()
+        })
+        .collect();
+    let result = grade_answers_in(
+        job,
+        &questions,
+        &request.answers,
+        request.strictness,
+        cfg,
+        ask_cfg,
+    )?;
+    Ok(graded_exam(request, &result))
+}
+
+pub fn spawn_carried_grade(
+    request: GradeRequest,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+) -> (Receiver<Result<GradedExam, String>>, ask::AskJob) {
+    let (tx, rx) = channel();
+    let job = ask::AskJob::default();
+    let worker = job.clone();
+    std::thread::spawn(move || {
+        let r = grade_carried(&request, &cfg, &ask_cfg, &worker).map_err(|e| format!("{e:#}"));
+        let _ = tx.send(r);
+    });
+    (rx, job)
+}
+
+pub fn spawn_carried_remediation(
+    request: RemediationRequest,
+    cfg: ExamConfig,
+    ask_cfg: AskConfig,
+) -> (Receiver<Result<Vec<TopicNumberCards>, String>>, ask::AskJob) {
+    let (tx, rx) = channel();
+    let job = ask::AskJob::default();
+    let worker = job.clone();
+    std::thread::spawn(move || {
+        let r = request
+            .topics
+            .iter()
+            .map(|topic| {
+                Ok(TopicNumberCards {
+                    topic: topic.topic,
+                    cards: remediation_cards_in(&worker, &topic.gaps, &cfg, &ask_cfg)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+            .map_err(|e| format!("{e:#}"));
+        let _ = tx.send(r);
+    });
+    (rx, job)
 }
 
 #[cfg(test)]
@@ -3332,6 +3501,372 @@ mod tests {
         )
         .unwrap_err();
         assert!(format!("{err:#}").contains("without any cards"));
+    }
+
+    fn carried_request(topics: &[usize], full: bool) -> GradeRequest {
+        GradeRequest {
+            version: crate::exam_carried::GRADE_REQUEST_VERSION,
+            sitting: "sitting-1".to_string(),
+            deck: "deck-1".to_string(),
+            strictness: Strictness::Balanced,
+            full,
+            questions: topics
+                .iter()
+                .enumerate()
+                .map(|(at, topic)| crate::exam_carried::GradeQuestion {
+                    topic: *topic,
+                    prompt: format!("Q{at}"),
+                    points: vec![format!("point {at}")],
+                })
+                .collect(),
+            answers: topics.iter().map(|_| "an answer".to_string()).collect(),
+        }
+    }
+
+    fn grades_reply(verdicts: &[&str]) -> String {
+        let grades: Vec<String> = verdicts
+            .iter()
+            .enumerate()
+            .map(|(at, verdict)| {
+                let missed = if *verdict == "pass" {
+                    "[]".to_string()
+                } else {
+                    format!("[\" missed {at} \", \"shared gap\"]")
+                };
+                format!(
+                    "{{\"verdict\":\"{verdict}\",\"feedback\":\"fb {at}\",\"missed\":{missed}}}"
+                )
+            })
+            .collect();
+        format!("{{\"grades\":[{}]}}", grades.join(","))
+    }
+
+    fn receive<T>(rx: &Receiver<T>) -> T {
+        rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap()
+    }
+
+    #[test]
+    fn grading_runs_the_model_without_allowed_tools() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let args = dir.path().join("args");
+        let reply = dir.path().join("reply");
+        std::fs::write(&reply, grades_reply(&["pass"])).unwrap();
+        let cli = fake_cli(
+            dir.path(),
+            &format!(
+                "echo \"$@\" >> {}; cat >/dev/null; cat {}",
+                args.display(),
+                reply.display()
+            ),
+        );
+        let ask_cfg = ask_config(&cli);
+        let qs = vec![ExamQuestion {
+            prompt: "Q".to_string(),
+            points: vec!["p".to_string()],
+            ..Default::default()
+        }];
+        grade_answers(
+            &qs,
+            &["a".to_string()],
+            Strictness::Balanced,
+            &ExamConfig::default(),
+            &ask_cfg,
+        )
+        .unwrap();
+        let graded_with = std::fs::read_to_string(&args).unwrap();
+        assert!(
+            !graded_with.contains("WebFetch") && !graded_with.contains("WebSearch"),
+            "grading names web tools: {graded_with}"
+        );
+
+        std::fs::remove_file(&args).unwrap();
+        ask::run_in(
+            &ask::AskJob::default(),
+            &run_config(&ExamConfig::default(), &ask_cfg),
+            "p",
+        )
+        .unwrap();
+        let other_call = std::fs::read_to_string(&args).unwrap();
+        assert!(
+            other_call.contains("WebFetch") && other_call.contains("WebSearch"),
+            "the control call must name the web tools: {other_call}"
+        );
+    }
+
+    #[test]
+    fn a_carried_grade_needs_no_deck_and_maps_verdicts_gaps_and_units() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), &grades_reply(&["pass", "partial", "fail"]));
+        let request = carried_request(&[0, 1, 1], false);
+        let (rx, _job) =
+            spawn_carried_grade(request.clone(), ExamConfig::default(), ask_config(&cli));
+        let graded = receive(&rx).unwrap();
+
+        let labels: Vec<&str> = graded.grades.iter().map(|g| g.verdict.as_str()).collect();
+        assert_eq!(vec!["PASS", "PARTIAL", "FAIL"], labels, "verdict labels");
+        assert_eq!(
+            vec![0, 1, 1],
+            graded.grades.iter().map(|g| g.topic).collect::<Vec<_>>(),
+            "topic numbers"
+        );
+        assert_eq!(
+            exam_text_units("fb 1"),
+            graded.grades[1].feedback_units,
+            "feedback units"
+        );
+        assert_eq!(
+            vec![exam_text_units(" missed 1 "), exam_text_units("shared gap")],
+            graded.grades[1].missed_units,
+            "missed units"
+        );
+        assert_eq!(
+            vec![exam_text_units("point 2")],
+            graded.grades[2].points_units,
+            "points units"
+        );
+        assert_eq!(2, graded.topics.len(), "one entry per topic number");
+        assert!(graded.topics[0].pass, "topic 0 passed its only answer");
+        assert!(!graded.topics[1].pass, "topic 1 passed no answer");
+        assert!(
+            graded.topics[0].gaps.is_empty(),
+            "a passed topic has no gaps"
+        );
+        assert_eq!(
+            vec!["missed 1", "shared gap", "missed 2"],
+            graded.topics[1].gaps,
+            "trimmed, distinct, in order"
+        );
+        assert_eq!(
+            Verdicts {
+                pass: 0,
+                partial: 1,
+                total: 2
+            },
+            graded.topics[1].verdicts,
+            "topic 1 counts"
+        );
+        assert_eq!(
+            Verdicts {
+                pass: 1,
+                partial: 1,
+                total: 3
+            },
+            graded.verdicts,
+            "overall counts"
+        );
+        assert!(!graded.mastered, "a failing exam is not mastered");
+    }
+
+    #[test]
+    fn a_carried_grade_gathers_no_gaps_from_a_passing_answer_of_an_unpassed_topic() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let reply = "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[\"noise\"]},\
+                      {\"verdict\":\"fail\",\"feedback\":\"no\",\"missed\":[\"real\"]}]}";
+        let cli = fake_reply(dir.path(), reply);
+        let (rx, _job) = spawn_carried_grade(
+            carried_request(&[0, 0], false),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        let graded = receive(&rx).unwrap();
+        assert_eq!(vec!["real"], graded.topics[0].gaps);
+    }
+
+    #[test]
+    fn a_carried_grade_is_mastered_only_when_full_and_every_answer_passed() {
+        let _lock = exec_lock();
+        let cases = [
+            (true, ["pass", "pass"], true),
+            (false, ["pass", "pass"], false),
+            (true, ["pass", "partial"], false),
+        ];
+        for (full, verdicts, mastered) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let cli = fake_reply(dir.path(), &grades_reply(&verdicts));
+            let (rx, _job) = spawn_carried_grade(
+                carried_request(&[0, 1], full),
+                ExamConfig::default(),
+                ask_config(&cli),
+            );
+            let graded = receive(&rx).unwrap();
+            assert_eq!(
+                mastered, graded.mastered,
+                "full={full} verdicts={verdicts:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_carried_grade_with_a_wrong_grade_count_from_the_model_is_an_error() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = fake_reply(dir.path(), &grades_reply(&["pass"]));
+        let (rx, _job) = spawn_carried_grade(
+            carried_request(&[0, 0], false),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        let err = receive(&rx).unwrap_err();
+        assert!(err.contains("graded 1 of 2"), "{err}");
+    }
+
+    #[test]
+    fn a_cancelled_carried_grade_ends_with_an_error_and_its_process_is_gone() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("hold");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let pid = dir.path().join("pid");
+        let cli = fake_cli(
+            dir.path(),
+            &format!(
+                "echo $$ > {pid}; cat >/dev/null; cat {fifo}",
+                pid = pid.display(),
+                fifo = fifo.display()
+            ),
+        );
+        let (rx, job) = spawn_carried_grade(
+            carried_request(&[0], false),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        let pid = loop {
+            if let Some(pid) = std::fs::read_to_string(&pid)
+                .ok()
+                .filter(|text| text.ends_with('\n'))
+            {
+                break pid.trim().to_string();
+            }
+            std::thread::yield_now();
+        };
+        job.cancel();
+        assert!(receive(&rx).is_err(), "a cancelled grade answers an error");
+        assert!(
+            !Path::new("/proc").join(&pid).exists(),
+            "the model process {pid} survived the cancel"
+        );
+    }
+
+    fn remediation_request(topics: &[(usize, &str)]) -> RemediationRequest {
+        RemediationRequest {
+            sitting: "sitting-1".to_string(),
+            deck: "deck-1".to_string(),
+            topics: topics
+                .iter()
+                .map(|(topic, gap)| crate::exam_carried::RemediationTopic {
+                    topic: *topic,
+                    gaps: vec![gap.to_string()],
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn carried_remediation_makes_one_call_per_topic_and_binds_cards_to_the_topic_number() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(
+            dir.path(),
+            &["## Why one?\nfirst\n", "## Why two?\nsecond\n"],
+        );
+        let (rx, _job) = spawn_carried_remediation(
+            remediation_request(&[(3, "gap three"), (1, "gap one")]),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        let cards = receive(&rx).unwrap();
+        assert_eq!(
+            2,
+            crate::testutil::fake_reply_calls(dir.path()),
+            "one call per topic"
+        );
+        assert_eq!(
+            vec![
+                TopicNumberCards {
+                    topic: 3,
+                    cards: "## Why one?\nfirst".to_string()
+                },
+                TopicNumberCards {
+                    topic: 1,
+                    cards: "## Why two?\nsecond".to_string()
+                },
+            ],
+            cards,
+            "request order, topic numbers"
+        );
+        let first_prompt = std::fs::read_to_string(dir.path().join("prompt-1")).unwrap();
+        assert!(first_prompt.contains("gap three"), "call 1 is for topic 3");
+    }
+
+    #[test]
+    fn carried_remediation_fails_as_a_whole_when_one_call_fails() {
+        let _lock = exec_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cli =
+            crate::testutil::fake_replies(dir.path(), &["## Why one?\nfirst\n", "no cards here"]);
+        let (rx, _job) = spawn_carried_remediation(
+            remediation_request(&[(0, "a"), (1, "b"), (2, "c")]),
+            ExamConfig::default(),
+            ask_config(&cli),
+        );
+        let err = receive(&rx).unwrap_err();
+        assert!(err.contains("without any cards"), "{err}");
+        assert_eq!(
+            2,
+            crate::testutil::fake_reply_calls(dir.path()),
+            "the failing call ends it"
+        );
+    }
+
+    #[test]
+    fn material_unchanged_is_false_after_an_examined_topic_changed() {
+        let ws = Workspace::new();
+        let deck = sourced_deck(&ws);
+        let store = Store::open(ws.deck().with_file_name("p.json")).unwrap();
+        let stamp = sitting_start(&deck, &store, 0, None).stamp;
+        let examined = |deck: &Deck| -> Vec<(String, String)> {
+            let manifest = deck.sources().unwrap().unwrap().manifest;
+            exam_topics(deck, Some(&manifest))
+                .into_iter()
+                .filter(|topic| topic.sourced)
+                .map(|topic| (topic.topic_id, topic.fingerprint))
+                .collect()
+        };
+        let before = examined(&deck);
+        assert!(!before.is_empty());
+        assert!(
+            crate::exam_status::material_unchanged(&deck, &before, &stamp),
+            "control: nothing changed yet"
+        );
+
+        ws.write_live("s.txt", b"c now stands for a changed concept.\n");
+        sources::commands::update(
+            &ws.deck(),
+            &sources::source_id(b"c stands for a concept.\n"),
+            &ws.live().join("s.txt"),
+            None,
+            false,
+            &ExamConfig::default(),
+        )
+        .unwrap();
+        let changed = Deck::load(ws.deck()).unwrap();
+        let fresh_stamp = sitting_start(&changed, &store, 0, None).stamp;
+        assert!(
+            !crate::exam_status::material_unchanged(&changed, &before, &fresh_stamp),
+            "the examined fingerprints alone must fail it"
+        );
+        assert!(!crate::exam_status::material_unchanged(
+            &changed, &before, &stamp
+        ));
     }
 
     fn drain(s: &mut Sitting, store: &mut Store) {
