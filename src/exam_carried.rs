@@ -1,4 +1,7 @@
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::{BTreeMap, HashSet},
+    path::Path,
+};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -10,6 +13,8 @@ use crate::{
 };
 
 pub const VERSION: u32 = 1;
+pub const GRADE_REQUEST_VERSION: u32 = 1;
+pub const HELD_EXAM_VERSION: u32 = 1;
 pub const MAX_ANSWERS_BYTES: usize = 256 * 1024;
 pub const MAX_QUESTIONS_REQUEST_BYTES: usize = 2 * 1024 * 1024;
 pub const ANSWER_TOO_LONG: &str = "this answer is too long to send";
@@ -140,7 +145,7 @@ impl CarriedExam {
                 .unwrap_or_default()
         };
         GradeRequest {
-            version: VERSION,
+            version: GRADE_REQUEST_VERSION,
             sitting: self.sitting.clone(),
             deck: self.deck.clone(),
             strictness: self.strictness,
@@ -262,7 +267,7 @@ impl GradeRequest {
     }
 
     fn check(&self) -> Result<()> {
-        if self.version != VERSION {
+        if self.version != GRADE_REQUEST_VERSION {
             bail!("the grade request is version {}", self.version);
         }
         if self.questions.is_empty() {
@@ -305,6 +310,479 @@ impl RemediationRequest {
 
     pub fn to_json(&self) -> Result<String> {
         serde_json::to_string(self).context("encoding the remediation request")
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Verdicts {
+    pub pass: u32,
+    pub partial: u32,
+    pub total: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GradedAnswer {
+    pub topic: usize,
+    pub verdict: String,
+    pub feedback: String,
+    pub feedback_units: Vec<ContentUnit>,
+    pub missed: Vec<String>,
+    pub missed_units: Vec<Vec<ContentUnit>>,
+    pub points_units: Vec<Vec<ContentUnit>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GradedTopic {
+    pub pass: bool,
+    pub verdicts: Verdicts,
+    pub gaps: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TopicNumberCards {
+    pub topic: usize,
+    pub cards: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GradingReply {
+    pub sitting: Option<String>,
+    pub phase: String,
+    pub grades: Vec<GradedAnswer>,
+    pub topics: Vec<GradedTopic>,
+    pub verdicts: Option<Verdicts>,
+    pub mastered: bool,
+    pub cards_by_topic: Vec<TopicNumberCards>,
+    pub thinking: bool,
+    pub elapsed: Option<u64>,
+    pub error: Option<String>,
+    pub estimate: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldStart {
+    pub eligible: bool,
+    pub sourced: String,
+    pub unsourced_cards: Vec<String>,
+    pub unsourced_topics: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldResult {
+    pub received_ms: u64,
+    pub recorded: bool,
+    pub grades: Vec<GradedAnswer>,
+    pub topics: Vec<GradedTopic>,
+    pub verdicts: Verdicts,
+    pub mastered: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldStanding {
+    pub text: String,
+    pub exam_changed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldOutcome {
+    pub recorded: bool,
+    pub standing: Option<HeldStanding>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldExam {
+    pub version: u32,
+    pub exam: CarriedExam,
+    pub questions_units: Vec<Vec<ContentUnit>>,
+    pub start: HeldStart,
+    pub answers: Vec<String>,
+    pub locked: Vec<bool>,
+    pub result: Option<HeldResult>,
+    pub outcome: Option<HeldOutcome>,
+    pub remediated: BTreeMap<String, u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceivedExam {
+    exam: CarriedExam,
+    questions_units: Vec<Vec<ContentUnit>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct HeldView {
+    pub sitting: String,
+    pub deck: String,
+    pub strictness: Strictness,
+    pub full: bool,
+    pub questions: Vec<String>,
+    pub questions_units: Vec<Vec<ContentUnit>>,
+    pub answers: Vec<String>,
+    pub locked: Vec<bool>,
+    pub unsourced_topics: Vec<String>,
+    pub outcome: Option<HeldOutcome>,
+    pub remediated: BTreeMap<String, u32>,
+    pub can_remediate: bool,
+    pub result: Option<JoinedResult>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct JoinedResult {
+    pub grades: Vec<JoinedGrade>,
+    pub topics: Vec<JoinedTopic>,
+    pub verdicts: Verdicts,
+    pub mastered: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct JoinedGrade {
+    pub topic: usize,
+    pub shape: &'static str,
+    pub mental_model: String,
+    pub question: String,
+    pub question_units: Vec<ContentUnit>,
+    pub points: Vec<String>,
+    pub points_units: Vec<Vec<ContentUnit>>,
+    pub answer: String,
+    pub verdict: String,
+    pub feedback: String,
+    pub feedback_units: Vec<ContentUnit>,
+    pub missed: Vec<String>,
+    pub missed_units: Vec<Vec<ContentUnit>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct JoinedTopic {
+    pub topic_id: String,
+    pub fingerprint: String,
+    pub label: String,
+    pub cards: Vec<String>,
+    pub pass: bool,
+    pub verdicts: Verdicts,
+}
+
+impl HeldExam {
+    pub fn received(carried_json: &str, start: HeldStart) -> Result<Self> {
+        let received: ReceivedExam =
+            serde_json::from_str(carried_json).context("unreadable carried exam")?;
+        received.exam.check()?;
+        let count = received.exam.questions.len();
+        if received.questions_units.len() != count {
+            bail!(
+                "unreadable carried exam: {} question units for {count} questions",
+                received.questions_units.len()
+            );
+        }
+        Ok(Self {
+            version: HELD_EXAM_VERSION,
+            exam: received.exam,
+            questions_units: received.questions_units,
+            start,
+            answers: vec![String::new(); count],
+            locked: vec![false; count],
+            result: None,
+            outcome: None,
+            remediated: BTreeMap::new(),
+        })
+    }
+
+    pub fn create(&self, path: &Path) -> Result<()> {
+        if path.exists() {
+            bail!("an exam is already held for this deck");
+        }
+        self.save(path)
+    }
+
+    pub fn load(path: &Path) -> Result<Option<Self>> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => Self::parse(&text)
+                .with_context(|| format!("reading {}", path.display()))
+                .map(Some),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(self).context("encoding the held exam")?;
+        crate::exam_ideas::write_atomic(path, json.as_bytes())
+    }
+
+    fn parse(text: &str) -> Result<Self> {
+        let held: Self = serde_json::from_str(text).context("unreadable held exam")?;
+        held.check().context("unreadable held exam")?;
+        Ok(held)
+    }
+
+    fn check(&self) -> Result<()> {
+        if self.version != HELD_EXAM_VERSION {
+            bail!("version {}", self.version);
+        }
+        self.exam.check()?;
+        let count = self.exam.questions.len();
+        for (name, length) in [
+            ("answers", self.answers.len()),
+            ("locks", self.locked.len()),
+            ("question units", self.questions_units.len()),
+        ] {
+            if length != count {
+                bail!("{length} {name} for {count} questions");
+            }
+        }
+        if let Some(result) = &self.result {
+            self.check_counts(result.grades.len(), result.topics.len())?;
+        }
+        Ok(())
+    }
+
+    fn check_counts(&self, grades: usize, topics: usize) -> Result<()> {
+        let questions = self.exam.questions.len();
+        if grades != questions {
+            bail!("{grades} grades for {questions} questions");
+        }
+        let asked = self.exam.asked_topics().len();
+        if topics != asked {
+            bail!("{topics} graded topics for {asked} asked topics");
+        }
+        Ok(())
+    }
+
+    pub fn set_answers(&mut self, answers: Vec<String>, locked: Vec<bool>) -> Result<()> {
+        self.refuse_once_graded()?;
+        let count = self.exam.questions.len();
+        if answers.len() != count || locked.len() != count {
+            bail!(
+                "{} answers and {} locks for {count} questions",
+                answers.len(),
+                locked.len()
+            );
+        }
+        let sent: Vec<String> = answers
+            .iter()
+            .zip(&locked)
+            .filter(|(_, locked)| **locked)
+            .map(|(answer, _)| {
+                if answer.trim().is_empty() {
+                    String::new()
+                } else {
+                    answer.clone()
+                }
+            })
+            .collect();
+        if answers_bytes(&sent) > MAX_ANSWERS_BYTES {
+            bail!(ANSWER_TOO_LONG);
+        }
+        self.answers = answers;
+        self.locked = locked;
+        Ok(())
+    }
+
+    pub fn grade_request(&self) -> Result<GradeRequest> {
+        self.refuse_once_graded()?;
+        Ok(self.exam.grade_request(&self.answers))
+    }
+
+    fn refuse_once_graded(&self) -> Result<()> {
+        if self.result.is_some() {
+            bail!("this exam was already graded");
+        }
+        Ok(())
+    }
+
+    pub fn store_result(
+        &mut self,
+        reply: &GradingReply,
+        received_ms: u64,
+        recorded: bool,
+    ) -> Result<()> {
+        self.refuse_once_graded()?;
+        if reply.sitting.as_deref() != Some(self.exam.sitting.as_str()) {
+            bail!("the grading reply is for another sitting");
+        }
+        if reply.phase != "results" {
+            bail!("the grading reply is in phase {}", reply.phase);
+        }
+        self.check_counts(reply.grades.len(), reply.topics.len())
+            .context("the grading reply does not fit the exam")?;
+        let request = self.exam.grade_request(&self.answers);
+        let numbered_alike = reply
+            .grades
+            .iter()
+            .zip(&request.questions)
+            .all(|(grade, question)| grade.topic == question.topic);
+        if !numbered_alike {
+            bail!("the grading reply numbers a grade's topic unlike its question");
+        }
+        let Some(verdicts) = reply.verdicts else {
+            bail!("the grading reply has no verdicts");
+        };
+        self.result = Some(HeldResult {
+            received_ms,
+            recorded,
+            grades: reply.grades.clone(),
+            topics: reply.topics.clone(),
+            verdicts,
+            mastered: reply.mastered,
+        });
+        Ok(())
+    }
+
+    pub fn asked(&self) -> Vec<crate::exam_ideas::AskedIdea> {
+        let Some(result) = &self.result else {
+            return Vec::new();
+        };
+        self.exam
+            .questions
+            .iter()
+            .zip(&result.grades)
+            .map(|(question, grade)| crate::exam_ideas::AskedIdea {
+                topic: question.topic_id.clone(),
+                idea: question.idea,
+                passed: grade.verdict == Verdict::Pass.label(),
+            })
+            .collect()
+    }
+
+    pub fn sitting_record(&self) -> Option<crate::store::SittingRecord> {
+        let result = self.result.as_ref()?;
+        Some(crate::store::SittingRecord {
+            topics: self
+                .exam
+                .asked_topics()
+                .iter()
+                .zip(&result.topics)
+                .map(|(topic, graded)| crate::store::TopicRecord {
+                    topic_id: topic.topic_id.clone(),
+                    fingerprint: topic.fingerprint.clone(),
+                    pass: graded.pass,
+                })
+                .collect(),
+            full: self.exam.full,
+            pass: result.verdicts.pass,
+            partial: result.verdicts.partial,
+            total: result.verdicts.total,
+        })
+    }
+
+    pub fn remediation_request(&self) -> Option<RemediationRequest> {
+        let recorded = self
+            .outcome
+            .as_ref()
+            .is_some_and(|outcome| outcome.recorded);
+        let result = self.result.as_ref().filter(|_| recorded)?;
+        let topics: Vec<RemediationTopic> = self
+            .exam
+            .asked_topics()
+            .iter()
+            .zip(&result.topics)
+            .enumerate()
+            .filter(|(_, (topic, graded))| {
+                !graded.pass
+                    && !graded.gaps.is_empty()
+                    && !self.remediated.contains_key(&topic.topic_id)
+            })
+            .map(|(number, (_, graded))| RemediationTopic {
+                topic: number,
+                gaps: graded.gaps.clone(),
+            })
+            .collect();
+        if topics.is_empty() {
+            return None;
+        }
+        Some(RemediationRequest {
+            sitting: self.exam.sitting.clone(),
+            deck: self.exam.deck.clone(),
+            topics,
+        })
+    }
+
+    pub fn topic_id_of(&self, topic: usize) -> Option<&str> {
+        self.exam
+            .asked_topics()
+            .get(topic)
+            .map(|asked| asked.topic_id.as_str())
+    }
+
+    pub fn view(&self) -> HeldView {
+        HeldView {
+            sitting: self.exam.sitting.clone(),
+            deck: self.exam.deck.clone(),
+            strictness: self.exam.strictness,
+            full: self.exam.full,
+            questions: self
+                .exam
+                .questions
+                .iter()
+                .map(|question| question.prompt.clone())
+                .collect(),
+            questions_units: self.questions_units.clone(),
+            answers: self.answers.clone(),
+            locked: self.locked.clone(),
+            unsourced_topics: self.start.unsourced_topics.clone(),
+            outcome: self.outcome.clone(),
+            remediated: self.remediated.clone(),
+            can_remediate: self.remediation_request().is_some(),
+            result: self.result.as_ref().map(|result| self.joined(result)),
+        }
+    }
+
+    fn joined(&self, result: &HeldResult) -> JoinedResult {
+        let request = self.exam.grade_request(&self.answers);
+        let grades = self
+            .exam
+            .questions
+            .iter()
+            .zip(&request.questions)
+            .zip(&self.questions_units)
+            .zip(&self.answers)
+            .zip(&result.grades)
+            .map(
+                |((((question, numbered), question_units), answer), grade)| JoinedGrade {
+                    topic: numbered.topic,
+                    shape: question.shape.label(),
+                    mental_model: question.mental_model.clone(),
+                    question: question.prompt.clone(),
+                    question_units: question_units.clone(),
+                    points: question.points.clone(),
+                    points_units: grade.points_units.clone(),
+                    answer: answer.clone(),
+                    verdict: grade.verdict.clone(),
+                    feedback: grade.feedback.clone(),
+                    feedback_units: grade.feedback_units.clone(),
+                    missed: grade.missed.clone(),
+                    missed_units: grade.missed_units.clone(),
+                },
+            )
+            .collect();
+        let topics = self
+            .exam
+            .asked_topics()
+            .iter()
+            .zip(&result.topics)
+            .map(|(topic, graded)| JoinedTopic {
+                topic_id: topic.topic_id.clone(),
+                fingerprint: topic.fingerprint.clone(),
+                label: topic.label.clone(),
+                cards: topic.cards.clone(),
+                pass: graded.pass,
+                verdicts: graded.verdicts,
+            })
+            .collect();
+        JoinedResult {
+            grades,
+            topics,
+            verdicts: result.verdicts,
+            mastered: result.mastered,
+        }
     }
 }
 
@@ -687,5 +1165,573 @@ mod tests {
         };
         rejects(&remediation, "RemediationRequest");
         rejects(&remediation.topics[0], "RemediationTopic");
+    }
+
+    fn start() -> HeldStart {
+        HeldStart {
+            eligible: true,
+            sourced: "sourced-1".into(),
+            unsourced_cards: strings(&["card-u"]),
+            unsourced_topics: strings(&["topic-u"]),
+        }
+    }
+
+    fn received_text(carried: &CarriedExam, units: &[Vec<ContentUnit>]) -> String {
+        serde_json::json!({ "exam": carried, "questions_units": units }).to_string()
+    }
+
+    fn held_from(carried: CarriedExam) -> HeldExam {
+        let units = carried.questions_units();
+        HeldExam::received(&received_text(&carried, &units), start()).unwrap()
+    }
+
+    fn held() -> HeldExam {
+        held_from(exam(&["a", "b", "c"], &["b", "a"]))
+    }
+
+    fn units(text: &str) -> Vec<ContentUnit> {
+        exam_text_units(text)
+    }
+
+    fn graded(topic: usize, verdict: &str, tag: &str) -> GradedAnswer {
+        GradedAnswer {
+            topic,
+            verdict: verdict.into(),
+            feedback: format!("feedback {tag}"),
+            feedback_units: units(&format!("feedback {tag}")),
+            missed: vec![format!("missed {tag}")],
+            missed_units: vec![units(&format!("missed {tag}"))],
+            points_units: vec![units(&format!("point {tag}"))],
+        }
+    }
+
+    fn graded_topic(pass: bool, gaps: &[&str]) -> GradedTopic {
+        GradedTopic {
+            pass,
+            verdicts: Verdicts {
+                pass: u32::from(pass),
+                partial: 0,
+                total: 1,
+            },
+            gaps: strings(gaps),
+        }
+    }
+
+    fn fitting_reply(held: &HeldExam) -> GradingReply {
+        let request = held.exam.grade_request(&held.answers);
+        GradingReply {
+            sitting: Some(held.exam.sitting.clone()),
+            phase: "results".into(),
+            grades: request
+                .questions
+                .iter()
+                .enumerate()
+                .map(|(i, q)| graded(q.topic, "PASS", &i.to_string()))
+                .collect(),
+            topics: held
+                .exam
+                .asked_topics()
+                .iter()
+                .map(|_| graded_topic(true, &[]))
+                .collect(),
+            verdicts: Some(Verdicts {
+                pass: 2,
+                partial: 0,
+                total: 2,
+            }),
+            mastered: true,
+            cards_by_topic: vec![TopicNumberCards {
+                topic: 0,
+                cards: "card-a".into(),
+            }],
+            thinking: false,
+            elapsed: Some(7),
+            error: None,
+            estimate: None,
+        }
+    }
+
+    fn graded_held() -> HeldExam {
+        let mut value = held();
+        value
+            .set_answers(strings(&["answer 0", "answer 1"]), vec![true, true])
+            .unwrap();
+        let reply = fitting_reply(&value);
+        value.store_result(&reply, 1000, true).unwrap();
+        value
+    }
+
+    fn recorded(mut value: HeldExam) -> HeldExam {
+        value.outcome = Some(HeldOutcome {
+            recorded: true,
+            standing: Some(HeldStanding {
+                text: "standing".into(),
+                exam_changed: false,
+            }),
+        });
+        value
+    }
+
+    fn load_text(text: &str) -> Result<Option<HeldExam>> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("held.json");
+        std::fs::write(&path, text).unwrap();
+        HeldExam::load(&path)
+    }
+
+    #[test]
+    fn l1_a_received_document_becomes_a_held_exam_with_empty_unlocked_answers() {
+        let carried = exam(&["a", "b", "c"], &["b", "a"]);
+        let value = held_from(carried.clone());
+        assert_eq!(value.version, HELD_EXAM_VERSION, "version");
+        assert_eq!(value.exam, carried, "exam");
+        assert_eq!(value.questions_units, carried.questions_units(), "units");
+        assert_eq!(value.start, start(), "start");
+        assert_eq!(value.answers, strings(&["", ""]), "answers");
+        assert_eq!(value.locked, [false, false], "locked");
+        assert_eq!(value.result, None, "result");
+        assert_eq!(value.outcome, None, "outcome");
+        assert!(value.remediated.is_empty(), "remediated");
+    }
+
+    #[test]
+    fn l2_a_received_document_with_a_units_count_unlike_its_questions_is_refused() {
+        let carried = exam(&["a", "b"], &["a", "b"]);
+        let mut short = carried.questions_units();
+        short.pop();
+        let error = HeldExam::received(&received_text(&carried, &short), start()).unwrap_err();
+        assert!(
+            error.to_string().contains("question units"),
+            "error was: {error}"
+        );
+        let units = carried.questions_units();
+        HeldExam::received(&received_text(&carried, &units), start())
+            .expect("a matching units count");
+    }
+
+    #[test]
+    fn l3_create_refuses_to_replace_a_held_file_and_leaves_it_byte_identical() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("held.json");
+        held().create(&path).expect("the first create");
+        let before = std::fs::read(&path).unwrap();
+        let other = graded_held();
+        let error = other.create(&path).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("an exam is already held for this deck"),
+            "error was: {error}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before, "bytes after refusal");
+    }
+
+    #[test]
+    fn l4_a_held_exam_round_trips_through_its_file_in_every_state() {
+        let fresh = held();
+        let mut answered = held();
+        answered
+            .set_answers(strings(&["one", ""]), vec![true, false])
+            .unwrap();
+        let with_result = graded_held();
+        let with_outcome = recorded(graded_held());
+        let mut with_remediated = recorded(graded_held());
+        with_remediated.remediated.insert("a".into(), 3);
+        let dir = tempfile::tempdir().unwrap();
+        for (state, value) in [
+            ("fresh", fresh),
+            ("answered", answered),
+            ("with result", with_result),
+            ("with outcome", with_outcome),
+            ("with remediated", with_remediated),
+        ] {
+            let first = dir.path().join(format!("{state}-1.json"));
+            let second = dir.path().join(format!("{state}-2.json"));
+            value.save(&first).unwrap();
+            let loaded = HeldExam::load(&first)
+                .unwrap_or_else(|e| panic!("{state}: load failed: {e:#}"))
+                .unwrap_or_else(|| panic!("{state}: loaded as absent"));
+            assert_eq!(loaded, value, "{state}: loaded value");
+            loaded.save(&second).unwrap();
+            assert_eq!(
+                std::fs::read(&first).unwrap(),
+                std::fs::read(&second).unwrap(),
+                "{state}: bytes after a second save"
+            );
+        }
+    }
+
+    #[test]
+    fn l5_set_answers_refuses_a_lock_that_takes_the_locked_answers_over_the_limit() {
+        let mut value = held();
+        let long = strings(&[&"x".repeat(MAX_ANSWERS_BYTES), "y"]);
+        let before = value.clone();
+        let error = value
+            .set_answers(long.clone(), vec![true, true])
+            .unwrap_err();
+        assert_eq!(error.to_string(), ANSWER_TOO_LONG, "locking both");
+        assert_eq!(value, before, "value after the refusal");
+        value
+            .set_answers(long.clone(), vec![false, false])
+            .expect("the same text unlocked");
+        value
+            .set_answers(long.clone(), vec![true, false])
+            .expect("only the first locked, at the limit");
+        assert_eq!(value.answers, long, "answers kept");
+        assert_eq!(value.locked, [true, false], "locks kept");
+    }
+
+    #[test]
+    fn l6_three_byte_characters_are_counted_alike_by_the_lock_and_by_parse() {
+        let at_limit = format!("{}x", "€".repeat(MAX_ANSWERS_BYTES / 3));
+        assert_eq!(at_limit.len(), MAX_ANSWERS_BYTES, "fixture length");
+        let over = "€".repeat(MAX_ANSWERS_BYTES / 3 + 1);
+        for (name, answer, fits) in [("at the limit", at_limit, true), ("over", over, false)] {
+            let mut value = held_from(exam(&["a"], &["a"]));
+            let locked = value.set_answers(vec![answer.clone()], vec![true]);
+            let request = value.exam.grade_request(&[answer]);
+            let parsed = GradeRequest::parse(request.to_json().unwrap().as_bytes());
+            assert_eq!(locked.is_ok(), fits, "{name}: the lock");
+            assert_eq!(parsed.is_ok(), fits, "{name}: parse");
+        }
+    }
+
+    #[test]
+    fn l7_grade_request_is_refused_once_a_result_is_stored() {
+        let mut value = held();
+        value.grade_request().expect("before a result");
+        let reply = fitting_reply(&value);
+        value.store_result(&reply, 1, true).unwrap();
+        let error = value.grade_request().unwrap_err();
+        assert!(
+            error.to_string().contains("this exam was already graded"),
+            "error was: {error}"
+        );
+    }
+
+    #[test]
+    fn l8_store_result_keeps_the_time_and_the_choice() {
+        for (received_ms, choice) in [(1234, false), (5678, true)] {
+            let mut value = held();
+            let reply = fitting_reply(&value);
+            value.store_result(&reply, received_ms, choice).unwrap();
+            let result = value.result.unwrap();
+            assert_eq!(result.received_ms, received_ms, "time");
+            assert_eq!(result.recorded, choice, "choice at {received_ms}");
+            assert_eq!(result.grades, reply.grades, "grades");
+            assert_eq!(result.topics, reply.topics, "topics");
+            assert_eq!(Some(result.verdicts), reply.verdicts, "verdicts");
+            assert_eq!(result.mastered, reply.mastered, "mastered");
+        }
+    }
+
+    #[test]
+    fn l9_a_second_store_result_is_refused_and_the_first_stays() {
+        let mut value = held();
+        let first = fitting_reply(&value);
+        value.store_result(&first, 1, true).unwrap();
+        let stored = value.clone();
+        let mut second = fitting_reply(&value);
+        second.mastered = false;
+        assert!(
+            value.store_result(&second, 2, false).is_err(),
+            "the second store was accepted"
+        );
+        assert_eq!(value, stored, "value after the second store");
+    }
+
+    #[test]
+    fn l10_asked_marks_an_idea_passed_only_for_a_pass_verdict() {
+        let mut carried = exam(&["a", "b", "c"], &["b", "a", "c"]);
+        carried.questions[1].idea = 2;
+        carried.questions[2].idea = 5;
+        let mut value = held_from(carried);
+        assert!(value.asked().is_empty(), "no result");
+        let mut reply = fitting_reply(&value);
+        for (grade, verdict) in reply.grades.iter_mut().zip(["PASS", "PARTIAL", "FAIL"]) {
+            grade.verdict = verdict.into();
+        }
+        value.store_result(&reply, 1, true).unwrap();
+        let idea = |topic: &str, idea, passed| crate::exam_ideas::AskedIdea {
+            topic: topic.into(),
+            idea,
+            passed,
+        };
+        assert_eq!(
+            value.asked(),
+            [idea("b", 0, true), idea("a", 2, false), idea("c", 5, false)]
+        );
+    }
+
+    #[test]
+    fn l11_sitting_record_names_each_asked_topic_with_its_fingerprint_and_pass() {
+        let mut value = held();
+        assert_eq!(value.sitting_record(), None, "no result");
+        let mut reply = fitting_reply(&value);
+        reply.topics = vec![graded_topic(true, &[]), graded_topic(false, &["g"])];
+        reply.verdicts = Some(Verdicts {
+            pass: 3,
+            partial: 1,
+            total: 5,
+        });
+        value.store_result(&reply, 1, true).unwrap();
+        let topic = |id: &str, pass| crate::store::TopicRecord {
+            topic_id: id.into(),
+            fingerprint: format!("fp-{id}"),
+            pass,
+        };
+        assert_eq!(
+            value.sitting_record(),
+            Some(crate::store::SittingRecord {
+                topics: vec![topic("a", true), topic("b", false)],
+                full: true,
+                pass: 3,
+                partial: 1,
+                total: 5,
+            })
+        );
+    }
+
+    #[test]
+    fn l12_remediation_request_holds_only_unpassed_topics_with_gaps_not_yet_remediated() {
+        let mut value = held_from(exam(&["a", "b", "c", "d"], &["a", "b", "c", "d"]));
+        let mut reply = fitting_reply(&value);
+        reply.topics = vec![
+            graded_topic(true, &["partial gap"]),
+            graded_topic(false, &[]),
+            graded_topic(false, &["c gap"]),
+            graded_topic(false, &["d gap"]),
+        ];
+        value.store_result(&reply, 1, true).unwrap();
+        let mut value = recorded(value);
+        value.remediated.insert("c".into(), 2);
+        assert_eq!(
+            value.remediation_request(),
+            Some(RemediationRequest {
+                sitting: "s1".into(),
+                deck: "deck-1".into(),
+                topics: vec![RemediationTopic {
+                    topic: 3,
+                    gaps: strings(&["d gap"]),
+                }],
+            })
+        );
+        value.remediated.insert("d".into(), 1);
+        assert_eq!(value.remediation_request(), None, "no topic left");
+    }
+
+    #[test]
+    fn l13_remediation_request_is_none_without_a_recorded_outcome() {
+        let unrecorded = {
+            let mut value = recorded(graded_held());
+            value.outcome = Some(HeldOutcome {
+                recorded: false,
+                standing: None,
+            });
+            value
+        };
+        let failing = |mut value: HeldExam| {
+            if let Some(result) = value.result.as_mut() {
+                result.topics[0] = graded_topic(false, &["g"]);
+            }
+            value
+        };
+        for (row, value) in [
+            ("no result", held()),
+            ("a result and no outcome", failing(graded_held())),
+            ("an outcome that says not recorded", failing(unrecorded)),
+        ] {
+            assert_eq!(value.remediation_request(), None, "{row}");
+        }
+        assert!(
+            failing(recorded(graded_held()))
+                .remediation_request()
+                .is_some(),
+            "control: a recorded outcome with a failed topic"
+        );
+    }
+
+    #[test]
+    fn l14_a_reply_that_does_not_fit_the_exam_is_refused_and_the_value_is_unchanged() {
+        let value = held();
+        type ReplyEdit = fn(&mut GradingReply);
+        let rows: Vec<(&str, ReplyEdit)> = vec![
+            ("another sitting", |r| r.sitting = Some("s2".into())),
+            ("phase grading", |r| r.phase = "grading".into()),
+            ("one grade too few", |r| {
+                r.grades.pop();
+            }),
+            ("one topic too many", |r| {
+                r.topics.push(graded_topic(true, &[]))
+            }),
+            ("a grade naming another topic number", |r| {
+                r.grades[0].topic = r.grades[1].topic
+            }),
+            ("no verdicts", |r| r.verdicts = None),
+        ];
+        for (row, edit) in rows {
+            let mut reply = fitting_reply(&value);
+            edit(&mut reply);
+            let mut changed = value.clone();
+            assert!(
+                changed.store_result(&reply, 1, true).is_err(),
+                "row {row}: the reply was accepted"
+            );
+            assert_eq!(changed, value, "row {row}: value after the refusal");
+        }
+        let mut control = value.clone();
+        control
+            .store_result(&fitting_reply(&value), 1, true)
+            .expect("control: the fitting reply");
+    }
+
+    #[test]
+    fn l15_the_view_joins_each_grade_with_its_question_points_answer_and_topic() {
+        let mut carried = exam(&["a", "b", "c"], &["b", "a"]);
+        carried.questions[0].shape = Shape::Fix;
+        carried.questions[0].mental_model = "model b".into();
+        carried.questions[0].points = strings(&["point b"]);
+        let mut value = held_from(carried);
+        let fresh = serde_json::to_value(value.view()).unwrap();
+        assert_eq!(fresh["result"], serde_json::Value::Null, "no result");
+        value
+            .set_answers(strings(&["answer 0", "answer 1"]), vec![true, false])
+            .unwrap();
+        let mut reply = fitting_reply(&value);
+        reply.grades[1].verdict = "FAIL".into();
+        reply.topics = vec![graded_topic(false, &["gap a"]), graded_topic(true, &[])];
+        value.store_result(&reply, 1, true).unwrap();
+        let value = recorded(value);
+        let joined = |i: usize, topic: usize, shape: &'static str| {
+            let question = &value.exam.questions[i];
+            let grade = &reply.grades[i];
+            JoinedGrade {
+                topic,
+                shape,
+                mental_model: question.mental_model.clone(),
+                question: question.prompt.clone(),
+                question_units: units(&question.prompt),
+                points: question.points.clone(),
+                points_units: grade.points_units.clone(),
+                answer: value.answers[i].clone(),
+                verdict: grade.verdict.clone(),
+                feedback: grade.feedback.clone(),
+                feedback_units: grade.feedback_units.clone(),
+                missed: grade.missed.clone(),
+                missed_units: grade.missed_units.clone(),
+            }
+        };
+        let topic = |id: &str, graded: &GradedTopic| JoinedTopic {
+            topic_id: id.into(),
+            fingerprint: format!("fp-{id}"),
+            label: format!("Topic {id}"),
+            cards: vec![format!("card-{id}")],
+            pass: graded.pass,
+            verdicts: graded.verdicts,
+        };
+        let expected = HeldView {
+            sitting: "s1".into(),
+            deck: "deck-1".into(),
+            strictness: Strictness::default(),
+            full: true,
+            questions: strings(&["Why `b`?", "Why `a`?"]),
+            questions_units: value.questions_units.clone(),
+            answers: strings(&["answer 0", "answer 1"]),
+            locked: vec![true, false],
+            unsourced_topics: strings(&["topic-u"]),
+            outcome: value.outcome.clone(),
+            remediated: BTreeMap::new(),
+            can_remediate: true,
+            result: Some(JoinedResult {
+                grades: vec![joined(0, 1, "fix"), joined(1, 0, "boundary")],
+                topics: vec![topic("a", &reply.topics[0]), topic("b", &reply.topics[1])],
+                verdicts: reply.verdicts.unwrap(),
+                mastered: true,
+            }),
+        };
+        assert_eq!(value.view(), expected);
+    }
+
+    #[test]
+    fn an_absent_held_file_loads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(HeldExam::load(&dir.path().join("none.json")).unwrap(), None);
+    }
+
+    #[test]
+    fn a_held_file_that_does_not_fit_its_exam_is_unreadable() {
+        let base = serde_json::to_value(recorded(graded_held())).unwrap();
+        type FileEdit = fn(&mut serde_json::Value);
+        let rows: Vec<(&str, FileEdit)> = vec![
+            ("version 2", |v| v["version"] = 2.into()),
+            ("a question naming no topic", |v| {
+                v["exam"]["questions"][0]["topic_id"] = "z".into()
+            }),
+            ("one answer too few", |v| {
+                v["answers"].as_array_mut().unwrap().pop();
+            }),
+            ("one lock too many", |v| {
+                v["locked"].as_array_mut().unwrap().push(false.into())
+            }),
+            ("one question unit list too few", |v| {
+                v["questions_units"].as_array_mut().unwrap().pop();
+            }),
+            ("one grade too few", |v| {
+                v["result"]["grades"].as_array_mut().unwrap().pop();
+            }),
+            ("one topic too few", |v| {
+                v["result"]["topics"].as_array_mut().unwrap().pop();
+            }),
+        ];
+        for (row, edit) in rows {
+            let mut value = base.clone();
+            edit(&mut value);
+            let error = load_text(&value.to_string()).expect_err(row);
+            assert!(
+                format!("{error:#}").contains("unreadable held exam"),
+                "row {row}: error was: {error:#}"
+            );
+        }
+        load_text(&base.to_string()).expect("control: the unedited file");
+    }
+
+    #[test]
+    fn an_unknown_field_inside_any_held_struct_makes_the_held_file_unreadable() {
+        let base = serde_json::to_value(recorded(graded_held())).unwrap();
+        for place in [
+            "",
+            "/start",
+            "/result",
+            "/result/verdicts",
+            "/result/grades/0",
+            "/result/topics/0",
+            "/outcome",
+            "/outcome/standing",
+        ] {
+            let mut value = base.clone();
+            value.pointer_mut(place).unwrap()["extra"] = true.into();
+            let error = load_text(&value.to_string())
+                .expect_err(&format!("an unknown field at {place:?} was accepted"));
+            assert!(
+                format!("{error:#}").contains("unreadable held exam"),
+                "unknown field at {place:?}: error was: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_grading_reply_with_an_unknown_top_level_field_still_parses() {
+        let reply = fitting_reply(&held());
+        let mut value = serde_json::to_value(&reply).unwrap();
+        value["added_later"] = true.into();
+        let parsed: GradingReply = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed, reply);
+    }
+
+    #[test]
+    fn a_grading_reply_with_an_unknown_field_inside_topic_number_cards_is_refused() {
+        let mut value = serde_json::to_value(fitting_reply(&held())).unwrap();
+        value["cards_by_topic"][0]["extra"] = true.into();
+        assert!(serde_json::from_value::<GradingReply>(value).is_err());
     }
 }
