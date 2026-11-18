@@ -297,8 +297,9 @@ a restarted server reopens it. The file holds the generated questions with
 their key points, the topics and their fingerprints, and three values from
 the phone's start request, all inside the remote body cap: the sitting's
 ideas document, which starts from the one the phone sent (parsed into its
-typed shape); the deck's catalog name, kept only when the catalog resolved
-it and resolved through the catalog again at a restore; and the names of
+typed shape), with the text of each idea asked about repeated in its
+question; the deck's catalog name, kept only when the catalog resolved it
+and resolved through the catalog again at a restore; and the names of
 requested cards the deck does not hold, kept as given. The path to the file
 is not phone-supplied. A pairing-token holder can therefore make the
 desktop hold one such file at a time: a second start is refused while a
