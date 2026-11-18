@@ -29,6 +29,7 @@ pub(super) struct JobsState {
     pub(super) receiving: Option<Receiving>,
     pub(super) remote_ask: Option<RemoteAsk>,
     pub(super) remote_exam: Option<RemoteExamining>,
+    pub(super) grading: GradingDesk,
     pub(super) remote_generate: Option<RemoteGenerating>,
     pub(super) preparing: Vec<Preparing>,
     pub(super) preparing_sequence: u64,
@@ -123,6 +124,17 @@ pub(super) enum JobsCommand {
     },
     RemoteExamRemediate(Reply<Option<RemoteExamDto>>),
     RemoteExamClose(Reply<()>),
+    RemoteGradingSubmit {
+        request: GradingRequest,
+        exam_cfg: ExamConfig,
+        ask_cfg: AskConfig,
+        reply: Reply<Option<crate::exam_carried::GradingReply>>,
+    },
+    RemoteGradingPoll(Reply<crate::exam_carried::GradingReply>),
+    RemoteGradingClose {
+        sitting: String,
+        reply: Reply<()>,
+    },
     RemoteGenerateStart {
         url: String,
         guidance: Option<String>,
@@ -297,6 +309,25 @@ impl JobsHandle {
     }
     pub(super) fn remote_exam_close(&self) -> Option<()> {
         self.call(JobsCommand::RemoteExamClose)
+    }
+    pub(super) fn remote_grading_submit(
+        &self,
+        request: GradingRequest,
+        exam_cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Option<Option<crate::exam_carried::GradingReply>> {
+        self.call(|reply| JobsCommand::RemoteGradingSubmit {
+            request,
+            exam_cfg,
+            ask_cfg,
+            reply,
+        })
+    }
+    pub(super) fn remote_grading_poll(&self) -> Option<crate::exam_carried::GradingReply> {
+        self.call(JobsCommand::RemoteGradingPoll)
+    }
+    pub(super) fn remote_grading_close(&self, sitting: String) -> Option<()> {
+        self.call(|reply| JobsCommand::RemoteGradingClose { sitting, reply })
     }
     pub(super) fn remote_generate_start(
         &self,
@@ -641,6 +672,24 @@ impl JobsState {
                 {
                     eprintln!("warning: could not remove the kept exam: {error}");
                 }
+                let _ = reply.send(());
+            }
+            JobsCommand::RemoteGradingSubmit {
+                request,
+                exam_cfg,
+                ask_cfg,
+                reply,
+            } => {
+                self.grading.advance();
+                let _ = reply.send(self.grading.submit(request, exam_cfg, ask_cfg));
+            }
+            JobsCommand::RemoteGradingPoll(reply) => {
+                self.grading.advance();
+                let _ = reply.send(self.grading.reply());
+            }
+            JobsCommand::RemoteGradingClose { sitting, reply } => {
+                self.grading.advance();
+                self.grading.close(&sitting);
                 let _ = reply.send(());
             }
             JobsCommand::RemoteGenerateStart {
@@ -1047,6 +1096,14 @@ mod tests {
                 handle.remote_exam_remediate().is_none(),
             ),
             ("remote_exam_close", handle.remote_exam_close().is_none()),
+            (
+                "remote_grading_poll",
+                handle.remote_grading_poll().is_none(),
+            ),
+            (
+                "remote_grading_close",
+                handle.remote_grading_close(String::new()).is_none(),
+            ),
             (
                 "remote_generate_poll",
                 handle.remote_generate_poll().is_none(),

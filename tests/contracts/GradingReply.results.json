@@ -1,0 +1,75 @@
+{
+  "cards_by_topic": [],
+  "elapsed": null,
+  "error": null,
+  "estimate": null,
+  "grades": [
+    {
+      "feedback": "Rust has no GC",
+      "feedback_units": [
+        {
+          "kind": "sentence",
+          "runs": [
+            {
+              "text": "Rust has no GC"
+            }
+          ],
+          "text": "Rust has no GC"
+        }
+      ],
+      "missed": [
+        "memory safety without a GC"
+      ],
+      "missed_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "memory safety without a GC"
+              }
+            ],
+            "text": "memory safety without a GC"
+          }
+        ]
+      ],
+      "points_units": [
+        [
+          {
+            "kind": "sentence",
+            "runs": [
+              {
+                "text": "memory safety without a GC"
+              }
+            ],
+            "text": "memory safety without a GC"
+          }
+        ]
+      ],
+      "topic": 0,
+      "verdict": "FAIL"
+    }
+  ],
+  "mastered": false,
+  "phase": "results",
+  "sitting": "0123456789abcdefghjkmnpqrs",
+  "thinking": false,
+  "topics": [
+    {
+      "gaps": [
+        "memory safety without a GC"
+      ],
+      "pass": false,
+      "verdicts": {
+        "partial": 0,
+        "pass": 0,
+        "total": 1
+      }
+    }
+  ],
+  "verdicts": {
+    "partial": 0,
+    "pass": 0,
+    "total": 1
+  }
+}

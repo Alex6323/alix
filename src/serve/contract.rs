@@ -4,6 +4,7 @@ use super::*;
 use crate::{
     answer::TypedResult,
     exam,
+    exam_carried::GradingReply,
     inline::InlineRun,
     math::MathView,
     render::{AnswerStep, CellAlign, ChecklistItem, ContentUnit},
@@ -3064,6 +3065,154 @@ fn remoteexamdto_remediated_wire_shape() {
             "error": null,
             "estimate": null,
             "ideas": null
+        }),
+    );
+}
+
+fn grading_reply(phase: &str) -> GradingReply {
+    GradingReply {
+        sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
+        phase: phase.to_string(),
+        ..GradingDesk::Idle.reply()
+    }
+}
+
+#[test]
+fn gradingreply_idle_wire_shape() {
+    pin(
+        "GradingReply.idle",
+        &GradingDesk::Idle.reply(),
+        json!({
+            "sitting": null,
+            "phase": "idle",
+            "grades": [],
+            "topics": [],
+            "verdicts": null,
+            "mastered": false,
+            "cards_by_topic": [],
+            "thinking": false,
+            "elapsed": null,
+            "error": null,
+            "estimate": null
+        }),
+    );
+}
+
+#[test]
+fn gradingreply_grading_wire_shape() {
+    let reply = GradingReply {
+        thinking: true,
+        elapsed: Some(12),
+        estimate: Some("usually 10 to 20 minutes".to_string()),
+        ..grading_reply("grading")
+    };
+    pin(
+        "GradingReply.grading",
+        &reply,
+        json!({
+            "sitting": "0123456789abcdefghjkmnpqrs",
+            "phase": "grading",
+            "grades": [],
+            "topics": [],
+            "verdicts": null,
+            "mastered": false,
+            "cards_by_topic": [],
+            "thinking": true,
+            "elapsed": 12,
+            "error": null,
+            "estimate": "usually 10 to 20 minutes"
+        }),
+    );
+}
+
+#[test]
+fn gradingreply_results_wire_shape() {
+    let units = |text: &str| crate::render::exam_text_units(text);
+    let reply = GradingReply {
+        grades: vec![crate::exam_carried::GradedAnswer {
+            topic: 0,
+            verdict: "FAIL".to_string(),
+            feedback: "Rust has no GC".to_string(),
+            feedback_units: units("Rust has no GC"),
+            missed: vec!["memory safety without a GC".to_string()],
+            missed_units: vec![units("memory safety without a GC")],
+            points_units: vec![units("memory safety without a GC")],
+        }],
+        topics: vec![crate::exam_carried::GradedTopic {
+            pass: false,
+            verdicts: crate::exam_carried::Verdicts {
+                pass: 0,
+                partial: 0,
+                total: 1,
+            },
+            gaps: vec!["memory safety without a GC".to_string()],
+        }],
+        verdicts: Some(crate::exam_carried::Verdicts {
+            pass: 0,
+            partial: 0,
+            total: 1,
+        }),
+        ..grading_reply("results")
+    };
+    pin(
+        "GradingReply.results",
+        &reply,
+        json!({
+            "sitting": "0123456789abcdefghjkmnpqrs",
+            "phase": "results",
+            "grades": [{
+                "topic": 0,
+                "verdict": "FAIL",
+                "feedback": "Rust has no GC",
+                "feedback_units": [{"kind": "sentence", "text": "Rust has no GC", "runs": [{"text": "Rust has no GC"}]}],
+                "missed": ["memory safety without a GC"],
+                "missed_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]],
+                "points_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]]
+            }],
+            "topics": [{
+                "pass": false,
+                "verdicts": {"pass": 0, "partial": 0, "total": 1},
+                "gaps": ["memory safety without a GC"]
+            }],
+            "verdicts": {"pass": 0, "partial": 0, "total": 1},
+            "mastered": false,
+            "cards_by_topic": [],
+            "thinking": false,
+            "elapsed": null,
+            "error": null,
+            "estimate": null
+        }),
+    );
+}
+
+#[test]
+fn gradingreply_remediated_wire_shape() {
+    let reply = GradingReply {
+        cards_by_topic: vec![crate::exam_carried::TopicNumberCards {
+            topic: 0,
+            cards: "## Why does Rust use ownership?\nso drops are deterministic, no GC needed"
+                .to_string(),
+        }],
+        ..grading_reply("remediated")
+    };
+    pin(
+        "GradingReply.remediated",
+        &reply,
+        json!({
+            "sitting": "0123456789abcdefghjkmnpqrs",
+            "phase": "remediated",
+            "grades": [],
+            "topics": [],
+            "verdicts": null,
+            "mastered": false,
+            "cards_by_topic": [{
+                "topic": 0,
+                "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed"
+            }],
+            "thinking": false,
+            "elapsed": null,
+            "error": null,
+            "estimate": null
         }),
     );
 }

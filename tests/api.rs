@@ -10718,6 +10718,46 @@ fn remote_endpoints_require_the_token_like_the_rest_of_the_api() {
         b"not json",
     );
     assert_ne!(401, resp.status, "body: {:?}", resp.body);
+
+    for (method, path) in [
+        ("POST", "/api/remote/exam/grading"),
+        ("GET", "/api/remote/exam/grading"),
+        ("POST", "/api/remote/exam/grading/remediate"),
+        ("POST", "/api/remote/exam/grading/close"),
+    ] {
+        let resp = http(
+            &base,
+            method,
+            path,
+            &[("Content-Type", "application/json")],
+            b"not json",
+        );
+        assert_eq!(
+            401, resp.status,
+            "{method} {path} without the token: status {}",
+            resp.status
+        );
+        assert!(
+            resp.body.is_empty(),
+            "{method} {path} without the token: body {:?}",
+            resp.body
+        );
+        let resp = http(
+            &base,
+            method,
+            path,
+            &[
+                ("Content-Type", "application/json"),
+                ("Authorization", "Bearer secret"),
+            ],
+            b"not json",
+        );
+        assert_ne!(
+            401, resp.status,
+            "{method} {path} with the token: status {}",
+            resp.status
+        );
+    }
 }
 
 /// Recursively reads every regular file under `dir` into a byte-keyed map
@@ -11745,4 +11785,865 @@ fn a_tracked_launch_marks_the_graded_review_with_its_confidence_and_the_deck_rem
         get_json(&base, "/api/state")["track_confidence"].as_bool(),
         "a launch without the field keeps the stored toggle"
     );
+}
+
+const GRADING: &str = "/api/remote/exam/grading";
+const GRADING_REMEDIATE: &str = "/api/remote/exam/grading/remediate";
+const GRADING_CLOSE: &str = "/api/remote/exam/grading/close";
+const GRADING_BODY_LIMIT: usize = 4 * 1024 * 1024;
+const UNSERVED_DECK: &str = "elsewhere/unserved.md";
+
+/// A fake model for the grading desk. Every call appends its arguments to
+/// `calls.log`; while `hold` exists a call parks on the `gate` fifo, which
+/// this value keeps open read-write so a release is never lost and an open
+/// never blocks; while `fail` exists a call answers with text no grader
+/// accepts. Grade calls answer with `grades`; any other call answers with
+/// one card named after the first `gap-*` word of its prompt.
+struct GradingModel {
+    dir: TempDir,
+    gate: std::fs::File,
+    fake: PathBuf,
+}
+
+impl GradingModel {
+    fn new(grades: &str) -> Self {
+        let dir = TempDir::new().unwrap();
+        let gate_path = dir.path().join("gate");
+        mkfifo_at(&gate_path);
+        let gate = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&gate_path)
+            .expect("a fifo opens read-write without a reader");
+        std::fs::write(dir.path().join("grades"), grades).unwrap();
+        let fake = dir.path().join("fake-claude");
+        let at = |name: &str| dir.path().join(name).display().to_string();
+        std::fs::write(
+            &fake,
+            format!(
+                "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\n\
+                 printf '%s\\n' \"$*\" >> {calls}\n\
+                 if [ -e {hold} ]; then read _ < {gate}; fi\n\
+                 if [ -e {fail} ]; then printf 'no grades here'; exit 0; fi\n\
+                 case \"$input\" in\n\
+                 *'\"grades\"'*) cat {grades} ;;\n\
+                 *) printf '## %s?\\nanswer\\n' \"$(printf '%s\\n' \"$input\" | grep -o 'gap-[a-z]*' | head -n 1)\" ;;\n\
+                 esac\n\
+                 printf 'end\\n' >> {ended}\n",
+                calls = at("calls.log"),
+                hold = at("hold"),
+                gate = gate_path.display(),
+                fail = at("fail"),
+                grades = at("grades"),
+                ended = at("ended.log"),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Self { dir, gate, fake }
+    }
+
+    fn switch(&self, name: &str, on: bool) {
+        let path = self.dir.path().join(name);
+        if on {
+            std::fs::write(path, "").unwrap();
+        } else if path.exists() {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    fn hold(&self, on: bool) {
+        self.switch("hold", on);
+    }
+
+    fn fail(&self, on: bool) {
+        self.switch("fail", on);
+    }
+
+    fn release(&self) {
+        let _ = (&self.gate).write_all(b"go\ngo\n");
+    }
+
+    fn lines(&self, name: &str) -> Vec<String> {
+        std::fs::read_to_string(self.dir.path().join(name))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn calls(&self) -> usize {
+        self.lines("calls.log").len()
+    }
+}
+
+impl Drop for GradingModel {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+fn grade_body(sitting: &str, deck: &str, answer: &str) -> String {
+    serde_json::json!({
+        "version": 1,
+        "sitting": sitting,
+        "deck": deck,
+        "strictness": "balanced",
+        "full": true,
+        "questions": [{"topic": 0, "prompt": "Q1", "points": ["p1"]}],
+        "answers": [answer],
+    })
+    .to_string()
+}
+
+fn remediation_body(sitting: &str, deck: &str, gap: &str) -> String {
+    serde_json::json!({
+        "sitting": sitting,
+        "deck": deck,
+        "topics": [{"topic": 0, "gaps": [gap]}],
+    })
+    .to_string()
+}
+
+fn padded_to(body: &str, length: usize) -> Vec<u8> {
+    let mut bytes = body.as_bytes().to_vec();
+    assert!(bytes.len() <= length, "the body fits before padding");
+    bytes.resize(length, b' ');
+    bytes
+}
+
+fn post_bytes(base: &str, path: &str, body: &[u8]) -> HttpResp {
+    http(
+        base,
+        "POST",
+        path,
+        &[("Content-Type", "application/json")],
+        body,
+    )
+}
+
+fn settled_grading(base: &str) -> serde_json::Value {
+    poll_until(base, GRADING, |b| b["thinking"] == false)
+}
+
+fn grading_server(model: &GradingModel) -> (String, Guard) {
+    spawn_full_server_fixture(Some(&model.fake), |_| {}, |_| {})
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DeskState {
+    Idle,
+    Running,
+    Done,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DeskRow {
+    GradeEqual,
+    GradeDifferent,
+    RemediateEqual,
+    RemediateDifferent,
+    Poll,
+    CloseOwn,
+    CloseOther,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum DeskAfter {
+    Idle,
+    Running(&'static str),
+    Done(&'static str),
+    Failed(&'static str),
+}
+
+const DESK_SITTING: &str = "sitting-one";
+
+fn first_request(remediation: bool) -> (&'static str, String) {
+    if remediation {
+        (
+            GRADING_REMEDIATE,
+            remediation_body(DESK_SITTING, UNSERVED_DECK, "gap-one"),
+        )
+    } else {
+        (
+            GRADING,
+            grade_body(DESK_SITTING, UNSERVED_DECK, "first answer"),
+        )
+    }
+}
+
+fn second_request(remediation: bool) -> (&'static str, String) {
+    if remediation {
+        (
+            GRADING_REMEDIATE,
+            remediation_body(DESK_SITTING, UNSERVED_DECK, "gap-two"),
+        )
+    } else {
+        (
+            GRADING,
+            grade_body(DESK_SITTING, UNSERVED_DECK, "second answer"),
+        )
+    }
+}
+
+fn drive_desk(base: &str, model: &GradingModel, state: DeskState, remediation: bool, cell: &str) {
+    let (path, body) = first_request(remediation);
+    match state {
+        DeskState::Idle => {}
+        DeskState::Running => {
+            model.hold(true);
+            let status = post_json(base, path, &body).status;
+            assert_eq!(200, status, "{cell}: setup start, status {status}");
+            poll_until(base, "/api/version", |_| model.calls() == 1);
+        }
+        DeskState::Done => {
+            let status = post_json(base, path, &body).status;
+            assert_eq!(200, status, "{cell}: setup start, status {status}");
+            let done = settled_grading(base);
+            assert!(
+                done["error"].is_null(),
+                "{cell}: setup ends without an error: {done}"
+            );
+        }
+        DeskState::Failed => {
+            model.fail(true);
+            let status = post_json(base, path, &body).status;
+            assert_eq!(200, status, "{cell}: setup start, status {status}");
+            let failed = settled_grading(base);
+            assert!(
+                failed["error"].is_string(),
+                "{cell}: setup ends with an error: {failed}"
+            );
+            model.fail(false);
+        }
+    }
+}
+
+fn send_row(base: &str, row: DeskRow) -> u16 {
+    let send = |(path, body): (&str, String)| post_json(base, path, &body).status;
+    match row {
+        DeskRow::GradeEqual => send(first_request(false)),
+        DeskRow::GradeDifferent => send(second_request(false)),
+        DeskRow::RemediateEqual => send(first_request(true)),
+        DeskRow::RemediateDifferent => send(second_request(true)),
+        DeskRow::Poll => http(base, "GET", GRADING, &[], &[]).status,
+        DeskRow::CloseOwn => {
+            post_json(
+                base,
+                GRADING_CLOSE,
+                &serde_json::json!({ "sitting": DESK_SITTING }).to_string(),
+            )
+            .status
+        }
+        DeskRow::CloseOther => {
+            post_json(base, GRADING_CLOSE, r#"{"sitting":"sitting-two"}"#).status
+        }
+    }
+}
+
+fn assert_desk(cell: &str, poll: &serde_json::Value, after: DeskAfter) {
+    let (phase, sitting, thinking, error) = match after {
+        DeskAfter::Idle => ("idle", None, false, false),
+        DeskAfter::Running(phase) => (phase, Some(DESK_SITTING), true, false),
+        DeskAfter::Done(phase) => (phase, Some(DESK_SITTING), false, false),
+        DeskAfter::Failed(phase) => (phase, Some(DESK_SITTING), false, true),
+    };
+    assert_eq!(
+        phase, poll["phase"],
+        "{cell}: phase of the following poll: {poll}"
+    );
+    assert_eq!(
+        sitting.map_or(serde_json::Value::Null, serde_json::Value::from),
+        poll["sitting"],
+        "{cell}: sitting of the following poll: {poll}"
+    );
+    assert_eq!(
+        thinking, poll["thinking"],
+        "{cell}: thinking of the following poll: {poll}"
+    );
+    assert_eq!(
+        error,
+        poll["error"].is_string(),
+        "{cell}: error of the following poll: {poll}"
+    );
+}
+
+#[test]
+fn the_grading_desk_answers_every_request_in_every_state_as_tabled() {
+    use DeskAfter::{Done, Failed, Idle as NowIdle, Running};
+    use DeskRow::*;
+    use DeskState::{Done as WasDone, Failed as WasFailed, Idle as WasIdle, Running as WasRunning};
+    let _lock = exec_lock();
+    let grades = r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap-one"]}]}"#;
+    let table: [(DeskRow, DeskState, u16, DeskAfter, usize); 26] = [
+        (GradeDifferent, WasIdle, 200, Running("grading"), 1),
+        (RemediateDifferent, WasIdle, 200, Running("remediating"), 1),
+        (Poll, WasIdle, 200, NowIdle, 0),
+        (CloseOwn, WasIdle, 200, NowIdle, 0),
+        (CloseOther, WasIdle, 200, NowIdle, 0),
+        (GradeEqual, WasRunning, 200, Running("grading"), 1),
+        (GradeDifferent, WasRunning, 409, Running("grading"), 1),
+        (RemediateEqual, WasRunning, 200, Running("remediating"), 1),
+        (
+            RemediateDifferent,
+            WasRunning,
+            409,
+            Running("remediating"),
+            1,
+        ),
+        (Poll, WasRunning, 200, Running("grading"), 1),
+        (CloseOwn, WasRunning, 200, NowIdle, 1),
+        (CloseOther, WasRunning, 200, Running("grading"), 1),
+        (GradeEqual, WasDone, 200, Done("results"), 1),
+        (GradeDifferent, WasDone, 200, Running("grading"), 2),
+        (RemediateEqual, WasDone, 200, Done("remediated"), 1),
+        (RemediateDifferent, WasDone, 200, Running("remediating"), 2),
+        (Poll, WasDone, 200, Done("results"), 1),
+        (CloseOwn, WasDone, 200, NowIdle, 1),
+        (CloseOther, WasDone, 200, Done("results"), 1),
+        (GradeEqual, WasFailed, 200, Running("grading"), 2),
+        (GradeDifferent, WasFailed, 200, Running("grading"), 2),
+        (RemediateEqual, WasFailed, 200, Running("remediating"), 2),
+        (
+            RemediateDifferent,
+            WasFailed,
+            200,
+            Running("remediating"),
+            2,
+        ),
+        (Poll, WasFailed, 200, Failed("grading"), 1),
+        (CloseOwn, WasFailed, 200, NowIdle, 1),
+        (CloseOther, WasFailed, 200, Failed("grading"), 1),
+    ];
+    for (row, state, status, after, calls) in table {
+        let cell = format!("{row:?} on {state:?}");
+        let model = GradingModel::new(grades);
+        let (base, _guard) = grading_server(&model);
+        let remediation = matches!(row, RemediateEqual | RemediateDifferent);
+        drive_desk(&base, &model, state, remediation, &cell);
+        model.hold(true);
+        let got_status = send_row(&base, row);
+        let poll = get_json(&base, GRADING);
+        model.release();
+        settled_grading(&base);
+        let got_calls = model.calls();
+        assert_eq!(status, got_status, "{cell}: status");
+        assert_desk(&cell, &poll, after);
+        assert_eq!(calls, got_calls, "{cell}: model calls");
+    }
+
+    let cell = "a different grade after a job ended unpolled";
+    let model = GradingModel::new(grades);
+    let (base, _guard) = grading_server(&model);
+    let (path, body) = first_request(false);
+    assert_eq!(
+        200,
+        post_json(&base, path, &body).status,
+        "{cell}: setup start"
+    );
+    poll_until(&base, "/api/version", |_| {
+        model.lines("ended.log").len() == 1
+    });
+    model.hold(true);
+    let (path, body) = second_request(false);
+    let started = Instant::now();
+    let mut got_status = post_json(&base, path, &body).status;
+    while got_status == 409 && started.elapsed() < HANG_BUDGET {
+        got_status = post_json(&base, path, &body).status;
+    }
+    let poll = get_json(&base, GRADING);
+    model.release();
+    settled_grading(&base);
+    let got_calls = model.calls();
+    assert_eq!(200, got_status, "{cell}: status");
+    assert_desk(cell, &poll, Running("grading"));
+    assert_eq!(2, got_calls, "{cell}: model calls");
+
+    for (cell, path, body) in [
+        (
+            "a grading close without a readable body on a done desk",
+            GRADING_CLOSE,
+            "not json".to_string(),
+        ),
+        (
+            "a refused grade on a done desk",
+            GRADING,
+            grade_body(DESK_SITTING, UNSERVED_DECK, "first answer")
+                .replace("\"version\":1", "\"version\":2"),
+        ),
+    ] {
+        let model = GradingModel::new(grades);
+        let (base, _guard) = grading_server(&model);
+        drive_desk(&base, &model, WasDone, false, cell);
+        let before = get_json(&base, GRADING);
+        let got_status = post_json(&base, path, &body).status;
+        let poll = get_json(&base, GRADING);
+        let got_calls = model.calls();
+        assert_eq!(400, got_status, "{cell}: status");
+        assert_eq!(
+            before, poll,
+            "{cell}: the following poll shows the same job"
+        );
+        assert_desk(cell, &poll, Done("results"));
+        assert_eq!(1, got_calls, "{cell}: model calls");
+    }
+}
+
+fn exam_view_fields(view: &serde_json::Value) -> serde_json::Value {
+    let grades: Vec<serde_json::Value> = view["grades"]
+        .as_array()
+        .expect("grades is an array")
+        .iter()
+        .map(|grade| {
+            serde_json::json!({
+                "verdict": grade["verdict"],
+                "feedback": grade["feedback"],
+                "feedback_units": grade["feedback_units"],
+                "missed": grade["missed"],
+                "missed_units": grade["missed_units"],
+                "points_units": grade["points_units"],
+            })
+        })
+        .collect();
+    let topics: Vec<serde_json::Value> = view["topics"]
+        .as_array()
+        .expect("topics is an array")
+        .iter()
+        .map(|topic| serde_json::json!({"pass": topic["pass"], "verdicts": topic["verdicts"]}))
+        .collect();
+    serde_json::json!({
+        "grades": grades,
+        "topics": topics,
+        "verdicts": view["verdicts"],
+        "mastered": view["mastered"],
+    })
+}
+
+#[test]
+fn a_fresh_server_grades_a_request_for_a_deck_it_does_not_serve_and_writes_nothing() {
+    let _lock = exec_lock();
+    let scripts = TempDir::new().unwrap();
+    let grades_path = scripts.path().join("grades");
+    std::fs::write(
+        &grades_path,
+        r#"{"grades":[{"verdict":"partial","feedback":"close, see `p1`","missed":["p1 in **full**"]}]}"#,
+    )
+    .unwrap();
+    let fake = branching_exam_cli(scripts.path(), &grades_path);
+
+    let (browser_base, _browser_guard) =
+        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_| {});
+    prepare_exam(&browser_base, r#"{"deck":"examws/examdeck.md"}"#);
+    let resp = post_json(
+        &browser_base,
+        "/api/exam/start",
+        r#"{"deck":"examws/examdeck.md"}"#,
+    );
+    assert_eq!(200, resp.status, "browser: start");
+    poll_until(&browser_base, "/api/exam", |b| b["phase"] == "answering");
+    post_json(&browser_base, "/api/exam/grade", r#"{"text":"a1"}"#);
+    let browser = poll_until(&browser_base, "/api/exam", |b| b["phase"] == "results");
+    assert_eq!(
+        (Some("PARTIAL"), 1),
+        (
+            browser["grades"][0]["verdict"].as_str(),
+            browser["grades"][0]["missed_units"]
+                .as_array()
+                .map_or(0, Vec::len)
+        ),
+        "browser: one partial grade with one missed point: {browser}"
+    );
+
+    let (base, guard) = spawn_full_server_fixture(
+        Some(&fake),
+        |dir| {
+            std::fs::write(
+                dir.join("unstamped.md"),
+                "---\nformat-version: 1\nid: \"deck-unstamped\"\n---\n## an unstamped card\nits answer\n",
+            )
+            .unwrap();
+        },
+        |_| {},
+    );
+    let _ = sync_root_id(&base);
+    let before = snapshot_dir(guard.dir());
+
+    let exam = alix::exam_carried::CarriedExam::parse(
+        &serde_json::json!({
+            "version": 1,
+            "sitting": "sitting-carried",
+            "deck": UNSERVED_DECK,
+            "strictness": "balanced",
+            "full": true,
+            "unknown_cards": [],
+            "topics": [{"topic_id": "topic-c", "fingerprint": "f", "label": "C", "cards": ["card-e1"]}],
+            "questions": [{
+                "topic_id": "topic-c",
+                "idea": 1,
+                "prompt": "Q1",
+                "points": ["p1"],
+                "shape": "instance",
+                "mental_model": "",
+            }],
+            "ideas": {"version": 1, "topics": {}},
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let received = serde_json::json!({
+        "exam": exam,
+        "questions_units": exam.questions_units(),
+    })
+    .to_string();
+    let mut held = alix::exam_carried::HeldExam::received(
+        &received,
+        alix::exam_carried::HeldStart {
+            eligible: true,
+            sourced: String::new(),
+            unsourced_cards: Vec::new(),
+            unsourced_topics: Vec::new(),
+        },
+    )
+    .unwrap();
+    held.set_answers(vec!["a1".to_string()], vec![true])
+        .unwrap();
+    let request = held.grade_request().unwrap().to_json().unwrap();
+    let resp = post_json(&base, GRADING, &request);
+    assert_eq!(200, resp.status, "carried: grade request accepted");
+    let results = settled_grading(&base);
+    let after = snapshot_dir(guard.dir());
+    assert_eq!("results", results["phase"], "carried: graded: {results}");
+    assert!(
+        before == after,
+        "carried: the served folder is byte-identical across the grade; changed: {:?}",
+        after
+            .keys()
+            .chain(before.keys())
+            .filter(|path| before.get(*path) != after.get(*path))
+            .collect::<Vec<_>>()
+    );
+
+    let reply: alix::exam_carried::GradingReply = serde_json::from_value(results.clone()).unwrap();
+    held.store_result(&reply, 1, true).unwrap();
+    let joined = serde_json::to_value(held.view().result.expect("a stored result joins")).unwrap();
+    assert_eq!(
+        exam_view_fields(&browser),
+        exam_view_fields(&joined),
+        "carried: the joined result equals the browser's results; browser {browser}, joined {joined}"
+    );
+}
+
+#[test]
+fn each_refused_grading_request_is_400_and_the_desk_is_unchanged() {
+    let _lock = exec_lock();
+    let model = GradingModel::new(r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#);
+    let (base, _guard) = grading_server(&model);
+    let grade = |edit: &dyn Fn(&mut serde_json::Value)| {
+        let mut body: serde_json::Value =
+            serde_json::from_str(&grade_body(DESK_SITTING, UNSERVED_DECK, "an answer")).unwrap();
+        edit(&mut body);
+        body.to_string().into_bytes()
+    };
+    let remediation = |edit: &dyn Fn(&mut serde_json::Value)| {
+        let mut body: serde_json::Value =
+            serde_json::from_str(&remediation_body(DESK_SITTING, UNSERVED_DECK, "gap-one"))
+                .unwrap();
+        edit(&mut body);
+        body.to_string().into_bytes()
+    };
+    let refusals: Vec<(&str, &str, Vec<u8>)> = vec![
+        ("grade: not json", GRADING, b"not json".to_vec()),
+        (
+            "grade: an unknown field",
+            GRADING,
+            grade(&|b| b["extra"] = 1.into()),
+        ),
+        (
+            "grade: another version",
+            GRADING,
+            grade(&|b| b["version"] = 2.into()),
+        ),
+        (
+            "grade: no question",
+            GRADING,
+            grade(&|b| {
+                b["questions"] = serde_json::json!([]);
+                b["answers"] = serde_json::json!([]);
+            }),
+        ),
+        (
+            "grade: more answers than questions",
+            GRADING,
+            grade(&|b| b["answers"] = serde_json::json!(["a", "b"])),
+        ),
+        (
+            "grade: topics not numbered from 0",
+            GRADING,
+            grade(&|b| b["questions"][0]["topic"] = 1.into()),
+        ),
+        (
+            "grade: topics with a gap",
+            GRADING,
+            grade(&|b| {
+                b["questions"] = serde_json::json!([
+                    {"topic": 0, "prompt": "Q1", "points": ["p1"]},
+                    {"topic": 2, "prompt": "Q2", "points": ["p2"]},
+                ]);
+                b["answers"] = serde_json::json!(["a", "b"]);
+            }),
+        ),
+        (
+            "grade: a topic numbered 18446744073709551615",
+            GRADING,
+            grade(&|b| b["questions"][0]["topic"] = u64::MAX.into()),
+        ),
+        (
+            "grade: answers over 256 KiB",
+            GRADING,
+            grade(&|b| b["answers"] = serde_json::json!(["x".repeat(256 * 1024 + 1)])),
+        ),
+        (
+            "grade: a valid body of 4 MiB and one byte",
+            GRADING,
+            padded_to(
+                &grade_body(DESK_SITTING, UNSERVED_DECK, "a padded answer"),
+                GRADING_BODY_LIMIT + 1,
+            ),
+        ),
+        (
+            "remediate: not json",
+            GRADING_REMEDIATE,
+            b"not json".to_vec(),
+        ),
+        (
+            "remediate: an unknown field",
+            GRADING_REMEDIATE,
+            remediation(&|b| b["extra"] = 1.into()),
+        ),
+        (
+            "remediate: no topic",
+            GRADING_REMEDIATE,
+            remediation(&|b| b["topics"] = serde_json::json!([])),
+        ),
+        (
+            "remediate: a topic without a gap",
+            GRADING_REMEDIATE,
+            remediation(&|b| b["topics"][0]["gaps"] = serde_json::json!([])),
+        ),
+        (
+            "remediate: a valid body of 4 MiB and one byte",
+            GRADING_REMEDIATE,
+            padded_to(
+                &remediation_body(DESK_SITTING, UNSERVED_DECK, "gap-padded"),
+                GRADING_BODY_LIMIT + 1,
+            ),
+        ),
+    ];
+
+    let idle = get_json(&base, GRADING);
+    assert_eq!("idle", idle["phase"], "idle desk: setup: {idle}");
+    for (row, path, body) in &refusals {
+        let status = post_bytes(&base, path, body).status;
+        let poll = get_json(&base, GRADING);
+        assert_eq!(400, status, "idle desk, {row}: status");
+        assert_eq!(idle, poll, "idle desk, {row}: the desk is unchanged");
+    }
+    assert_eq!(0, model.calls(), "idle desk: no refusal calls the model");
+
+    let resp = post_json(
+        &base,
+        GRADING,
+        &grade_body(DESK_SITTING, UNSERVED_DECK, "an answer"),
+    );
+    assert_eq!(200, resp.status, "done desk: setup start");
+    let done = settled_grading(&base);
+    assert_eq!("results", done["phase"], "done desk: setup: {done}");
+    for (row, path, body) in &refusals {
+        let status = post_bytes(&base, path, body).status;
+        let poll = get_json(&base, GRADING);
+        assert_eq!(400, status, "done desk, {row}: status");
+        assert_eq!(done, poll, "done desk, {row}: the same job and phase");
+    }
+    assert_eq!(1, model.calls(), "done desk: no refusal calls the model");
+
+    for (row, path, body) in [
+        (
+            "grade: a valid body of exactly 4 MiB",
+            GRADING,
+            grade_body(DESK_SITTING, UNSERVED_DECK, "another answer"),
+        ),
+        (
+            "remediate: a valid body of exactly 4 MiB",
+            GRADING_REMEDIATE,
+            remediation_body(DESK_SITTING, UNSERVED_DECK, "gap-exact"),
+        ),
+    ] {
+        let status = post_bytes(&base, path, &padded_to(&body, GRADING_BODY_LIMIT)).status;
+        let settled = settled_grading(&base);
+        assert_eq!(200, status, "{row}: accepted, desk {settled}");
+    }
+    assert_eq!(
+        3,
+        model.calls(),
+        "the two accepted bodies each call the model"
+    );
+}
+
+fn effort_of(args: &str) -> Option<&str> {
+    let mut words = args.split(' ');
+    words.find(|word| *word == "--effort")?;
+    words.next()
+}
+
+#[test]
+fn grading_uses_the_workspace_effort_for_a_served_deck_and_the_global_one_otherwise() {
+    let _lock = exec_lock();
+    let model = GradingModel::new(r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#);
+    let (base, _guard) = spawn_full_server_fixture(
+        Some(&model.fake),
+        |dir| {
+            write_exam_deck_fixture(dir);
+            std::fs::write(
+                dir.join(EXAM_WS).join("alix.local.toml"),
+                "[exam]\neffort = \"workspace-effort\"\n",
+            )
+            .unwrap();
+        },
+        |opts| opts.exam.effort = Some("global-effort".to_string()),
+    );
+
+    let served = "examws/examdeck.md";
+    let steps = [
+        (
+            "grade, served deck",
+            GRADING,
+            grade_body("sitting-a", served, "a"),
+            "workspace-effort",
+        ),
+        (
+            "grade, unserved deck",
+            GRADING,
+            grade_body("sitting-b", UNSERVED_DECK, "a"),
+            "global-effort",
+        ),
+        (
+            "remediate, served deck",
+            GRADING_REMEDIATE,
+            remediation_body("sitting-c", served, "gap-c"),
+            "workspace-effort",
+        ),
+        (
+            "remediate, unserved deck",
+            GRADING_REMEDIATE,
+            remediation_body("sitting-d", UNSERVED_DECK, "gap-d"),
+            "global-effort",
+        ),
+    ];
+    for (index, (step, path, body, effort)) in steps.iter().enumerate() {
+        let status = post_json(&base, path, body).status;
+        let settled = settled_grading(&base);
+        let calls = model.lines("calls.log");
+        assert_eq!(200, status, "{step}: status, desk {settled}");
+        assert_eq!(
+            index + 1,
+            calls.len(),
+            "{step}: one call per step: {calls:?}"
+        );
+        assert_eq!(
+            Some(*effort),
+            effort_of(&calls[index]),
+            "{step}: the call's effort: {}",
+            calls[index]
+        );
+    }
+}
+
+#[test]
+fn the_grading_call_names_no_allowed_tool() {
+    let _lock = exec_lock();
+    let model = GradingModel::new(r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#);
+    let (base, _guard) = grading_server(&model);
+
+    let resp = post_json(
+        &base,
+        "/api/remote/ask",
+        r#"{"card":{"deck_id":"deck-sample","card_id":"card-s1","subject":"sample.md","front":"2 + 2","back":["4"],"at":null},
+            "history":[],"question":"why?"}"#,
+    );
+    assert_eq!(200, resp.status, "control: a tutor question starts");
+    poll_until(&base, "/api/remote/ask", |b| b["thinking"] == false);
+
+    let resp = post_json(
+        &base,
+        GRADING,
+        &grade_body(DESK_SITTING, UNSERVED_DECK, "a"),
+    );
+    assert_eq!(200, resp.status, "grade: status");
+    let settled = settled_grading(&base);
+    assert_eq!("results", settled["phase"], "grade: settled: {settled}");
+
+    let calls = model.lines("calls.log");
+    assert_eq!(
+        2,
+        calls.len(),
+        "one tutor call and one grading call: {calls:?}"
+    );
+    assert!(
+        calls[0].contains("--allowedTools"),
+        "control: the tutor call names its allowed tools: {}",
+        calls[0]
+    );
+    assert!(
+        !calls[1].contains("--allowedTools")
+            && !calls[1].contains("WebFetch")
+            && !calls[1].contains("WebSearch"),
+        "grade: the grading call names no allowed tool: {}",
+        calls[1]
+    );
+}
+
+#[test]
+fn a_remediation_on_a_freshly_started_server_returns_cards_per_topic_number() {
+    let _lock = exec_lock();
+    let model = GradingModel::new(r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#);
+    let (base, _guard) = grading_server(&model);
+
+    let body = serde_json::json!({
+        "sitting": DESK_SITTING,
+        "deck": UNSERVED_DECK,
+        "topics": [
+            {"topic": 1, "gaps": ["gap-bee"]},
+            {"topic": 0, "gaps": ["gap-ay"]},
+        ],
+    })
+    .to_string();
+    let resp = post_json(&base, GRADING_REMEDIATE, &body);
+    assert_eq!(200, resp.status, "remediate: status");
+    let remediated = settled_grading(&base);
+    assert_eq!(
+        "remediated", remediated["phase"],
+        "remediate: settled: {remediated}"
+    );
+    let entries = remediated["cards_by_topic"]
+        .as_array()
+        .expect("cards_by_topic is an array");
+    let pairs: Vec<(u64, bool)> = entries
+        .iter()
+        .zip(["gap-bee", "gap-ay"])
+        .map(|(entry, gap)| {
+            (
+                entry["topic"].as_u64().unwrap_or(u64::MAX),
+                entry["cards"]
+                    .as_str()
+                    .is_some_and(|cards| cards.contains(gap)),
+            )
+        })
+        .collect();
+    assert_eq!(
+        vec![(1, true), (0, true)],
+        pairs,
+        "remediate: each card set comes back under the number of the topic whose gaps made it: {remediated}"
+    );
+    assert_eq!(2, model.calls(), "remediate: one call per topic");
 }

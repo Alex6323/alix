@@ -34,7 +34,9 @@ use crate::{
     config::{
         AiConfig, Audience, Bindings, BrowseBindings, ExamConfig, GenerateDeckConfig, PickerKeys,
     },
-    doctor, import,
+    doctor,
+    exam_carried::{GradeRequest, RemediationRequest},
+    import,
     recent::RecentDecks,
     share,
     store::Store,
@@ -42,6 +44,7 @@ use crate::{
 };
 
 const MAX_REMOTE_BODY: usize = 256 * 1024;
+const MAX_GRADING_BODY: usize = 4 * 1024 * 1024;
 
 /// Every JSON body is read through this, never straight off the socket:
 /// `from_reader` keeps reading while a client keeps sending, so one request
@@ -63,6 +66,25 @@ fn sources_policy(with_sources: bool) -> share::SourcesPolicy {
         share::SourcesPolicy::Carry
     } else {
         share::SourcesPolicy::Omit
+    }
+}
+
+fn grading_exam_config(catalog: &CatalogHandle, exam_cfg: &ExamConfig, deck: &str) -> ExamConfig {
+    match catalog.resolve_path(deck.to_string()).flatten() {
+        Some(path) => exam_cfg
+            .clone()
+            .for_workspace(&workspace::content_root(&path)),
+        None => exam_cfg.clone(),
+    }
+}
+
+fn grading_request(path: &str, bytes: &[u8]) -> Option<GradingRequest> {
+    match path {
+        "/api/remote/exam/grading" => GradeRequest::parse(bytes).ok().map(GradingRequest::Grade),
+        "/api/remote/exam/grading/remediate" => RemediationRequest::parse(bytes)
+            .ok()
+            .map(GradingRequest::Remediate),
+        _ => None,
     }
 }
 
@@ -329,6 +351,7 @@ pub fn run_review(
             receiving: None,
             remote_ask: None,
             remote_exam: kept_exam,
+            grading: GradingDesk::Idle,
             remote_generate: None,
             preparing: Vec::new(),
             preparing_sequence: crate::time::now_ms(),
@@ -2085,6 +2108,44 @@ pub fn run_review(
                 Some(()) => respond_status(request, 200),
                 None => respond_status(request, 503),
             },
+            (Method::Post, "/api/remote/exam/grading" | "/api/remote/exam/grading/remediate") => {
+                let Some(carried) = read_capped(request.as_reader(), MAX_GRADING_BODY)
+                    .and_then(|bytes| grading_request(&path, &bytes))
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                let deck = match &carried {
+                    GradingRequest::Grade(grade) => &grade.deck,
+                    GradingRequest::Remediate(remediation) => &remediation.deck,
+                };
+                let exam_cfg = grading_exam_config(&catalog, exam_cfg, deck);
+                match jobs.remote_grading_submit(carried, exam_cfg, ask_cfg.clone()) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 409),
+                    Some(Some(reply)) => respond_json(request, &reply),
+                }
+            }
+            (Method::Get, "/api/remote/exam/grading") => match jobs.remote_grading_poll() {
+                Some(reply) => respond_json(request, &reply),
+                None => respond_status(request, 503),
+            },
+            (Method::Post, "/api/remote/exam/grading/close") => {
+                #[derive(Deserialize)]
+                struct Body {
+                    sitting: String,
+                }
+                let Some(body) = read_capped(request.as_reader(), MAX_REMOTE_BODY)
+                    .and_then(|bytes| serde_json::from_slice::<Body>(&bytes).ok())
+                else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match jobs.remote_grading_close(body.sitting) {
+                    Some(()) => respond_status(request, 200),
+                    None => respond_status(request, 503),
+                }
+            }
             // No dest, no destination-collision check: this returns the
             // deck text, it never places a file (both are the phone's job).
             (Method::Post, "/api/remote/generate") => {

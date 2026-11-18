@@ -23,8 +23,10 @@ use crate::{
     augment_ai,
     card::Card,
     cite::CitationRoots,
-    config::{AiConfig, AskConfig, Audience, GenerateDeckConfig},
-    exam, generate, math, parser,
+    config::{AiConfig, AskConfig, Audience, ExamConfig, GenerateDeckConfig},
+    exam,
+    exam_carried::{GradeRequest, GradingReply, RemediationRequest, TopicNumberCards},
+    generate, math, parser,
     session::{Session, now_ms},
     share,
     trace::{self, TraceSession},
@@ -1177,6 +1179,198 @@ impl RemoteExamining {
                 .flatten(),
             ideas: result.and(s.ideas()).cloned(),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum GradingRequest {
+    Grade(GradeRequest),
+    Remediate(RemediationRequest),
+}
+
+impl GradingRequest {
+    fn sitting(&self) -> &str {
+        match self {
+            GradingRequest::Grade(request) => &request.sitting,
+            GradingRequest::Remediate(request) => &request.sitting,
+        }
+    }
+}
+
+enum GradingWork {
+    Grade(Receiver<Result<exam::GradedExam, String>>),
+    Remediate(Receiver<Result<Vec<TopicNumberCards>, String>>),
+}
+
+enum GradingOutcome {
+    Graded(exam::GradedExam),
+    Remediated(Vec<TopicNumberCards>),
+}
+
+fn received<T>(rx: &Receiver<Result<T, String>>) -> Option<Result<T, String>> {
+    match rx.try_recv() {
+        Ok(result) => Some(result),
+        Err(TryRecvError::Empty) => None,
+        Err(TryRecvError::Disconnected) => {
+            Some(Err("the grading worker exited unexpectedly".to_string()))
+        }
+    }
+}
+
+pub(super) struct GradingJob {
+    request: GradingRequest,
+    work: GradingWork,
+    job: ask::AskJob,
+    started_ms: u64,
+    estimate: Option<&'static str>,
+    outcome: Option<Result<GradingOutcome, String>>,
+}
+
+impl Drop for GradingJob {
+    fn drop(&mut self) {
+        if self.outcome.is_none() {
+            self.job.cancel();
+        }
+    }
+}
+
+impl GradingJob {
+    fn start(request: GradingRequest, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
+        let estimate = exam::wait_estimate(&ask_cfg);
+        let (work, job) = match &request {
+            GradingRequest::Grade(grade) => {
+                let (rx, job) = exam::spawn_carried_grade(grade.clone(), cfg, ask_cfg);
+                (GradingWork::Grade(rx), job)
+            }
+            GradingRequest::Remediate(remediation) => {
+                let (rx, job) = exam::spawn_carried_remediation(remediation.clone(), cfg, ask_cfg);
+                (GradingWork::Remediate(rx), job)
+            }
+        };
+        Self {
+            request,
+            work,
+            job,
+            started_ms: now_ms(),
+            estimate,
+            outcome: None,
+        }
+    }
+
+    fn advance(&mut self) {
+        if self.outcome.is_some() {
+            return;
+        }
+        self.outcome = match &self.work {
+            GradingWork::Grade(rx) => received(rx).map(|r| r.map(GradingOutcome::Graded)),
+            GradingWork::Remediate(rx) => received(rx).map(|r| r.map(GradingOutcome::Remediated)),
+        };
+    }
+
+    fn running(&self) -> bool {
+        self.outcome.is_none()
+    }
+
+    fn failed(&self) -> bool {
+        matches!(self.outcome, Some(Err(_)))
+    }
+
+    fn reply(&self) -> GradingReply {
+        let finished = matches!(self.outcome, Some(Ok(_)));
+        let phase = match (&self.request, finished) {
+            (GradingRequest::Grade(_), false) => "grading",
+            (GradingRequest::Grade(_), true) => "results",
+            (GradingRequest::Remediate(_), false) => "remediating",
+            (GradingRequest::Remediate(_), true) => "remediated",
+        };
+        let mut reply = GradingReply {
+            sitting: Some(self.request.sitting().to_string()),
+            phase: phase.to_string(),
+            thinking: self.running(),
+            elapsed: self
+                .running()
+                .then(|| now_ms().saturating_sub(self.started_ms) / 1000),
+            estimate: self
+                .running()
+                .then_some(self.estimate)
+                .flatten()
+                .map(str::to_string),
+            ..grading_idle_reply()
+        };
+        match &self.outcome {
+            None => {}
+            Some(Err(error)) => reply.error = Some(error.clone()),
+            Some(Ok(GradingOutcome::Graded(graded))) => {
+                reply.grades = graded.grades.clone();
+                reply.topics = graded.topics.clone();
+                reply.verdicts = Some(graded.verdicts);
+                reply.mastered = graded.mastered;
+            }
+            Some(Ok(GradingOutcome::Remediated(cards))) => reply.cards_by_topic = cards.clone(),
+        }
+        reply
+    }
+}
+
+pub(super) enum GradingDesk {
+    Idle,
+    Job(Box<GradingJob>),
+}
+
+impl GradingDesk {
+    pub(super) fn advance(&mut self) {
+        if let GradingDesk::Job(job) = self {
+            job.advance();
+        }
+    }
+
+    pub(super) fn submit(
+        &mut self,
+        request: GradingRequest,
+        cfg: ExamConfig,
+        ask_cfg: AskConfig,
+    ) -> Option<GradingReply> {
+        if let GradingDesk::Job(job) = self {
+            if job.request == request && !job.failed() {
+                return Some(job.reply());
+            }
+            if job.running() {
+                return None;
+            }
+        }
+        *self = GradingDesk::Job(Box::new(GradingJob::start(request, cfg, ask_cfg)));
+        Some(self.reply())
+    }
+
+    pub(super) fn reply(&self) -> GradingReply {
+        match self {
+            GradingDesk::Idle => grading_idle_reply(),
+            GradingDesk::Job(job) => job.reply(),
+        }
+    }
+
+    pub(super) fn close(&mut self, sitting: &str) {
+        if let GradingDesk::Job(job) = self
+            && job.request.sitting() == sitting
+        {
+            *self = GradingDesk::Idle;
+        }
+    }
+}
+
+fn grading_idle_reply() -> GradingReply {
+    GradingReply {
+        sitting: None,
+        phase: "idle".to_string(),
+        grades: Vec::new(),
+        topics: Vec::new(),
+        verdicts: None,
+        mastered: false,
+        cards_by_topic: Vec::new(),
+        thinking: false,
+        elapsed: None,
+        error: None,
+        estimate: None,
     }
 }
 
