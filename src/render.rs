@@ -5,7 +5,7 @@ use crate::{card::Card, inline::DisplayProjector};
 // Struct variants (not newtype) because serde's internal tagging can't tag
 // newtype variants; wire shape is `{"kind": ..., "text": ...}` (docs/API.md).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum ContentUnit {
     Sentence {
         text: String,
@@ -99,6 +99,7 @@ fn cell_align(delimiter_cell: &str) -> CellAlign {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChecklistItem {
     pub checked: bool,
     pub text: String,
@@ -1061,6 +1062,63 @@ mod tests {
 
     use super::*;
     use crate::card::AnswerSpace;
+
+    #[test]
+    fn every_rendered_type_refuses_an_unknown_field_and_reads_a_known_one() {
+        fn check<T: serde::de::DeserializeOwned + Serialize>(row: &str, value: &T) {
+            let json = serde_json::to_value(value).unwrap();
+            assert!(
+                serde_json::from_value::<T>(json.clone()).is_ok(),
+                "control {row}: {json} did not read"
+            );
+            let mut extended = json;
+            extended["extra"] = true.into();
+            assert!(
+                serde_json::from_value::<T>(extended.clone()).is_err(),
+                "row {row}: {extended} was accepted"
+            );
+        }
+        let run = crate::inline::InlineRun {
+            text: "t".into(),
+            ..Default::default()
+        };
+        check(
+            "ContentUnit",
+            &ContentUnit::Sentence {
+                text: "t".into(),
+                runs: vec![run.clone()],
+            },
+        );
+        check("InlineRun", &run);
+        check(
+            "MathView",
+            &crate::math::MathView {
+                display: false,
+                svg: None,
+                error: None,
+            },
+        );
+        check(
+            "ChecklistItem",
+            &ChecklistItem {
+                checked: true,
+                text: "t".into(),
+                runs: vec![run],
+            },
+        );
+        check(
+            "RegionView",
+            &crate::review::RegionView {
+                role: crate::review::RegionRole::Asked,
+                reveal_on_answer: true,
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+                unit: "px".into(),
+            },
+        );
+    }
 
     fn note_units(card: &Card) -> Vec<ContentUnit> {
         note_views(card)

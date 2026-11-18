@@ -10,6 +10,7 @@ fn is_false(value: &bool) -> bool {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct InlineRun {
     pub text: String,
     #[serde(default, skip_serializing_if = "is_false")]

@@ -27,6 +27,7 @@ pub enum RegionRole {
 /// One drawable region (ADR 0034). Geometry is JSON numbers in the unit the
 /// author wrote.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct RegionView {
     pub role: RegionRole,
     /// Whether local answer reveal unmasks this region: an asked blank and a
