@@ -13026,7 +13026,8 @@ fn a_running_grading_job_reports_no_estimate_and_its_elapsed_seconds_until_it_en
         let reply = reply_of(&resp).unwrap_or_default();
         let running = get_json(&base, GRADING);
         model.release_one();
-        let ended = settled_within_budget(&base).unwrap_or_default();
+        let ended = settled_within_budget(&base)
+            .unwrap_or_else(|| panic!("{step}: the job did not end within {HANG_BUDGET:?}"));
         assert_eq!(200, resp.status, "{step}: status");
         for (when, value) in [
             ("its own reply", &reply),

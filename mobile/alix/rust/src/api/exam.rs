@@ -1777,4 +1777,63 @@ mod tests {
             "the held file is unchanged"
         );
     }
+
+    fn card_progress(root: &Path) -> serde_json::Map<String, serde_json::Value> {
+        let bytes = progress_bytes(root).expect("the deck's progress file exists");
+        let document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        document["cards"]
+            .as_object()
+            .cloned()
+            .expect("the progress file has a cards member")
+    }
+
+    #[test]
+    fn an_apply_and_a_stored_remediation_leave_every_cards_review_progress_as_the_store_holds_it()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (path, exam) = held_on_deck(root);
+        {
+            let mut store = open_store(&path, &root_arg(root), None).unwrap();
+            store.get_or_insert("card-a1").record_review(
+                NOW,
+                alix::scheduler::Grade::Pass,
+                alix::depth::Depth::Recall,
+                false,
+            );
+            store.save().unwrap();
+        }
+        let before = card_progress(root);
+        assert!(
+            before.contains_key("card-a1"),
+            "control: the recorded review is in the progress file before the apply: {before:?}"
+        );
+
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL), true).unwrap();
+        held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+
+        assert_eq!(
+            before,
+            card_progress(root),
+            "the card progress after the apply equals the progress before it"
+        );
+
+        let stored = held_exam_store_remediation(
+            deck_arg(&path),
+            root_arg(root),
+            remediation_reply(&exam.sitting, &[(0, "## q\na\n")]),
+            None,
+        )
+        .unwrap();
+        assert_eq!(1, stored, "control: the remediation stored its one card");
+
+        let after = card_progress(root);
+        for (card, progress) in &before {
+            assert_eq!(
+                Some(progress),
+                after.get(card),
+                "{card}'s progress after the remediation equals its progress before the apply"
+            );
+        }
+    }
 }
