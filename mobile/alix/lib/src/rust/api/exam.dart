@@ -6,8 +6,8 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `empty`, `exam_answers_path`, `exam_files`, `exam_ideas_path`, `held_path`, `load_held`, `open_store`, `parse`, `save`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PhonePreparedExam`
+// These functions are ignored because they are not marked as `pub`: `apply_ideas`, `apply_progress`, `empty`, `exam_answers_path`, `exam_files`, `exam_ideas_path`, `held_path`, `load_held`, `open_store`, `open`, `parse`, `result`, `save`, `stamp`, `write_outcome`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `HeldApply`, `PhonePreparedExam`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 String? examIdeasLoad({required String deckPath, required String rootDir}) =>
@@ -123,6 +123,50 @@ void heldExamRemove({required String rootDir, required String deckId}) =>
       rootDir: rootDir,
       deckId: deckId,
     );
+
+void heldExamStoreResult({
+  required String rootDir,
+  required String deckId,
+  required String replyJson,
+  required BigInt receivedMs,
+  required bool recorded,
+}) => RustLib.instance.api.crateApiExamHeldExamStoreResult(
+  rootDir: rootDir,
+  deckId: deckId,
+  replyJson: replyJson,
+  receivedMs: receivedMs,
+  recorded: recorded,
+);
+
+String heldExamApply({
+  required String deckPath,
+  required String rootDir,
+  String? device,
+}) => RustLib.instance.api.crateApiExamHeldExamApply(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  device: device,
+);
+
+String? heldExamRemediationRequest({
+  required String rootDir,
+  required String deckId,
+}) => RustLib.instance.api.crateApiExamHeldExamRemediationRequest(
+  rootDir: rootDir,
+  deckId: deckId,
+);
+
+int heldExamStoreRemediation({
+  required String deckPath,
+  required String rootDir,
+  required String replyJson,
+  String? device,
+}) => RustLib.instance.api.crateApiExamHeldExamStoreRemediation(
+  deckPath: deckPath,
+  rootDir: rootDir,
+  replyJson: replyJson,
+  device: device,
+);
 
 ExamApplied applyExamResult({
   required String deckPath,
