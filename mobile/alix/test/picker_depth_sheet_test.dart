@@ -520,7 +520,7 @@ void main() {
     expect(find.text('needs a paired desktop'), findsNothing, reason: 'result without a desktop: no desktop requirement');
   });
 
-  testWidgets('a fetching exam shows the preparing row and a tap does nothing', (tester) async {
+  testWidgets('a fetching exam says fetching, shows no counter, and a tap does nothing', (tester) async {
     final starts = <bool>[];
     var cancels = 0;
     final since = DateTime(2026, 11, 11, 1, 0, 0);
@@ -654,6 +654,28 @@ void main() {
       matching: find.byWidgetPredicate((w) => w is Opacity && w.opacity < 1),
     );
     expect(dimmedAncestor(find.byIcon(Icons.chevron_right).last), findsOneWidget, reason: 'locked row: the chevron sits under one dimming Opacity');
+    expect(dimmedAncestor(find.text('Generate exam')), findsOneWidget, reason: 'locked row: the label sits under one dimming Opacity');
+    expect(dimmedAncestor(find.text('locked')), findsOneWidget, reason: 'locked row: the hint sits under one dimming Opacity');
     expect(dimmedAncestor(find.byIcon(Icons.more_vert)), findsNothing, reason: 'locked row: the menu button sits under no dimming Opacity');
+  });
+
+  testWidgets('the menu button is at least 48 by 48 and no higher than its row, enabled or not', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    for (final (name, locked) in [('enabled row', false), ('disabled row', true)]) {
+      await tester.pumpWidget(
+        _sheet((_) {}, exam: offer(locked: locked, onDiscard: () {})),
+      );
+      final button = tester.getSize(
+        find.ancestor(of: find.byIcon(Icons.more_vert), matching: find.byType(IconButton)),
+      );
+      final row = tester.getSize(find.widgetWithText(InkWell, 'Generate exam')).height;
+      expect(
+        (button.width >= 48, button.height >= 48, button.height <= row),
+        (true, true, true),
+        reason: '$name: button ${button.width} by ${button.height}, row height $row',
+      );
+    }
   });
 }
