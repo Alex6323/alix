@@ -537,7 +537,8 @@ void main() {
       ),
     );
     expect(find.text('Generate exam'), findsOneWidget, reason: 'fetching: label kept');
-    expect(find.text('preparing… 20s'), findsOneWidget, reason: 'fetching: same hint as preparing');
+    expect(find.text('fetching…'), findsOneWidget, reason: 'fetching: its own hint, no counter');
+    expect(find.textContaining('preparing'), findsNothing, reason: 'fetching: the preparing hint is not shown');
 
     await tester.tap(find.text('Generate exam'));
     expect(starts, isEmpty, reason: 'fetching: a tap starts nothing, got $starts');
@@ -602,5 +603,57 @@ void main() {
       );
       expect(tester.takeException(), isNull, reason: '$action at 360x760: the sheet lays out without an exception');
     }
+  });
+
+  Color? iconColor(WidgetTester tester, Finder icon) => tester
+      .widget<RichText>(
+        find.descendant(of: icon, matching: find.byType(RichText)),
+      )
+      .text
+      .style
+      ?.color;
+
+  testWidgets('the menu icon is drawn in the colour of the row chevron, filled or not', (tester) async {
+    for (final (name, action, due) in [
+      ('filled take', PickerExamAction.take, false),
+      ('filled generate', PickerExamAction.generate, true),
+      ('unfilled generate', PickerExamAction.generate, false),
+    ]) {
+      await tester.pumpWidget(
+        _sheet((_) {}, exam: offer(action: action, due: due, onDiscard: () {})),
+      );
+      await tester.pumpAndSettle();
+      final chevron = iconColor(tester, find.byIcon(Icons.chevron_right).last);
+      final menu = iconColor(tester, find.byIcon(Icons.more_vert));
+      expect(menu, chevron, reason: '$name: menu icon colour $menu vs chevron colour $chevron');
+    }
+  });
+
+  testWidgets('the exam row is as tall with the menu as without on a phone, filled or not', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    for (final (name, action, label) in [
+      ('filled take', PickerExamAction.take, 'Take exam'),
+      ('unfilled generate', PickerExamAction.generate, 'Generate exam'),
+    ]) {
+      await tester.pumpWidget(_sheet((_) {}, exam: offer(action: action)));
+      final without = tester.getSize(find.widgetWithText(InkWell, label)).height;
+      await tester.pumpWidget(_sheet((_) {}, exam: offer(action: action, onDiscard: () {})));
+      final withMenu = tester.getSize(find.widgetWithText(InkWell, label)).height;
+      expect(withMenu, without, reason: '$name: height with the menu $withMenu vs without $without');
+    }
+  });
+
+  testWidgets('on a disabled row the menu button is not dimmed while the chevron is', (tester) async {
+    await tester.pumpWidget(
+      _sheet((_) {}, exam: offer(locked: true, onDiscard: () {})),
+    );
+    Finder dimmedAncestor(Finder of) => find.ancestor(
+      of: of,
+      matching: find.byWidgetPredicate((w) => w is Opacity && w.opacity < 1),
+    );
+    expect(dimmedAncestor(find.byIcon(Icons.chevron_right).last), findsOneWidget, reason: 'locked row: the chevron sits under one dimming Opacity');
+    expect(dimmedAncestor(find.byIcon(Icons.more_vert)), findsNothing, reason: 'locked row: the menu button sits under no dimming Opacity');
   });
 }

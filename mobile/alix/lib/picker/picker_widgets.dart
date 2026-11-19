@@ -643,10 +643,7 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
   }
 
   void _syncTick() {
-    final action = widget.exam?.action;
-    final preparing =
-        action == PickerExamAction.preparing ||
-        action == PickerExamAction.fetching;
+    final preparing = widget.exam?.action == PickerExamAction.preparing;
     if (!preparing) {
       _tick?.cancel();
       _tick = null;
@@ -755,11 +752,11 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     ? 'needs a paired desktop'
                     : exam.notice ??
                           switch (exam.action) {
-                            PickerExamAction.preparing ||
-                            PickerExamAction.fetching => _preparingFor(
+                            PickerExamAction.preparing => _preparingFor(
                               exam.preparingSince,
                               exam.now(),
                             ),
+                            PickerExamAction.fetching => 'fetching…',
                             PickerExamAction.take =>
                               exam.serverLive
                                   ? 'graded by your paired desktop'
@@ -778,24 +775,7 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     : exam.action == PickerExamAction.preparing
                     ? exam.onCancel
                     : () => exam.onStart(exam.filterable && _needsWorkOnly),
-                menu: exam.onDiscard == null
-                    ? null
-                    : PopupMenuButton<bool>(
-                        icon: const Icon(Icons.more_vert),
-                        iconSize: 20,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        onSelected: (_) => exam.onDiscard!(),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem<bool>(
-                            value: true,
-                            child: Text('Discard exam'),
-                          ),
-                        ],
-                      ),
+                onDiscard: exam.onDiscard,
               ),
             ],
           ],
@@ -811,80 +791,106 @@ class _PickerLaunchRow extends StatelessWidget {
     required this.hint,
     required this.onTap,
     this.filled = false,
-    this.menu,
+    this.onDiscard,
   });
 
   final String label;
   final String hint;
   final VoidCallback? onTap;
   final bool filled;
-  final Widget? menu;
+  final VoidCallback? onDiscard;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = theme.alix;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Opacity(
-        opacity: onTap == null ? 0.5 : 1,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(11),
-            onTap: onTap,
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 54),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-              decoration: BoxDecoration(
-                color: filled ? theme.colorScheme.onSurface : null,
-                border: Border.all(
-                  color: filled ? Colors.transparent : tokens.line,
+    final foreground = filled ? theme.colorScheme.surface : tokens.dim;
+    final row = Opacity(
+      opacity: onTap == null ? 0.5 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 54),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            decoration: BoxDecoration(
+              color: filled ? theme.colorScheme.onSurface : null,
+              border: Border.all(
+                color: filled ? Colors.transparent : tokens.line,
+              ),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: filled ? theme.colorScheme.surface : null,
+                        ),
+                      ),
+                      Text(
+                        hint,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: foreground,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: filled ? theme.colorScheme.surface : null,
-                          ),
-                        ),
-                        Text(
-                          hint,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: filled ? theme.colorScheme.surface : tokens.dim,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    size: 22,
-                    color: filled ? theme.colorScheme.surface : tokens.dim,
-                  ),
-                  ?menu,
-                ],
-              ),
+                Icon(Icons.chevron_right, size: 22, color: foreground),
+                if (onDiscard != null) const SizedBox(width: _menuButtonSize),
+              ],
             ),
           ),
         ),
       ),
     );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: onDiscard == null
+          ? row
+          : Stack(
+              children: [
+                row,
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 16,
+                  child: Center(
+                    child: PopupMenuButton<bool>(
+                      icon: const Icon(Icons.more_vert),
+                      iconSize: 20,
+                      iconColor: foreground,
+                      padding: EdgeInsets.zero,
+                      onSelected: (_) => onDiscard!(),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem<bool>(
+                          value: true,
+                          child: Text('Discard exam'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
   }
 }
+
+const double _menuButtonSize = 48;
 
 class PickerThemeSheet extends StatelessWidget {
   const PickerThemeSheet({
