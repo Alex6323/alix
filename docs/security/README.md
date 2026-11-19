@@ -301,7 +301,7 @@ path is not phone-supplied, and a second start replaces a ready exam rather
 than adding a file. A close removes the file; one that cannot remove it
 answers 500 and the exam stays ready. A generation closed before its exam was
 written leaves no file. A file that cannot be read is reported on stderr at
-start and left in place; the desk starts idle and the next generation replaces
+start and left in place; the slot starts idle and the next generation replaces
 it. No progress, mastery, or card is written. Regression evidence:
 `a_close_that_races_the_keep_leaves_no_exam_file_and_an_idle_desk_after_a_restart`,
 `a_ready_exam_survives_a_restart_and_a_deleted_deck_with_equal_question_units`,

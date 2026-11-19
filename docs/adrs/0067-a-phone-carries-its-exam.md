@@ -145,19 +145,23 @@ remediation calls on a document of their own making, up to 4 MiB a
 request. Those calls run without tools, so text placed in the key points
 reaches a model that cannot fetch or search. The deck name in a request is
 used only to look up a served deck's exam effort; a name that is not
-served selects nothing. `docs/security/README.md` records these and their
+served selects the global effort. `docs/security/README.md` records these and their
 regression evidence.
 
 ## Verification
 
-- A table-driven test per slot checks every state against every request,
-  and counts model calls so that "not run again" is observed.
+- A table-driven test per slot checks every state against every request.
+  The generation table also checks the exam file after each cell, and the
+  grading table counts model calls so that "not run again" is observed.
 - `tests/api.rs` restarts a server over an exam that waits to be fetched,
   deletes the deck, and fetches it; and grades a request for a deck the
   server does not serve, with the served folder byte-identical afterwards.
-- The phone's tests kill the app between each step of fetching and of
-  recording a result, and compare the progress and ideas records with an
-  uninterrupted run.
+- The phone's tests kill the app after a fetched exam's file is written and
+  before it is flagged as fetched, and check that the next poll writes
+  nothing, sets the flag and closes. The bridge's tests kill the recording of
+  a result at each of its steps (after the result is stored, after progress
+  is saved, after the ideas are saved) and compare the progress and ideas
+  records with an uninterrupted run.
 - `remote_endpoints_never_write_the_server_store` asserts that the only
   file a remote call adds is the exam waiting to be fetched, and that it
   is gone after the close.

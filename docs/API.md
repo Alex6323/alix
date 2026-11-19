@@ -498,15 +498,16 @@ sources changed, the server lists the ideas first.
 
 Generation takes minutes, so the phone polls `GET /api/remote/exam` (a
 `RemoteExamDto`, §6): `generating`, then `ready` once the exam is complete, or
-`generating` with `error` set if it failed. The generation desk holds one exam
+`generating` with `error` set if it failed. The generation slot holds one exam
 at a time: a start while one is generating is 409; a start while one is `ready`
 or failed replaces it (500, with the ready exam kept, if its file cannot be
 removed first). `GET /api/remote/exam/carried?sitting=<id>` hands over the
 `ready` exam as a `CarriedReplyDto` (§6): 400 without `sitting`, 404 when the
-desk holds no ready exam with that id. The phone stores it, then `POST
+slot holds no ready exam with that id. The phone stores it, then `POST
 /api/remote/exam/close {sitting}` ends the exam on the desktop: it cancels a
-running generation and removes a ready exam's file; a sitting the desk does not
-hold is 200 and changes nothing; a body that is not JSON with a `sitting` is 400.
+running generation and removes the exam's file, and answers 500 with the exam
+ready if that file cannot be removed; a sitting the slot does not hold is 200
+and changes nothing; a body that is not JSON with a `sitting` is 400.
 Once closed, the desktop keeps nothing about the exam. A generation still
 running when the server stops is lost; a ready exam survives a restart. An exam
 whose own grade request, answers left blank, would exceed 2 MiB fails its
@@ -528,10 +529,11 @@ server does not serve selects the global one. The body is capped at 4 MiB, and
 the answers together at 256 KiB; a request over either cap, unreadable, of a
 version other than 1, with no question, with an answer count that differs from
 the question count, with topic numbers that are not 0 up without a gap, or a
-remediation with no topic or a topic with no gap, is 400. The grading desk holds one
-job: a request equal to the running or finished job is answered with that job
-and not run again, a different request while a job runs is 409, and a finished
-job does not block a new one. `POST /api/remote/exam/grading/close {sitting}`
+remediation with no topic or a topic with no gap, is 400. The grading slot holds one
+job: a request equal to the running job, or to a finished one, is answered with
+that job and not run again; a different request while a job runs is 409; after
+a finished job a different request starts a new job, and after a failed job any
+request runs again. `POST /api/remote/exam/grading/close {sitting}`
 drops the job when its sitting matches, cancelling a running call, and is 200
 either way (400 without a readable body). The server keeps no idea history: the
 exam carries the updated ideas document for the phone to store.
@@ -891,7 +893,7 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 ### Remote (paired clients) (since 0.6.0)
 
 Every arm below is `/api/remote/*` (§4.11). `remote_ask`, the exam
-generation desk and the exam grading desk are single-flight slots kept
+generation slot and the exam grading slot are single-flight and kept
 separate from each other and from the browser's own `ask`/`exam` state: a
 second client pairing to the same instance collides with the first, same as a
 double `POST`.
@@ -904,12 +906,12 @@ double `POST`.
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/ask/card` | `{deck_id, card_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body / a `card_id` the served deck does not hold, or one whose topic has no topic id (plain-text message naming it); 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it), malformed, or a topic id two topics share; 500 the id could not be minted or the deck no longer loads |
 | POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 an exam is already generating (close it first) / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck; 500 the ready exam it would replace cannot be removed |
-| GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when the desk holds no exam) | – |
+| GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when the slot holds no exam) | – |
 | GET | `/api/remote/exam/carried?sitting=<id>` | – | `CarriedReplyDto` | 400 no `sitting`; 404 no ready exam with that id |
-| POST | `/api/remote/exam/close` | `{sitting}` | 200 (also for a sitting the desk does not hold) | 400 no readable body; 500 the ready exam's file cannot be removed (the exam stays ready) |
+| POST | `/api/remote/exam/close` | `{sitting}` | 200 (also for a sitting the slot does not hold) | 400 no readable body; 500 the exam's file cannot be removed (the exam is then ready) |
 | POST | `/api/remote/exam/grading` | `GradeRequest` (up to 4 MiB) | `GradingReply` | 400 unreadable / over a cap (§4.11); 409 a different grading job is running |
 | POST | `/api/remote/exam/grading/remediate` | `RemediationRequest` (up to 4 MiB) | `GradingReply` | 400 unreadable / no topic / a topic with no gap; 409 a different grading job is running |
-| GET | `/api/remote/exam/grading` | – | `GradingReply` (poll; `phase:"idle"` when the desk holds no job) | – |
+| GET | `/api/remote/exam/grading` | – | `GradingReply` (poll; `phase:"idle"` when the slot holds no job) | – |
 | POST | `/api/remote/exam/grading/close` | `{sitting}` | 200 | 400 no readable body |
 | POST | `/api/remote/generate` | `{url, guidance?}` | `RemoteGenerateDto` | 400 bad/oversized body / `url` not `http://`/`https://`; 409 a generation is already thinking |
 | GET | `/api/remote/generate` | – | `RemoteGenerateDto` (poll) | 409 no job |
@@ -1802,7 +1804,7 @@ come in `CarriedReplyDto` once the exam is `ready`.
 | Key | Type | Meaning |
 |---|---|---|
 | `sitting` | string? | The exam's id, minted when it starts (26 lowercase Crockford base32 characters) and unchanged until it is closed; a replacement on the same deck gets a new one. `null` at `idle`. The phone fetches, grades and records only the sitting it started. |
-| `phase` | string | `idle` \| `generating` \| `ready` (open set). `idle` is the baseline when the desk holds no exam. A failed generation stays `generating` with `error` set and `thinking` false. |
+| `phase` | string | `idle` \| `generating` \| `ready` (open set). `idle` is the baseline when the slot holds no exam. A failed generation stays `generating` with `error` set and `thinking` false. |
 | `deck` | string | The deck name exactly as sent to `/api/remote/exam/start` (so a workspace deck keeps its `<workspace>/<file>` form); empty at `idle`. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
 | `thinking` | bool | Poll while true. |

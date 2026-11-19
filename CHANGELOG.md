@@ -12,11 +12,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   serves every card in deck order, starting after the card walked last and
   wrapping around. `POST /api/walk` takes an optional `cram`.
 
-- `RemoteExamDto.sitting` names the open remote exam sitting, minted at
-  its start and new for a replacement on the same deck. The phone records a
-  result only for the sitting it started in this run of the app: another
-  client's sitting, or one reopened after the app restarted, shows its
-  result but records nothing and offers no remediation.
+- `RemoteExamDto.sitting` names the exam the phone started, minted at its
+  start and new for a replacement on the same deck. The phone fetches, grades
+  and records only that sitting.
 
 - `alix share --with-sources`, the web Share sheet's folded "Include exam
   sources" option, `with_sources` on `POST /api/share` and
@@ -291,12 +289,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Phone exam: a generated exam is fetched once to the phone, which keeps it in
-  a file of its own, answers it without the desktop, and sends the answers to
-  the desktop only to be graded or turned into remediation cards. The desktop
-  keeps nothing about a fetched exam, the exam's key points are now sent to the
-  phone, a held exam can be discarded from the deck sheet, and the
-  `/api/remote/exam/*` calls change to match (`docs/API.md`). An exam open
-  across this update is lost on both devices.
+  a file of its own and answers it without the desktop. The desktop grades the
+  answers it is sent and writes remediation cards from the gaps it is sent,
+  keeps nothing about a fetched exam, and the exam's key points are now sent to
+  the phone; the `/api/remote/exam/*` calls change to match (`docs/API.md`).
+  An exam open across this update is lost on both devices.
 
 - A walk serves the cards you have never walked before the ones you missed,
   each in deck order, so coming back to a walk continues with new cards
@@ -324,8 +321,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sheet resumes where you left off; it no longer discards the exam. The answer
   being typed is saved as an editable draft when you leave (Continue later,
   close, back) or when the app goes to the background, so a paused or killed
-  app no longer loses it. The phone's saved-answers file gains a per-answer
-  `locked` flag; a file written by an earlier build is unreadable.
+  app no longer loses it. The exam's file on the phone keeps a `locked` flag
+  per answer.
 
 - A blank (cloze) card keeps its question at the top, where a plain card has
   it, on the phone and in the browser; it no longer sits vertically centered
@@ -456,8 +453,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   error. Exam
   remediation runs once per failed topic and binds each card to it, and a
   tutor card joins the topic of the card it was drafted on; both refuse a
-  topic id two topics share. Wire: `RemoteExamDto.cards` is replaced by
-  `cards_by_topic` (`[{topic_id, cards}]`), and `RemoteCreateCardReq`
+  topic id two topics share. Wire: remediation cards come back as
+  `GradingReply.cards_by_topic` (`[{topic, cards}]`, `topic` the topic's
+  number in the grade request), and `RemoteCreateCardReq`
   requires `card_id`, the card the draft was made on (an id the deck lacks,
   or one whose topic has no id, is a 400).
 
@@ -522,7 +520,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that still sets it fails to load. The idea lists
   and their history live in `.alix/exam/<deck-id>.json` (the phone keeps
   its own and sends it with `POST /api/remote/exam/start` as `ideas`;
-  `RemoteExamDto.ideas` returns it updated, and `RemoteExamDto.estimate`
+  `CarriedExam.ideas` returns it updated, and `RemoteExamDto.estimate`
   gives a rough wait).
 
 - `[exam] timeout_secs` defaults to 3600 seconds per call instead of 300:
@@ -543,11 +541,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   each examined topic, and each question's shape; **mastered** appears only
   for a perfect full sitting.
 
-- Exam wire: `ExamDto` and `RemoteExamDto` drop `passed` and `is_trace` and
-  gain `topics` (an `ExamTopicDto` per examined topic: `topic_id`,
+- Exam wire: `ExamDto` drops `passed` and `is_trace` and
+  gains `topics` (an `ExamTopicDto` per examined topic: `topic_id`,
   `fingerprint`, label, card ids, pass, verdict counts; a topic that drew no
   question is left out), `verdicts` (the sitting's counts), `full` and
-  `mastered`; `ExamDto` drops `cooldown_ms` and gains `exam_high_mark`,
+  `mastered`; the phone's `GradingReply` carries per-topic `pass`, verdict
+  counts and `gaps`, `verdicts` and `mastered`, and its `CarriedExam` carries
+  `full` and each topic's `topic_id`, `fingerprint`, label and card ids;
+  `ExamDto` drops `cooldown_ms` and gains `exam_high_mark`,
   `exam_changed` and `unsourced_topics`. Each grade row gains `topic`,
   `shape` and `mental_model`. `ExamDto.unlocks` names the decks this sitting
   unlocked. `POST /api/remote/exam/start` takes `cards` and examines the
@@ -580,7 +581,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   math, code blocks), and a question's code block shows line numbers.
   `ExamDto.question_units`,
   `ExamGradeDto.{question,points,feedback,missed}_units`
-  and `RemoteExamDto.questions_units` carry the parsed text.
+  `CarriedReplyDto.questions_units` and the `_units` fields of
+  `GradingReply.grades` carry the parsed text.
 
 - The desktop no longer copies the tutorial deck into a new decks folder; a
   first run creates the folder empty. A `tutorial.md` copied in by an
@@ -1007,7 +1009,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sources are frozen: it reads those sources, so the warning now shows only
   when no source material is available.
 
-- Phone: "Exam ready" shows once, when the preparation finishes, and names
+- Phone: "Exam ready" shows once, when the exam arrives on the phone, and names
   the deck by its title; it no longer reappears each time a workspace opens.
 
 - Phone exam: code blocks number their lines, as on the web, so a question
@@ -1064,8 +1066,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The phone's sync status no longer counts one conflicted deck twice when
   its push and the pull right after it both find the conflict.
 
-- The phone's exam error screen now shows the desktop's reason under "The exam
-  backend failed.", as the web does.
+- The phone's exam screen now shows the desktop's reason when grading fails,
+  as the web does.
 
 - `alix reset --exam --all` no longer follows a directory symlink outside the
   configured decks root and clears another folder's exam progress.
@@ -1386,13 +1388,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Adult web review keeps several formulas and question images visible together
   instead of clipping a later formula or shrinking an image to a speck.
 
-- A phone exam survives a desktop restart. Once its questions exist, the
-  desktop keeps the exam on disk until the phone closes it, and a restarted
-  server reopens it unanswered under the same `sitting` id; the phone still
-  holds the answers. Before, the exam lived only in the server's memory and a
-  restart or shutdown lost it. An exam that cannot be kept now fails its
-  generation with a message instead of handing out questions that would not
-  survive.
+- A phone exam waiting to be fetched survives a desktop restart. Once its
+  questions exist, the desktop keeps the exam in `.alix/exam/remote.json`
+  until the phone has fetched it and closed it, and a restarted server hands it
+  over under the same `sitting` id. Before, the exam lived only in the server's
+  memory and a restart or shutdown lost it. An exam that cannot be kept now
+  fails its generation with a message instead of handing out questions that
+  would not survive.
 
 - A rejected exam reply is retried with the parser's complaint and the reply
   text around the fault. The retry reason used to start with a copy of the

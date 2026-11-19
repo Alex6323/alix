@@ -113,7 +113,7 @@ Once paired, review gains things it doesn't have offline:
 - An exam row on a deck's launch sheet, for a fact deck that declares
   exam material, with an **Only what needs work** switch (on by default,
   disabled once every topic has passed). **Generate exam** has the desktop
-  write the exam; the app fetches it while it is open within reach of the
+  write the exam; the app fetches it while it is open and can reach the
   desktop, or the next time it starts there, and the row then reads **Take
   exam**. The exam opens full-screen from the phone's own copy, with no desktop:
   one question at a time. Submitting sends the answers to the desktop for
@@ -122,8 +122,10 @@ Once paired, review gains things it doesn't have offline:
   points, a **Turn the gaps into cards** button. Every result and any
   remediation cards land in the phone's own progress store, exactly like an
   offline grade, matching the rule above: the server computes, the phone keeps.
-  [The exam chapter](12-the-ai-exam.md#sitting-the-exam) lists what the rows say
-  and how to discard an exam.
+  [The exam chapter](12-the-ai-exam.md#sitting-the-exam) lists what the rows say,
+  how to discard an exam, and what happens when the deck changed since the exam
+  was written (the exam is still graded and shown, but its result is not
+  recorded).
 
 A [trace deck](13-trace-decks.md) runs entirely on-device: predict, reveal,
 and self-grade each checkpoint. It has no AI exam or paired-only capstone.
@@ -141,7 +143,10 @@ confirmed the paired desktop is reachable and
 running at least version 0.6.0; there is no retry chrome for a dead or
 too-old server: the Ask button simply is not there, and the **Generate exam**
 row is disabled with a short hint (an exam already fetched stays open, and
-only its grading needs the desktop). The desktop writes the exam from its own
+only its grading needs the desktop; one still waiting on the desktop is fetched
+the next time the app is open and reaches it). The phone checks the desktop when
+the deck list opens, and again when you return to it from a folder or after the
+pairing sheet. The desktop writes the exam from its own
 copy of the deck's frozen sources; the phone reads the copy a pull carried to
 it (`sources/deck-<token>/`) to tell which topics have sources and whether a
 result still matches the material. The roots file beside them,
@@ -154,8 +159,9 @@ instead of at pairing time), the phone shows one SnackBar: "Pairing expired.
 Pair again from Settings → Connected devices." On the review screen it
 carries a **Re-pair** action that reopens the pairing sheet directly; the
 exam screen and the tutor sheet show the same line inside the screen instead,
-so there you follow the message's own instruction (a held exam and its answers
-stay on the phone). Pinning `[serve] token` is what stops
+so there you follow the message's own instruction. An exam already fetched and
+your answers stay on the phone and you can keep answering; grading it needs the
+new pairing. Pinning `[serve] token` is what stops
 this from happening in the first place.
 
 ## Security posture

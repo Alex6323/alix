@@ -176,16 +176,26 @@ and you can sit it at any time as practice, before drilling too:
   desktop write the exam and leaves you on the sheet: the row keeps its name
   and counts the time so far (`preparing… 2m 5s`), and you can review, walk,
   or close the app meanwhile. Tapping the row while it runs asks **Cancel
-  preparation?**. The desktop writes one exam at a time; asking again while
-  one is being written shows `the desktop refused the exam`. The finished exam
-  is fetched to the phone while the app is open within reach of the desktop,
-  or the next time the app starts there: the row reads `fetching…`, a notice
-  says `Exam ready: <deck title>.`, and the row then reads **Take exam**,
-  filled; the exam opens only when you tap it. From then on the exam is on the
-  phone and answering it needs no desktop. Only **Generate exam** and grading
-  need the desktop: with none reachable the **Generate exam** row is disabled
-  and says `needs a paired desktop`, and **Take exam** says `grading needs
-  your paired desktop`.
+  preparation?**; confirming stops the writing on the desktop and drops the
+  exam. The exam is on the desktop while it is written, and stays there when
+  finished until the phone fetches it. The app fetches it whenever it is open
+  and can reach the paired desktop, and the next time it starts there if it
+  could not: the row reads `fetching…`, a notice says `Exam ready: <deck
+  title>.`, and the row then reads **Take exam**, filled; the exam opens only
+  when you tap it. From then on the exam is only on the phone, and it opens and
+  can be answered to the end without the desktop. The desktop writes one exam
+  at a time: the row shows `the desktop refused the exam` when it does not take
+  the request, for example while it is writing another exam (wait for it, or
+  cancel it from its deck's row), or when it cannot be reached.
+  Three lines say the desktop is needed, each at its own step. On the deck's
+  sheet, **Generate exam** reads `needs a paired desktop` while the app has not
+  reached the paired desktop ([the pairing chapter](19-pairing.md#whats-borrowed-once-paired)
+  says when it checks), and **Take exam** reads `grading needs your paired
+  desktop` then, or `graded by your paired desktop` otherwise: it opens either
+  way. On the exam screen, `grading needs the paired desktop` shows when you
+  submit, or tap **Turn the gaps into cards**, and the desktop does not
+  answer: your answers stay on the phone, and the buttons then read `submit
+  again` and `remediate again`.
 
 **Generate exam** offers **only what needs work**, on by default: the exam
 then asks only about the topics that have not passed (those that need
@@ -199,36 +209,54 @@ page or a restarted server, and your answers are saved into it as you give
 them. On the phone it is a file in the deck's workspace on the phone
 (`.alix/exam/<deck-id>.carried.json`, which also holds the key points, shown
 only with the results), so it survives closing the app and a restarted
-desktop; the phone saves each answer as you move on from it, and
-the desktop keeps nothing about an exam the phone has fetched. The exam is lost
-with an uninstall, cleared app data, or a removed workspace, and an exam that
-was open before the update that introduced this is lost on both devices: write
-it again. **Continue later** under each question (or the close button) leaves
+desktop; the phone saves each answer as you move on from it, and the desktop
+keeps nothing about an exam the phone has fetched. The exam is lost with its
+workspace if that is removed from the phone (the **Remove** in the Sync
+sheet). **Continue later** under each question (or the close button) leaves
 the exam open: reopen the deck's sheet and **Take exam** returns to where you
 left off. The answer you were typing is kept as an editable draft, also when
 the app goes to the background.
 
 The last question's button reads **Submit** and sends your answers to the
-desktop to be graded; the screen says `The server is working…` meanwhile. If
-the desktop cannot be reached the screen says `grading needs the paired
-desktop`, your answers stay on the phone, and the button reads `submit again`.
-The graded result is stored in the same file before it is applied, so closing
-the app meanwhile loses nothing; until you leave the results screen the row
-reads **Show result** (`your graded exam`). The phone records a result against
-the material as it stood when it started the exam, and it keeps that starting
-point in the exam's file. If that material has changed since (the sources of
-an examined topic, or the cards of a topic no source grounds), the exam screen
-says `the deck changed since this exam was prepared; its result cannot be
-recorded` and offers **Discard exam**; the last button then reads `submit
-anyway`, and the result shows with `not recorded` under the points and records
-nothing. Either way, an answer locks once you move on from it, and leaving
-returns you to the first unanswered question next time. Grading uses the exam
-up. To drop an exam you no longer want, tap the ⋮ at the right of its row
-(**Take exam**, **Show result**, or the `fetching…` row) and choose **Discard
-exam**, which asks `Discard exam?` with the deck's title and the choices
-**Keep** and **Discard exam**; the phone's copy is removed, and the desktop is
-asked to drop its own when it can be reached. In the browser,
-editing cards, topic prose or a topic's heading leaves a prepared exam
+desktop to be graded; the screen says `The server is working…` meanwhile. The
+phone saves the graded result in the exam's file first and then records it in
+its own progress, so closing the app in between loses nothing. A graded exam
+cannot be answered again. Leaving the results screen removes the exam from the
+phone, and the row reads **Generate exam** again. The exam stays, and the row
+reads **Show result** (`your graded exam`), if you close the app on the results
+screen, leave while the cards are still being made, or the result could not be
+recorded (the screen then offers `try again`).
+
+The phone records a result only if the deck's exam material is still what the
+exam was prepared from. That material is the sources of the deck's topics and,
+for a topic no source grounds, its cards (see [What a standing
+means](#what-a-standing-means)). The phone compares it with its own copy of the
+deck, which a sync with the desktop updates, when you open the exam and when
+you submit. If a source changed, or a card was added to a topic no source
+grounds, the exam screen says `the deck changed since this exam was prepared;
+its result cannot be recorded` and offers **Discard exam**; the last button
+then reads `submit anyway`. Submitting anyway still grades the exam and shows
+the points and each answer's breakdown, with `not recorded` under the points:
+no topic result or standing is recorded, and no remediation cards are offered.
+The browser's rule differs: it refuses a stale exam instead of recording
+nothing, as described below.
+
+To drop an exam, tap the ⋮ at the right of its row, which asks `Discard exam?`
+with the deck's title and the choices **Keep** and **Discard exam**. On
+**Take exam** or **Show result** it removes the exam and your answers from the
+phone and records nothing (a result already recorded stays). On the
+`fetching…` row it drops the exam still waiting on the desktop; if the desktop
+cannot be reached the exam is still dropped on the phone and never fetched, and
+it stays on the desktop until another exam is written there. While an exam is
+being written, cancelling it is the way to drop it. If you tap **Generate
+exam** while the desktop still has a finished exam of this phone that could not
+be fetched (for example because the deck already holds another exam on the
+phone), the row reads `could not fetch the exam for <title>`, naming that
+waiting exam's deck; its **Discard exam** drops that waiting exam and then
+writes the one you asked for.
+
+An answer locks once you move on from it, and leaving returns you to the first
+unanswered question next time. In the browser, editing cards, topic prose or a topic's heading leaves a prepared exam
 valid. Changing a topic's sources (adding, updating, removing or rebinding
 one, or changing its ranges), or removing a topic, makes it stale: Take
 exam is refused, the prepared exam is kept, and the next Generate exam

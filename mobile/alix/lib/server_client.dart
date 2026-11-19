@@ -664,17 +664,6 @@ class RemoteGenerate {
 /// over `/api/remote/*`. Behind an interface so the tutor and exam screens
 /// (built on top of this) can fake it in tests, the same seam
 /// [PlatformAccess] plays for platform channels.
-///
-/// Error surface:
-/// - success -> the value; a bool-returning call -> true on 2xx.
-/// - HTTP 401 -> throws [PairingExpired]; callers map it to a re-pair
-///   prompt.
-/// - unreachable, timeout, refused, or non-HTTP garbage -> null (false for
-///   a bool-returning call, [GradingNoAnswer] for a grading call): failure
-///   reads as absence, never an exception.
-/// - any other status (400, 403, 409, ...) -> false/null, except the three
-///   grading calls ([gradingSubmit], [gradingRemediate], [gradingGet]),
-///   which return [GradingRefused] with the status.
 abstract class ServerClient {
   /// The paired server's version and root identity (`GET /api/version`), or
   /// null if it cannot be reached or does not answer with JSON.
@@ -756,12 +745,9 @@ class HttpServerClient implements ServerClient {
   Uri uriFor(String path, [Map<String, String>? query]) =>
       Uri(scheme: config.scheme, host: config.host, port: config.port, path: path, queryParameters: query);
 
-  /// Runs one call and returns its decoded JSON body, implementing the
-  /// LOCKED error surface: a 401 throws [PairingExpired]; every other
-  /// non-2xx-JSON outcome (unreachable, timed out, refused, malformed body,
-  /// 400, 403, 409, ...) reads as null. [body], when present, is sent as a
-  /// JSON object with an explicit `Content-Length` (never chunked, so the
-  /// server's capped body reader always sees a clean end).
+  /// [body], when present, is sent as a JSON object with an explicit
+  /// `Content-Length` (never chunked, so the server's capped body reader
+  /// always sees a clean end).
   Future<Map<String, dynamic>?> _call(String method, String path, [Object? body]) async {
     try {
       return await _attempt(method, path, body).timeout(_requestTimeout);
