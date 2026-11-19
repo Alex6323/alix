@@ -382,6 +382,16 @@ void main() {
     return (root: root, support: support, deck: deck);
   }
 
+  // The lib's topic fingerprint for the source writeVerifiedTestSources binds to the deck.
+  const examFixtureFingerprint = '0pp0sejc00cb7z27y6m6h6mc5kchhc7hfrhx2kafkytjpb7kctey';
+
+  String carriedForExamFixture(String deck) {
+    final topic = ((jsonDecode(contract('CarriedReplyDto')) as Map)['exam'] as Map)['topics'][0] as Map;
+    return contract('CarriedReplyDto')
+        .replaceAll(topic['topic_id'] as String, exam_bridge.examDeckId(deckPath: deck)!)
+        .replaceAll(topic['fingerprint'] as String, examFixtureFingerprint);
+  }
+
   FakeServerClient fetchingDesk({
     List<String?>? carried,
     Completer<void>? examCloseGate,
@@ -788,7 +798,7 @@ void main() {
 
   testWidgets('a deck with a held exam opens it with the desktop unreachable', (tester) async {
     final fixture = await examFixture('exam-held-offline');
-    final desk = fetchingDesk();
+    final desk = fetchingDesk(carried: [carriedForExamFixture(fixture.deck)]);
     await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
     await generateAndFetch(tester);
     final offline = FakeServerClient();
@@ -803,9 +813,9 @@ void main() {
     await tester.tap(find.text('Take exam'));
     await tester.pumpAndSettle();
     expect(
-      find.text('the deck changed: this exam is stale and cannot be recorded'),
+      find.text('Why does Rust use ownership?'),
       findsOneWidget,
-      reason: 'offline: the exam screen opens the held exam, stale since the fixture deck does not hold the material of the contract exam',
+      reason: 'offline: the exam screen shows the held question; the stale line instead means examFixtureFingerprint no longer matches what the lib computes for the fixture',
     );
   });
 
@@ -946,7 +956,7 @@ void main() {
     'a deck file renamed after its exam was fetched still shows Take exam and opens it',
     (tester) async {
       final fixture = await examFixture('exam-renamed-deck');
-      final desk = fetchingDesk();
+      final desk = fetchingDesk(carried: [carriedForExamFixture(fixture.deck)]);
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await generateAndFetch(tester);
       File(fixture.deck).renameSync('${fixture.root.path}/ws/decks/renamed.md');
@@ -958,9 +968,9 @@ void main() {
       await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
       expect(
-        find.text('the deck changed: this exam is stale and cannot be recorded'),
+        find.text('Why does Rust use ownership?'),
         findsOneWidget,
-        reason: 'renamed: the exam screen opens the held exam, stale since the fixture deck does not hold the material of the contract exam',
+        reason: 'renamed: the exam opens on its question; the stale line instead means examFixtureFingerprint no longer matches what the lib computes for the fixture',
       );
     },
   );
