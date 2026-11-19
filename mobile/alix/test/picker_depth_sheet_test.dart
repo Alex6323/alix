@@ -545,19 +545,19 @@ void main() {
     expect(cancels, 0, reason: 'fetching: a tap cancels nothing, got $cancels');
   });
 
-  testWidgets('the exam row has a menu with Discard exam only when the offer carries onDiscard', (tester) async {
+  testWidgets('the exam row has one bin button with the tooltip Discard exam only when the offer carries onDiscard, and never a menu', (tester) async {
     await tester.pumpWidget(_sheet((_) {}, exam: offer()));
-    expect(find.byIcon(Icons.more_vert), findsNothing, reason: 'no onDiscard: no menu button');
+    expect(find.byIcon(Icons.delete_outline), findsNothing, reason: 'no onDiscard: no bin');
+    expect(find.byTooltip('Discard exam'), findsNothing, reason: 'no onDiscard: no tooltip');
 
     await tester.pumpWidget(_sheet((_) {}, exam: offer(onDiscard: () {})));
-    expect(find.byIcon(Icons.more_vert), findsOneWidget, reason: 'onDiscard set: one menu button');
-    expect(find.text('Discard exam'), findsNothing, reason: 'the entry shows only once the menu opens');
-    await tester.tap(find.byIcon(Icons.more_vert));
-    await tester.pumpAndSettle();
-    expect(find.text('Discard exam'), findsOneWidget, reason: 'menu open: the single entry');
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget, reason: 'onDiscard set: one bin');
+    expect(find.byTooltip('Discard exam'), findsOneWidget, reason: 'onDiscard set: one tooltip');
+    expect(find.byIcon(Icons.more_vert), findsNothing, reason: 'onDiscard set: no three dots');
+    expect(find.byType(PopupMenuButton<bool>), findsNothing, reason: 'onDiscard set: no popup menu');
   });
 
-  testWidgets('choosing Discard exam calls onDiscard once and not the row tap, also on a disabled row', (tester) async {
+  testWidgets('tapping the bin calls onDiscard once and not the row tap, also on a disabled row', (tester) async {
     for (final (live, action) in [
       (true, PickerExamAction.generate),
       (true, PickerExamAction.preparing),
@@ -579,9 +579,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byIcon(Icons.more_vert));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Discard exam'));
+      await tester.tap(find.byIcon(Icons.delete_outline));
       await tester.pumpAndSettle();
       expect(discards, 1, reason: '$action live=$live: onDiscard calls $discards, expected 1');
       expect(starts, isEmpty, reason: '$action live=$live: the row start was not triggered, got $starts');
@@ -589,7 +587,7 @@ void main() {
     }
   });
 
-  testWidgets('the exam row with a menu lays out on a phone for every action', (tester) async {
+  testWidgets('the exam row with the bin lays out on a phone for every action', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -613,7 +611,7 @@ void main() {
       .style
       ?.color;
 
-  testWidgets('the menu icon is drawn in the colour of the row chevron, filled or not', (tester) async {
+  testWidgets('the bin is drawn in the colour of the row chevron, filled or not', (tester) async {
     for (final (name, action, due) in [
       ('filled take', PickerExamAction.take, false),
       ('filled generate', PickerExamAction.generate, true),
@@ -624,12 +622,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       final chevron = iconColor(tester, find.byIcon(Icons.chevron_right).last);
-      final menu = iconColor(tester, find.byIcon(Icons.more_vert));
-      expect(menu, chevron, reason: '$name: menu icon colour $menu vs chevron colour $chevron');
+      final bin = iconColor(tester, find.byIcon(Icons.delete_outline));
+      expect(bin, chevron, reason: '$name: bin colour $bin vs chevron colour $chevron');
     }
   });
 
-  testWidgets('the exam row is as tall with the menu as without on a phone, filled or not', (tester) async {
+  testWidgets('the exam row is as tall with the bin as without on a phone, filled or not', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -640,12 +638,12 @@ void main() {
       await tester.pumpWidget(_sheet((_) {}, exam: offer(action: action)));
       final without = tester.getSize(find.widgetWithText(InkWell, label)).height;
       await tester.pumpWidget(_sheet((_) {}, exam: offer(action: action, onDiscard: () {})));
-      final withMenu = tester.getSize(find.widgetWithText(InkWell, label)).height;
-      expect(withMenu, without, reason: '$name: height with the menu $withMenu vs without $without');
+      final withBin = tester.getSize(find.widgetWithText(InkWell, label)).height;
+      expect(withBin, without, reason: '$name: height with the bin $withBin vs without $without');
     }
   });
 
-  testWidgets('on a disabled row the menu button is not dimmed while the chevron is', (tester) async {
+  testWidgets('on a disabled row the bin is not dimmed while the chevron is', (tester) async {
     await tester.pumpWidget(
       _sheet((_) {}, exam: offer(locked: true, onDiscard: () {})),
     );
@@ -656,10 +654,11 @@ void main() {
     expect(dimmedAncestor(find.byIcon(Icons.chevron_right).last), findsOneWidget, reason: 'locked row: the chevron sits under one dimming Opacity');
     expect(dimmedAncestor(find.text('Generate exam')), findsOneWidget, reason: 'locked row: the label sits under one dimming Opacity');
     expect(dimmedAncestor(find.text('locked')), findsOneWidget, reason: 'locked row: the hint sits under one dimming Opacity');
-    expect(dimmedAncestor(find.byIcon(Icons.more_vert)), findsNothing, reason: 'locked row: the menu button sits under no dimming Opacity');
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget, reason: 'locked row: the bin is shown');
+    expect(dimmedAncestor(find.byIcon(Icons.delete_outline)), findsNothing, reason: 'locked row: the bin sits under no dimming Opacity');
   });
 
-  testWidgets('the menu button is at least 48 by 48 and no higher than its row, enabled or not', (tester) async {
+  testWidgets('the bin is at least 48 by 48 and no higher than its row, enabled or not', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -668,7 +667,7 @@ void main() {
         _sheet((_) {}, exam: offer(locked: locked, onDiscard: () {})),
       );
       final button = tester.getSize(
-        find.ancestor(of: find.byIcon(Icons.more_vert), matching: find.byType(IconButton)),
+        find.ancestor(of: find.byIcon(Icons.delete_outline), matching: find.byType(IconButton)),
       );
       final row = tester.getSize(find.widgetWithText(InkWell, 'Generate exam')).height;
       expect(
@@ -676,6 +675,28 @@ void main() {
         (true, true, true),
         reason: '$name: button ${button.width} by ${button.height}, row height $row',
       );
+    }
+  });
+
+  testWidgets('the exam row chevron sits in the column of the other rows chevrons, with the bin and without', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    for (final (name, action, due) in [
+      ('filled take', PickerExamAction.take, false),
+      ('unfilled generate', PickerExamAction.generate, false),
+    ]) {
+      for (final withBin in [false, true]) {
+        await tester.pumpWidget(
+          _sheet((_) {}, onWalk: (_) {}, exam: offer(action: action, due: due, onDiscard: withBin ? () {} : null)),
+        );
+        final centres = [
+          for (final chevron in find.byIcon(Icons.chevron_right).evaluate())
+            tester.getCenter(find.byWidget(chevron.widget)).dx,
+        ];
+        expect(centres.length, greaterThan(1), reason: '$name bin=$withBin: the exam row and other launch rows show chevrons');
+        expect(centres.toSet().length, 1, reason: '$name bin=$withBin: chevron centres $centres are not one column');
+      }
     }
   });
 }

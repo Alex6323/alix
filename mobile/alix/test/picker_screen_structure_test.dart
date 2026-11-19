@@ -497,9 +497,7 @@ void main() {
       Directory('${support.path}/exam-sittings.json.tmp').createSync();
 
   Future<void> chooseDiscard(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.more_vert));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Discard exam'));
+    await tester.tap(find.byIcon(Icons.delete_outline));
     await tester.pumpAndSettle();
   }
 
@@ -1008,7 +1006,7 @@ void main() {
 
       await openDeck(tester);
       expect(
-        [find.text('Take exam').evaluate().length, find.byIcon(Icons.more_vert).evaluate().length],
+        [find.text('Take exam').evaluate().length, find.byIcon(Icons.delete_outline).evaluate().length],
         [1, 1],
         reason: 'unreadable: the row offers the exam and a discard',
       );
@@ -1887,9 +1885,9 @@ void main() {
       await tapGenerate(tester);
       await tester.pumpAndSettle();
       expect(
-        find.byIcon(Icons.more_vert),
+        find.byIcon(Icons.delete_outline),
         findsOneWidget,
-        reason: 'step 1: the blocked claim gives the Other exam row a discard menu',
+        reason: 'step 1: the blocked claim gives the Other exam row a bin',
       );
 
       await tick(tester);
@@ -1897,11 +1895,11 @@ void main() {
         [
           heldFiles(fixture.root).length,
           find.textContaining('could not').evaluate().length,
-          find.byIcon(Icons.more_vert).evaluate().length,
+          find.byIcon(Icons.delete_outline).evaluate().length,
           find.text('graded by your paired desktop').evaluate().length,
         ],
         [1, 0, 0, 1],
-        reason: 'step 2: the poll fetched the exam: no blocked line, no discard menu, the generate hint',
+        reason: 'step 2: the poll fetched the exam: no blocked line, no bin, the generate hint',
       );
     },
   );
@@ -2080,16 +2078,14 @@ void main() {
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
       expect(
-        [heldFiles(fixture.root).length, find.text('Take exam').evaluate().length, find.byIcon(Icons.more_vert).evaluate().length],
+        [heldFiles(fixture.root).length, find.text('Take exam').evaluate().length, find.byIcon(Icons.delete_outline).evaluate().length],
         [1, 1, 1],
-        reason: 'sources removed, exam held: one file, Take exam, one menu',
+        reason: 'sources removed, exam held: one file, Take exam, one bin',
       );
-      await tester.tap(find.byIcon(Icons.more_vert));
-      await tester.pumpAndSettle();
       expect(
-        find.text('Discard exam'),
+        find.byTooltip('Discard exam'),
         findsOneWidget,
-        reason: 'the menu of the held exam offers Discard exam',
+        reason: 'the held exam row offers Discard exam',
       );
     },
   );

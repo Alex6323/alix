@@ -240,7 +240,7 @@ deck changed: this exam is stale and cannot be recorded` and a **Discard exam**
 button; the close button leaves and keeps the exam. Found when you tap
 **Submit**, your answers are saved, nothing is sent, the same line shows, and
 the button that read **Submit** reads **Discard exam**. Either **Discard exam**
-asks `Discard exam?` as the ⋮ menu does (below). If the deck changes after
+asks `Discard exam?` as the bin on the row does (below). If the deck changes after
 **Submit**, while the desktop grades, the result is shown with `not recorded`
 under the points: no topic result or standing is recorded, and no remediation
 cards are offered. In the browser too a result is recorded only
@@ -248,8 +248,8 @@ against unchanged material: a prepared exam that became stale is not opened,
 and a sitting whose material changes while it is open records nothing (both
 below).
 
-To drop an exam, tap the ⋮ at the right of its row, which asks `Discard exam?`
-with the deck's title and the choices **Keep** and **Discard exam**. On
+To drop an exam, tap the bin icon just left of the arrow on its row, which asks
+`Discard exam?` with the deck's title and the choices **Keep** and **Discard exam**. On
 **Take exam** or **Show result** it removes the exam and your answers from the
 phone and records nothing (a result already recorded stays). On the
 `fetching…` row it drops the exam still waiting on the desktop; if the desktop

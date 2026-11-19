@@ -848,8 +848,8 @@ class _PickerLaunchRow extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (onDiscard != null) const SizedBox(width: _discardButtonSize),
                 Icon(Icons.chevron_right, size: 22, color: foreground),
-                if (onDiscard != null) const SizedBox(width: _menuButtonSize),
               ],
             ),
           ),
@@ -866,20 +866,15 @@ class _PickerLaunchRow extends StatelessWidget {
                 Positioned(
                   top: 0,
                   bottom: 0,
-                  right: 16,
+                  right: _chevronColumnWidth,
+                  width: _discardButtonSize,
                   child: Center(
-                    child: PopupMenuButton<bool>(
-                      icon: const Icon(Icons.more_vert),
+                    child: IconButton(
+                      icon: const Icon(Icons.delete_outline),
                       iconSize: 20,
-                      iconColor: foreground,
-                      padding: EdgeInsets.zero,
-                      onSelected: (_) => onDiscard!(),
-                      itemBuilder: (_) => const [
-                        PopupMenuItem<bool>(
-                          value: true,
-                          child: Text('Discard exam'),
-                        ),
-                      ],
+                      color: foreground,
+                      tooltip: 'Discard exam',
+                      onPressed: onDiscard,
                     ),
                   ),
                 ),
@@ -889,7 +884,8 @@ class _PickerLaunchRow extends StatelessWidget {
   }
 }
 
-const double _menuButtonSize = 48;
+const double _discardButtonSize = 48;
+const double _chevronColumnWidth = 16 + 22;
 
 class PickerThemeSheet extends StatelessWidget {
   const PickerThemeSheet({

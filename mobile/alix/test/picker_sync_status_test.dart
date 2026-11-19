@@ -205,7 +205,7 @@ void main() {
       );
       // The cycle the button starts names no entry: it covers the root, so
       // no row carries a sync action of its own.
-      expect(find.byIcon(Icons.more_vert), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
     },
   );
 
@@ -242,7 +242,7 @@ void main() {
       // The desktop's heading carries the one Sync for everything beneath
       // it; no row carries an action of its own.
       expect(find.text('SYNC'), findsOneWidget);
-      expect(find.byIcon(Icons.more_vert), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
     },
   );
 
