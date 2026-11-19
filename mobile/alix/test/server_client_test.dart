@@ -463,52 +463,6 @@ void main() {
       expect(ask.draft!.back, ['so drops are deterministic', 'no GC needed']);
     });
 
-    test('examGet maps the preparation estimate, ideas document, and mental model key', () async {
-      final s = await startServer((request) async {
-        await request.drain<void>();
-        await respondJson(request, 200, {
-          'phase': 'results',
-          'deck': 'rust.md',
-          'strictness': 'balanced',
-          'questions': ['Why ownership?'],
-          'grades': [
-            {
-              'question': 'Why ownership?',
-              'points': ['memory safety'],
-              'answer': 'ownership controls drops',
-              'verdict': 'PASS',
-              'feedback': 'Right.',
-              'missed': <String>[],
-              'mental_model': 'ownership controls destruction',
-              'model': 'must not be accepted',
-            },
-          ],
-          'gaps': <String>[],
-          'can_remediate': false,
-          'thinking': false,
-          'estimate': 'about 20 to 30 minutes',
-          'ideas': {
-            'version': 1,
-            'material': 'xxh64-0123456789abcdef',
-            'topics': <Object>[],
-          },
-        });
-      });
-      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
-      addTearDown(client.close);
-
-      final exam = await client.examGet();
-
-      expect(exam, isNotNull);
-      expect(exam!.estimate, 'about 20 to 30 minutes');
-      expect(exam.ideas, {
-        'version': 1,
-        'material': 'xxh64-0123456789abcdef',
-        'topics': <Object>[],
-      });
-      expect(exam.grades.single.mentalModel, 'ownership controls destruction');
-    });
-
     test('examStart sends cards and the phone ideas document', () async {
       String? seenPath;
       Map<String, dynamic>? seenBody;
@@ -781,6 +735,373 @@ void main() {
       expect(await client.generateGet(), isNull);
       // generateClose returns void; the assertion is that it completes without throwing.
       await client.generateClose();
+    });
+  });
+
+  group('HttpServerClient exam desks', () {
+    HttpServer? server;
+
+    Future<HttpServer> startServer(Future<void> Function(HttpRequest request) handle) async {
+      final s = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server = s;
+      s.listen((request) => handle(request));
+      return s;
+    }
+
+    Future<void> respondRaw(HttpRequest request, int status, String body) async {
+      request.response.statusCode = status;
+      request.response.headers.contentType = ContentType.json;
+      request.response.add(utf8.encode(body));
+      await request.response.close();
+    }
+
+    Future<HttpServerClient> clientFor(HttpServer s) async {
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
+      addTearDown(client.close);
+      return client;
+    }
+
+    String contract(String name) => File('../../tests/contracts/$name.json').readAsStringSync();
+
+    tearDown(() async {
+      await server?.close(force: true);
+      server = null;
+    });
+
+    const gradeRequest = '{"deck":"rust.md","sitting":"s1","answers":["a"]}';
+    const remediationRequest = '{"deck":"rust.md","sitting":"s1","topics":[0]}';
+
+    final rows = <({
+      String name,
+      Future<Object?> Function(ServerClient client) call,
+      String method,
+      String path,
+      Map<String, String> query,
+      String? body,
+      String reply,
+    })>[
+      (
+        name: 'examStart',
+        call: (client) => client.examStart('rust.md', cards: const ['card-a'], ideas: const {'version': 1}),
+        method: 'POST',
+        path: '/api/remote/exam/start',
+        query: const {},
+        body: '{"deck":"rust.md","cards":["card-a"],"ideas":{"version":1}}',
+        reply: '{"phase":"generating"}',
+      ),
+      (
+        name: 'examGet',
+        call: (client) => client.examGet(),
+        method: 'GET',
+        path: '/api/remote/exam',
+        query: const {},
+        body: null,
+        reply: '{"phase":"idle"}',
+      ),
+      (
+        name: 'examCarried',
+        call: (client) => client.examCarried('s1'),
+        method: 'GET',
+        path: '/api/remote/exam/carried',
+        query: const {'sitting': 's1'},
+        body: null,
+        reply: '{"exam":{}}',
+      ),
+      (
+        name: 'examClose',
+        call: (client) => client.examClose('s1'),
+        method: 'POST',
+        path: '/api/remote/exam/close',
+        query: const {},
+        body: '{"sitting":"s1"}',
+        reply: '',
+      ),
+      (
+        name: 'gradingSubmit',
+        call: (client) => client.gradingSubmit(gradeRequest),
+        method: 'POST',
+        path: '/api/remote/exam/grading',
+        query: const {},
+        body: gradeRequest,
+        reply: '{"phase":"grading"}',
+      ),
+      (
+        name: 'gradingRemediate',
+        call: (client) => client.gradingRemediate(remediationRequest),
+        method: 'POST',
+        path: '/api/remote/exam/grading/remediate',
+        query: const {},
+        body: remediationRequest,
+        reply: '{"phase":"remediating"}',
+      ),
+      (
+        name: 'gradingGet',
+        call: (client) => client.gradingGet(),
+        method: 'GET',
+        path: '/api/remote/exam/grading',
+        query: const {},
+        body: null,
+        reply: '{"phase":"idle"}',
+      ),
+      (
+        name: 'gradingClose',
+        call: (client) => client.gradingClose('s1'),
+        method: 'POST',
+        path: '/api/remote/exam/grading/close',
+        query: const {},
+        body: '{"sitting":"s1"}',
+        reply: '',
+      ),
+    ];
+
+    test('each exam call uses its method, path, query and body', () async {
+      for (final row in rows) {
+        String? method;
+        String? path;
+        Map<String, String>? query;
+        String? body;
+        final s = await startServer((request) async {
+          method = request.method;
+          path = request.uri.path;
+          query = request.uri.queryParameters;
+          body = await utf8.decoder.bind(request).join();
+          await respondRaw(request, 200, row.reply);
+        });
+        final client = await clientFor(s);
+
+        await row.call(client);
+
+        expect(method, row.method, reason: '${row.name} method');
+        expect(path, row.path, reason: '${row.name} path');
+        expect(query, row.query, reason: '${row.name} query');
+        expect(body, row.body ?? '', reason: '${row.name} body');
+        await s.close(force: true);
+      }
+    });
+
+    test('a 401 throws PairingExpired from every exam call', () async {
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondRaw(request, 401, '');
+      });
+      final client = await clientFor(s);
+
+      for (final row in rows) {
+        await expectLater(
+          row.call(client),
+          throwsA(isA<PairingExpired>()),
+          reason: '${row.name} answered 401',
+        );
+      }
+    });
+
+    test('a grading request is sent byte for byte as given', () async {
+      const requests = [
+        '{"answers":["\u0001 \u20ac"],  "sitting" : "s1"}',
+        '{ "answers" : ["\\u00e9 \\n \u20ac"],\n"sitting":"s1" }',
+      ];
+      final received = <List<int>>[];
+      final types = <String?>[];
+      final s = await startServer((httpRequest) async {
+        received.add(await httpRequest.fold<List<int>>([], (all, chunk) => [...all, ...chunk]));
+        types.add(httpRequest.headers.contentType?.mimeType);
+        await respondRaw(httpRequest, 200, '{"phase":"grading"}');
+      });
+      final client = await clientFor(s);
+
+      for (final (index, request) in requests.indexed) {
+        received.clear();
+        types.clear();
+
+        await client.gradingSubmit(request);
+        await client.gradingRemediate(request);
+
+        expect(received.length, 2, reason: 'requests the server saw for request $index');
+        expect(received[0], utf8.encode(request), reason: 'gradingSubmit bytes on the wire for request $index');
+        expect(received[1], utf8.encode(request), reason: 'gradingRemediate bytes on the wire for request $index');
+        expect(types, ['application/json', 'application/json'], reason: 'content types for request $index');
+      }
+    });
+
+    test('a grading call maps 200, 400, 409, a dropped connection and 401', () async {
+      const replyText = '{ "phase" : "results",\n "sitting":"sé€" , "thinking":false }';
+      var status = 200;
+      var drop = false;
+      var reply = replyText;
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        if (drop) {
+          final socket = await request.response.detachSocket();
+          socket.destroy();
+          return;
+        }
+        await respondRaw(request, status, reply);
+      });
+      final client = await clientFor(s);
+
+      final answered = await client.gradingSubmit(gradeRequest);
+      expect(answered, isA<GradingAnswered>(), reason: 'gradingSubmit answered 200');
+      answered as GradingAnswered;
+      expect(answered.body, replyText, reason: '200 body as received, whitespace and non-ASCII kept');
+      expect(answered.state.phase, 'results', reason: '200 state phase');
+      expect(answered.state.sitting, 'sé€', reason: '200 state sitting');
+      expect(answered.state.thinking, isFalse, reason: '200 state thinking');
+
+      for (final refused in [400, 404, 409, 500, 503]) {
+        status = refused;
+        final call = await client.gradingSubmit(gradeRequest);
+        expect(call, isA<GradingRefused>(), reason: 'gradingSubmit answered $refused');
+        expect((call as GradingRefused).status, refused, reason: 'status carried for $refused');
+        final remediate = await client.gradingRemediate(remediationRequest);
+        expect(remediate, isA<GradingRefused>(), reason: 'gradingRemediate answered $refused');
+        final poll = await client.gradingGet();
+        expect(poll, isA<GradingRefused>(), reason: 'gradingGet answered $refused');
+      }
+
+      status = 200;
+      for (final garbage in ['[1]', 'not json', '', '"text"']) {
+        reply = garbage;
+        final call = await client.gradingSubmit(gradeRequest);
+        expect(call, isA<GradingNoAnswer>(), reason: 'gradingSubmit answered 200 with body "$garbage"');
+      }
+
+      drop = true;
+      expect(await client.gradingSubmit(gradeRequest), isA<GradingNoAnswer>(), reason: 'gradingSubmit, connection dropped');
+      expect(await client.gradingGet(), isA<GradingNoAnswer>(), reason: 'gradingGet, connection dropped');
+
+      drop = false;
+      status = 401;
+      await expectLater(
+        client.gradingSubmit(gradeRequest),
+        throwsA(isA<PairingExpired>()),
+        reason: 'gradingSubmit answered 401',
+      );
+    });
+
+    test('a grading call with no server listening is no answer', () async {
+      final s = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final port = s.port;
+      await s.close(force: true);
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: port, token: 'x'));
+      addTearDown(client.close);
+
+      expect(await client.gradingSubmit(gradeRequest), isA<GradingNoAnswer>(), reason: 'gradingSubmit, port closed');
+      expect(await client.gradingClose('s1'), isFalse, reason: 'gradingClose, port closed');
+    });
+
+    test('the grading reply states read from the pinned replies', () async {
+      for (final (name, phase, thinking) in [
+        ('GradingReply.idle', 'idle', false),
+        ('GradingReply.grading', 'grading', true),
+        ('GradingReply.results', 'results', false),
+        ('GradingReply.remediated', 'remediated', false),
+      ]) {
+        final text = contract(name);
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondRaw(request, 200, text);
+        });
+        final client = await clientFor(s);
+
+        final call = await client.gradingGet();
+
+        expect(call, isA<GradingAnswered>(), reason: '$name answered');
+        call as GradingAnswered;
+        expect(call.body, text, reason: '$name body as received');
+        expect(call.state.phase, phase, reason: '$name phase');
+        expect(call.state.thinking, thinking, reason: '$name thinking');
+        await s.close(force: true);
+      }
+    });
+
+    test('the carried body is returned verbatim and a 404 is null', () async {
+      final carried = contract('CarriedReplyDto');
+      var status = 200;
+      var body = carried;
+      String? seenSitting;
+      final s = await startServer((request) async {
+        seenSitting = request.uri.queryParameters['sitting'];
+        await request.drain<void>();
+        await respondRaw(request, status, body);
+      });
+      final client = await clientFor(s);
+
+      expect(await client.examCarried('s 1&x=é/#'), carried, reason: 'carried body as received on 200');
+      expect(seenSitting, 's 1&x=é/#', reason: 'sitting the server decoded from the query');
+
+      body = '{ "exam" :  {}, \n "questions_units":[] }';
+      expect(await client.examCarried('s1'), body, reason: 'carried body with odd whitespace on 200');
+
+      for (final other in [400, 404, 409, 500, 503]) {
+        status = other;
+        expect(await client.examCarried('s1'), isNull, reason: 'carried answered $other');
+      }
+
+      status = 401;
+      await expectLater(client.examCarried('s1'), throwsA(isA<PairingExpired>()), reason: 'carried answered 401');
+    });
+
+    test('a close is true on 200 and false on another status', () async {
+      var status = 200;
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondRaw(request, status, '');
+      });
+      final client = await clientFor(s);
+
+      expect(await client.examClose('s1'), isTrue, reason: 'examClose answered 200');
+      expect(await client.gradingClose('s1'), isTrue, reason: 'gradingClose answered 200');
+      for (final other in [400, 500]) {
+        status = other;
+        expect(await client.examClose('s1'), isFalse, reason: 'examClose answered $other');
+        expect(await client.gradingClose('s1'), isFalse, reason: 'gradingClose answered $other');
+      }
+    });
+
+    test('the generation reply reads the ready phase', () async {
+      for (final (name, phase, sitting, unknown, thinking) in [
+        ('RemoteExamDto.idle', 'idle', null, <String>[], false),
+        ('RemoteExamDto.generating', 'generating', '0123456789abcdefghjkmnpqrs', ['card-gone'], true),
+        ('RemoteExamDto.ready', 'ready', '0123456789abcdefghjkmnpqrs', <String>[], false),
+      ]) {
+        final text = contract(name);
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondRaw(request, 200, text);
+        });
+        final client = await clientFor(s);
+
+        final polled = await client.examGet();
+        final started = await client.examStart('rust.md');
+
+        for (final (call, exam) in [('examGet', polled), ('examStart', started)]) {
+          expect(exam, isNotNull, reason: '$name through $call');
+          expect(exam!.phase, phase, reason: '$name phase through $call');
+          expect(exam.sitting, sitting, reason: '$name sitting through $call');
+          expect(exam.unknownCards, unknown, reason: '$name unknownCards through $call');
+          expect(exam.thinking, thinking, reason: '$name thinking through $call');
+          expect(exam.deck, name.endsWith('idle') ? '' : 'rust.md', reason: '$name deck through $call');
+        }
+        await s.close(force: true);
+      }
+    });
+
+    test('the generating reply carries elapsed and estimate, and a 409 start is null', () async {
+      var status = 200;
+      final text = contract('RemoteExamDto.generating');
+      final s = await startServer((request) async {
+        await request.drain<void>();
+        await respondRaw(request, status, text);
+      });
+      final client = await clientFor(s);
+
+      final exam = await client.examGet();
+      expect(exam?.elapsed, 12, reason: 'generating elapsed');
+      expect(exam?.estimate, 'usually 10 to 20 minutes', reason: 'generating estimate');
+      expect(exam?.error, isNull, reason: 'generating error');
+
+      status = 409;
+      expect(await client.examStart('rust.md'), isNull, reason: 'examStart answered 409');
     });
   });
 

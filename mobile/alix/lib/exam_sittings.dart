@@ -1,33 +1,70 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:alix_mobile/bridge/exam_bridge.dart' as exam_bridge;
 import 'package:flutter/foundation.dart';
 
+/// A sitting's starting state, evaluated once against the phone's store:
+/// the cards to ask about (null for a full sitting), whether the review
+/// condition holds, and the evidence stamp a standing records.
+class ExamSittingStart {
+  const ExamSittingStart({
+    required this.deckId,
+    required this.cards,
+    required this.eligible,
+    required this.sourced,
+    required this.unsourcedCards,
+    required this.unsourcedTopics,
+  });
+
+  final String deckId;
+  final List<String>? cards;
+  final bool eligible;
+  final String sourced;
+  final List<String> unsourcedCards;
+  final List<String> unsourcedTopics;
+}
+
 /// An exam sitting this phone started on a paired desktop: the start state
-/// its result is recorded against, and what of that result was applied.
+/// its result is recorded against, and whether its exam was fetched.
 class StartedSitting {
   StartedSitting({
+    required this.root,
+    required this.deckId,
     required this.deckPath,
     required this.title,
+    required this.sitting,
     required this.start,
-    this.sitting,
     this.announced = false,
-    this.recorded = false,
-    this.standing,
-    Map<String, int>? remediated,
-  }) : remediated = remediated ?? {};
+    this.fetched = false,
+  });
 
+  final String root;
+  final String deckId;
   final String deckPath;
   final String title;
-  final exam_bridge.ExamSittingStart start;
-  String? sitting;
+  final String sitting;
+  final ExamSittingStart start;
   bool announced;
-  bool recorded;
-  ({String text, bool examChanged})? standing;
-  final Map<String, int> remediated;
+  bool fetched;
+
+  static const _keys = {
+    'root',
+    'deck_id',
+    'deck_path',
+    'title',
+    'sitting',
+    'announced',
+    'cards',
+    'eligible',
+    'sourced',
+    'unsourced_cards',
+    'unsourced_topics',
+    'fetched',
+  };
 
   Map<String, dynamic> toJson() => {
+    'root': root,
+    'deck_id': deckId,
     'deck_path': deckPath,
     'title': title,
     'sitting': sitting,
@@ -37,46 +74,37 @@ class StartedSitting {
     'sourced': start.sourced,
     'unsourced_cards': start.unsourcedCards,
     'unsourced_topics': start.unsourcedTopics,
-    'recorded': recorded,
-    'standing': switch (standing) {
-      null => null,
-      final s => {'text': s.text, 'exam_changed': s.examChanged},
-    },
-    'remediated': remediated,
+    'fetched': fetched,
   };
 
   static StartedSitting fromJson(Map<String, dynamic> json) {
+    if (json.length != _keys.length || !json.keys.every(_keys.contains)) {
+      throw const FormatException('a start record has exactly its keys');
+    }
     List<String> strings(Object? value) => [for (final s in value as List) s as String];
-    final standing = json['standing'] as Map<String, dynamic>?;
+    final deckId = json['deck_id'] as String;
     return StartedSitting(
+      root: json['root'] as String,
+      deckId: deckId,
       deckPath: json['deck_path'] as String,
       title: json['title'] as String,
-      sitting: json['sitting'] as String?,
+      sitting: json['sitting'] as String,
       announced: json['announced'] as bool,
-      start: exam_bridge.ExamSittingStart(
+      start: ExamSittingStart(
+        deckId: deckId,
         cards: json['cards'] == null ? null : strings(json['cards']),
         eligible: json['eligible'] as bool,
         sourced: json['sourced'] as String,
         unsourcedCards: strings(json['unsourced_cards']),
         unsourcedTopics: strings(json['unsourced_topics']),
       ),
-      recorded: json['recorded'] as bool,
-      standing: standing == null
-          ? null
-          : (
-              text: standing['text'] as String,
-              examChanged: standing['exam_changed'] as bool,
-            ),
-      remediated: {
-        for (final entry in (json['remediated'] as Map<String, dynamic>).entries)
-          entry.key: entry.value as int,
-      },
+      fetched: json['fetched'] as bool,
     );
   }
 }
 
-/// The sittings this phone started, one per deck, kept in the app's support
-/// folder so an app restart mid-exam still records the result.
+/// The sittings this phone started, one per pairing root and deck id, kept in
+/// the app's support folder so an app restart mid-exam still finds them.
 class StartedSittings {
   StartedSittings._(this._file, this._byDeck);
 
@@ -84,20 +112,19 @@ class StartedSittings {
   static final Map<String, StartedSittings> _loaded = {};
 
   final File _file;
-  final Map<String, StartedSitting> _byDeck;
+  final Map<(String, String), StartedSitting> _byDeck;
 
-  /// An unreadable file holds no sitting: its results become unrecordable,
-  /// as they were before sittings were kept on disk.
+  /// An unreadable file holds no sitting.
   static StartedSittings load(Directory support) {
     final file = File('${support.path}/exam-sittings.json');
     return _loaded.putIfAbsent(file.path, () {
-      final byDeck = <String, StartedSitting>{};
+      final byDeck = <(String, String), StartedSitting>{};
       try {
         final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
         if (json['version'] == _version) {
           for (final item in json['sittings'] as List) {
             final sitting = StartedSitting.fromJson(item as Map<String, dynamic>);
-            byDeck[sitting.deckPath] = sitting;
+            byDeck[(sitting.root, sitting.deckId)] = sitting;
           }
         }
       } on Object {
@@ -112,14 +139,8 @@ class StartedSittings {
   @visibleForTesting
   static void forgetLoaded() => _loaded.clear();
 
-  /// The kept start for [deckPath], only while it names [sitting].
-  StartedSitting? kept(String deckPath, String? sitting) {
-    final kept = _byDeck[deckPath];
-    if (kept == null || sitting == null || kept.sitting != sitting) return null;
-    return kept;
-  }
+  StartedSitting? forDeck(String root, String deckId) => _byDeck[(root, deckId)];
 
-  /// The kept start whose desktop sitting id is [sitting].
   StartedSitting? bySitting(String? sitting) {
     if (sitting == null) return null;
     for (final kept in _byDeck.values) {
@@ -129,12 +150,12 @@ class StartedSittings {
   }
 
   void put(StartedSitting sitting) {
-    _byDeck[sitting.deckPath] = sitting;
+    _byDeck[(sitting.root, sitting.deckId)] = sitting;
     save();
   }
 
-  void remove(String deckPath) {
-    if (_byDeck.remove(deckPath) != null) save();
+  void remove(String root, String deckId) {
+    if (_byDeck.remove((root, deckId)) != null) save();
   }
 
   void save() {

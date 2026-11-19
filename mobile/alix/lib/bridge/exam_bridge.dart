@@ -1,4 +1,5 @@
 import 'package:alix_mobile/exam_screen.dart' show ExamAnswers;
+import 'package:alix_mobile/exam_sittings.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/exam.dart' as bridge;
 
@@ -43,25 +44,6 @@ void examAnswersClear({
   required String rootDir,
 }) => bridge.examAnswersClear(deckPath: deckPath, rootDir: rootDir);
 
-/// A sitting's starting state, evaluated once against the phone's store:
-/// the cards to ask about (null for a full sitting), whether the review
-/// condition holds, and the evidence stamp a standing records.
-class ExamSittingStart {
-  const ExamSittingStart({
-    required this.cards,
-    required this.eligible,
-    required this.sourced,
-    required this.unsourcedCards,
-    required this.unsourcedTopics,
-  });
-
-  final List<String>? cards;
-  final bool eligible;
-  final String sourced;
-  final List<String> unsourcedCards;
-  final List<String> unsourcedTopics;
-}
-
 ExamSittingStart examSittingStart({
   required String deckPath,
   required String rootDir,
@@ -75,6 +57,7 @@ ExamSittingStart examSittingStart({
     nowMs: nowMs,
   );
   return ExamSittingStart(
+    deckId: start.deckId,
     cards: start.cards,
     eligible: start.eligible,
     sourced: start.stamp.sourced,

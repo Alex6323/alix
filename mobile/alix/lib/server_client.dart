@@ -160,11 +160,6 @@ bool _asBool(dynamic v) => v == true;
 
 List<String> _asStringList(dynamic v) => v is List ? v.whereType<String>().toList() : const [];
 
-Map<String, dynamic>? _asJsonObject(dynamic v) {
-  if (v is! Map || v.keys.any((key) => key is! String)) return null;
-  return Map<String, dynamic>.from(v);
-}
-
 /// `[ContentUnitDto]` (docs/API.md) to the review models, so a tutor answer
 /// renders through the card's unit widgets. A unit of an unknown kind or
 /// without its required fields is dropped rather than guessed at.
@@ -534,91 +529,89 @@ class RemoteExamTopic {
   }
 }
 
-/// A paired phone's AI exam sitting. Mirrors `RemoteExamDto`; unlike the
-/// browser's `ExamDto` there is no server-side session, so this carries no
-/// `total`/`current`/`question`/`answer`/`on_last`. `phase: "idle"` is the
-/// baseline when no sitting is open.
+/// The generation desk's reply (`RemoteExamDto`): the exam itself is fetched
+/// once, by [ServerClient.examCarried], when the phase is `ready`.
 class RemoteExam {
   const RemoteExam({
     required this.phase,
     required this.deck,
-    required this.strictness,
-    required this.questions,
-    this.questionsUnits = const [],
-    required this.grades,
-    required this.gaps,
-    required this.canRemediate,
-    this.cardsByTopic = const [],
     required this.thinking,
+    this.sitting,
+    this.unknownCards = const [],
     this.elapsed,
     this.error,
     this.estimate,
-    this.ideas,
-    this.topics = const [],
-    this.verdicts,
-    this.full = false,
-    this.mastered = false,
-    this.unknownCards = const [],
-    this.sitting,
   });
 
   final String? sitting;
   final String phase;
   final String deck;
-  final String strictness;
-  final List<String> questions;
-  final List<List<ReviewContentUnitModel>> questionsUnits;
-  final List<RemoteExamTopic> topics;
-  final ExamVerdicts? verdicts;
-  final bool full;
-  final bool mastered;
   final List<String> unknownCards;
-  final List<RemoteExamGrade> grades;
-  final List<String> gaps;
-  final bool canRemediate;
-
-  /// One entry per failed topic, set only in the `remediated` phase: the
-  /// client parses and stores each topic's cards, the server never keeps them
-  /// (the iron rule).
-  final List<RemoteTopicCards> cardsByTopic;
-
   final bool thinking;
   final int? elapsed;
   final String? error;
   final String? estimate;
-  final Map<String, dynamic>? ideas;
 
   static RemoteExam fromJson(Map<String, dynamic> json) => RemoteExam(
         sitting: _asString(json['sitting']),
         phase: _asString(json['phase']) ?? 'idle',
         deck: _asString(json['deck']) ?? '',
-        strictness: _asString(json['strictness']) ?? 'balanced',
-        questions: _asStringList(json['questions']),
-        questionsUnits: _unitLists(json['questions_units']),
-        topics: json['topics'] is List
-            ? (json['topics'] as List).map(RemoteExamTopic.fromJson).whereType<RemoteExamTopic>().toList()
-            : const [],
-        verdicts: ExamVerdicts.fromJson(json['verdicts']),
-        full: _asBool(json['full']),
-        mastered: _asBool(json['mastered']),
         unknownCards: _asStringList(json['unknown_cards']),
-        grades: json['grades'] is List
-            ? (json['grades'] as List).map(RemoteExamGrade.fromJson).whereType<RemoteExamGrade>().toList()
-            : const [],
-        gaps: _asStringList(json['gaps']),
-        canRemediate: _asBool(json['can_remediate']),
-        cardsByTopic: json['cards_by_topic'] is List
-            ? (json['cards_by_topic'] as List)
-                .map(RemoteTopicCards.fromJson)
-                .whereType<RemoteTopicCards>()
-                .toList()
-            : const [],
         thinking: _asBool(json['thinking']),
         elapsed: _asInt(json['elapsed']),
         error: _asString(json['error']),
         estimate: _asString(json['estimate']),
-        ideas: _asJsonObject(json['ideas']),
       );
+}
+
+/// The grading desk's reply (`GradingReply`) reduced to what the phone polls
+/// on; the reply's text is kept whole by [GradingAnswered.body].
+class RemoteGrading {
+  const RemoteGrading({
+    required this.phase,
+    required this.thinking,
+    this.sitting,
+    this.elapsed,
+    this.error,
+    this.estimate,
+  });
+
+  final String? sitting;
+  final String phase;
+  final bool thinking;
+  final int? elapsed;
+  final String? error;
+  final String? estimate;
+
+  static RemoteGrading fromJson(Map<String, dynamic> json) => RemoteGrading(
+        sitting: _asString(json['sitting']),
+        phase: _asString(json['phase']) ?? 'idle',
+        thinking: _asBool(json['thinking']),
+        elapsed: _asInt(json['elapsed']),
+        error: _asString(json['error']),
+        estimate: _asString(json['estimate']),
+      );
+}
+
+sealed class GradingCall {
+  const GradingCall();
+}
+
+final class GradingAnswered extends GradingCall {
+  const GradingAnswered(this.body, this.state);
+
+  final String body;
+  final RemoteGrading state;
+}
+
+final class GradingRefused extends GradingCall {
+  const GradingRefused(this.status);
+
+  final int status;
+}
+
+final class GradingNoAnswer extends GradingCall {
+  const GradingNoAnswer();
 }
 
 /// One failed topic's remediation in a [RemoteExam]: its topic id and its
@@ -691,6 +684,8 @@ class RemoteGenerate {
 ///   a bool-returning call): failure reads as absence, never an exception.
 /// - any other status (400, 403, 409, ...) -> false/null for v1; callers
 ///   treat it as a generic failed tap, there is no per-status exception.
+/// - the grading calls return a [GradingCall] instead: any status but 200 is
+///   [GradingRefused], and only a call with no HTTP reply is [GradingNoAnswer].
 abstract class ServerClient {
   /// The paired server's version and root identity (`GET /api/version`), or
   /// null if it cannot be reached or does not answer with JSON.
@@ -728,18 +723,27 @@ abstract class ServerClient {
     Map<String, dynamic>? ideas,
   });
 
-  /// `GET /api/remote/exam`: polls the open sitting.
+  /// `GET /api/remote/exam`: polls the generation desk.
   Future<RemoteExam?> examGet();
 
-  /// `POST /api/remote/exam/grade`: submits every answer as one batch.
-  Future<bool> examGrade(List<String> answers);
+  /// `GET /api/remote/exam/carried`: the generated exam of [sitting] as the
+  /// desktop sent it, or null.
+  Future<String?> examCarried(String sitting);
 
-  /// `POST /api/remote/exam/remediate`: turns a failed, remediable result
-  /// into cards (read back from the next `examGet()`'s `cards`).
-  Future<bool> examRemediate();
+  /// `POST /api/remote/exam/close`: closes [sitting] on the generation desk.
+  Future<bool> examClose(String sitting);
 
-  /// `POST /api/remote/exam/close`: drops the server's sitting slot.
-  Future<void> examClose();
+  /// `POST /api/remote/exam/grading`: [requestJson] is sent as given.
+  Future<GradingCall> gradingSubmit(String requestJson);
+
+  /// `POST /api/remote/exam/grading/remediate`: [requestJson] is sent as given.
+  Future<GradingCall> gradingRemediate(String requestJson);
+
+  /// `GET /api/remote/exam/grading`: polls the grading desk.
+  Future<GradingCall> gradingGet();
+
+  /// `POST /api/remote/exam/grading/close`: closes [sitting] on the grading desk.
+  Future<bool> gradingClose(String sitting);
 
   /// `POST /api/remote/generate`: starts generating a deck from [url],
   /// optionally steered by [guidance]. Omits `guidance` from the body when
@@ -768,8 +772,8 @@ class HttpServerClient implements ServerClient {
 
   static const _requestTimeout = Duration(seconds: 10);
 
-  Uri uriFor(String path) =>
-      Uri(scheme: config.scheme, host: config.host, port: config.port, path: path);
+  Uri uriFor(String path, [Map<String, String>? query]) =>
+      Uri(scheme: config.scheme, host: config.host, port: config.port, path: path, queryParameters: query);
 
   /// Runs one call and returns its decoded JSON body, implementing the
   /// LOCKED error surface: a 401 throws [PairingExpired]; every other
@@ -793,10 +797,18 @@ class HttpServerClient implements ServerClient {
   }
 
   Future<(int, Map<String, dynamic>?)> _exchange(String method, String path, Object? body) async {
-    final request = await (method == 'GET' ? _client.getUrl(uriFor(path)) : _client.postUrl(uriFor(path)));
+    final (status, text) = await _send(method, path, bytes: body == null ? null : utf8.encode(jsonEncode(body)));
+    if (status < 200 || status >= 300) return (status, null);
+    if (text.isEmpty) return (status, const <String, dynamic>{});
+    final decoded = jsonDecode(text);
+    return (status, decoded is Map<String, dynamic> ? decoded : null);
+  }
+
+  Future<(int, String)> _send(String method, String path, {Map<String, String>? query, List<int>? bytes}) async {
+    final uri = uriFor(path, query);
+    final request = await (method == 'GET' ? _client.getUrl(uri) : _client.postUrl(uri));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${config.token}');
-    if (body != null) {
-      final bytes = utf8.encode(jsonEncode(body));
+    if (bytes != null) {
       request.headers.contentType = ContentType.json;
       request.contentLength = bytes.length;
       request.add(bytes);
@@ -804,10 +816,7 @@ class HttpServerClient implements ServerClient {
     final response = await request.close();
     final text = await response.transform(utf8.decoder).join();
     if (response.statusCode == 401) throw const PairingExpired();
-    if (response.statusCode < 200 || response.statusCode >= 300) return (response.statusCode, null);
-    if (text.isEmpty) return (response.statusCode, const <String, dynamic>{});
-    final decoded = jsonDecode(text);
-    return (response.statusCode, decoded is Map<String, dynamic> ? decoded : null);
+    return (response.statusCode, text);
   }
 
   Future<Map<String, dynamic>?> _get(String path) => _call('GET', path);
@@ -905,20 +914,52 @@ class HttpServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examGrade(List<String> answers) async {
-    final json = await _post('/api/remote/exam/grade', {'answers': answers});
-    return json != null;
+  Future<String?> examCarried(String sitting) async {
+    try {
+      final (status, text) = await _send('GET', '/api/remote/exam/carried', query: {'sitting': sitting}).timeout(_requestTimeout);
+      return status == 200 ? text : null;
+    } on PairingExpired {
+      rethrow;
+    } on Object {
+      return null;
+    }
   }
 
   @override
-  Future<bool> examRemediate() async {
-    final json = await _post('/api/remote/exam/remediate');
-    return json != null;
-  }
+  Future<bool> examClose(String sitting) async => await _post('/api/remote/exam/close', {'sitting': sitting}) != null;
 
   @override
-  Future<void> examClose() async {
-    await _post('/api/remote/exam/close');
+  Future<GradingCall> gradingSubmit(String requestJson) => _grading('POST', '/api/remote/exam/grading', requestJson);
+
+  @override
+  Future<GradingCall> gradingRemediate(String requestJson) =>
+      _grading('POST', '/api/remote/exam/grading/remediate', requestJson);
+
+  @override
+  Future<GradingCall> gradingGet() => _grading('GET', '/api/remote/exam/grading');
+
+  @override
+  Future<bool> gradingClose(String sitting) async =>
+      await _post('/api/remote/exam/grading/close', {'sitting': sitting}) != null;
+
+  Future<GradingCall> _grading(String method, String path, [String? requestJson]) async {
+    final int status;
+    final String text;
+    try {
+      (status, text) = await _send(method, path, bytes: requestJson == null ? null : utf8.encode(requestJson)).timeout(_requestTimeout);
+    } on PairingExpired {
+      rethrow;
+    } on Object {
+      return const GradingNoAnswer();
+    }
+    if (status != 200) return GradingRefused(status);
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is! Map<String, dynamic>) return const GradingNoAnswer();
+      return GradingAnswered(text, RemoteGrading.fromJson(decoded));
+    } on FormatException {
+      return const GradingNoAnswer();
+    }
   }
 
   @override

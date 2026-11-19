@@ -34,17 +34,16 @@ class FakeServerClient implements ServerClient {
     this.examStartSitting,
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
-    List<RemoteExam>? examGetRepliesAfterRemediate,
     this.expireOnExamGet = false,
     Map<int, Completer<RemoteExam?>>? examGetGates,
     this.nullFirstExamGetCalls = 0,
     this.noSittingBeforeStart = false,
-    List<bool>? examGradeReplies,
-    this.expireOnExamGrade = false,
-    List<bool>? examRemediateReplies,
-    this.expireOnExamRemediate = false,
     this.examCloseGate,
     this.failExamClose = false,
+    this.examCarriedReply,
+    List<GradingCall>? gradingReplies,
+    this.expireOnGrading = false,
+    this.gradingCloseReply = true,
     this.generateStartReply = true,
     this.expireOnGenerateStart = false,
     List<RemoteGenerate>? generateGetReplies,
@@ -56,10 +55,8 @@ class FakeServerClient implements ServerClient {
        postNoteReplies = postNoteReplies ?? const [true],
        postCardReplies = postCardReplies ?? const [],
        examGetReplies = examGetReplies ?? const [],
-       examGetRepliesAfterRemediate = examGetRepliesAfterRemediate ?? const [],
        examGetGates = examGetGates ?? const {},
-       examGradeReplies = examGradeReplies ?? const [true],
-       examRemediateReplies = examRemediateReplies ?? const [true],
+       gradingReplies = gradingReplies ?? const [],
        generateGetReplies = generateGetReplies ?? const [];
 
   // ── probe (version / backendName) ────────────────────────────────────
@@ -98,14 +95,13 @@ class FakeServerClient implements ServerClient {
   final bool expireOnPostCard;
   final Completer<AddCardReply>? postCardGate;
 
-  // ── exam (examStart / examGet / examGrade / examRemediate) ─────────────
+  // ── exam (the generation desk and the grading desk) ─────────────────────
   final bool examStartReply;
 
   /// The sitting id an accepted `examStart` names.
   final String? examStartSitting;
   final bool expireOnExamStart;
   final List<RemoteExam> examGetReplies;
-  final List<RemoteExam> examGetRepliesAfterRemediate;
   final bool expireOnExamGet;
 
   /// Parks a specific (0-based) `examGet()` call on a completer instead of
@@ -122,12 +118,17 @@ class FakeServerClient implements ServerClient {
   /// `examGet()` answers null, without consuming a reply, until `examStart`
   /// has been called: the desktop holds no sitting the phone did not start.
   final bool noSittingBeforeStart;
-  final List<bool> examGradeReplies;
-  final bool expireOnExamGrade;
-  final List<bool> examRemediateReplies;
-  final bool expireOnExamRemediate;
   final Completer<void>? examCloseGate;
   final bool failExamClose;
+
+  /// What `examCarried` answers: the body text, or null for no exam.
+  final String? examCarriedReply;
+
+  /// Replies to `gradingSubmit`, `gradingRemediate` and `gradingGet`, one per
+  /// call across the three, the last repeating; empty reads as no answer.
+  final List<GradingCall> gradingReplies;
+  final bool expireOnGrading;
+  final bool gradingCloseReply;
 
   // ── generate (generateStart / generateGet) ──────────────────────────────
   final bool generateStartReply;
@@ -152,7 +153,10 @@ class FakeServerClient implements ServerClient {
   bool generateStartCalled = false;
   String? generateStartedUrl;
   String? generateStartedGuidance;
-  final List<List<String>> gradeAnswers = [];
+  final List<String> gradingRequests = [];
+  final List<String> carriedSittings = [];
+  final List<String> examClosedSittings = [];
+  final List<String> gradingClosedSittings = [];
   int examCloseCalls = 0;
   int generateCloseCalls = 0;
   bool closed = false;
@@ -164,9 +168,7 @@ class FakeServerClient implements ServerClient {
   int _cardCall = 0;
   int _examGetCall = 0;
   int get examGetCalls => _examGetCall;
-  int _examGetAfterRemediateCall = 0;
-  int _gradeCall = 0;
-  int _remediateCall = 0;
+  int _gradingCall = 0;
   int _generateGetCall = 0;
   RemoteExam? _replacementExam;
 
@@ -266,11 +268,6 @@ class FakeServerClient implements ServerClient {
       sitting: examStartSitting,
       phase: 'generating',
       deck: deck,
-      strictness: 'balanced',
-      questions: const [],
-      grades: const [],
-      gaps: const [],
-      canRemediate: false,
       thinking: true,
     );
   }
@@ -280,13 +277,6 @@ class FakeServerClient implements ServerClient {
     if (expireOnExamGet) throw const PairingExpired();
     if (_replacementExam case final replacement?) return replacement;
     if (noSittingBeforeStart && startedDeck == null) return null;
-    if (_remediateCall > 0 && examGetRepliesAfterRemediate.isNotEmpty) {
-      final call = _examGetAfterRemediateCall++;
-      return examGetRepliesAfterRemediate[call.clamp(
-        0,
-        examGetRepliesAfterRemediate.length - 1,
-      )];
-    }
     final call = _examGetCall;
     _examGetCall++;
     final gate = examGetGates[call];
@@ -298,36 +288,48 @@ class FakeServerClient implements ServerClient {
   }
 
   @override
-  Future<bool> examGrade(List<String> answers) async {
-    gradeAnswers.add(answers);
-    if (expireOnExamGrade) throw const PairingExpired();
-    final reply =
-        examGradeReplies[_gradeCall.clamp(0, examGradeReplies.length - 1)];
-    _gradeCall++;
-    return reply;
+  Future<String?> examCarried(String sitting) async {
+    carriedSittings.add(sitting);
+    if (expireOnExamGet) throw const PairingExpired();
+    return examCarriedReply;
   }
 
   @override
-  Future<bool> examRemediate() async {
-    if (expireOnExamRemediate) throw const PairingExpired();
-    final reply =
-        examRemediateReplies[_remediateCall.clamp(
-          0,
-          examRemediateReplies.length - 1,
-        )];
-    _remediateCall++;
-    return reply;
-  }
-
-  @override
-  Future<void> examClose() async {
+  Future<bool> examClose(String sitting) async {
     if (failExamClose) {
       examCloseCalls++;
       throw StateError('exam close failed');
     }
     if (closed) throw StateError('examClose on a closed client');
     examCloseCalls++;
+    examClosedSittings.add(sitting);
     if (examCloseGate != null) await examCloseGate!.future;
+    return true;
+  }
+
+  @override
+  Future<GradingCall> gradingSubmit(String requestJson) => _grading(requestJson);
+
+  @override
+  Future<GradingCall> gradingRemediate(String requestJson) => _grading(requestJson);
+
+  @override
+  Future<GradingCall> gradingGet() => _grading(null);
+
+  @override
+  Future<bool> gradingClose(String sitting) async {
+    if (expireOnGrading) throw const PairingExpired();
+    gradingClosedSittings.add(sitting);
+    return gradingCloseReply;
+  }
+
+  Future<GradingCall> _grading(String? requestJson) async {
+    if (requestJson != null) gradingRequests.add(requestJson);
+    if (expireOnGrading) throw const PairingExpired();
+    if (gradingReplies.isEmpty) return const GradingNoAnswer();
+    final reply = gradingReplies[_gradingCall.clamp(0, gradingReplies.length - 1)];
+    _gradingCall++;
+    return reply;
   }
 
   @override
