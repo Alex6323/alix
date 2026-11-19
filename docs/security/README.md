@@ -65,7 +65,7 @@ Alix does not claim to provide:
 | Asset | Primary harm if compromised |
 | --- | --- |
 | Decks, notes, images, source citations, and frozen excerpts | Private learning or source material is disclosed or altered. |
-| `.alix/progress/<deck-id>.json`, `.alix/exam/<deck-id>.json` and `.alix/exam/<deck-id>.prepared.json`, `.alix/recent.json`, and `alix.local.toml` | Learning history, prepared exam questions and answers, device-local settings, or scheduling state is disclosed or corrupted. |
+| `.alix/progress/<deck-id>.json`, `.alix/exam/<deck-id>.json`, `.alix/exam/<deck-id>.prepared.json`, `.alix/exam/<deck-id>.carried.json`, `.alix/exam/remote.json`, `.alix/recent.json`, and `alix.local.toml` | Learning history, prepared and carried exam questions, key points and answers, device-local settings, or scheduling state is disclosed or corrupted. |
 | Pairing tokens and profile configuration | An unintended LAN client can invoke guarded API operations. |
 | User-created bug-report archive | Redacted diagnostics or metadata are disclosed after the user attaches the file. |
 | Declared local `cite:` roots | A grounded AI call (tutor browse, trace build, workspace update) reads files outside the evidence the learner expected to share. |
@@ -238,8 +238,8 @@ intentionally unauthenticated so a browser can bootstrap; the token protects
 only `/api/*`. A token placed in a URL can appear in browser history, logs,
 screenshots, or copied links. Ordinary JSON request bodies read through one
 central 256 KiB cap (`json_body`), remote AI request bodies use their own
-256 KiB cap, paired progress pushes use a 64 MiB cap, and ZIP uploads use a
-50 MiB cap (`src/serve/mod.rs`). These cap
+256 KiB cap (4 MiB for the two exam grading calls), paired progress pushes use
+a 64 MiB cap, and ZIP uploads use a 50 MiB cap (`src/serve/mod.rs`). These cap
 directions are pinned by `tests/api.rs`: oversized bodies are refused, and a
 kilobytes-scale body must reach its handler rather than die at the cap
 (2026-08-02: `/api/choose` briefly read its body uncapped straight off the
@@ -290,32 +290,57 @@ web URLs rather than a client-selected desktop path. The remote exam handlers
 deliberately avoid the poll path that writes progress. These controls do not
 turn pairing into a multi-user authorization system.
 
-A remote exam writes one more desktop file (ADR 0066). Once its questions
-exist, the server keeps the sitting at a fixed path in the served folder's
-private state (`.alix/exam/remote.json`) until the phone closes the exam, so
-a restarted server reopens it. The file holds the generated questions with
-their key points, the topics and their fingerprints, and three values from
-the phone's start request, all inside the remote body cap: the sitting's
-ideas document, which starts from the one the phone sent (parsed into its
-typed shape), with the text of each idea asked about repeated in its
-question; the deck's catalog name, kept only when the catalog resolved it
-and resolved through the catalog again at a restore; and the names of
-requested cards the deck does not hold, kept as given. The path to the file
-is not phone-supplied. A pairing-token holder can therefore make the
-desktop hold one such file at a time: a second start is refused while a
-sitting is open, and closing removes the file. A generation that finishes
-after its exam was closed writes no file. A removal that fails is reported on
-stderr while the close still answers 200: the key points then stay on disk
-and the next start reopens that exam. A kept file that cannot be
-read, or that the deck can no longer carry, or whose deck is no longer found
-under the name it was started with, is reported on stderr at start
-and left in place; the slot starts idle. No progress, mastery, or card is
-written. Regression evidence:
-`closing_after_generation_but_before_its_keep_write_cannot_resurrect_the_exam`,
-`a_paused_remote_exam_survives_a_server_restart_until_it_is_closed`,
-`an_unreadable_kept_remote_exam_leaves_the_slot_idle_and_the_file_in_place`,
-`a_remote_exam_that_cannot_be_kept_reports_the_failure_instead_of_its_questions`
+A remote exam writes one more desktop file (ADR 0067). Once its questions
+exist, the server keeps the generated exam at a fixed path in the served
+folder's private state (`.alix/exam/remote.json`) until the phone has fetched
+it and closed it, so a restarted server still hands it over. The file is one
+`CarriedExam` document: the questions with their key points, the topics and
+their fingerprints, the exam ideas document, the deck's catalog name as the
+phone sent it, and the names of requested cards the deck does not hold. The
+path is not phone-supplied, and a second start replaces a ready exam rather
+than adding a file. A close removes the file; one that cannot remove it
+answers 500 and the exam stays ready. A generation closed before its exam was
+written leaves no file. A file that cannot be read is reported on stderr at
+start and left in place; the desk starts idle and the next generation replaces
+it. No progress, mastery, or card is written. Regression evidence:
+`a_close_that_races_the_keep_leaves_no_exam_file_and_an_idle_desk_after_a_restart`,
+`a_ready_exam_survives_a_restart_and_a_deleted_deck_with_equal_question_units`,
+`an_unreadable_exam_file_leaves_the_desk_idle_and_the_next_generation_replaces_it`
 and `remote_endpoints_never_write_the_server_store` (`tests/api.rs`).
+
+The exam's key points are no longer kept from the phone (ADR 0067). Through
+the remote exam calls a pairing-token holder can now:
+
+- read the key points of an exam that waits to be fetched
+  (`GET /api/remote/exam/carried` hands over the whole document). Pinned by
+  `the_generation_desk_answers_every_request_in_every_state_as_tabled`
+  (`tests/api.rs`, which asserts the handed-over exam carries them) and by the
+  `carriedreplydto_wire_shape` snapshot (`src/serve/contract.rs`);
+- discard an exam that waits to be fetched, by starting another or by closing
+  it with its sitting id, which `GET /api/remote/exam` shows. Pinned by
+  `the_generation_desk_answers_every_request_in_every_state_as_tabled`
+  (`tests/api.rs`);
+- have the desktop run grading and remediation on a document of their own
+  making, with no deck or exam behind it. A tutor call already starts a model
+  call at will, so this is the same kind of spend. Pinned by
+  `a_fresh_server_grades_a_request_for_a_deck_it_does_not_serve_and_writes_nothing`
+  and `a_remediation_on_a_freshly_started_server_returns_cards_per_topic_number`
+  (`tests/api.rs`);
+- place text in the key-point position of the grading prompt. That call runs
+  without tools, so the text reaches a model that cannot fetch or search; it
+  is not filtered, and the injection gap listed below applies. Pinned by
+  `the_grading_call_names_no_allowed_tool` (`tests/api.rs`) and
+  `grading_runs_the_model_without_allowed_tools` (`src/exam.rs`);
+- name a deck in a grading request, which selects that deck's workspace
+  exam effort when the server serves it and the global one otherwise; the deck
+  is not opened. Pinned by
+  `grading_uses_the_workspace_effort_for_a_served_deck_and_the_global_one_otherwise`
+  (`tests/api.rs`);
+- post bodies of up to 4 MiB (answers together up to 256 KiB) to the two
+  grading calls, where every other remote body stays at 256 KiB. Pinned by
+  `each_refused_grading_request_is_400_and_the_desk_is_unchanged`
+  (`tests/api.rs`), which accepts a body of exactly 4 MiB and refuses one byte
+  more.
 
 ### Local server log
 

@@ -1,11 +1,19 @@
 # 0067: A phone carries its exam, and the desktop grades what it is handed
 
-- Status: Proposed
+- Status: Accepted
 - Recorded: 2026-11-18
 - Retrospective: No
 - Supersedes: 0066
 - Amends: 0010 (remote handlers keep nothing on the desktop, for a
   generated exam the phone has not fetched yet)
+- Evidence: pub struct CarriedExam in src/exam_carried.rs
+- Evidence: pub fn exam_kept in src/state.rs
+- Evidence: fn the_generation_desk_answers_every_request_in_every_state_as_tabled in tests/api.rs
+- Evidence: fn the_grading_desk_answers_every_request_in_every_state_as_tabled in tests/api.rs
+- Evidence: fn a_ready_exam_survives_a_restart_and_a_deleted_deck_with_equal_question_units in tests/api.rs
+- Evidence: fn a_fresh_server_grades_a_request_for_a_deck_it_does_not_serve_and_writes_nothing in tests/api.rs
+- Evidence: fn remote_endpoints_never_write_the_server_store in tests/api.rs
+- Evidence: fn a_kill_at_each_point_ends_like_an_uninterrupted_apply in mobile/alix/rust/src/api/exam.rs
 
 ## Context
 

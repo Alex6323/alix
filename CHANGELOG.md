@@ -290,6 +290,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Phone exam: a generated exam is fetched once to the phone, which keeps it in
+  a file of its own, answers it without the desktop, and sends the answers to
+  the desktop only to be graded or turned into remediation cards. The desktop
+  keeps nothing about a fetched exam, the exam's key points are now sent to the
+  phone, a held exam can be discarded from the deck sheet, and the
+  `/api/remote/exam/*` calls change to match (`docs/API.md`). An exam open
+  across this update is lost on both devices.
+
 - A walk serves the cards you have never walked before the ones you missed,
   each in deck order, so coming back to a walk continues with new cards
   instead of repeating earlier misses first.

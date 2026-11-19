@@ -112,6 +112,7 @@ spanish/
 │   ├── progress/deck-<token>.json
 │   ├── exam/deck-<token>.json
 │   ├── exam/deck-<token>.prepared.json
+│   ├── exam/deck-<token>.carried.json
 │   └── recent.json
 └── augment/
 ```
@@ -327,6 +328,7 @@ sources/deck-<token>/manifest.local.toml # private: where each key's folder is o
 .alix/progress/deck-<token>.json # private schedules, history, exam state
 .alix/exam/deck-<token>.json # private exam idea lists and what was asked
 .alix/exam/deck-<token>.prepared.json # a written exam waiting to be taken
+.alix/exam/deck-<token>.carried.json # an exam the phone fetched and is taking
 .alix/recent.json            # private recent-deck history
 ```
 
@@ -392,7 +394,7 @@ way. The [mobile app](18-the-mobile-app.md#syncing-with-the-desktop)'s
 sync with a [paired](19-pairing.md) desktop sends the same set with the
 sources always included: the phone reads its copy to tell which topics
 have sources and whether their results are current, while the desktop
-writes and grades the phone's exam from its own copy.
+writes the phone's exam from its own copy.
 `alix share <dir>` does that over magic-wormhole with the personal files
 (`.alix/`, `*.local.*`, backups, and conflict copies) left home; the
 other side runs `alix receive <code>` and gets it beside their own decks, ready

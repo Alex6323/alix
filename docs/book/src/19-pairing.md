@@ -33,8 +33,9 @@ assembled card, notes, links, frozen evidence, and allowed live source root,
 just like the desktop tutor. When either id cannot be matched, the reply is
 marked `card_only` and uses only the card text the phone sent; the phone names
 that limit as "Answered from the card alone: the paired desktop could not
-match this card." An AI exam sitting is
-graded on the server, but the result, any remediation cards, and what counts
+match this card." An AI exam is written on the desktop and fetched once to the
+phone, which holds it and takes it without the desktop; the desktop only grades
+the answers it is sent, and the result, any remediation cards, and what counts
 as mastered stay the phone's to keep. A deck generation call hands back the
 full deck text and a suggested file name; a note condense hands back up to
 three lines. Either way the phone decides where they land: the decks folder
@@ -109,14 +110,20 @@ Once paired, review gains things it doesn't have offline:
   mid-call forgets the call; the phone reports it as failed (the question
   goes back into the chat box) rather than waiting for a result that will
   never come.
-- An **Exam** row on a deck's launch sheet, for a fact deck that declares
-  exam material, with an "Only what needs work" switch (on by default,
-  disabled once every topic has passed). It opens a full-screen exam: one question at a
-  time, then the points count, each topic's count, a Pass/Partial/Fail
-  breakdown per question and, when an answer missed key points, a **Turn the
-  gaps into cards** button. Every sitting's results and any remediation cards
-  land in the phone's own progress store, exactly like an offline grade,
-  matching the rule above: the server computes, the phone keeps.
+- An exam row on a deck's launch sheet, for a fact deck that declares
+  exam material, with an **Only what needs work** switch (on by default,
+  disabled once every topic has passed). **Generate exam** has the desktop
+  write the exam; the app fetches it while it is open within reach of the
+  desktop, or the next time it starts there, and the row then reads **Take
+  exam**. The exam opens full-screen from the phone's own copy, with no desktop:
+  one question at a time. Submitting sends the answers to the desktop for
+  grading, which shows the points count, each topic's count, a
+  Pass/Partial/Fail breakdown per question and, when an answer missed key
+  points, a **Turn the gaps into cards** button. Every result and any
+  remediation cards land in the phone's own progress store, exactly like an
+  offline grade, matching the rule above: the server computes, the phone keeps.
+  [The exam chapter](12-the-ai-exam.md#sitting-the-exam) lists what the rows say
+  and how to discard an exam.
 
 A [trace deck](13-trace-decks.md) runs entirely on-device: predict, reveal,
 and self-grade each checkpoint. It has no AI exam or paired-only capstone.
@@ -129,22 +136,26 @@ the same liveness rule as the two chips: the row
 appears only while the phone has confirmed the paired desktop is reachable
 and new enough, and is simply absent otherwise.
 
-The Ask button and the Exam row both depend on the phone having
+The Ask button and writing an exam both depend on the phone having
 confirmed the paired desktop is reachable and
 running at least version 0.6.0; there is no retry chrome for a dead or
-too-old server: the Ask button simply is not there, and the Exam row is
-disabled with a short hint. The exam itself reads the frozen sources a pull
-carried to the phone (`sources/deck-<token>/`), never the desktop's files;
-the roots file beside them, `manifest.local.toml`, names folders on one
-machine and is never synced in either direction.
+too-old server: the Ask button simply is not there, and the **Generate exam**
+row is disabled with a short hint (an exam already fetched stays open, and
+only its grading needs the desktop). The desktop writes the exam from its own
+copy of the deck's frozen sources; the phone reads the copy a pull carried to
+it (`sources/deck-<token>/`) to tell which topics have sources and whether a
+result still matches the material. The roots file beside them,
+`manifest.local.toml`, names folders on one machine and is never synced in
+either direction.
 
 If the desktop answers but rejects the token partway through a review, an
 exam, a note, or a generation (the restart case above, caught mid-session
 instead of at pairing time), the phone shows one SnackBar: "Pairing expired.
-Pair again from Settings → Connected devices." On the review and exam screens it
+Pair again from Settings → Connected devices." On the review screen it
 carries a **Re-pair** action that reopens the pairing sheet directly; the
-tutor sheet shows the same line inside the sheet instead, so there you
-follow the message's own instruction. Pinning `[serve] token` is what stops
+exam screen and the tutor sheet show the same line inside the screen instead,
+so there you follow the message's own instruction (a held exam and its answers
+stay on the phone). Pinning `[serve] token` is what stops
 this from happening in the first place.
 
 ## Security posture

@@ -665,14 +665,16 @@ class RemoteGenerate {
 /// (built on top of this) can fake it in tests, the same seam
 /// [PlatformAccess] plays for platform channels.
 ///
-/// Error surface (LOCKED, every method obeys it):
-/// - success -> the value; a `postX`/`examX` call -> true on 2xx.
+/// Error surface:
+/// - success -> the value; a bool-returning call -> true on 2xx.
 /// - HTTP 401 -> throws [PairingExpired]; callers map it to a re-pair
 ///   prompt.
 /// - unreachable, timeout, refused, or non-HTTP garbage -> null (false for
-///   a bool-returning call): failure reads as absence, never an exception.
-/// - any other status (400, 403, 409, ...) -> false/null for v1; callers
-///   treat it as a generic failed tap, there is no per-status exception.
+///   a bool-returning call, [GradingNoAnswer] for a grading call): failure
+///   reads as absence, never an exception.
+/// - any other status (400, 403, 409, ...) -> false/null, except the three
+///   grading calls ([gradingSubmit], [gradingRemediate], [gradingGet]),
+///   which return [GradingRefused] with the status.
 abstract class ServerClient {
   /// The paired server's version and root identity (`GET /api/version`), or
   /// null if it cannot be reached or does not answer with JSON.

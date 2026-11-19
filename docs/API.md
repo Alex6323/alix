@@ -416,14 +416,11 @@ onto disk, with three bounded exceptions. A remote note whose card the
 desktop serves is also appended to that deck's personal sidecar (see the note
 call below), so the desktop holds it and the next sync pull carries it to the
 phone. A card created through `POST /api/remote/ask/card` on a served deck is
-appended to the same sidecar. An open remote exam is kept in the served
+appended to the same sidecar. A generated exam waits in the served
 folder's private state (`.alix/exam/remote.json`) from the moment its
-questions exist until the phone closes it (see the exam calls below), so a
-restarted server still holds it. Two conditions bound that: the kept exam
-names its deck by the catalog name it was started under, so a deck renamed or
-moved meanwhile leaves the file in place and the slot `idle` after a restart;
-and a close whose file cannot be removed still answers 200, logs the failure,
-and leaves an exam that the next start reopens.
+questions exist until the phone has fetched it and closed it (see the exam
+calls below), so a restarted server still holds it; a close whose file
+cannot be removed answers 500 and the exam stays.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the card's required stable `deck_id` and
@@ -486,32 +483,58 @@ make, with nothing else in its block, the answer is `200` with that card's
 `{id, block}` (its bytes as stored) and nothing is appended. A match against
 the authored deck stays `422`, even when the sidecar holds the same card.
 
-A remote exam sitting starts with `POST /api/remote/exam/start {deck, cards?, ideas?}`: the
-server resolves **its own copy** of the named deck, by the same resolution
-`/api/select` uses (a bare name, or a qualified `<workspace>/<file>`). A
-deck that declares no sources (no row in its workspace's
+A remote exam is written on the desktop and then carried by the phone. `POST
+/api/remote/exam/start {deck, cards?, ideas?}` resolves **its own copy** of the
+named deck, by the same resolution `/api/select` uses (a bare name, or a
+qualified `<workspace>/<file>`), and starts writing the exam. A deck that
+declares no sources (no row in its workspace's
 `sources/<deck-id>/manifest.toml`) is refused outright (409): there is nothing
 to examine. The browser's `requires:` deck lock is
 read from the server's own store, which is not the phone's truth, so a remote
-sitting skips that check and the phone applies its own gate. Unlike the browser's page-at-a-time
-`/api/exam/answer` + `/api/exam/grade`, a remote client answers every
-question locally and submits them as one batch: `POST
-/api/remote/exam/grade {answers: [string]}` grades the whole sitting in one
-call. A failed, remediable result's cards come back as deck-format text on
-`RemoteExamDto.cards` (§6) for the **client** to parse and store: the
-server generates them but never keeps them. Generation takes minutes, so the
-sitting stays in the server's slot while the phone is away; the phone polls
-`GET /api/remote/exam` when it returns and closes the slot explicitly
-(closing cancels a running generation). Once its questions exist, the sitting
-is also kept on disk until that close: a restarted server reopens it in
-`answering`, unanswered, under the same `sitting` id, and the phone submits
-its answers again. A generation still running when the server stops is lost.
-Each exam asks three questions per
-topic, aimed at ideas the phone's `ideas` document picks (never asked, then
-last failed, then oldest); for a topic the document lacks, or whose sources
-changed, the server lists the ideas first. The updated document comes back on
-`RemoteExamDto.ideas` after grading for the phone to keep; the server's own
-copy goes with the kept sitting when the phone closes it.
+exam skips that check and the phone applies its own gate. Each exam asks three
+questions per topic, aimed at ideas the phone's `ideas` document picks (never
+asked, then last failed, then oldest); for a topic the document lacks, or whose
+sources changed, the server lists the ideas first.
+
+Generation takes minutes, so the phone polls `GET /api/remote/exam` (a
+`RemoteExamDto`, §6): `generating`, then `ready` once the exam is complete, or
+`generating` with `error` set if it failed. The generation desk holds one exam
+at a time: a start while one is generating is 409; a start while one is `ready`
+or failed replaces it (500, with the ready exam kept, if its file cannot be
+removed first). `GET /api/remote/exam/carried?sitting=<id>` hands over the
+`ready` exam as a `CarriedReplyDto` (§6): 400 without `sitting`, 404 when the
+desk holds no ready exam with that id. The phone stores it, then `POST
+/api/remote/exam/close {sitting}` ends the exam on the desktop: it cancels a
+running generation and removes a ready exam's file; a sitting the desk does not
+hold is 200 and changes nothing; a body that is not JSON with a `sitting` is 400.
+Once closed, the desktop keeps nothing about the exam. A generation still
+running when the server stops is lost; a ready exam survives a restart. An exam
+whose own grade request, answers left blank, would exceed 2 MiB fails its
+generation with `the exam is too large to hand to a phone`.
+
+The phone answers from its own copy, with no desktop. Unlike the browser's
+page-at-a-time `/api/exam/answer` + `/api/exam/grade`, it submits every answer
+as one batch: `POST /api/remote/exam/grading` with a `GradeRequest` (§6) starts
+one grading job, and `POST /api/remote/exam/grading/remediate` with a
+`RemediationRequest` starts one that writes cards for the gaps it names.
+Poll `GET /api/remote/exam/grading` while `thinking`; each answer is a
+`GradingReply` (§6), and a remediation's cards come back as
+deck-format text on `GradingReply.cards_by_topic` for the **client** to parse
+and store: the server generates them but never keeps them. The request carries
+everything the grading reads: the server opens no deck, reads no source, writes
+nothing under the served folder, and runs the model without tools. The deck
+name in it only selects the effort of a served deck's workspace; a name the
+server does not serve selects the global one. The body is capped at 4 MiB, and
+the answers together at 256 KiB; a request over either cap, unreadable, of a
+version other than 1, with no question, with an answer count that differs from
+the question count, with topic numbers that are not 0 up without a gap, or a
+remediation with no topic or a topic with no gap, is 400. The grading desk holds one
+job: a request equal to the running or finished job is answered with that job
+and not run again, a different request while a job runs is 409, and a finished
+job does not block a new one. `POST /api/remote/exam/grading/close {sitting}`
+drops the job when its sitting matches, cancelling a running call, and is 200
+either way (400 without a readable body). The server keeps no idea history: the
+exam carries the updated ideas document for the phone to store.
 
 `POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
 minus everything the iron rule forbids: there is no `dest` (a phone chooses
@@ -527,11 +550,12 @@ is simply `null` and the client validates its own copy. `POST
 Each family is single-flight and lives in its own slot, kept separate from
 the browser's own `ask`/`exam` state: a second client pairing to the same
 instance, or a double `POST` while one call is already in flight, gets
-`409`. Every `/api/remote/*` POST body is capped at 256 KiB; an over-cap or
-malformed body is a bare `400`: a long re-sent transcript is the likely way
-to reach it as a conversation grows. Errors are bare status codes here too
-(§3), and the pairing token (§2) applies exactly as it does to the rest of
-`/api/*`.
+`409` (an identical grading request gets the running job instead). Every
+`/api/remote/*` POST body is capped at 256 KiB, except the two grading calls
+(4 MiB); an over-cap or malformed body is a bare `400`: a long re-sent
+transcript is the likely way to reach it as a conversation grows. Errors are
+bare status codes here too (§3), and the pairing token (§2) applies exactly as
+it does to the rest of `/api/*`.
 
 ### 4.12 Sync (paired phone)
 
@@ -866,10 +890,11 @@ See §4.12 for ordering, header grammar, and the route-specific status tables.
 
 ### Remote (paired clients) (since 0.6.0)
 
-Every arm below is `/api/remote/*` (§4.11). `remote_ask` and `remote_exam`
-are single-flight slots kept separate from the browser's own `ask`/`exam`
-state: a second client pairing to the same instance collides with the
-first, same as a double `POST`.
+Every arm below is `/api/remote/*` (§4.11). `remote_ask`, the exam
+generation desk and the exam grading desk are single-flight slots kept
+separate from each other and from the browser's own `ask`/`exam` state: a
+second client pairing to the same instance collides with the first, same as a
+double `POST`.
 
 | Method | Path | Body | Response | Errors |
 |---|---|---|---|---|
@@ -878,11 +903,14 @@ first, same as a double `POST`.
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/ask/card` | `{deck_id, card_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body / a `card_id` the served deck does not hold, or one whose topic has no topic id (plain-text message naming it); 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it), malformed, or a topic id two topics share; 500 the id could not be minted or the deck no longer loads |
-| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 a sitting is already open (close it first) / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck |
-| GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when no sitting is open) | – |
-| POST | `/api/remote/exam/grade` | `{answers: [string]}` | `RemoteExamDto` | 400 bad/oversized body / wrong number of answers; 409 no sitting open / not in the answering phase |
-| POST | `/api/remote/exam/remediate` | – | `RemoteExamDto` | 409 no sitting open / nothing to remediate |
-| POST | `/api/remote/exam/close` | – | 200 | – |
+| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 an exam is already generating (close it first) / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck; 500 the ready exam it would replace cannot be removed |
+| GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when the desk holds no exam) | – |
+| GET | `/api/remote/exam/carried?sitting=<id>` | – | `CarriedReplyDto` | 400 no `sitting`; 404 no ready exam with that id |
+| POST | `/api/remote/exam/close` | `{sitting}` | 200 (also for a sitting the desk does not hold) | 400 no readable body; 500 the ready exam's file cannot be removed (the exam stays ready) |
+| POST | `/api/remote/exam/grading` | `GradeRequest` (up to 4 MiB) | `GradingReply` | 400 unreadable / over a cap (§4.11); 409 a different grading job is running |
+| POST | `/api/remote/exam/grading/remediate` | `RemediationRequest` (up to 4 MiB) | `GradingReply` | 400 unreadable / no topic / a topic with no gap; 409 a different grading job is running |
+| GET | `/api/remote/exam/grading` | – | `GradingReply` (poll; `phase:"idle"` when the desk holds no job) | – |
+| POST | `/api/remote/exam/grading/close` | `{sitting}` | 200 | 400 no readable body |
 | POST | `/api/remote/generate` | `{url, guidance?}` | `RemoteGenerateDto` | 400 bad/oversized body / `url` not `http://`/`https://`; 409 a generation is already thinking |
 | GET | `/api/remote/generate` | – | `RemoteGenerateDto` (poll) | 409 no job |
 | POST | `/api/remote/generate/close` | – | 200 | – |
@@ -1767,34 +1795,88 @@ Example, settled with a note (from the pinned test):
 
 ### RemoteExamDto
 
-A paired phone's AI exam sitting (`/api/remote/exam/*`; §4.11). Unlike
-`ExamDto`, there is no server-side session: answering happens client-local
-as one batch, so there is no `total`/`current`/`question`/`answer`/`on_last`;
-the client counts its own remediation cards, so there is no
-`remediated_count` or `unlocks` (a pass unlocks nothing server-side, so the
-phone applies it to its own state).
+The state of a paired phone's exam generation (`/api/remote/exam`,
+`/api/remote/exam/start`; §4.11). It says nothing about the questions: those
+come in `CarriedReplyDto` once the exam is `ready`.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `sitting` | string? | The open sitting's id, minted when it starts (26 lowercase Crockford base32 characters) and unchanged until it is closed; a replacement sitting on the same deck gets a new one. `null` at `idle`. The phone records a result only for the sitting it started. |
-| `phase` | string | `idle` \| `generating` \| `answering` \| `grading` \| `results` \| `remediating` \| `remediated` (open set). `idle` is the baseline when no sitting is open: `ExamDto` has no equivalent, since the browser's exam slot simply doesn't exist between sittings. |
+| `sitting` | string? | The exam's id, minted when it starts (26 lowercase Crockford base32 characters) and unchanged until it is closed; a replacement on the same deck gets a new one. `null` at `idle`. The phone fetches, grades and records only the sitting it started. |
+| `phase` | string | `idle` \| `generating` \| `ready` (open set). `idle` is the baseline when the desk holds no exam. A failed generation stays `generating` with `error` set and `thinking` false. |
 | `deck` | string | The deck name exactly as sent to `/api/remote/exam/start` (so a workspace deck keeps its `<workspace>/<file>` form); empty at `idle`. |
-| `strictness` | string | `strict` \| `balanced` \| `lenient` *(closed)*. |
-| `questions` | [string] | Prompts only: the rubric (`ExamQuestion.points`) never leaves the server. |
-| `questions_units` | [[ContentUnit]] | Each of `questions` parsed as `ExamDto.question_units` is. |
-| `grades` | [ExamGradeDto] | Populated in `results`/`remediated`. |
-| `topics` / `verdicts` / `full` / `mastered` | | As in `ExamDto`. The phone records each topic's `pass` under its `topic_id` with its `fingerprint` in its own store, with the review condition and evidence stamp it evaluated at its own start; the desktop records nothing of a phone sitting. There is no `exam_high_mark`: the phone words its own from its store. |
 | `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
-| `gaps` | [string] | Named understanding gaps. |
-| `can_remediate` | bool | A failed topic has an answer that missed key points. |
-| `cards_by_topic` | [TopicCardsDto] | Set in the `remediated` phase, one entry per failed topic in deck order: `topic_id: string` (the topic id, or the deck id for the leading topic) and `cards: string` (that topic's deck-format text). The client parses and stores each entry's cards bound to its topic; the server never does. Empty in every other phase. |
 | `thinking` | bool | Poll while true. |
-| `elapsed` | number? | Seconds the in-flight call has run. |
-| `error` | string? | |
-| `estimate` | string? | A rough wait for the generation, set only while `generating` (for example `usually 10 to 20 minutes`); `null` when the backend has no measured range. Never a commitment. |
-| `ideas` | object? | The exam ideas document after grading, set in `results`/`remediated`: the phone stores it whole as its `.alix/exam/<deck-id>.json` and sends it back in the next `start`. Shape: `{"version": 1, "topics": {"<topic-id>": {"fingerprint", "ideas": [{"text", "last_tested_ms", "last_test_passed"}]}}}`, unknown fields rejected. |
+| `elapsed` | number? | Seconds the generation has run, set only while it runs. |
+| `error` | string? | Why the generation failed. |
+| `estimate` | string? | A rough wait for the generation, set only while it runs (for example `usually 10 to 20 minutes`); `null` when the backend has no measured range. Never a commitment. |
 
-Example, remediated: `tests/contracts/RemoteExamDto.remediated.json` (written by the pinned test).
+Examples: `tests/contracts/RemoteExamDto.idle.json`, `.generating.json` and
+`.ready.json` (written by the pinned tests).
+
+### CarriedReplyDto
+
+The reply to `GET /api/remote/exam/carried`: the ready exam as one
+`CarriedExam` document the phone stores whole (in `<deck-id>.carried.json`,
+with its answers and, after grading, its result), and the rendering the phone
+shows.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `exam` | CarriedExam | The exam document, below. |
+| `questions_units` | [[ContentUnit]] | `exam.questions[i].prompt` parsed as `ExamDto.question_units` is, one entry per question. |
+
+`CarriedExam` (version 1; unknown keys are rejected): `version` (number),
+`sitting` (string), `deck` (string, as in `RemoteExamDto.deck`), `strictness`
+(`strict` \| `balanced` \| `lenient`, *closed*), `full` (bool: the exam
+examines every topic of the deck), `unknown_cards` (as in `RemoteExamDto`),
+`topics` (`topic_id`, `fingerprint` of the sources the topic was examined over,
+`label`, `cards`: the topic's card ids), `questions` (`topic_id`, `idea`: the
+position of the asked idea in that topic's list in `ideas`, `prompt`, `points`:
+the key points a correct answer hits, `shape`: `instance` \| `boundary` \|
+`fix`, `mental_model`), and `ideas`: the exam ideas document as the generation
+updated it, `{"version": 1, "topics": {"<topic-id>": {"fingerprint", "ideas":
+[{"text", "last_tested_ms", "last_test_passed"}]}}}`, unknown fields rejected.
+The phone records a topic's `pass` under its `topic_id` with its `fingerprint`
+in its own store, with the review condition and evidence stamp it evaluated at
+its own start; the desktop records nothing about a phone's exam. Because
+`points` is part of the document, a holder of the pairing token and the
+learner on the phone can read the key points before answering. Example:
+`tests/contracts/CarriedReplyDto.json`.
+
+### GradeRequest and RemediationRequest
+
+The bodies of `POST /api/remote/exam/grading` and
+`POST /api/remote/exam/grading/remediate`. Unknown keys are rejected.
+
+`GradeRequest` (its own `version`, 1): `version`, `sitting`, `deck`,
+`strictness` and `full` as in `CarriedExam`, `questions` (`topic`: the number of
+the question's topic among the topics that have a question, in `CarriedExam.topics`
+order, counted from 0 without a gap; `prompt`; `points`), and `answers`, one
+string per question in order (a blank answer is the empty string).
+
+`RemediationRequest`: `sitting`, `deck`, and `topics` (`topic`: a topic number as
+above; `gaps`: the missed key points of that topic, at least one).
+
+### GradingReply
+
+The answer to either grading call and to `GET /api/remote/exam/grading`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `sitting` | string? | The sitting of the request the job was started with; `null` at `idle`. |
+| `phase` | string | `idle` \| `grading` \| `results` \| `remediating` \| `remediated` (open set). A failed job keeps `grading` or `remediating` with `error` set. |
+| `grades` | [object] | Set in `results`, one per question in order: `topic` (number), `verdict` (`PASS` \| `PARTIAL` \| `FAIL`), `feedback`, `feedback_units` ([ContentUnit]), `missed` ([string]), `missed_units` ([[ContentUnit]]), `points_units` ([[ContentUnit]]: the question's key points). |
+| `topics` | [object] | Set in `results`, one per topic number in order: `pass` (bool), `verdicts` (`{pass, partial, total}`), `gaps` ([string]). |
+| `verdicts` | {pass, partial, total}? | The raw verdict counts, set in `results`. A client shows points as pass + partial / 2 over total. |
+| `mastered` | bool | Every answer was PASS in an exam that covers the whole deck. |
+| `cards_by_topic` | [object] | Set in `remediated`, one entry per topic of the request: `topic` (number) and `cards` (that topic's deck-format text). The client parses and stores each entry's cards bound to its topic; the server never does. Empty in every other phase. |
+| `thinking` | bool | Poll while true. |
+| `elapsed` | number? | Seconds the running job has run. |
+| `error` | string? | Why the job failed. |
+| `estimate` | string? | Always `null`. |
+
+Examples: `tests/contracts/GradingReply.idle.json`, `.grading.json`,
+`.results.json` and `.remediated.json` (written by the pinned tests).
 
 ### RemoteGenerateDto (since 0.6.0)
 
