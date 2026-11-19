@@ -619,6 +619,20 @@ impl HeldExam {
         Ok(())
     }
 
+    pub fn material_unchanged(&self, deck: &crate::deck::Deck) -> bool {
+        let examined: Vec<(String, String)> = self
+            .exam
+            .asked_topics()
+            .into_iter()
+            .map(|topic| (topic.topic_id.clone(), topic.fingerprint.clone()))
+            .collect();
+        let stamp = crate::store::ExamStamp {
+            sourced: self.start.sourced.clone(),
+            unsourced_cards: self.start.unsourced_cards.clone(),
+        };
+        crate::exam_status::material_unchanged(deck, &examined, &stamp)
+    }
+
     pub fn grade_request(&self) -> Result<GradeRequest> {
         self.refuse_once_graded()?;
         let request = self.exam.grade_request(&self.answers);
@@ -2019,5 +2033,97 @@ mod tests {
         let mut value = serde_json::to_value(fitting_reply(&held())).unwrap();
         value["cards_by_topic"][0]["extra"] = true.into();
         assert!(serde_json::from_value::<GradingReply>(value).is_err());
+    }
+
+    fn sourced_deck_path(workspace: &Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(workspace.join("decks")).unwrap();
+        std::fs::write(workspace.join("alix.toml"), "").unwrap();
+        let path = workspace.join("decks").join("d.md");
+        std::fs::write(
+            &path,
+            "---\nformat-version: 1\nid: deck-d\n---\n\
+             # A\nprose\n<!-- id: topic-a -->\n\n## a1\nx\n<!-- id: card-a1 -->\n",
+        )
+        .unwrap();
+        crate::stamp::stamp_deck(&path).unwrap();
+        let deck = crate::deck::Deck::load(&path).unwrap();
+        let live = workspace.join("live");
+        std::fs::create_dir_all(&live).unwrap();
+        let file = live.join("d.md.txt");
+        std::fs::write(&file, "the source of d.md\n").unwrap();
+        crate::sources::commands::add(
+            crate::sources::commands::AddRequest {
+                deck: &path,
+                files: vec![file],
+                root: Some(("live".to_string(), live)),
+                key: None,
+                topics: deck.topic_ids().into_iter().flatten().collect(),
+            },
+            &crate::config::ExamConfig::default(),
+        )
+        .unwrap();
+        path
+    }
+
+    fn held_as_started(deck_path: &Path, scratch: &Path) -> HeldExam {
+        let deck = crate::deck::Deck::load(deck_path).unwrap();
+        let store = crate::store::Store::open(scratch.join("progress.json")).unwrap();
+        let start = crate::exam_status::sitting_start(&deck, &store, 0, None);
+        let examined = crate::exam_status::examined_topics(&deck);
+        let mut carried = exam(&[], &[]);
+        carried.topics = examined
+            .iter()
+            .map(|topic| CarriedTopic {
+                topic_id: topic.topic_id.clone(),
+                fingerprint: topic.fingerprint.clone(),
+                label: topic.label.clone(),
+                cards: topic.card_ids.clone(),
+            })
+            .collect();
+        carried.questions = examined
+            .iter()
+            .map(|topic| question(&topic.topic_id))
+            .collect();
+        let held_start = HeldStart {
+            eligible: start.eligible,
+            sourced: start.stamp.sourced,
+            unsourced_cards: start.stamp.unsourced_cards,
+            unsourced_topics: start.unsourced_topics,
+        };
+        let units = carried.questions_units();
+        HeldExam::received(&received_text(&carried, &units), held_start).unwrap()
+    }
+
+    #[test]
+    fn a_held_exams_material_is_unchanged_for_the_deck_as_started_and_changed_after_a_source_changed()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let path = sourced_deck_path(dir.path());
+        let held = held_as_started(&path, dir.path());
+        assert!(
+            !held.exam.topics.is_empty(),
+            "control: the held exam examines a topic"
+        );
+        assert!(
+            held.material_unchanged(&crate::deck::Deck::load(&path).unwrap()),
+            "the deck as started"
+        );
+
+        let live = dir.path().join("live/d.md.txt");
+        std::fs::write(&live, "the changed source of d.md\n").unwrap();
+        crate::sources::commands::update(
+            &path,
+            &crate::sources::source_id(b"the source of d.md\n"),
+            &live,
+            None,
+            false,
+            &crate::config::ExamConfig::default(),
+        )
+        .unwrap();
+
+        assert!(
+            !held.material_unchanged(&crate::deck::Deck::load(&path).unwrap()),
+            "an examined topic's source changed after the start"
+        );
     }
 }

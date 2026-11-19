@@ -219,14 +219,9 @@ pub fn exam_sitting_start(
     })
 }
 
-fn held_path(root_dir: &Path, deck_id: &str) -> PathBuf {
-    alix::state::UserFiles::new(alix::workspace::root_store_path(root_dir))
+fn held_path(root_dir: &str, deck_id: &str) -> PathBuf {
+    alix::state::UserFiles::new(alix::workspace::root_store_path(Path::new(root_dir)))
         .exam_carried_for(deck_id)
-}
-
-fn held_path_of_deck(deck_path: &Path, root_dir: &Path) -> Result<PathBuf> {
-    let (files, deck_id) = exam_files(deck_path, root_dir)?;
-    Ok(files.exam_carried_for(&deck_id))
 }
 
 fn load_held(path: &Path) -> Result<alix::exam_carried::HeldExam> {
@@ -234,12 +229,7 @@ fn load_held(path: &Path) -> Result<alix::exam_carried::HeldExam> {
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn held_exam_receive(
-    root_dir: String,
-    deck_id: String,
-    carried_json: String,
-    start: ExamStart,
-) -> Result<()> {
+pub fn held_exam_receive(root_dir: String, carried_json: String, start: ExamStart) -> Result<()> {
     let held = alix::exam_carried::HeldExam::received(
         &carried_json,
         alix::exam_carried::HeldStart {
@@ -249,31 +239,30 @@ pub fn held_exam_receive(
             unsourced_topics: start.unsourced_topics,
         },
     )?;
-    held.create(&held_path(Path::new(&root_dir), &deck_id))
+    held.create(&held_path(&root_dir, &start.deck_id))
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn held_exam_sitting(root_dir: String, deck_id: String) -> Result<Option<String>> {
-    let held = alix::exam_carried::HeldExam::load(&held_path(Path::new(&root_dir), &deck_id))?;
+    let held = alix::exam_carried::HeldExam::load(&held_path(&root_dir, &deck_id))?;
     Ok(held.map(|held| held.exam.sitting))
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn held_exam_view(deck_path: String, root_dir: String) -> Result<Option<String>> {
-    let path = held_path_of_deck(Path::new(&deck_path), Path::new(&root_dir))?;
-    alix::exam_carried::HeldExam::load(&path)?
+pub fn held_exam_view(root_dir: String, deck_id: String) -> Result<Option<String>> {
+    alix::exam_carried::HeldExam::load(&held_path(&root_dir, &deck_id))?
         .map(|held| serde_json::to_string(&held.view()).context("cannot encode the held exam"))
         .transpose()
 }
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn held_exam_save_answers(
-    deck_path: String,
     root_dir: String,
+    deck_id: String,
     answers: Vec<String>,
     locked: Vec<bool>,
 ) -> Result<()> {
-    let path = held_path_of_deck(Path::new(&deck_path), Path::new(&root_dir))?;
+    let path = held_path(&root_dir, &deck_id);
     let mut held = load_held(&path)?;
     held.set_answers(answers, locked)?;
     held.save(&path)
@@ -281,33 +270,25 @@ pub fn held_exam_save_answers(
 
 #[flutter_rust_bridge::frb(sync)]
 pub fn held_exam_material_changed(deck_path: String, root_dir: String) -> Result<bool> {
-    let deck_path = PathBuf::from(deck_path);
-    let held = load_held(&held_path_of_deck(&deck_path, Path::new(&root_dir))?)?;
-    let deck = alix::deck::Deck::load(&deck_path)?;
-    let examined: Vec<(String, String)> = held
-        .exam
-        .asked_topics()
-        .into_iter()
-        .map(|topic| (topic.topic_id.clone(), topic.fingerprint.clone()))
-        .collect();
-    let stamp = alix::store::ExamStamp {
-        sourced: held.start.sourced,
-        unsourced_cards: held.start.unsourced_cards,
-    };
-    Ok(!alix::exam_status::material_unchanged(
-        &deck, &examined, &stamp,
-    ))
+    let deck = alix::deck::Deck::load(Path::new(&deck_path))?;
+    let deck_id = deck
+        .deck_token
+        .clone()
+        .context("the deck is not initialized")?;
+    let held = load_held(&held_path(&root_dir, &deck_id))?;
+    Ok(!held.material_unchanged(&deck))
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn held_exam_grade_request(deck_path: String, root_dir: String) -> Result<String> {
-    let path = held_path_of_deck(Path::new(&deck_path), Path::new(&root_dir))?;
-    load_held(&path)?.grade_request()?.to_json()
+pub fn held_exam_grade_request(root_dir: String, deck_id: String) -> Result<String> {
+    load_held(&held_path(&root_dir, &deck_id))?
+        .grade_request()?
+        .to_json()
 }
 
 #[flutter_rust_bridge::frb(sync)]
-pub fn held_exam_remove(deck_path: String, root_dir: String) -> Result<()> {
-    let path = held_path_of_deck(Path::new(&deck_path), Path::new(&root_dir))?;
+pub fn held_exam_remove(root_dir: String, deck_id: String) -> Result<()> {
+    let path = held_path(&root_dir, &deck_id);
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1230,12 +1211,7 @@ mod tests {
         deck_id: &str,
         exam: &alix::exam_carried::CarriedExam,
     ) -> Result<()> {
-        held_exam_receive(
-            root_arg(root),
-            deck_id.to_string(),
-            received_json(exam),
-            plain_start(deck_id),
-        )
+        held_exam_receive(root_arg(root), received_json(exam), plain_start(deck_id))
     }
 
     fn deck_arg(path: &Path) -> String {
@@ -1264,7 +1240,6 @@ mod tests {
             held.start,
             "the start is copied into the held file"
         );
-        assert!(!root.join("decks").exists(), "no deck file was needed");
         assert_eq!(
             Some("sitting-1".to_string()),
             held_exam_sitting(root_arg(root), "deck-d".to_string()).unwrap(),
@@ -1311,17 +1286,16 @@ mod tests {
     fn view_is_none_without_a_file_and_shows_the_questions_after_receive() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
         assert_eq!(
             None,
-            held_exam_view(deck_arg(&path), root_arg(root)).unwrap(),
+            held_exam_view(root_arg(root), "deck-d".to_string()).unwrap(),
             "no file, no view"
         );
 
         let exam = carried_exam(&named_topics(&["topic-a", "topic-b"]), "sitting-1");
         receive_for(root, "deck-d", &exam).unwrap();
 
-        let json = held_exam_view(deck_arg(&path), root_arg(root))
+        let json = held_exam_view(root_arg(root), "deck-d".to_string())
             .unwrap()
             .expect("a view after receive");
         let view: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1337,7 +1311,6 @@ mod tests {
     fn saved_answers_and_locks_are_there_after_a_reload() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
         receive_for(
             root,
             "deck-d",
@@ -1346,8 +1319,8 @@ mod tests {
         .unwrap();
 
         held_exam_save_answers(
-            deck_arg(&path),
             root_arg(root),
+            "deck-d".to_string(),
             vec!["locked answer".to_string(), "a draft".to_string()],
             vec![true, false],
         )
@@ -1356,26 +1329,38 @@ mod tests {
         let held = alix::exam_carried::HeldExam::load(&held_file(root, "deck-d"))
             .unwrap()
             .unwrap();
-        assert_eq!(vec!["locked answer", "a draft"], held.answers);
-        assert_eq!(vec![true, false], held.locked);
+        assert_eq!(
+            vec!["locked answer", "a draft"],
+            held.answers,
+            "answers in the held file after the save"
+        );
+        assert_eq!(
+            vec![true, false],
+            held.locked,
+            "locks in the held file after the save"
+        );
         let view: serde_json::Value = serde_json::from_str(
-            &held_exam_view(deck_arg(&path), root_arg(root))
+            &held_exam_view(root_arg(root), "deck-d".to_string())
                 .unwrap()
                 .unwrap(),
         )
         .unwrap();
         assert_eq!(
             serde_json::json!(["locked answer", "a draft"]),
-            view["answers"]
+            view["answers"],
+            "answers in the view after the save: {view}"
         );
-        assert_eq!(serde_json::json!([true, false]), view["locked"]);
+        assert_eq!(
+            serde_json::json!([true, false]),
+            view["locked"],
+            "locks in the view after the save: {view}"
+        );
     }
 
     #[test]
     fn a_lock_over_the_answer_limit_is_refused_with_the_too_long_line_and_nothing_changes() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
         receive_for(
             root,
             "deck-d",
@@ -1383,8 +1368,8 @@ mod tests {
         )
         .unwrap();
         held_exam_save_answers(
-            deck_arg(&path),
             root_arg(root),
+            "deck-d".to_string(),
             vec!["kept".into()],
             vec![false],
         )
@@ -1392,14 +1377,18 @@ mod tests {
         let before = std::fs::read(held_file(root, "deck-d")).unwrap();
 
         let error = held_exam_save_answers(
-            deck_arg(&path),
             root_arg(root),
+            "deck-d".to_string(),
             vec!["x".repeat(alix::exam_carried::MAX_ANSWERS_BYTES + 1)],
             vec![true],
         )
         .unwrap_err();
 
-        assert_eq!(alix::exam_carried::ANSWER_TOO_LONG, error.to_string());
+        assert_eq!(
+            alix::exam_carried::ANSWER_TOO_LONG,
+            error.to_string(),
+            "the refused lock passes the library's text through"
+        );
         assert_eq!(
             before,
             std::fs::read(held_file(root, "deck-d")).unwrap(),
@@ -1414,13 +1403,7 @@ mod tests {
         let path = two_topic_deck(root);
         let start = exam_sitting_start(deck_arg(&path), root_arg(root), false, NOW).unwrap();
         let exam = carried_exam(&deck_topics(&path), "s");
-        held_exam_receive(
-            root_arg(root),
-            start.deck_id.clone(),
-            received_json(&exam),
-            start,
-        )
-        .unwrap();
+        held_exam_receive(root_arg(root), received_json(&exam), start).unwrap();
         assert!(
             !held_exam_material_changed(deck_arg(&path), root_arg(root)).unwrap(),
             "the deck as started"
@@ -1448,20 +1431,19 @@ mod tests {
     fn two_grade_requests_for_unchanged_answers_are_byte_equal_and_equal_the_lib_builders() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
         let exam = carried_exam(&named_topics(&["topic-a", "topic-b"]), "s");
         receive_for(root, "deck-d", &exam).unwrap();
         let answers = vec!["first answer".to_string(), "   ".to_string()];
         held_exam_save_answers(
-            deck_arg(&path),
             root_arg(root),
+            "deck-d".to_string(),
             answers.clone(),
             vec![true, true],
         )
         .unwrap();
 
-        let first = held_exam_grade_request(deck_arg(&path), root_arg(root)).unwrap();
-        let second = held_exam_grade_request(deck_arg(&path), root_arg(root)).unwrap();
+        let first = held_exam_grade_request(root_arg(root), "deck-d".to_string()).unwrap();
+        let second = held_exam_grade_request(root_arg(root), "deck-d".to_string()).unwrap();
 
         assert_eq!(first, second, "a repeat sends the same bytes");
         assert_eq!(
@@ -1475,7 +1457,6 @@ mod tests {
     fn remove_deletes_the_file_and_an_absent_file_is_fine() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
         receive_for(
             root,
             "deck-d",
@@ -1487,13 +1468,14 @@ mod tests {
             "control: the file exists"
         );
 
-        held_exam_remove(deck_arg(&path), root_arg(root)).unwrap();
+        held_exam_remove(root_arg(root), "deck-d".to_string()).unwrap();
         assert!(!held_file(root, "deck-d").exists(), "the file is gone");
-        held_exam_remove(deck_arg(&path), root_arg(root)).unwrap();
+        held_exam_remove(root_arg(root), "deck-d".to_string()).unwrap();
 
         assert_eq!(
             None,
-            held_exam_view(deck_arg(&path), root_arg(root)).unwrap()
+            held_exam_view(root_arg(root), "deck-d".to_string()).unwrap(),
+            "no view once the file is removed"
         );
     }
 
@@ -1505,14 +1487,16 @@ mod tests {
 
         let start = exam_sitting_start(deck_arg(&path), root_arg(root), false, NOW).unwrap();
 
-        assert_eq!("deck-d", start.deck_id);
+        assert_eq!(
+            "deck-d", start.deck_id,
+            "the sitting start carries the deck's id"
+        );
     }
 
     #[test]
     fn receive_and_save_answers_write_no_ideas_document() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
 
         receive_for(
             root,
@@ -1521,8 +1505,8 @@ mod tests {
         )
         .unwrap();
         held_exam_save_answers(
-            deck_arg(&path),
             root_arg(root),
+            "deck-d".to_string(),
             vec!["a".into()],
             vec![true],
         )
@@ -1544,7 +1528,6 @@ mod tests {
     fn another_file_in_the_exam_folder_is_left_alone() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let path = two_topic_deck(root);
         let exam_folder = root.join(".alix/exam");
         std::fs::create_dir_all(&exam_folder).unwrap();
         let siblings = [
@@ -1562,13 +1545,13 @@ mod tests {
         )
         .unwrap();
         held_exam_save_answers(
-            deck_arg(&path),
             root_arg(root),
+            "deck-d".to_string(),
             vec!["a".into()],
             vec![true],
         )
         .unwrap();
-        held_exam_remove(deck_arg(&path), root_arg(root)).unwrap();
+        held_exam_remove(root_arg(root), "deck-d".to_string()).unwrap();
 
         for (sibling, bytes) in &siblings {
             assert_eq!(
@@ -1578,5 +1561,63 @@ mod tests {
                 sibling.display()
             );
         }
+    }
+
+    #[test]
+    fn a_held_exam_is_reachable_by_root_and_deck_id_with_no_deck_file_anywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let exam = carried_exam(&named_topics(&["topic-a", "topic-b"]), "sitting-1");
+        held_exam_receive(root_arg(root), received_json(&exam), plain_start("deck-d")).unwrap();
+        assert!(
+            std::fs::read_dir(root).unwrap().all(|entry| entry
+                .unwrap()
+                .path()
+                .extension()
+                .is_none_or(|ext| ext != "md")),
+            "control: no deck file exists under the root"
+        );
+
+        let view: serde_json::Value = serde_json::from_str(
+            &held_exam_view(root_arg(root), "deck-d".to_string())
+                .unwrap()
+                .expect("a view without a deck"),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::json!(["question for topic-a?", "question for topic-b?"]),
+            view["questions"],
+            "view of the received exam without a deck: {view}"
+        );
+        let answers = vec!["first".to_string(), "second".to_string()];
+        held_exam_save_answers(
+            root_arg(root),
+            "deck-d".to_string(),
+            answers.clone(),
+            vec![true, false],
+        )
+        .unwrap();
+        let reloaded: serde_json::Value = serde_json::from_str(
+            &held_exam_view(root_arg(root), "deck-d".to_string())
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            (serde_json::json!(answers), serde_json::json!([true, false])),
+            (reloaded["answers"].clone(), reloaded["locked"].clone()),
+            "answers and locks after a reload without a deck: {reloaded}"
+        );
+        assert_eq!(
+            exam.grade_request(&answers).to_json().unwrap(),
+            held_exam_grade_request(root_arg(root), "deck-d".to_string()).unwrap(),
+            "the grade request is built without a deck"
+        );
+        held_exam_remove(root_arg(root), "deck-d".to_string()).unwrap();
+        assert!(
+            !held_file(root, "deck-d").exists(),
+            "remove deleted {} without a deck",
+            held_file(root, "deck-d").display()
+        );
     }
 }

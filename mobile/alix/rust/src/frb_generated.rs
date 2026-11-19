@@ -2185,13 +2185,13 @@ fn wire__crate__api__exam__held_exam_grade_request_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_deck_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
                     let output_ok =
-                        crate::api::exam::held_exam_grade_request(api_deck_path, api_root_dir)?;
+                        crate::api::exam::held_exam_grade_request(api_root_dir, api_deck_id)?;
                     Ok(output_ok)
                 })(),
             )
@@ -2254,7 +2254,6 @@ fn wire__crate__api__exam__held_exam_receive_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
-            let api_deck_id = <String>::sse_decode(&mut deserializer);
             let api_carried_json = <String>::sse_decode(&mut deserializer);
             let api_start = <crate::api::exam::ExamStart>::sse_decode(&mut deserializer);
             deserializer.end();
@@ -2262,7 +2261,6 @@ fn wire__crate__api__exam__held_exam_receive_impl(
                 (move || {
                     let output_ok = crate::api::exam::held_exam_receive(
                         api_root_dir,
-                        api_deck_id,
                         api_carried_json,
                         api_start,
                     )?;
@@ -2293,13 +2291,12 @@ fn wire__crate__api__exam__held_exam_remove_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_deck_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
-                    let output_ok =
-                        crate::api::exam::held_exam_remove(api_deck_path, api_root_dir)?;
+                    let output_ok = crate::api::exam::held_exam_remove(api_root_dir, api_deck_id)?;
                     Ok(output_ok)
                 })(),
             )
@@ -2327,16 +2324,16 @@ fn wire__crate__api__exam__held_exam_save_answers_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_deck_id = <String>::sse_decode(&mut deserializer);
             let api_answers = <Vec<String>>::sse_decode(&mut deserializer);
             let api_locked = <Vec<bool>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
                     let output_ok = crate::api::exam::held_exam_save_answers(
-                        api_deck_path,
                         api_root_dir,
+                        api_deck_id,
                         api_answers,
                         api_locked,
                     )?;
@@ -2400,12 +2397,12 @@ fn wire__crate__api__exam__held_exam_view_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_deck_path = <String>::sse_decode(&mut deserializer);
             let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_deck_id = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
-                    let output_ok = crate::api::exam::held_exam_view(api_deck_path, api_root_dir)?;
+                    let output_ok = crate::api::exam::held_exam_view(api_root_dir, api_deck_id)?;
                     Ok(output_ok)
                 })(),
             )

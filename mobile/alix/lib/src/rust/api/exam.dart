@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `empty`, `exam_answers_path`, `exam_files`, `exam_ideas_path`, `held_path_of_deck`, `held_path`, `load_held`, `open_store`, `parse`, `save`
+// These functions are ignored because they are not marked as `pub`: `empty`, `exam_answers_path`, `exam_files`, `exam_ideas_path`, `held_path`, `load_held`, `open_store`, `parse`, `save`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PhonePreparedExam`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
@@ -70,12 +70,10 @@ ExamStart examSittingStart({
 
 void heldExamReceive({
   required String rootDir,
-  required String deckId,
   required String carriedJson,
   required ExamStart start,
 }) => RustLib.instance.api.crateApiExamHeldExamReceive(
   rootDir: rootDir,
-  deckId: deckId,
   carriedJson: carriedJson,
   start: start,
 );
@@ -86,20 +84,20 @@ String? heldExamSitting({required String rootDir, required String deckId}) =>
       deckId: deckId,
     );
 
-String? heldExamView({required String deckPath, required String rootDir}) =>
+String? heldExamView({required String rootDir, required String deckId}) =>
     RustLib.instance.api.crateApiExamHeldExamView(
-      deckPath: deckPath,
       rootDir: rootDir,
+      deckId: deckId,
     );
 
 void heldExamSaveAnswers({
-  required String deckPath,
   required String rootDir,
+  required String deckId,
   required List<String> answers,
   required List<bool> locked,
 }) => RustLib.instance.api.crateApiExamHeldExamSaveAnswers(
-  deckPath: deckPath,
   rootDir: rootDir,
+  deckId: deckId,
   answers: answers,
   locked: locked,
 );
@@ -113,17 +111,17 @@ bool heldExamMaterialChanged({
 );
 
 String heldExamGradeRequest({
-  required String deckPath,
   required String rootDir,
+  required String deckId,
 }) => RustLib.instance.api.crateApiExamHeldExamGradeRequest(
-  deckPath: deckPath,
   rootDir: rootDir,
+  deckId: deckId,
 );
 
-void heldExamRemove({required String deckPath, required String rootDir}) =>
+void heldExamRemove({required String rootDir, required String deckId}) =>
     RustLib.instance.api.crateApiExamHeldExamRemove(
-      deckPath: deckPath,
       rootDir: rootDir,
+      deckId: deckId,
     );
 
 ExamApplied applyExamResult({

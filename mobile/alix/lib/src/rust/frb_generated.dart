@@ -320,8 +320,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   String crateApiExamHeldExamGradeRequest({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
   });
 
   bool crateApiExamHeldExamMaterialChanged({
@@ -331,19 +331,18 @@ abstract class RustLibApi extends BaseApi {
 
   void crateApiExamHeldExamReceive({
     required String rootDir,
-    required String deckId,
     required String carriedJson,
     required ExamStart start,
   });
 
   void crateApiExamHeldExamRemove({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
   });
 
   void crateApiExamHeldExamSaveAnswers({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
     required List<String> answers,
     required List<bool> locked,
   });
@@ -354,8 +353,8 @@ abstract class RustLibApi extends BaseApi {
   });
 
   String? crateApiExamHeldExamView({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
   });
 
   Future<void> crateApiSimpleInitApp();
@@ -1980,15 +1979,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String crateApiExamHeldExamGradeRequest({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
+          sse_encode_String(deckId, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
         },
         codec: SseCodec(
@@ -1996,7 +1995,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamHeldExamGradeRequestConstMeta,
-        argValues: [deckPath, rootDir],
+        argValues: [rootDir, deckId],
         apiImpl: this,
       ),
     );
@@ -2005,7 +2004,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiExamHeldExamGradeRequestConstMeta =>
       const TaskConstMeta(
         debugName: "held_exam_grade_request",
-        argNames: ["deckPath", "rootDir"],
+        argNames: ["rootDir", "deckId"],
       );
 
   @override
@@ -2041,7 +2040,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   void crateApiExamHeldExamReceive({
     required String rootDir,
-    required String deckId,
     required String carriedJson,
     required ExamStart start,
   }) {
@@ -2050,7 +2048,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
-          sse_encode_String(deckId, serializer);
           sse_encode_String(carriedJson, serializer);
           sse_encode_box_autoadd_exam_start(start, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
@@ -2060,7 +2057,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamHeldExamReceiveConstMeta,
-        argValues: [rootDir, deckId, carriedJson, start],
+        argValues: [rootDir, carriedJson, start],
         apiImpl: this,
       ),
     );
@@ -2069,20 +2066,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiExamHeldExamReceiveConstMeta =>
       const TaskConstMeta(
         debugName: "held_exam_receive",
-        argNames: ["rootDir", "deckId", "carriedJson", "start"],
+        argNames: ["rootDir", "carriedJson", "start"],
       );
 
   @override
   void crateApiExamHeldExamRemove({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
+          sse_encode_String(deckId, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
         },
         codec: SseCodec(
@@ -2090,7 +2087,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamHeldExamRemoveConstMeta,
-        argValues: [deckPath, rootDir],
+        argValues: [rootDir, deckId],
         apiImpl: this,
       ),
     );
@@ -2098,13 +2095,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiExamHeldExamRemoveConstMeta => const TaskConstMeta(
     debugName: "held_exam_remove",
-    argNames: ["deckPath", "rootDir"],
+    argNames: ["rootDir", "deckId"],
   );
 
   @override
   void crateApiExamHeldExamSaveAnswers({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
     required List<String> answers,
     required List<bool> locked,
   }) {
@@ -2112,8 +2109,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
+          sse_encode_String(deckId, serializer);
           sse_encode_list_String(answers, serializer);
           sse_encode_list_bool(locked, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
@@ -2123,7 +2120,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamHeldExamSaveAnswersConstMeta,
-        argValues: [deckPath, rootDir, answers, locked],
+        argValues: [rootDir, deckId, answers, locked],
         apiImpl: this,
       ),
     );
@@ -2132,7 +2129,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiExamHeldExamSaveAnswersConstMeta =>
       const TaskConstMeta(
         debugName: "held_exam_save_answers",
-        argNames: ["deckPath", "rootDir", "answers", "locked"],
+        argNames: ["rootDir", "deckId", "answers", "locked"],
       );
 
   @override
@@ -2167,15 +2164,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   String? crateApiExamHeldExamView({
-    required String deckPath,
     required String rootDir,
+    required String deckId,
   }) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
+          sse_encode_String(deckId, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
         },
         codec: SseCodec(
@@ -2183,7 +2180,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamHeldExamViewConstMeta,
-        argValues: [deckPath, rootDir],
+        argValues: [rootDir, deckId],
         apiImpl: this,
       ),
     );
@@ -2191,7 +2188,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiExamHeldExamViewConstMeta => const TaskConstMeta(
     debugName: "held_exam_view",
-    argNames: ["deckPath", "rootDir"],
+    argNames: ["rootDir", "deckId"],
   );
 
   @override
