@@ -325,7 +325,11 @@ the remote exam calls a pairing-token holder can now:
   call at will, so this is the same kind of spend. Pinned by
   `a_fresh_server_grades_a_request_for_a_deck_it_does_not_serve_and_writes_nothing`
   and `a_remediation_on_a_freshly_started_server_returns_cards_per_topic_number`
-  (`tests/api.rs`);
+  (`tests/api.rs`). One remediation request makes one model call per topic it
+  lists, one after another; the number of topics is bounded only by the 4 MiB
+  body and a topic number may repeat, and the calls stop when every topic is
+  done, when one call fails, or when `POST /api/remote/exam/grading/close` with
+  the request's sitting id ends the running call;
 - place text in the key-point position of the grading prompt. That call runs
   without tools, so the text reaches a model that cannot fetch or search; it
   is not filtered, and the injection gap listed below applies. Pinned by

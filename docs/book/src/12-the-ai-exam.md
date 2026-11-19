@@ -177,8 +177,8 @@ and you can sit it at any time as practice, before drilling too:
   the time so far (`preparing… 2m 5s`), and you can review, walk, or close the
   app meanwhile. Tapping the row while it runs asks **Cancel preparation?**;
   confirming stops the writing on the desktop and drops the exam (if the
-  desktop does not answer, the row reads `could not cancel the preparation` and
-  the exam stays). The exam is on the desktop while it is written, and stays
+  cancel fails, the row reads `could not cancel the preparation` and the
+  exam stays). The exam is on the desktop while it is written, and stays
   there when finished until the phone fetches it. The app fetches it whenever
   it is open and can reach the paired desktop, and the next time it starts
   there if it could not: the row reads `fetching…`, a notice says `Exam ready:
@@ -225,9 +225,9 @@ its own progress, so closing the app in between loses nothing. A graded exam
 cannot be answered again. Leaving the results screen removes the exam from the
 phone, and the row reads **Generate exam** again. The exam stays, and the row
 reads **Show result** (`your graded exam`), if you close the app on the results
-screen, leave while the cards are still being made, or recording
-the graded result in the phone's progress failed (the screen then shows the
-error and offers `try again`).
+screen, leave while the cards are still being made, or recording the graded
+result on the phone failed (the screen then shows the error and offers
+`try again`).
 
 The phone records a result only if the deck's exam material is still what the
 exam was prepared from. That material is the sources of the deck's topics and,
