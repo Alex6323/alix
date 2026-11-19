@@ -46,7 +46,6 @@ StartedSitting _sitting({
   List<String>? cards = const ['card-a', 'card-b'],
 }) => StartedSitting(
   root: root,
-  deckId: deckId,
   deckPath: 'decks/$deckId.md',
   title: 'Deck $deckId',
   sitting: sitting,

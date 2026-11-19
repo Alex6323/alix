@@ -27,7 +27,6 @@ class ExamSittingStart {
 class StartedSitting {
   StartedSitting({
     required this.root,
-    required this.deckId,
     required this.deckPath,
     required this.title,
     required this.sitting,
@@ -37,13 +36,14 @@ class StartedSitting {
   });
 
   final String root;
-  final String deckId;
   final String deckPath;
   final String title;
   final String sitting;
   final ExamSittingStart start;
   bool announced;
   bool fetched;
+
+  String get deckId => start.deckId;
 
   static const _keys = {
     'root',
@@ -83,7 +83,6 @@ class StartedSitting {
     final deckId = json['deck_id'] as String;
     return StartedSitting(
       root: json['root'] as String,
-      deckId: deckId,
       deckPath: json['deck_path'] as String,
       title: json['title'] as String,
       sitting: json['sitting'] as String,
