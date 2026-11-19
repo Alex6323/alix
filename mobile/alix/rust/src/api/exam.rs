@@ -1787,22 +1787,24 @@ mod tests {
             .expect("the progress file has a cards member")
     }
 
+    fn held_with_a_reviewed_card(root: &Path) -> (PathBuf, alix::exam_carried::CarriedExam) {
+        let (path, exam) = held_on_deck(root);
+        let mut store = open_store(&path, &root_arg(root), None).unwrap();
+        store.get_or_insert("card-a1").record_review(
+            NOW,
+            alix::scheduler::Grade::Pass,
+            alix::depth::Depth::Recall,
+            false,
+        );
+        store.save().unwrap();
+        (path, exam)
+    }
+
     #[test]
-    fn an_apply_and_a_stored_remediation_leave_every_cards_review_progress_as_the_store_holds_it()
-    {
+    fn an_apply_leaves_every_cards_review_progress_as_the_store_holds_it() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let (path, exam) = held_on_deck(root);
-        {
-            let mut store = open_store(&path, &root_arg(root), None).unwrap();
-            store.get_or_insert("card-a1").record_review(
-                NOW,
-                alix::scheduler::Grade::Pass,
-                alix::depth::Depth::Recall,
-                false,
-            );
-            store.save().unwrap();
-        }
+        let (path, exam) = held_with_a_reviewed_card(root);
         let before = card_progress(root);
         assert!(
             before.contains_key("card-a1"),
@@ -1817,22 +1819,62 @@ mod tests {
             card_progress(root),
             "the card progress after the apply equals the progress before it"
         );
+    }
 
-        let stored = held_exam_store_remediation(
-            deck_arg(&path),
-            root_arg(root),
-            remediation_reply(&exam.sitting, &[(0, "## q\na\n")]),
-            None,
-        )
-        .unwrap();
-        assert_eq!(1, stored, "control: the remediation stored its one card");
+    #[test]
+    fn a_remediation_that_revives_a_card_leaves_every_other_cards_review_progress_as_the_store_holds_it(
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (path, exam) = held_with_a_reviewed_card(root);
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL), true).unwrap();
+        held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+        let remediate = |topic: usize| {
+            held_exam_store_remediation(
+                deck_arg(&path),
+                root_arg(root),
+                remediation_reply(&exam.sitting, &[(topic, "## q\na\n")]),
+                None,
+            )
+            .unwrap()
+        };
+        assert_eq!(1, remediate(0), "control: the first remediation stores its one card");
+        let revived = alix::personal::read(&path, "deck-d").cards[0]
+            .card
+            .id()
+            .expect("the remediation card has an id");
+        {
+            let mut store = open_store(&path, &root_arg(root), None).unwrap();
+            store.get_or_insert(&revived).recall = Some(alix::store::FsrsState {
+                state: 2,
+                scheduled_days: alix::session::DEFAULT_RETIRE_AFTER_DAYS,
+                ..Default::default()
+            });
+            store.save().unwrap();
+        }
+        let before = card_progress(root);
+        assert!(
+            before.contains_key("card-a1") && before.contains_key(&revived),
+            "control: the reviewed card and the retired {revived} are in the progress file: {before:?}"
+        );
+
+        assert_eq!(
+            1,
+            remediate(1),
+            "control: the second remediation revives the retired card"
+        );
 
         let after = card_progress(root);
-        for (card, progress) in &before {
+        assert_eq!(
+            Some(&serde_json::to_value(alix::store::CardState::new()).unwrap()),
+            after.get(&revived),
+            "the revived {revived} starts over as a new card after the remediation"
+        );
+        for (card, progress) in before.iter().filter(|(card, _)| **card != revived) {
             assert_eq!(
                 Some(progress),
                 after.get(card),
-                "{card}'s progress after the remediation equals its progress before the apply"
+                "{card}'s progress after the remediation that revives a card equals its progress before it"
             );
         }
     }

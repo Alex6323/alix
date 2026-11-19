@@ -64,15 +64,16 @@ void main() {
     );
   }
 
-  testWidgets('on a 360-wide phone no footer label is cut beside submit anyway or submit again', (tester) async {
+  testWidgets('on a 360-wide phone no footer label is cut beside submit anyway', (tester) async {
     await openOnPhone(tester, FakeHeldExam(changed: true), FakeServerClient());
     expect(find.text('submit anyway'), findsOneWidget, reason: 'changed deck: the filled button reads submit anyway');
     for (final label in ['Back', 'Continue later', 'submit anyway']) {
       expectWhole(tester, 'submit anyway', label);
     }
     expect(tester.takeException(), isNull, reason: 'submit anyway: the footer lays out without overflow');
+  });
 
-    await tester.pumpWidget(const SizedBox.shrink());
+  testWidgets('on a 360-wide phone no footer label is cut beside submit again', (tester) async {
     await openOnPhone(tester, FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)]));
     await tester.enterText(_field, 'a borrow is a reference');
     await tester.tap(find.text('Submit'));
