@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/bridge/exam_bridge.dart' as exam_bridge;
 import 'package:alix_mobile/bridge/picker_bridge.dart';
 import 'package:alix_mobile/bridge/sync_bridge.dart' as sync_bridge;
+import 'package:alix_mobile/exam_handoff.dart';
 import 'package:alix_mobile/exam_screen.dart';
 import 'package:alix_mobile/exam_sittings.dart';
 import 'package:alix_mobile/folder_browser.dart';
@@ -33,14 +35,6 @@ import 'package:alix_mobile/sync/sync_sheet.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/trace_screen.dart';
 import 'package:alix_mobile/walk_screen.dart';
-
-class _UnrecordableSitting implements Exception {
-  const _UnrecordableSitting();
-
-  @override
-  String toString() =>
-      'This phone did not start this exam, so its result was not recorded.';
-}
 
 class PickerScreen extends StatefulWidget {
   const PickerScreen({
@@ -147,6 +141,9 @@ class _PickerScreenState extends State<PickerScreen> {
   ({String scheme, String host, int port, String token, String rootId})?
   _examClientKey;
   ServerClient? _examStateClient;
+  ExamHandoff? _examHandoff;
+  StartedSittings? _sittings;
+  String? _examRootDir;
   Timer? _examPollTimer;
   bool _examPollInFlight = false;
   bool _examPollPaused = false;
@@ -154,6 +151,10 @@ class _PickerScreenState extends State<PickerScreen> {
     (exam: null, polledAt: DateTime.now()),
   );
   final _examNotice = ValueNotifier<({String deck, String text})?>(null);
+  final _heldNotice = ValueNotifier<({String deck, String text})?>(null);
+  final _heldChanged = ValueNotifier<int>(0);
+  ({String deck, StartedSitting record, Future<void> Function() resume})?
+  _blockedClaim;
   RemoteExam? get _remoteExam => _remoteExamSlot.value.exam;
   set _remoteExam(RemoteExam? exam) =>
       _remoteExamSlot.value = (exam: exam, polledAt: DateTime.now());
@@ -179,6 +180,8 @@ class _PickerScreenState extends State<PickerScreen> {
     _examPollTimer?.cancel();
     _remoteExamSlot.dispose();
     _examNotice.dispose();
+    _heldNotice.dispose();
+    _heldChanged.dispose();
     _examStateClient?.close();
     _syncController?.removeListener(_controller.reload);
     _controller.dispose();
@@ -218,11 +221,13 @@ class _PickerScreenState extends State<PickerScreen> {
 
   Future<void> _loadPairing() async {
     final support = await _support();
+    _sittings = StartedSittings.load(support);
     _hasPairings = readPairings(support).isNotEmpty;
     final isPairedRootScreen =
         widget.dir == null && widget.masteredEntries == null;
     final config = readActivePairing(support);
     if (config == null) {
+      _examRootDir = null;
       if (isPairedRootScreen) {
         _pairedDir = null;
         _pairedLabel = null;
@@ -241,6 +246,7 @@ class _PickerScreenState extends State<PickerScreen> {
         rootId: config.rootId,
       );
     } on Object {
+      _examRootDir = null;
       if (isPairedRootScreen) {
         _pairedDir = null;
         _pairedLabel = null;
@@ -253,6 +259,7 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
 
+    _examRootDir = pairedDir;
     String? recoveryError;
     if (isPairedRootScreen) {
       try {
@@ -328,13 +335,15 @@ class _PickerScreenState extends State<PickerScreen> {
     _examPollTimer = null;
     _examStateClient?.close();
     _examStateClient = null;
+    _examHandoff = null;
     _examClientKey = null;
     _remoteExam = null;
   }
 
   void _configureExamPolling(ServerConfig config, {required bool live}) {
     if (!mounted) return;
-    if (!live) {
+    final sittings = _sittings;
+    if (!live || sittings == null) {
       _stopExamPolling();
       return;
     }
@@ -348,7 +357,14 @@ class _PickerScreenState extends State<PickerScreen> {
     if (_examClientKey != key || _examStateClient == null) {
       _stopExamPolling();
       _examClientKey = key;
-      _examStateClient = (widget.buildClient ?? HttpServerClient.new)(config);
+      final client = (widget.buildClient ?? HttpServerClient.new)(config);
+      _examStateClient = client;
+      _examHandoff = ExamHandoff(
+        sittings: sittings,
+        client: client,
+        heldSitting: exam_bridge.heldExamSitting,
+        receive: exam_bridge.heldExamReceive,
+      );
     }
     _examPollTimer?.cancel();
     _examPollTimer = null;
@@ -362,8 +378,18 @@ class _PickerScreenState extends State<PickerScreen> {
     _examPollTimer = null;
   }
 
-  void _pollWhileGenerating(RemoteExam? exam) {
-    if (exam?.phase != 'generating' || _examPollPaused) {
+  void _resumeExamPolling() {
+    if (_examStateClient == null) return;
+    _examPollPaused = false;
+    unawaited(_pollRemoteExam());
+  }
+
+  void _keepPolling(RemoteExam? exam) {
+    final record = _sittings?.bySitting(exam?.sitting);
+    final owed =
+        exam?.phase == 'generating' ||
+        (exam?.phase == 'ready' && record != null && !record.fetched);
+    if (!owed || _examPollPaused) {
       _examPollTimer?.cancel();
       _examPollTimer = null;
       return;
@@ -374,28 +400,42 @@ class _PickerScreenState extends State<PickerScreen> {
 
   String? _remoteExamKey(RemoteExam? exam) => exam == null
       ? null
-      : '${exam.phase}\u0000${exam.deck}\u0000${exam.estimate ?? ''}'
-            '\u0000${exam.questions.join('\u0001')}';
+      : '${exam.phase}\u0000${exam.sitting ?? ''}\u0000${exam.deck}'
+            '\u0000${exam.estimate ?? ''}';
 
   Future<void> _pollRemoteExam() async {
     final client = _examStateClient;
-    if (client == null || _examPollInFlight) return;
+    final handoff = _examHandoff;
+    if (client == null || handoff == null || _examPollInFlight) return;
     _examPollInFlight = true;
     final epoch = _examSlotEpoch;
     RemoteExam? next;
+    Handoff? handed;
     var expired = false;
     try {
-      next = await client.examGet();
-    } on PairingExpired {
-      expired = true;
-    } on Object {
-      next = null;
+      try {
+        next = await client.examGet();
+      } on PairingExpired {
+        expired = true;
+      } on Object {
+        next = null;
+      }
+      final sitting = next?.sitting;
+      if (!expired && next?.phase == 'ready' && sitting != null) {
+        try {
+          handed = await handoff.onReady(sitting);
+        } on PairingExpired {
+          expired = true;
+        } on Object {
+          handed = Handoff.failed;
+        }
+      }
     } finally {
       _examPollInFlight = false;
     }
-    if (!mounted ||
-        !identical(client, _examStateClient) ||
-        epoch != _examSlotEpoch) {
+    if (!mounted) return;
+    if (handed != null) _afterHandoff(next?.sitting, changed: handed == Handoff.fetched);
+    if (!identical(client, _examStateClient) || epoch != _examSlotEpoch) {
       return;
     }
     if (expired) {
@@ -404,40 +444,29 @@ class _PickerScreenState extends State<PickerScreen> {
       return;
     }
     if (next == null) {
-      _pollWhileGenerating(_remoteExam);
+      _keepPolling(_remoteExam);
       return;
     }
     final before = _remoteExamKey(_remoteExam);
     final after = _remoteExamKey(next);
-    final previous = _remoteExam;
     _remoteExam = next;
-    _pollWhileGenerating(next);
-    if (next.phase == 'answering') {
-      unawaited(
-        _announceReady(
-          next,
-          observedTransition:
-              previous?.phase == 'generating' && previous?.deck == next.deck,
-        ),
-      );
-    }
+    _keepPolling(next);
     if (before != after) _controller.reload();
   }
 
-  /// A sitting this phone started is announced once, even when it became
-  /// ready while the app was closed; any other sitting only on a transition
-  /// this picker saw.
-  Future<void> _announceReady(RemoteExam exam, {required bool observedTransition}) async {
-    final sittings = StartedSittings.load(await _support());
-    if (!mounted) return;
-    final kept = sittings.bySitting(exam.sitting);
-    if (kept != null) {
-      if (kept.announced) return;
-      kept.announced = true;
+  void _afterHandoff(String? sitting, {required bool changed}) {
+    if (changed) _heldChanged.value++;
+    final sittings = _sittings;
+    final record = sittings?.bySitting(sitting);
+    if (sittings == null || record == null || !record.fetched || record.announced) {
+      return;
+    }
+    record.announced = true;
+    _snack('Exam ready: ${record.title}.');
+    try {
       sittings.save();
-      _snack('Exam ready: ${kept.title}.');
-    } else if (observedTransition) {
-      _snack('Exam ready: ${exam.deck}.');
+    } on Object {
+      return;
     }
   }
 
@@ -620,18 +649,27 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
+  void _pairingExpiredAtExam(String deckName) {
+    _controller.setServerReachable(false);
+    _stopExamPolling();
+    _examNotice.value = (deck: deckName, text: 'pairing expired');
+    _snack(pairingExpiredMessage);
+  }
+
   Future<void> _startExamGeneration(
     PickerEntry entry, {
     required String root,
     required bool needsWorkOnly,
   }) async {
     final client = _examStateClient;
-    if (client == null) return;
+    final handoff = _examHandoff;
+    final sittings = _sittings;
+    if (client == null || handoff == null || sittings == null) return;
     final deckName = examDeckName(deckPath: entry.path, rootDir: root);
     void notice(String text) =>
         _examNotice.value = (deck: deckName, text: text);
-    final sittings = StartedSittings.load(await _support());
-    final exam_bridge.ExamSittingStart start;
+    _blockedClaim = null;
+    final ExamSittingStart start;
     Map<String, dynamic>? ideas;
     try {
       start = exam_bridge.examSittingStart(
@@ -653,43 +691,70 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     RemoteExam? started;
     try {
-      if (_remoteExam?.error != null) await client.examClose();
+      final lastPolled = _remoteExam?.sitting;
+      final claim = await handoff.claimBeforeStart();
+      if (!mounted) return;
+      _afterHandoff(lastPolled, changed: true);
+      switch (claim) {
+        case ClaimBlocked(:final record):
+          _blockedClaim = (
+            deck: deckName,
+            record: record,
+            resume: () => _startExamGeneration(
+              entry,
+              root: root,
+              needsWorkOnly: needsWorkOnly,
+            ),
+          );
+          notice('The prepared exam for ${record.title} could not be fetched.');
+          return;
+        case ClaimUnreachable():
+          notice('the desktop refused the exam');
+          return;
+        case ClaimClear():
+          break;
+      }
+      final failedSitting = _remoteExam?.error == null
+          ? null
+          : _remoteExam?.sitting;
+      if (failedSitting != null && sittings.bySitting(failedSitting) != null) {
+        await client.examClose(failedSitting);
+      }
       started = await client.examStart(
         deckName,
         cards: start.cards,
         ideas: ideas,
       );
     } on PairingExpired {
-      _controller.setServerReachable(false);
-      _stopExamPolling();
-      notice('pairing expired');
-      _snack(pairingExpiredMessage);
+      _pairingExpiredAtExam(deckName);
       return;
     } on Object {
       started = null;
     }
     if (!mounted) return;
-    if (started == null) {
+    final sitting = started?.sitting;
+    if (started == null || sitting == null) {
       notice('the desktop refused the exam');
       return;
     }
     _examNotice.value = null;
     sittings.put(
       StartedSitting(
+        root: root,
         deckPath: entry.path,
         title: entry.title,
+        sitting: sitting,
         start: start,
-        sitting: started.sitting,
       ),
     );
     _examSlotEpoch++;
     _remoteExam = started;
-    _pollWhileGenerating(started);
+    _keepPolling(started);
   }
 
   Future<void> _cancelExamGeneration(
     BuildContext sheet,
-    PickerEntry entry,
+    StartedSitting record,
     String deckName,
   ) async {
     final confirmed = await showDialog<bool>(
@@ -710,9 +775,13 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     final client = _examStateClient;
     if (confirmed != true || client == null) return;
+    bool closed;
     try {
-      await client.examClose();
+      closed = await client.examClose(record.sitting);
     } on Object {
+      closed = false;
+    }
+    if (!closed) {
       _examNotice.value = (
         deck: deckName,
         text: 'could not cancel the preparation',
@@ -721,92 +790,168 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     _examNotice.value = null;
     _examSlotEpoch++;
-    StartedSittings.load(await _support()).remove(entry.path);
+    _sittings?.remove(record.root, record.deckId);
     if (!mounted) return;
     _remoteExam = null;
-    _pollWhileGenerating(null);
+    _keepPolling(null);
     _controller.reload();
   }
 
-  Future<void> _openExam(
+  Future<bool> _confirmDiscard(BuildContext context) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialog) => AlertDialog(
+          title: const Text('Discard exam?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialog).pop(false),
+              child: const Text('Keep'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialog).pop(true),
+              child: const Text('Discard exam'),
+            ),
+          ],
+        ),
+      ) ==
+      true;
+
+  Future<bool> _discardHeld(
+    BuildContext context, {
+    required String root,
+    required String deckId,
+  }) async {
+    if (!await _confirmDiscard(context)) return false;
+    String? sitting;
+    try {
+      sitting = exam_bridge.heldExamSitting(root, deckId);
+    } on Object {
+      sitting = null;
+    }
+    final sittings = _sittings;
+    final record = sittings?.bySitting(sitting);
+    if (sittings != null && record != null) {
+      record.fetched = true;
+      sittings.save();
+    }
+    exam_bridge.heldExamRemove(rootDir: root, deckId: deckId);
+    _heldChanged.value++;
+    final client = _examStateClient;
+    if (sitting != null && client != null && root == _examRootDir) {
+      unawaited(client.examClose(sitting).then<void>((_) {}, onError: (Object _) {}));
+      unawaited(client.gradingClose(sitting).then<void>((_) {}, onError: (Object _) {}));
+    }
+    return true;
+  }
+
+  Future<void> _discardHeldFromSheet(
+    BuildContext sheet,
+    String deckName, {
+    required String root,
+    required String deckId,
+  }) async {
+    try {
+      if (await _discardHeld(sheet, root: root, deckId: deckId)) {
+        _heldNotice.value = null;
+      }
+    } on Object catch (error) {
+      _heldNotice.value = (deck: deckName, text: bridgeErrorText(error));
+    }
+  }
+
+  Future<bool> _discardReady(
+    BuildContext sheet,
+    String deckName,
+    StartedSitting record,
+  ) async {
+    final handoff = _examHandoff;
+    if (handoff == null || !await _confirmDiscard(sheet)) return false;
+    try {
+      await handoff.discardReady(record);
+    } on PairingExpired {
+      _pairingExpiredAtExam(deckName);
+      return false;
+    } on Object catch (error) {
+      _examNotice.value = (deck: deckName, text: bridgeErrorText(error));
+      return false;
+    }
+    if (!mounted) return false;
+    _heldChanged.value++;
+    return true;
+  }
+
+  Future<void> _discardBlocked(BuildContext sheet) async {
+    final blocked = _blockedClaim;
+    if (blocked == null) return;
+    if (await _discardReady(sheet, blocked.deck, blocked.record)) {
+      await blocked.resume();
+    }
+  }
+
+  void _leaveHeldResult({required String root, required String deckId}) {
+    try {
+      final sittings = _sittings;
+      final record = sittings?.bySitting(exam_bridge.heldExamSitting(root, deckId));
+      if (sittings != null && record != null) {
+        record.fetched = true;
+        sittings.save();
+      }
+      exam_bridge.heldExamRemove(rootDir: root, deckId: deckId);
+    } on Object {
+      return;
+    }
+  }
+
+  Future<void> _openHeldExam(
     PickerEntry entry, {
     required String root,
-    required RemoteExam exam,
+    required String deckId,
   }) async {
     final support = await _support();
+    if (!mounted) return;
     final config = readActivePairing(support);
-    if (config == null || !mounted) return;
-    final sittings = StartedSittings.load(support);
-    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    final client = config == null
+        ? null
+        : (widget.buildClient ?? HttpServerClient.new)(config);
     _pauseExamPolling();
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ExamScreen(
           deckName: examDeckName(deckPath: entry.path, rootDir: root),
+          held: exam_bridge.BridgeHeldExam(
+            deckPath: entry.path,
+            deckId: deckId,
+            rootDir: root,
+            device: widget.device,
+          ),
           client: client,
-          support: support,
-          buildClient: widget.buildClient ?? HttpServerClient.new,
-          unsourcedTopics:
-              sittings.kept(entry.path, exam.sitting)?.start.unsourcedTopics ??
-              const [],
-          initialExam: exam,
-          loadAnswers: (questions) => exam_bridge.examAnswersLoad(
-            deckPath: entry.path,
-            rootDir: root,
-            questions: questions,
-          ),
-          saveAnswers: (questions, answers) => exam_bridge.examAnswersSave(
-            deckPath: entry.path,
-            rootDir: root,
-            questions: questions,
-            answers: answers,
-          ),
-          clearAnswers: () =>
-              exam_bridge.examAnswersClear(deckPath: entry.path, rootDir: root),
-          saveIdeas: (ideas) => exam_bridge.examIdeasSave(
-            deckPath: entry.path,
-            rootDir: root,
-            json: jsonEncode(ideas),
-          ),
-          applyResult: (exam, nowMs) {
-            final kept = sittings.kept(entry.path, exam.sitting);
-            if (kept == null) throw const _UnrecordableSitting();
-            if (kept.recorded) return kept.standing;
-            kept.standing = exam_bridge.applyExamResult(
-              deckPath: entry.path,
-              rootDir: root,
-              exam: exam,
-              start: kept.start,
-              nowMs: nowMs,
-              device: widget.device,
-            );
-            kept.recorded = true;
-            sittings.save();
-            return kept.standing;
-          },
-          applyRemediation: (exam, topic) {
-            final kept = sittings.kept(entry.path, exam.sitting);
-            if (kept == null) return null;
-            final applied = kept.remediated[topic.topicId];
-            if (applied != null) return applied;
-            final count = exam_bridge.applyExamRemediation(
-              deckPath: entry.path,
-              rootDir: root,
-              topicId: topic.topicId,
-              cardsText: topic.cards,
-              device: widget.device,
-            );
-            kept.remediated[topic.topicId] = count;
-            sittings.save();
-            return count;
-          },
-          nowMs: () => BigInt.from(DateTime.now().millisecondsSinceEpoch),
+          onLeaveResult: () => _leaveHeldResult(root: root, deckId: deckId),
+          onDiscard: () => _discardHeld(context, root: root, deckId: deckId),
         ),
       ),
     );
     if (!mounted) return;
-    _configureExamPolling(config, live: true);
+    _resumeExamPolling();
+    _heldChanged.value++;
     _controller.reload();
+  }
+
+  String? _examDeckId(String deckPath) {
+    try {
+      return exam_bridge.examDeckId(deckPath: deckPath);
+    } on Object {
+      return null;
+    }
+  }
+
+  ({bool held, bool hasResult}) _readHeld(String root, String? deckId) {
+    if (deckId == null) return (held: false, hasResult: false);
+    try {
+      final view = exam_bridge.heldExamView(rootDir: root, deckId: deckId);
+      return (held: view != null, hasResult: view?.result != null);
+    } on Object {
+      return (held: true, hasResult: false);
+    }
   }
 
   SyncPendingConflict? _pendingConflictFor(
@@ -840,21 +985,43 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     if (!mounted) return;
     bool? walkCram;
-    RemoteExam? examToTake;
+    var openHeld = false;
     final deckName = examDeckName(deckPath: entry.path, rootDir: root);
     _examNotice.value = null;
+    _heldNotice.value = null;
+    _blockedClaim = null;
+    final deckId = _examDeckId(entry.path);
+    final held = ValueNotifier(_readHeld(root, deckId));
+    void readHeld() => held.value = _readHeld(root, deckId);
+    _heldChanged.addListener(readHeld);
     final launch = await showModalBottomSheet<PickerLaunch>(
       context: context,
       isScrollControlled: true,
       builder: (sheet) => ListenableBuilder(
-        listenable: Listenable.merge([_remoteExamSlot, _examNotice]),
+        listenable: Listenable.merge([
+          _remoteExamSlot,
+          _examNotice,
+          _heldNotice,
+          _heldChanged,
+          held,
+        ]),
         builder: (_, _) {
           final polled = _remoteExamSlot.value;
-          final notice = _examNotice.value;
-          final slot = polled.exam?.deck == deckName ? polled.exam : null;
-          final generating = slot?.phase == 'generating';
-          final failed = generating && slot?.error != null;
-          final elapsed = Duration(seconds: slot?.elapsed ?? 0);
+          final record = deckId == null
+              ? null
+              : _sittings?.forDeck(root, deckId);
+          final (:action, :failed) = examActionFor(
+            held: held.value.held,
+            heldHasResult: held.value.hasResult,
+            record: record,
+            desk: polled.exam,
+          );
+          final holding =
+              action == PickerExamAction.take ||
+              action == PickerExamAction.result;
+          final notice = holding ? _heldNotice.value : _examNotice.value;
+          final blocked = _blockedClaim?.deck == deckName ? _blockedClaim : null;
+          final elapsed = Duration(seconds: polled.exam?.elapsed ?? 0);
           return PickerDepthSheet(
             canRecognize: entry.canRecognize,
             onChoose: (launch) => Navigator.of(sheet).pop(launch),
@@ -868,17 +1035,15 @@ class _PickerScreenState extends State<PickerScreen> {
                     serverLive: isPaired && _controller.serverReachable,
                     due: entry.examDue,
                     filterable: entry.examFilter != 'none',
-                    action: slot == null || failed
-                        ? PickerExamAction.generate
-                        : generating
-                        ? PickerExamAction.preparing
-                        : PickerExamAction.take,
+                    action: action,
                     failed: failed,
                     notice: notice?.deck == deckName ? notice?.text : null,
-                    preparingSince: polled.polledAt.subtract(elapsed),
+                    preparingSince: action == PickerExamAction.preparing
+                        ? polled.polledAt.subtract(elapsed)
+                        : null,
                     onStart: (needsWorkOnly) {
-                      if (slot != null && !generating) {
-                        examToTake = slot;
+                      if (holding) {
+                        openHeld = true;
                         Navigator.of(sheet).pop();
                         return;
                       }
@@ -888,13 +1053,29 @@ class _PickerScreenState extends State<PickerScreen> {
                         needsWorkOnly: needsWorkOnly,
                       );
                     },
-                    onCancel: () => _cancelExamGeneration(sheet, entry, deckName),
+                    onCancel: action == PickerExamAction.preparing && record != null
+                        ? () => _cancelExamGeneration(sheet, record, deckName)
+                        : null,
+                    onDiscard: holding && deckId != null
+                        ? () => _discardHeldFromSheet(
+                            sheet,
+                            deckName,
+                            root: root,
+                            deckId: deckId,
+                          )
+                        : action == PickerExamAction.fetching && record != null
+                        ? () => _discardReady(sheet, deckName, record)
+                        : blocked != null
+                        ? () => _discardBlocked(sheet)
+                        : null,
                   )
                 : null,
           );
         },
       ),
     );
+    _heldChanged.removeListener(readHeld);
+    held.dispose();
     if (!mounted) return;
     final lateConflict = _pendingConflictFor(
       entry,
@@ -909,8 +1090,8 @@ class _PickerScreenState extends State<PickerScreen> {
       await _openWalk(entry, root: root, cram: cram);
       return;
     }
-    if (examToTake case final exam?) {
-      await _openExam(entry, root: root, exam: exam);
+    if (openHeld && deckId != null) {
+      await _openHeldExam(entry, root: root, deckId: deckId);
       return;
     }
     if (launch == null) return;

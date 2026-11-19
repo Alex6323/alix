@@ -4,10 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/bootstrap.dart';
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/review_screen.dart';
-import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/sync/sync_controller.dart';
 import 'package:alix_mobile/sync/sync_models.dart';
@@ -16,7 +14,6 @@ import 'package:alix_mobile/sync_client.dart';
 import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
-import 'support/fake_server_client.dart';
 import 'support/picker_listing.dart';
 
 void main() {
@@ -83,20 +80,8 @@ void main() {
     required String deckPath,
     required String rowTitle,
     bool review = false,
-    FakeServerClient? examClient,
   }) async {
     final fixture = workspace();
-    if (examClient != null) {
-      await savePairing(
-        const ServerConfig(
-          host: '127.0.0.1',
-          port: 7777,
-          token: 'session-end-test',
-          rootId: 'root-test0000000000000000000000',
-        ),
-        support: fixture.support,
-      );
-    }
     final syncController = _MidSessionConflictController(
       deckId: deckId,
       deckPath: deckPath,
@@ -110,7 +95,6 @@ void main() {
           dir: fixture.workspace.path,
           title: 'Ws',
           supportDir: fixture.support,
-          buildClient: examClient == null ? null : (_) => examClient,
           syncController: syncController,
           isPairedSubtree: true,
           isPushedRoute: true,
@@ -344,152 +328,6 @@ void main() {
       await expectDesktopKept(tester, syncController, 'trace finished');
     },
   );
-
-  testWidgets(
-    'sitting the exam from the launch sheet after taking desktop on a finished review keeps the '
-    'desktop card progress',
-    (tester) async {
-      final client = FakeServerClient(
-        versionReply: '0.8.0',
-        examGetReplies: [_passedExam],
-      );
-      final syncController = await openSession(
-        tester,
-        deckId: 'deck-1',
-        deckPath: 'decks/deck.md',
-        rowTitle: 'Deck',
-        examClient: client,
-      );
-      await tester.tap(find.text('Reveal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Seen'));
-      await tester.pumpAndSettle();
-      expect(find.text('SESSION COMPLETE'), findsOneWidget);
-
-      await resolveAndExpectPicker(tester, syncController);
-      expect(_cards(syncController.workspace), isEmpty);
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Deck'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Take exam'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('1 / 1'), findsOneWidget);
-      expect(
-        _cards(syncController.workspace),
-        isEmpty,
-        reason: 'exam mastery must not restore the discarded phone reviews',
-      );
-    },
-  );
-
-  testWidgets(
-    'remediating after taking desktop on a finished review keeps only the '
-    'new remediation card',
-    (tester) async {
-      final client = FakeServerClient(
-        versionReply: '0.8.0',
-        noSittingBeforeStart: true,
-        examStartSitting: 'sitting-1',
-        examGetReplies: [_failedExam],
-        examGetRepliesAfterRemediate: [_remediatedExam],
-      );
-      final syncController = await openSession(
-        tester,
-        deckId: 'deck-1',
-        deckPath: 'decks/deck.md',
-        rowTitle: 'Deck',
-        examClient: client,
-      );
-      await tester.tap(find.text('Reveal'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Seen'));
-      await tester.pumpAndSettle();
-      expect(find.text('SESSION COMPLETE'), findsOneWidget);
-
-      await resolveAndExpectPicker(tester, syncController);
-      expect(_cards(syncController.workspace), isEmpty);
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Deck'));
-      await tester.pumpAndSettle();
-      writeVerifiedTestSources('${syncController.workspace.path}/decks/deck.md');
-      await tester.tap(find.text('Generate exam'));
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pump();
-      await tester.tap(find.text('Take exam'));
-      await tester.pumpAndSettle();
-      expect(find.text('0 / 1'), findsOneWidget);
-      expect(find.textContaining('the exam material changed'), findsNothing);
-      await tester.tap(find.text('Turn the gaps into cards'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Done.'), findsOneWidget);
-      expect(
-        _cards(syncController.workspace),
-        isEmpty,
-        reason: 'remediation must not restore the discarded phone review',
-      );
-      expect(
-        File('${syncController.workspace.path}/decks/deck.local.md')
-            .readAsStringSync(),
-        contains('## remediation question?'),
-        reason: 'the new remediation card lives in the sidecar',
-      );
-    },
-  );
-}
-
-const _passedExam = RemoteExam(
-  phase: 'results',
-  deck: 'ws/deck.md',
-  strictness: 'balanced',
-  questions: [],
-  verdicts: ExamVerdicts(pass: 1, partial: 0, total: 1),
-  full: true,
-  grades: [],
-  gaps: [],
-  canRemediate: false,
-  thinking: false,
-);
-
-const _failedExam = RemoteExam(
-  sitting: 'sitting-1',
-  phase: 'results',
-  deck: 'ws/deck.md',
-  strictness: 'balanced',
-  questions: ['What did the card explain?'],
-  verdicts: ExamVerdicts(pass: 0, partial: 0, total: 1),
-  full: true,
-  grades: [],
-  gaps: ['the tested idea'],
-  canRemediate: true,
-  thinking: false,
-);
-
-const _remediatedExam = RemoteExam(
-  sitting: 'sitting-1',
-  phase: 'remediated',
-  deck: 'ws/deck.md',
-  strictness: 'balanced',
-  questions: ['What did the card explain?'],
-  grades: [],
-  gaps: ['the tested idea'],
-  canRemediate: false,
-  cardsByTopic: [
-    RemoteTopicCards(
-      topicId: 'deck-1',
-      cards: '## remediation question?\nremediation answer\n',
-    ),
-  ],
-  thinking: false,
-);
-
-Map<String, dynamic> _cards(Directory workspace) {
-  final json = jsonDecode(progressDocument(workspace).readAsStringSync());
-  return (json as Map<String, dynamic>)['cards'] as Map<String, dynamic>;
 }
 
 File progressDocument(Directory workspace) {

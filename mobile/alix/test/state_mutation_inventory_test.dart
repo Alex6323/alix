@@ -92,8 +92,8 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:849',
-        'lib/picker_screen.dart:1069',
+        'lib/picker_screen.dart:1000',
+        'lib/picker_screen.dart:1250',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:226',
@@ -137,6 +137,8 @@ void main() {
           'the cram walk widened _openWalk above both and added a field to '
           'walk_screen.dart; a successful cancel clearing the notice added a '
           'line above both; '
+          'the held exam'"'"'s hand-off, discard and opening added fields and '
+          'methods above both; '
           'generate_sheet.dart is unchanged',
     );
   });
@@ -155,7 +157,7 @@ void main() {
           ..._sites(path, 'Timer.periodic('),
         ],
       ],
-      ['lib/picker_screen.dart:372', 'lib/picker/generate_controller.dart:142'],
+      ['lib/picker_screen.dart:398', 'lib/picker/generate_controller.dart:142'],
     );
     expect([
       for (final path in paths) ..._sites(path, 'StreamSubscription'),

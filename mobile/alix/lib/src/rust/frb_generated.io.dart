@@ -147,9 +147,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_box_autoadd_depth(dynamic raw);
 
   @protected
-  ExamOutcome dco_decode_box_autoadd_exam_outcome(dynamic raw);
-
-  @protected
   ExamStart dco_decode_box_autoadd_exam_start(dynamic raw);
 
   @protected
@@ -169,9 +166,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PairedWriter dco_decode_box_autoadd_paired_writer(dynamic raw);
-
-  @protected
-  PhoneExamAnswers dco_decode_box_autoadd_phone_exam_answers(dynamic raw);
 
   @protected
   PushOutcomeDto dco_decode_box_autoadd_push_outcome_dto(dynamic raw);
@@ -237,19 +231,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth dco_decode_depth(dynamic raw);
 
   @protected
-  ExamApplied dco_decode_exam_applied(dynamic raw);
-
-  @protected
-  ExamOutcome dco_decode_exam_outcome(dynamic raw);
-
-  @protected
   ExamStamp dco_decode_exam_stamp(dynamic raw);
 
   @protected
   ExamStart dco_decode_exam_start(dynamic raw);
-
-  @protected
-  ExamTopicOutcome dco_decode_exam_topic_outcome(dynamic raw);
 
   @protected
   ExcerptLine dco_decode_excerpt_line(dynamic raw);
@@ -307,9 +292,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw);
-
-  @protected
-  List<ExamTopicOutcome> dco_decode_list_exam_topic_outcome(dynamic raw);
 
   @protected
   List<ExcerptLine> dco_decode_list_excerpt_line(dynamic raw);
@@ -484,9 +466,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PairedWriter dco_decode_paired_writer(dynamic raw);
-
-  @protected
-  PhoneExamAnswers dco_decode_phone_exam_answers(dynamic raw);
 
   @protected
   PullReportDto dco_decode_pull_report_dto(dynamic raw);
@@ -685,9 +664,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_box_autoadd_depth(SseDeserializer deserializer);
 
   @protected
-  ExamOutcome sse_decode_box_autoadd_exam_outcome(SseDeserializer deserializer);
-
-  @protected
   ExamStart sse_decode_box_autoadd_exam_start(SseDeserializer deserializer);
 
   @protected
@@ -711,11 +687,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PairedWriter sse_decode_box_autoadd_paired_writer(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  PhoneExamAnswers sse_decode_box_autoadd_phone_exam_answers(
     SseDeserializer deserializer,
   );
 
@@ -793,19 +764,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Depth sse_decode_depth(SseDeserializer deserializer);
 
   @protected
-  ExamApplied sse_decode_exam_applied(SseDeserializer deserializer);
-
-  @protected
-  ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer);
-
-  @protected
   ExamStamp sse_decode_exam_stamp(SseDeserializer deserializer);
 
   @protected
   ExamStart sse_decode_exam_start(SseDeserializer deserializer);
-
-  @protected
-  ExamTopicOutcome sse_decode_exam_topic_outcome(SseDeserializer deserializer);
 
   @protected
   ExcerptLine sse_decode_excerpt_line(SseDeserializer deserializer);
@@ -867,11 +829,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<DeckStrip> sse_decode_list_deck_strip(SseDeserializer deserializer);
-
-  @protected
-  List<ExamTopicOutcome> sse_decode_list_exam_topic_outcome(
-    SseDeserializer deserializer,
-  );
 
   @protected
   List<ExcerptLine> sse_decode_list_excerpt_line(SseDeserializer deserializer);
@@ -1086,9 +1043,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PairedWriter sse_decode_paired_writer(SseDeserializer deserializer);
-
-  @protected
-  PhoneExamAnswers sse_decode_phone_exam_answers(SseDeserializer deserializer);
 
   @protected
   PullReportDto sse_decode_pull_report_dto(SseDeserializer deserializer);
@@ -1323,12 +1277,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_depth(Depth self, SseSerializer serializer);
 
   @protected
-  void sse_encode_box_autoadd_exam_outcome(
-    ExamOutcome self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_box_autoadd_exam_start(
     ExamStart self,
     SseSerializer serializer,
@@ -1367,12 +1315,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_paired_writer(
     PairedWriter self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_box_autoadd_phone_exam_answers(
-    PhoneExamAnswers self,
     SseSerializer serializer,
   );
 
@@ -1464,22 +1406,10 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_depth(Depth self, SseSerializer serializer);
 
   @protected
-  void sse_encode_exam_applied(ExamApplied self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer);
-
-  @protected
   void sse_encode_exam_stamp(ExamStamp self, SseSerializer serializer);
 
   @protected
   void sse_encode_exam_start(ExamStart self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_exam_topic_outcome(
-    ExamTopicOutcome self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_excerpt_line(ExcerptLine self, SseSerializer serializer);
@@ -1556,12 +1486,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_deck_strip(
     List<DeckStrip> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_list_exam_topic_outcome(
-    List<ExamTopicOutcome> self,
     SseSerializer serializer,
   );
 
@@ -1864,12 +1788,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_paired_writer(PairedWriter self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_phone_exam_answers(
-    PhoneExamAnswers self,
-    SseSerializer serializer,
-  );
 
   @protected
   void sse_encode_pull_report_dto(PullReportDto self, SseSerializer serializer);

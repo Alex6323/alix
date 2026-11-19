@@ -71,7 +71,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -712245284;
+  int get rustContentHash => 1426938122;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -251,22 +251,6 @@ abstract class RustLibApi extends BaseApi {
 
   TutorCard? crateApiReviewWalkSessionTutorCard({required WalkSession that});
 
-  int crateApiExamApplyExamRemediation({
-    required String deckPath,
-    required String rootDir,
-    required String topicId,
-    required String cardsText,
-    String? device,
-  });
-
-  ExamApplied crateApiExamApplyExamResult({
-    required String deckPath,
-    required String rootDir,
-    required ExamOutcome outcome,
-    required BigInt nowMs,
-    String? device,
-  });
-
   String crateApiGenerateApplyGeneratedDeck({
     required String decksDir,
     required String filename,
@@ -283,33 +267,11 @@ abstract class RustLibApi extends BaseApi {
 
   String? crateApiListingDeckTitle({required String path});
 
-  void crateApiExamExamAnswersClear({
-    required String deckPath,
-    required String rootDir,
-  });
-
-  PhoneExamAnswers crateApiExamExamAnswersLoad({
-    required String deckPath,
-    required String rootDir,
-    required List<String> questions,
-  });
-
-  void crateApiExamExamAnswersSave({
-    required String deckPath,
-    required String rootDir,
-    required List<String> questions,
-    required PhoneExamAnswers answers,
-  });
+  String? crateApiExamExamDeckId({required String deckPath});
 
   String? crateApiExamExamIdeasLoad({
     required String deckPath,
     required String rootDir,
-  });
-
-  void crateApiExamExamIdeasSave({
-    required String deckPath,
-    required String rootDir,
-    required String json,
   });
 
   ExamStart crateApiExamExamSittingStart({
@@ -1629,78 +1591,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  int crateApiExamApplyExamRemediation({
-    required String deckPath,
-    required String rootDir,
-    required String topicId,
-    required String cardsText,
-    String? device,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
-          sse_encode_String(rootDir, serializer);
-          sse_encode_String(topicId, serializer);
-          sse_encode_String(cardsText, serializer);
-          sse_encode_opt_String(device, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_u_32,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiExamApplyExamRemediationConstMeta,
-        argValues: [deckPath, rootDir, topicId, cardsText, device],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiExamApplyExamRemediationConstMeta =>
-      const TaskConstMeta(
-        debugName: "apply_exam_remediation",
-        argNames: ["deckPath", "rootDir", "topicId", "cardsText", "device"],
-      );
-
-  @override
-  ExamApplied crateApiExamApplyExamResult({
-    required String deckPath,
-    required String rootDir,
-    required ExamOutcome outcome,
-    required BigInt nowMs,
-    String? device,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
-          sse_encode_String(rootDir, serializer);
-          sse_encode_box_autoadd_exam_outcome(outcome, serializer);
-          sse_encode_u_64(nowMs, serializer);
-          sse_encode_opt_String(device, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_exam_applied,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiExamApplyExamResultConstMeta,
-        argValues: [deckPath, rootDir, outcome, nowMs, device],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiExamApplyExamResultConstMeta =>
-      const TaskConstMeta(
-        debugName: "apply_exam_result",
-        argNames: ["deckPath", "rootDir", "outcome", "nowMs", "device"],
-      );
-
-  @override
   String crateApiGenerateApplyGeneratedDeck({
     required String decksDir,
     required String filename,
@@ -1713,7 +1603,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(decksDir, serializer);
           sse_encode_String(filename, serializer);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1738,7 +1628,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -1770,7 +1660,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1797,7 +1687,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -1814,100 +1704,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "deck_title", argNames: ["path"]);
 
   @override
-  void crateApiExamExamAnswersClear({
-    required String deckPath,
-    required String rootDir,
-  }) {
+  String? crateApiExamExamDeckId({required String deckPath}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
-          sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
+          decodeSuccessData: sse_decode_opt_String,
           decodeErrorData: sse_decode_AnyhowException,
         ),
-        constMeta: kCrateApiExamExamAnswersClearConstMeta,
-        argValues: [deckPath, rootDir],
+        constMeta: kCrateApiExamExamDeckIdConstMeta,
+        argValues: [deckPath],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiExamExamAnswersClearConstMeta =>
-      const TaskConstMeta(
-        debugName: "exam_answers_clear",
-        argNames: ["deckPath", "rootDir"],
-      );
-
-  @override
-  PhoneExamAnswers crateApiExamExamAnswersLoad({
-    required String deckPath,
-    required String rootDir,
-    required List<String> questions,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
-          sse_encode_String(rootDir, serializer);
-          sse_encode_list_String(questions, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_phone_exam_answers,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiExamExamAnswersLoadConstMeta,
-        argValues: [deckPath, rootDir, questions],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiExamExamAnswersLoadConstMeta =>
-      const TaskConstMeta(
-        debugName: "exam_answers_load",
-        argNames: ["deckPath", "rootDir", "questions"],
-      );
-
-  @override
-  void crateApiExamExamAnswersSave({
-    required String deckPath,
-    required String rootDir,
-    required List<String> questions,
-    required PhoneExamAnswers answers,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
-          sse_encode_String(rootDir, serializer);
-          sse_encode_list_String(questions, serializer);
-          sse_encode_box_autoadd_phone_exam_answers(answers, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiExamExamAnswersSaveConstMeta,
-        argValues: [deckPath, rootDir, questions, answers],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiExamExamAnswersSaveConstMeta =>
-      const TaskConstMeta(
-        debugName: "exam_answers_save",
-        argNames: ["deckPath", "rootDir", "questions", "answers"],
-      );
+  TaskConstMeta get kCrateApiExamExamDeckIdConstMeta =>
+      const TaskConstMeta(debugName: "exam_deck_id", argNames: ["deckPath"]);
 
   @override
   String? crateApiExamExamIdeasLoad({
@@ -1920,7 +1737,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -1939,37 +1756,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  void crateApiExamExamIdeasSave({
-    required String deckPath,
-    required String rootDir,
-    required String json,
-  }) {
-    return handler.executeSync(
-      SyncTask(
-        callFfi: () {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_String(deckPath, serializer);
-          sse_encode_String(rootDir, serializer);
-          sse_encode_String(json, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_unit,
-          decodeErrorData: sse_decode_AnyhowException,
-        ),
-        constMeta: kCrateApiExamExamIdeasSaveConstMeta,
-        argValues: [deckPath, rootDir, json],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiExamExamIdeasSaveConstMeta => const TaskConstMeta(
-    debugName: "exam_ideas_save",
-    argNames: ["deckPath", "rootDir", "json"],
-  );
-
-  @override
   ExamStart crateApiExamExamSittingStart({
     required String deckPath,
     required String rootDir,
@@ -1984,7 +1770,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_bool(needsWorkOnly, serializer);
           sse_encode_u_64(nowMs, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 41)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_exam_start,
@@ -2016,7 +1802,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
           sse_encode_opt_String(device, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 42)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2045,7 +1831,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(deckId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 43)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2075,7 +1861,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 44)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -2107,7 +1893,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_String(carriedJson, serializer);
           sse_encode_box_autoadd_exam_start(start, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 45)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2137,7 +1923,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(deckId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 46)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -2167,7 +1953,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(deckId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 47)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2200,7 +1986,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(deckId, serializer);
           sse_encode_list_String(answers, serializer);
           sse_encode_list_bool(locked, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 48)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2230,7 +2016,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(deckId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 49)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -2264,7 +2050,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_String(replyJson, serializer);
           sse_encode_opt_String(device, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 55)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 50)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_32,
@@ -2300,7 +2086,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(replyJson, serializer);
           sse_encode_u_64(receivedMs, serializer);
           sse_encode_bool(recorded, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 56)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2330,7 +2116,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(deckId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 57)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 52)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_String,
@@ -2357,7 +2143,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 58,
+            funcId: 53,
             port: port_,
           );
         },
@@ -2386,7 +2172,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_32(covered, serializer);
           sse_encode_u_32(total, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_grade,
@@ -2423,7 +2209,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 60,
+            funcId: 55,
             port: port_,
           );
         },
@@ -2459,7 +2245,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 61,
+            funcId: 56,
             port: port_,
           );
         },
@@ -2493,7 +2279,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 62,
+            funcId: 57,
             port: port_,
           );
         },
@@ -2530,7 +2316,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 63,
+            funcId: 58,
             port: port_,
           );
         },
@@ -2558,7 +2344,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 59)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_paired_entry_state,
@@ -2581,7 +2367,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 60)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_64,
@@ -2608,7 +2394,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_u_64(compressed, serializer);
           sse_encode_u_64(unpacked, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_u_64,
@@ -2638,7 +2424,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_list_String(listed, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 62)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -2663,7 +2449,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_push_plan_item,
@@ -2695,7 +2481,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_box_autoadd_push_plan_item(item, serializer);
           sse_encode_box_autoadd_push_outcome_dto(outcome, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2721,7 +2507,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 65)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_String,
@@ -2748,7 +2534,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(entry, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 66)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2780,7 +2566,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(rootDir, serializer);
           sse_encode_String(deckId, serializer);
           sse_encode_bool(keepPhone, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 67)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_resolution_dto,
@@ -2810,7 +2596,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(support, serializer);
           sse_encode_String(rootId, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 73)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 68)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2839,7 +2625,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_String(entry, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 74)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 69)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_String,
@@ -2869,7 +2655,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(rootDir, serializer);
           sse_encode_list_String(listed, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 75)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 70)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_renamed_entry,
@@ -2899,7 +2685,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(deckPath, serializer);
           sse_encode_String(rootDir, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 76)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 71)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2929,7 +2715,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dir, serializer);
           sse_encode_opt_String(date, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 77)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 72)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -3179,12 +2965,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ExamOutcome dco_decode_box_autoadd_exam_outcome(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_exam_outcome(raw);
-  }
-
-  @protected
   ExamStart dco_decode_box_autoadd_exam_start(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_exam_start(raw);
@@ -3226,12 +3006,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PairedWriter dco_decode_box_autoadd_paired_writer(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_paired_writer(raw);
-  }
-
-  @protected
-  PhoneExamAnswers dco_decode_box_autoadd_phone_exam_answers(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return dco_decode_phone_exam_answers(raw);
   }
 
   @protected
@@ -3499,36 +3273,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ExamApplied dco_decode_exam_applied(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return ExamApplied(
-      unlocked: dco_decode_bool(arr[0]),
-      examHighMark: dco_decode_opt_String(arr[1]),
-      examChanged: dco_decode_bool(arr[2]),
-    );
-  }
-
-  @protected
-  ExamOutcome dco_decode_exam_outcome(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
-    return ExamOutcome(
-      topics: dco_decode_list_exam_topic_outcome(arr[0]),
-      full: dco_decode_bool(arr[1]),
-      pass: dco_decode_u_32(arr[2]),
-      partial: dco_decode_u_32(arr[3]),
-      total: dco_decode_u_32(arr[4]),
-      eligible: dco_decode_bool(arr[5]),
-      stamp: dco_decode_exam_stamp(arr[6]),
-    );
-  }
-
-  @protected
   ExamStamp dco_decode_exam_stamp(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -3552,19 +3296,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       eligible: dco_decode_bool(arr[2]),
       stamp: dco_decode_exam_stamp(arr[3]),
       unsourcedTopics: dco_decode_list_String(arr[4]),
-    );
-  }
-
-  @protected
-  ExamTopicOutcome dco_decode_exam_topic_outcome(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
-    return ExamTopicOutcome(
-      topicId: dco_decode_String(arr[0]),
-      fingerprint: dco_decode_String(arr[1]),
-      pass: dco_decode_bool(arr[2]),
     );
   }
 
@@ -3724,12 +3455,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<DeckStrip> dco_decode_list_deck_strip(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_deck_strip).toList();
-  }
-
-  @protected
-  List<ExamTopicOutcome> dco_decode_list_exam_topic_outcome(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return (raw as List<dynamic>).map(dco_decode_exam_topic_outcome).toList();
   }
 
   @protected
@@ -4160,18 +3885,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return PairedWriter(
       device: dco_decode_String(arr[0]),
       atMs: dco_decode_u_64(arr[1]),
-    );
-  }
-
-  @protected
-  PhoneExamAnswers dco_decode_phone_exam_answers(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return PhoneExamAnswers(
-      answers: dco_decode_list_String(arr[0]),
-      locked: dco_decode_list_bool(arr[1]),
     );
   }
 
@@ -4785,14 +4498,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ExamOutcome sse_decode_box_autoadd_exam_outcome(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_exam_outcome(deserializer));
-  }
-
-  @protected
   ExamStart sse_decode_box_autoadd_exam_start(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_exam_start(deserializer));
@@ -4842,14 +4547,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_paired_writer(deserializer));
-  }
-
-  @protected
-  PhoneExamAnswers sse_decode_box_autoadd_phone_exam_answers(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    return (sse_decode_phone_exam_answers(deserializer));
   }
 
   @protected
@@ -5162,40 +4859,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  ExamApplied sse_decode_exam_applied(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_unlocked = sse_decode_bool(deserializer);
-    var var_examHighMark = sse_decode_opt_String(deserializer);
-    var var_examChanged = sse_decode_bool(deserializer);
-    return ExamApplied(
-      unlocked: var_unlocked,
-      examHighMark: var_examHighMark,
-      examChanged: var_examChanged,
-    );
-  }
-
-  @protected
-  ExamOutcome sse_decode_exam_outcome(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_topics = sse_decode_list_exam_topic_outcome(deserializer);
-    var var_full = sse_decode_bool(deserializer);
-    var var_pass = sse_decode_u_32(deserializer);
-    var var_partial = sse_decode_u_32(deserializer);
-    var var_total = sse_decode_u_32(deserializer);
-    var var_eligible = sse_decode_bool(deserializer);
-    var var_stamp = sse_decode_exam_stamp(deserializer);
-    return ExamOutcome(
-      topics: var_topics,
-      full: var_full,
-      pass: var_pass,
-      partial: var_partial,
-      total: var_total,
-      eligible: var_eligible,
-      stamp: var_stamp,
-    );
-  }
-
-  @protected
   ExamStamp sse_decode_exam_stamp(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_sourced = sse_decode_String(deserializer);
@@ -5217,19 +4880,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       eligible: var_eligible,
       stamp: var_stamp,
       unsourcedTopics: var_unsourcedTopics,
-    );
-  }
-
-  @protected
-  ExamTopicOutcome sse_decode_exam_topic_outcome(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_topicId = sse_decode_String(deserializer);
-    var var_fingerprint = sse_decode_String(deserializer);
-    var var_pass = sse_decode_bool(deserializer);
-    return ExamTopicOutcome(
-      topicId: var_topicId,
-      fingerprint: var_fingerprint,
-      pass: var_pass,
     );
   }
 
@@ -5453,20 +5103,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <DeckStrip>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_deck_strip(deserializer));
-    }
-    return ans_;
-  }
-
-  @protected
-  List<ExamTopicOutcome> sse_decode_list_exam_topic_outcome(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-
-    var len_ = sse_decode_i_32(deserializer);
-    var ans_ = <ExamTopicOutcome>[];
-    for (var idx_ = 0; idx_ < len_; ++idx_) {
-      ans_.add(sse_decode_exam_topic_outcome(deserializer));
     }
     return ans_;
   }
@@ -6181,14 +5817,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  PhoneExamAnswers sse_decode_phone_exam_answers(SseDeserializer deserializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_answers = sse_decode_list_String(deserializer);
-    var var_locked = sse_decode_list_bool(deserializer);
-    return PhoneExamAnswers(answers: var_answers, locked: var_locked);
-  }
-
-  @protected
   PullReportDto sse_decode_pull_report_dto(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_entry = sse_decode_String(deserializer);
@@ -6897,15 +6525,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_box_autoadd_exam_outcome(
-    ExamOutcome self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_exam_outcome(self, serializer);
-  }
-
-  @protected
   void sse_encode_box_autoadd_exam_start(
     ExamStart self,
     SseSerializer serializer,
@@ -6966,15 +6585,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_paired_writer(self, serializer);
-  }
-
-  @protected
-  void sse_encode_box_autoadd_phone_exam_answers(
-    PhoneExamAnswers self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_phone_exam_answers(self, serializer);
   }
 
   @protected
@@ -7219,26 +6829,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_exam_applied(ExamApplied self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_bool(self.unlocked, serializer);
-    sse_encode_opt_String(self.examHighMark, serializer);
-    sse_encode_bool(self.examChanged, serializer);
-  }
-
-  @protected
-  void sse_encode_exam_outcome(ExamOutcome self, SseSerializer serializer) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_exam_topic_outcome(self.topics, serializer);
-    sse_encode_bool(self.full, serializer);
-    sse_encode_u_32(self.pass, serializer);
-    sse_encode_u_32(self.partial, serializer);
-    sse_encode_u_32(self.total, serializer);
-    sse_encode_bool(self.eligible, serializer);
-    sse_encode_exam_stamp(self.stamp, serializer);
-  }
-
-  @protected
   void sse_encode_exam_stamp(ExamStamp self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.sourced, serializer);
@@ -7253,17 +6843,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self.eligible, serializer);
     sse_encode_exam_stamp(self.stamp, serializer);
     sse_encode_list_String(self.unsourcedTopics, serializer);
-  }
-
-  @protected
-  void sse_encode_exam_topic_outcome(
-    ExamTopicOutcome self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_String(self.topicId, serializer);
-    sse_encode_String(self.fingerprint, serializer);
-    sse_encode_bool(self.pass, serializer);
   }
 
   @protected
@@ -7444,18 +7023,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_deck_strip(item, serializer);
-    }
-  }
-
-  @protected
-  void sse_encode_list_exam_topic_outcome(
-    List<ExamTopicOutcome> self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.length, serializer);
-    for (final item in self) {
-      sse_encode_exam_topic_outcome(item, serializer);
     }
   }
 
@@ -8132,16 +7699,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.device, serializer);
     sse_encode_u_64(self.atMs, serializer);
-  }
-
-  @protected
-  void sse_encode_phone_exam_answers(
-    PhoneExamAnswers self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_list_String(self.answers, serializer);
-    sse_encode_list_bool(self.locked, serializer);
   }
 
   @protected

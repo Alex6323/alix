@@ -32,15 +32,19 @@ class FakeServerClient implements ServerClient {
     this.postCardGate,
     this.examStartReply = true,
     this.examStartSitting,
+    this.examStartSittings,
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
     this.expireOnExamGet = false,
     Map<int, Completer<RemoteExam?>>? examGetGates,
     this.nullFirstExamGetCalls = 0,
     this.noSittingBeforeStart = false,
+    this.idleBeforeStart = false,
     this.examCloseGate,
+    this.examCloseReply = true,
     this.failExamClose = false,
     this.examCarriedReply,
+    this.examCarriedReplies,
     List<GradingCall>? gradingReplies,
     this.expireOnGrading = false,
     this.gradingCloseReply = true,
@@ -105,6 +109,10 @@ class FakeServerClient implements ServerClient {
 
   /// The sitting id an accepted `examStart` names.
   final String? examStartSitting;
+
+  /// The sitting each accepted `examStart` names, one per call, the last
+  /// repeating; when set they replace [examStartSitting].
+  final List<String?>? examStartSittings;
   final bool expireOnExamStart;
   final List<RemoteExam> examGetReplies;
   final bool expireOnExamGet;
@@ -123,10 +131,19 @@ class FakeServerClient implements ServerClient {
   /// `examGet()` answers null, without consuming a reply, until `examStart`
   /// has been called: the desktop holds no sitting the phone did not start.
   final bool noSittingBeforeStart;
+
+  /// `examGet()` answers an `idle` desk, without consuming a reply, until
+  /// `examStart` has been called.
+  final bool idleBeforeStart;
   final Completer<void>? examCloseGate;
+  final bool examCloseReply;
   final bool failExamClose;
 
   final String? examCarriedReply;
+
+  /// Replies to `examCarried`, one per call, the last repeating; when set
+  /// they replace [examCarriedReply].
+  final List<String?>? examCarriedReplies;
 
   /// Replies to `gradingSubmit`, `gradingRemediate` and `gradingGet`, one per
   /// call across the three, the last repeating; empty reads as no answer.
@@ -167,6 +184,8 @@ class FakeServerClient implements ServerClient {
   String? startedDeck;
 
   Map<String, dynamic>? startedIdeas;
+
+  int examStartCalls = 0;
 
   bool generateStartCalled = false;
   String? generateStartedUrl;
@@ -279,13 +298,17 @@ class FakeServerClient implements ServerClient {
     List<String>? cards,
     Map<String, dynamic>? ideas,
   }) async {
+    final call = examStartCalls++;
     startedDeck = deck;
     startedCards = cards;
     startedIdeas = ideas;
     if (expireOnExamStart) throw const PairingExpired();
     if (!examStartReply) return null;
+    final sittings = examStartSittings;
     return RemoteExam(
-      sitting: examStartSitting,
+      sitting: sittings != null && sittings.isNotEmpty
+          ? sittings[call.clamp(0, sittings.length - 1)]
+          : examStartSitting,
       phase: 'generating',
       deck: deck,
       thinking: true,
@@ -297,6 +320,9 @@ class FakeServerClient implements ServerClient {
     if (expireOnExamGet) throw const PairingExpired();
     if (_replacementExam case final replacement?) return replacement;
     if (noSittingBeforeStart && startedDeck == null) return null;
+    if (idleBeforeStart && startedDeck == null) {
+      return const RemoteExam(phase: 'idle', deck: '', thinking: false);
+    }
     final call = _examGetCall;
     _examGetCall++;
     final gate = examGetGates[call];
@@ -309,8 +335,13 @@ class FakeServerClient implements ServerClient {
 
   @override
   Future<String?> examCarried(String sitting) async {
+    final call = carriedSittings.length;
     carriedSittings.add(sitting);
     if (expireOnExamGet) throw const PairingExpired();
+    final replies = examCarriedReplies;
+    if (replies != null && replies.isNotEmpty) {
+      return replies[call.clamp(0, replies.length - 1)];
+    }
     return examCarriedReply;
   }
 
@@ -324,7 +355,7 @@ class FakeServerClient implements ServerClient {
     examCloseCalls++;
     examClosedSittings.add(sitting);
     if (examCloseGate != null) await examCloseGate!.future;
-    return true;
+    return examCloseReply;
   }
 
   @override

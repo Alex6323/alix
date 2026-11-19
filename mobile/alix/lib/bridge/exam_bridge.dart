@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/exam_sittings.dart';
 import 'package:alix_mobile/review/review_models.dart';
@@ -32,6 +34,35 @@ ExamSittingStart examSittingStart({
     unsourcedTopics: start.unsourcedTopics,
   );
 }
+
+String? examDeckId({required String deckPath}) => bridge.examDeckId(deckPath: deckPath);
+
+String? heldExamSitting(String rootDir, String deckId) =>
+    bridge.heldExamSitting(rootDir: rootDir, deckId: deckId);
+
+void heldExamReceive(StartedSitting record, String carriedBody) => bridge.heldExamReceive(
+  rootDir: record.root,
+  carriedJson: carriedBody,
+  start: bridge.ExamStart(
+    deckId: record.start.deckId,
+    cards: record.start.cards,
+    eligible: record.start.eligible,
+    stamp: bridge.ExamStamp(sourced: record.start.sourced, unsourcedCards: record.start.unsourcedCards),
+    unsourcedTopics: record.start.unsourcedTopics,
+  ),
+);
+
+@visibleForTesting
+int heldExamViewReads = 0;
+
+HeldExamView? heldExamView({required String rootDir, required String deckId}) {
+  heldExamViewReads++;
+  final json = bridge.heldExamView(rootDir: rootDir, deckId: deckId);
+  return json == null ? null : HeldExamView.fromJson(jsonDecode(json) as Map<String, dynamic>);
+}
+
+void heldExamRemove({required String rootDir, required String deckId}) =>
+    bridge.heldExamRemove(rootDir: rootDir, deckId: deckId);
 
 const answerTooLongText = 'this answer is too long to send';
 

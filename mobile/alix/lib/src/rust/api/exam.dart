@@ -6,50 +6,12 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `apply_ideas`, `apply_progress`, `empty`, `exam_answers_path`, `exam_files`, `exam_ideas_path`, `held_path`, `load_held`, `open_store`, `open`, `parse`, `result`, `save`, `stamp`, `write_outcome`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `HeldApply`, `PhonePreparedExam`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These functions are ignored because they are not marked as `pub`: `apply_ideas`, `apply_progress`, `exam_files`, `exam_ideas_path`, `held_path`, `load_held`, `open_store`, `open`, `result`, `stamp`, `write_outcome`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `HeldApply`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
 
 String? examIdeasLoad({required String deckPath, required String rootDir}) =>
     RustLib.instance.api.crateApiExamExamIdeasLoad(
-      deckPath: deckPath,
-      rootDir: rootDir,
-    );
-
-void examIdeasSave({
-  required String deckPath,
-  required String rootDir,
-  required String json,
-}) => RustLib.instance.api.crateApiExamExamIdeasSave(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  json: json,
-);
-
-PhoneExamAnswers examAnswersLoad({
-  required String deckPath,
-  required String rootDir,
-  required List<String> questions,
-}) => RustLib.instance.api.crateApiExamExamAnswersLoad(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  questions: questions,
-);
-
-void examAnswersSave({
-  required String deckPath,
-  required String rootDir,
-  required List<String> questions,
-  required PhoneExamAnswers answers,
-}) => RustLib.instance.api.crateApiExamExamAnswersSave(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  questions: questions,
-  answers: answers,
-);
-
-void examAnswersClear({required String deckPath, required String rootDir}) =>
-    RustLib.instance.api.crateApiExamExamAnswersClear(
       deckPath: deckPath,
       rootDir: rootDir,
     );
@@ -67,6 +29,9 @@ ExamStart examSittingStart({
   needsWorkOnly: needsWorkOnly,
   nowMs: nowMs,
 );
+
+String? examDeckId({required String deckPath}) =>
+    RustLib.instance.api.crateApiExamExamDeckId(deckPath: deckPath);
 
 void heldExamReceive({
   required String rootDir,
@@ -168,102 +133,6 @@ int heldExamStoreRemediation({
   device: device,
 );
 
-ExamApplied applyExamResult({
-  required String deckPath,
-  required String rootDir,
-  required ExamOutcome outcome,
-  required BigInt nowMs,
-  String? device,
-}) => RustLib.instance.api.crateApiExamApplyExamResult(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  outcome: outcome,
-  nowMs: nowMs,
-  device: device,
-);
-
-int applyExamRemediation({
-  required String deckPath,
-  required String rootDir,
-  required String topicId,
-  required String cardsText,
-  String? device,
-}) => RustLib.instance.api.crateApiExamApplyExamRemediation(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  topicId: topicId,
-  cardsText: cardsText,
-  device: device,
-);
-
-class ExamApplied {
-  final bool unlocked;
-  final String? examHighMark;
-  final bool examChanged;
-
-  const ExamApplied({
-    required this.unlocked,
-    this.examHighMark,
-    required this.examChanged,
-  });
-
-  @override
-  int get hashCode =>
-      unlocked.hashCode ^ examHighMark.hashCode ^ examChanged.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ExamApplied &&
-          runtimeType == other.runtimeType &&
-          unlocked == other.unlocked &&
-          examHighMark == other.examHighMark &&
-          examChanged == other.examChanged;
-}
-
-class ExamOutcome {
-  final List<ExamTopicOutcome> topics;
-  final bool full;
-  final int pass;
-  final int partial;
-  final int total;
-  final bool eligible;
-  final ExamStamp stamp;
-
-  const ExamOutcome({
-    required this.topics,
-    required this.full,
-    required this.pass,
-    required this.partial,
-    required this.total,
-    required this.eligible,
-    required this.stamp,
-  });
-
-  @override
-  int get hashCode =>
-      topics.hashCode ^
-      full.hashCode ^
-      pass.hashCode ^
-      partial.hashCode ^
-      total.hashCode ^
-      eligible.hashCode ^
-      stamp.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ExamOutcome &&
-          runtimeType == other.runtimeType &&
-          topics == other.topics &&
-          full == other.full &&
-          pass == other.pass &&
-          partial == other.partial &&
-          total == other.total &&
-          eligible == other.eligible &&
-          stamp == other.stamp;
-}
-
 class ExamStamp {
   final String sourced;
   final List<String> unsourcedCards;
@@ -315,46 +184,4 @@ class ExamStart {
           eligible == other.eligible &&
           stamp == other.stamp &&
           unsourcedTopics == other.unsourcedTopics;
-}
-
-class ExamTopicOutcome {
-  final String topicId;
-  final String fingerprint;
-  final bool pass;
-
-  const ExamTopicOutcome({
-    required this.topicId,
-    required this.fingerprint,
-    required this.pass,
-  });
-
-  @override
-  int get hashCode => topicId.hashCode ^ fingerprint.hashCode ^ pass.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ExamTopicOutcome &&
-          runtimeType == other.runtimeType &&
-          topicId == other.topicId &&
-          fingerprint == other.fingerprint &&
-          pass == other.pass;
-}
-
-class PhoneExamAnswers {
-  final List<String> answers;
-  final List<bool> locked;
-
-  const PhoneExamAnswers({required this.answers, required this.locked});
-
-  @override
-  int get hashCode => answers.hashCode ^ locked.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is PhoneExamAnswers &&
-          runtimeType == other.runtimeType &&
-          answers == other.answers &&
-          locked == other.locked;
 }
