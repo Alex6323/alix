@@ -529,14 +529,15 @@ server does not serve selects the global one. The body is capped at 4 MiB, and
 the answers together at 256 KiB; a request over either cap, unreadable, of a
 version other than 1, with no question, with an answer count that differs from
 the question count, with topic numbers that are not 0 up without a gap, or a
-remediation with no topic or a topic with no gap, is 400. The grading slot holds one
-job: a request equal to the running job, or to a finished one, is answered with
-that job and not run again; a different request while a job runs is 409; after
-a finished job a different request starts a new job, and after a failed job any
-request runs again. `POST /api/remote/exam/grading/close {sitting}`
-drops the job when its sitting matches, cancelling a running call, and is 200
-either way (400 without a readable body). The server keeps no idea history: the
-exam carries the updated ideas document for the phone to store.
+remediation with no topic or a topic with no gap, is 400. The grading slot
+holds one job: a request equal to the running job, or to a finished one, is
+answered with that job and not run again; a different request while a job runs
+is 409; after a finished job a different request starts a new job, and after a
+failed job any request runs again.
+`POST /api/remote/exam/grading/close {sitting}` drops the job when its sitting
+matches, cancelling a running call, and is 200 either way (400 without a
+readable body). The server keeps no idea history: the exam carries the updated
+ideas document for the phone to store.
 
 `POST /api/remote/generate {url, guidance?}` mirrors §4.7's `/api/generate`,
 minus everything the iron rule forbids: there is no `dest` (a phone chooses

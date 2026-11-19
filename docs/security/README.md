@@ -299,7 +299,7 @@ their fingerprints, the exam ideas document, the deck's catalog name as the
 phone sent it, and the names of requested cards the deck does not hold. The
 path is not phone-supplied, and a second start replaces a ready exam rather
 than adding a file. A close removes the file; one that cannot remove it
-answers 500 and the exam stays ready. A generation closed before its exam was
+answers 500 and the exam is then ready. A generation closed before its exam was
 written leaves no file. A file that cannot be read is reported on stderr at
 start and left in place; the slot starts idle and the next generation replaces
 it. No progress, mastery, or card is written. Regression evidence:

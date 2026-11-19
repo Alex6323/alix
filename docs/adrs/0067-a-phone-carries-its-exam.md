@@ -145,8 +145,8 @@ remediation calls on a document of their own making, up to 4 MiB a
 request. Those calls run without tools, so text placed in the key points
 reaches a model that cannot fetch or search. The deck name in a request is
 used only to look up a served deck's exam effort; a name that is not
-served selects the global effort. `docs/security/README.md` records these and their
-regression evidence.
+served selects the global effort. `docs/security/README.md` records these and
+their regression evidence.
 
 ## Verification
 

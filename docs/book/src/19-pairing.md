@@ -138,20 +138,19 @@ the same liveness rule as the two chips: the row
 appears only while the phone has confirmed the paired desktop is reachable
 and new enough, and is simply absent otherwise.
 
-The Ask button and writing an exam both depend on the phone having
-confirmed the paired desktop is reachable and
-running at least version 0.6.0; there is no retry chrome for a dead or
-too-old server: the Ask button simply is not there, and the **Generate exam**
-row is disabled with a short hint (an exam already fetched stays open, and
-only its grading needs the desktop; one still waiting on the desktop is fetched
-the next time the app is open and reaches it). The phone checks the desktop when
-the deck list opens, and again when you return to it from a folder or after the
-pairing sheet. The desktop writes the exam from its own
-copy of the deck's frozen sources; the phone reads the copy a pull carried to
-it (`sources/deck-<token>/`) to tell which topics have sources and whether a
-result still matches the material. The roots file beside them,
-`manifest.local.toml`, names folders on one machine and is never synced in
-either direction.
+The Ask button and writing an exam both depend on the phone having confirmed
+the paired desktop is reachable and running at least version 0.6.0; there is no
+retry chrome for a dead or too-old server: the Ask button simply is not there,
+and the **Generate exam** row is disabled with a short hint (an exam already
+fetched stays open, and only grading it and turning its gaps into cards need
+the desktop; one still waiting on the desktop is fetched the next time the app
+is open and reaches it). The phone checks the desktop when the deck list opens,
+and again when you return to it from a folder or after the pairing sheet. The
+desktop writes the exam from its own copy of the deck's frozen sources; the
+phone reads the copy a pull carried to it (`sources/deck-<token>/`) to tell
+which topics have sources and whether a result still matches the material. The
+roots file beside them, `manifest.local.toml`, names folders on one machine and
+is never synced in either direction.
 
 If the desktop answers but rejects the token partway through a review, an
 exam, a note, or a generation (the restart case above, caught mid-session

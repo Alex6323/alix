@@ -289,11 +289,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Phone exam: a generated exam is fetched once to the phone, which keeps it in
-  a file of its own and answers it without the desktop. The desktop grades the
-  answers it is sent and writes remediation cards from the gaps it is sent,
-  keeps nothing about a fetched exam, and the exam's key points are now sent to
-  the phone; the `/api/remote/exam/*` calls change to match (`docs/API.md`).
-  An exam open across this update is lost on both devices.
+  a file of its own and answers it without the desktop; the desktop only
+  grades the answers and writes remediation cards from the gaps it is sent,
+  and keeps nothing about a fetched exam. The `/api/remote/exam/*` calls
+  change to match (`docs/API.md`) and now send the exam's key points to the
+  phone. An exam open across this update is lost on both devices.
 
 - A walk serves the cards you have never walked before the ones you missed,
   each in deck order, so coming back to a walk continues with new cards
@@ -1046,12 +1046,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entry when it is first studied, so it shows as unseen until then. A
   remediation that revives a card saves that revival before it writes any new
   card, so a failed save writes nothing new and a retry counts every card.
-  The phone also remembers the remediation it applied for the exam sitting it
-  keeps, and a
-  reopened sitting shows that count instead of applying the cards again.
+  The phone also remembers which topics of an exam it already made
+  remediation cards for, and does not offer them again.
 
-- The phone shows a remediation's progress save error and offers Try again
-  instead of failing silently.
+- The phone's exam screen shows the error when saving a remediation's cards
+  fails, and its button then reads `remediate again`, instead of failing
+  silently.
 
 - Long prompts no longer fail to start on Codex and Copilot: every backend now
   receives the prompt on stdin, where those two took it as one command-line
