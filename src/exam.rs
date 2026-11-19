@@ -1370,14 +1370,6 @@ impl Sitting {
         }
     }
 
-    pub fn set_answers(&mut self, answers: Vec<String>) -> bool {
-        if self.phase == Phase::Answering && answers.len() == self.questions.len() {
-            self.answers = answers;
-            true
-        } else {
-            false
-        }
-    }
     pub fn next(&mut self) {
         self.lock_current();
         if self.current + 1 < self.questions.len() {
@@ -4633,40 +4625,6 @@ mod tests {
         assert_eq!(Some(Effect::Graded), effect, "a fail is recorded too");
         assert_eq!(&Phase::Results, s.phase());
         assert!(!s.result().unwrap().count().passed);
-    }
-
-    #[test]
-    fn set_answers_rejects_wrong_arity_and_wrong_phase() {
-        let _lock = exec_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let cli = branching_cli(
-            dir.path(),
-            "{\"grades\":[{\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]},\
-             {\"verdict\":\"pass\",\"feedback\":\"ok\",\"missed\":[]}]}",
-        );
-        let ws = Workspace::new();
-        let deck = sourced_deck(&ws);
-
-        let mut s = Sitting::start(
-            &deck,
-            SittingStart::default(),
-            Strictness::Balanced,
-            ExamConfig::default(),
-            ask_config(&cli),
-        );
-        assert_eq!(&Phase::Generating, s.phase());
-        assert!(!s.set_answers(Vec::new()));
-        assert!(s.answers().is_empty());
-
-        advance_until_idle(&mut s);
-        assert_eq!(&Phase::Answering, s.phase());
-        assert_eq!(2, s.total());
-
-        assert!(!s.set_answers(vec!["only one".to_string()]));
-        assert_eq!(vec!["".to_string(), "".to_string()], s.answers());
-
-        assert!(s.set_answers(vec!["a1".to_string(), "a2".to_string()]));
-        assert_eq!(vec!["a1".to_string(), "a2".to_string()], s.answers());
     }
 
     use crate::sources::{

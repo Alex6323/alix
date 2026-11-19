@@ -10699,6 +10699,26 @@ fn the_generation_desk_answers_every_request_in_every_state_as_tabled() {
         &serde_json::Value::Null,
     );
 
+    let cell = "a start whose deck checks fail on a ready desk";
+    let model = ExamModel::new();
+    let (base, guard) = exam_desk_server(&model);
+    let own = drive_generation_desk(&base, &model, WasReady, cell);
+    let path = exam_file(guard.dir());
+    let file_before = std::fs::read(&path).ok();
+    let resp = post_json(&base, EXAM_START, r#"{"deck":"sample.md"}"#);
+    let poll = get_json(&base, EXAM_DESK);
+    let file_after = std::fs::read(&path).ok();
+    assert_eq!(409, resp.status, "{cell}: status");
+    assert_generation_desk(cell, &poll, Ready, &own, &serde_json::Value::Null);
+    assert!(
+        file_before.is_some(),
+        "{cell}: setup, the exam file is there"
+    );
+    assert_eq!(
+        file_before, file_after,
+        "{cell}: the exam file is there and byte-identical"
+    );
+
     for (cell, method, path, body, status) in [
         (
             "a carried request without a sitting",
@@ -10713,20 +10733,6 @@ fn the_generation_desk_answers_every_request_in_every_state_as_tabled() {
             EXAM_CLOSE,
             "not json",
             400,
-        ),
-        (
-            "an answer batch to the deleted grade route",
-            "POST",
-            "/api/remote/exam/grade",
-            r#"{"answers":["a"]}"#,
-            404,
-        ),
-        (
-            "a request to the deleted remediate route",
-            "POST",
-            "/api/remote/exam/remediate",
-            "{}",
-            404,
         ),
     ] {
         let model = ExamModel::new();
