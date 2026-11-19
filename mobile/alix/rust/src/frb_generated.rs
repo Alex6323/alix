@@ -2311,7 +2311,6 @@ fn wire__crate__api__exam__held_exam_store_result_impl(
             let api_deck_id = <String>::sse_decode(&mut deserializer);
             let api_reply_json = <String>::sse_decode(&mut deserializer);
             let api_received_ms = <u64>::sse_decode(&mut deserializer);
-            let api_recorded = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                 (move || {
@@ -2320,7 +2319,6 @@ fn wire__crate__api__exam__held_exam_store_result_impl(
                         api_deck_id,
                         api_reply_json,
                         api_received_ms,
-                        api_recorded,
                     )?;
                     Ok(output_ok)
                 })(),

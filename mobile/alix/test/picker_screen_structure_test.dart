@@ -480,7 +480,7 @@ void main() {
       deckPath: deck,
       deckId: exam_bridge.examDeckId(deckPath: deck)!,
       rootDir: root.path,
-    ).storeResult(contract('GradingReply.results'), recorded: false);
+    ).storeResult(contract('GradingReply.results'));
   }
 
   void blockRecordSaves(Directory support) =>
@@ -803,9 +803,9 @@ void main() {
     await tester.tap(find.text('Take exam'));
     await tester.pumpAndSettle();
     expect(
-      find.text('Why does Rust use ownership?'),
+      find.text('the deck changed: this exam is stale and cannot be recorded'),
       findsOneWidget,
-      reason: 'offline: the exam screen shows the held question',
+      reason: 'offline: the exam screen opens the held exam, stale since the fixture deck does not hold the material of the contract exam',
     );
   });
 
@@ -958,9 +958,9 @@ void main() {
       await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Why does Rust use ownership?'),
+        find.text('the deck changed: this exam is stale and cannot be recorded'),
         findsOneWidget,
-        reason: 'renamed: the exam opens on its question',
+        reason: 'renamed: the exam screen opens the held exam, stale since the fixture deck does not hold the material of the contract exam',
       );
     },
   );

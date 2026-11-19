@@ -168,13 +168,12 @@ pub fn held_exam_store_result(
     deck_id: String,
     reply_json: String,
     received_ms: u64,
-    recorded: bool,
 ) -> Result<()> {
     let reply: alix::exam_carried::GradingReply =
         serde_json::from_str(&reply_json).context("unreadable grading reply")?;
     let path = held_path(&root_dir, &deck_id);
     let mut held = load_held(&path)?;
-    held.store_result(&reply, received_ms, recorded)?;
+    held.store_result(&reply, received_ms)?;
     held.save(&path)
 }
 
@@ -262,10 +261,9 @@ pub fn held_exam_apply(
     device: Option<String>,
 ) -> Result<String> {
     let mut apply = HeldApply::open(&deck_path, &root_dir)?;
-    let result = apply.result()?;
-    let (received_ms, recorded) = (result.received_ms, result.recorded);
+    let received_ms = apply.result()?.received_ms;
     if apply.held.outcome.is_none() {
-        if recorded && apply.held.material_unchanged(&apply.deck) {
+        if apply.held.material_unchanged(&apply.deck) {
             let store = apply_progress(&apply, device)?;
             apply_ideas(&apply)?;
             let standing = alix::exam_status::exam_high_mark(&store, &apply.deck_id, received_ms)
@@ -1080,18 +1078,27 @@ mod tests {
     const BOTH_PASS: &[(bool, &[&str])] = &[(true, &[]), (true, &[])];
     const BOTH_FAIL: &[(bool, &[&str])] = &[(false, &["gap of a"]), (false, &["gap of b"])];
 
-    fn store_reply(
-        root: &Path,
-        reply: &alix::exam_carried::GradingReply,
-        recorded: bool,
-    ) -> Result<()> {
+    fn store_reply(root: &Path, reply: &alix::exam_carried::GradingReply) -> Result<()> {
         held_exam_store_result(
             root_arg(root),
             "deck-d".to_string(),
             serde_json::to_string(reply).unwrap(),
             RECEIVED,
-            recorded,
         )
+    }
+
+    fn change_the_examined_source(root: &Path, path: &Path) {
+        let live = root.join("live").join("d.md.txt");
+        std::fs::write(&live, "the changed source of d.md\n").unwrap();
+        alix::sources::commands::update(
+            path,
+            &alix::sources::source_id(b"the source of d.md\n"),
+            &live,
+            None,
+            false,
+            &alix::config::ExamConfig::default(),
+        )
+        .unwrap();
     }
 
     fn remediation_reply(sitting: &str, cards: &[(usize, &str)]) -> String {
@@ -1162,21 +1169,20 @@ mod tests {
     }
 
     #[test]
-    fn store_result_writes_the_reply_its_time_and_the_choice_and_a_second_is_refused() {
+    fn store_result_writes_the_reply_and_its_time_and_a_second_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (_, exam) = held_on_deck(root);
         let reply = grading_reply(&exam, &[(true, &[]), (false, &["gap of b"])]);
 
-        store_reply(root, &reply, false).unwrap();
+        store_reply(root, &reply).unwrap();
 
         let result = held_now(root)
             .result
             .expect("a result in the held file after the store");
         assert_eq!(
-            (RECEIVED, false),
-            (result.received_ms, result.recorded),
-            "the stored time and choice after the store"
+            RECEIVED, result.received_ms,
+            "the stored time after the store"
         );
         assert_eq!(
             (reply.grades.clone(), reply.topics.clone()),
@@ -1186,7 +1192,7 @@ mod tests {
         assert_eq!(None, held_now(root).outcome, "storing writes no outcome");
         let before = std::fs::read(held_file(root, "deck-d")).unwrap();
 
-        let second = store_reply(root, &grading_reply(&exam, BOTH_PASS), true);
+        let second = store_reply(root, &grading_reply(&exam, BOTH_PASS));
 
         assert!(second.is_err(), "a second store is refused: {second:?}");
         assert_eq!(
@@ -1201,7 +1207,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
 
         let view = held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
 
@@ -1281,7 +1287,7 @@ mod tests {
         let control_dir = tempfile::tempdir().unwrap();
         let control_root = control_dir.path();
         let (control_path, exam) = held_on_deck(control_root);
-        store_reply(control_root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+        store_reply(control_root, &grading_reply(&exam, BOTH_PASS)).unwrap();
         held_exam_apply(deck_arg(&control_path), root_arg(control_root), None).unwrap();
         let control = exam_fields(&control_path, control_root);
         assert!(
@@ -1297,7 +1303,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let (path, exam) = held_on_deck(root);
-            store_reply(root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+            store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
             let apply = HeldApply::open(&deck_arg(&path), &root_arg(root)).unwrap();
             if steps >= 1 {
                 apply_progress(&apply, None).unwrap();
@@ -1351,7 +1357,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
         let progress = user_files(root).progress();
         std::fs::create_dir_all(&progress).unwrap();
 
@@ -1395,7 +1401,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
         let ideas = user_files(root).exam_ideas_for("deck-d");
         std::fs::create_dir_all(&ideas).unwrap();
 
@@ -1427,11 +1433,12 @@ mod tests {
     }
 
     #[test]
-    fn submit_anyway_records_nothing_stamps_no_idea_and_stores_not_recorded() {
+    fn a_result_applied_after_the_deck_changed_records_nothing_stamps_no_idea_and_stores_not_recorded() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_PASS), false).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
+        change_the_examined_source(root, &path);
         let progress = progress_bytes(root);
         let ideas = ideas_bytes(root);
 
@@ -1454,7 +1461,7 @@ mod tests {
                 standing: None,
             }),
             outcome_of(&view),
-            "submit anyway stores not recorded: {view}"
+            "a deck changed before the apply stores not recorded: {view}"
         );
     }
 
@@ -1463,7 +1470,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
         let live = root.join("live").join("d.md.txt");
         std::fs::write(&live, "the changed source of d.md\n").unwrap();
         alix::sources::commands::update(
@@ -1500,7 +1507,7 @@ mod tests {
 
     fn applied_with_both_failed(root: &Path) -> (PathBuf, alix::exam_carried::CarriedExam) {
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_FAIL), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL)).unwrap();
         held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
         (path, exam)
     }
@@ -1513,7 +1520,6 @@ mod tests {
         store_reply(
             root,
             &grading_reply(&exam, &[(true, &[]), (false, &["gap of b"])]),
-            true,
         )
         .unwrap();
         held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
@@ -1696,12 +1702,18 @@ mod tests {
     }
 
     #[test]
-    fn a_remediation_reply_after_submit_anyway_is_refused_and_writes_no_card() {
+    fn a_remediation_reply_for_a_result_that_was_not_recorded_is_refused_and_writes_no_card() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, BOTH_FAIL), false).unwrap();
-        held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL)).unwrap();
+        change_the_examined_source(root, &path);
+        let view = held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+        assert_eq!(
+            Some(false),
+            outcome_of(&view).map(|outcome| outcome.recorded),
+            "control: the changed deck's result is not recorded: {view}"
+        );
 
         let refused = held_exam_store_remediation(
             deck_arg(&path),
@@ -1728,7 +1740,7 @@ mod tests {
         let (path, exam) = held_on_deck(root);
         let renamed = path.with_file_name("renamed.md");
         std::fs::rename(&path, &renamed).unwrap();
-        store_reply(root, &grading_reply(&exam, BOTH_PASS), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
 
         let view = held_exam_apply(deck_arg(&renamed), root_arg(root), None).unwrap();
 
@@ -1811,7 +1823,7 @@ mod tests {
             "control: the recorded review is in the progress file before the apply: {before:?}"
         );
 
-        store_reply(root, &grading_reply(&exam, BOTH_FAIL), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL)).unwrap();
         held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
 
         assert_eq!(
@@ -1827,7 +1839,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_with_a_reviewed_card(root);
-        store_reply(root, &grading_reply(&exam, BOTH_FAIL), true).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL)).unwrap();
         held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
         let remediate = |topic: usize| {
             held_exam_store_remediation(

@@ -210,7 +210,7 @@ abstract class HeldExamAccess {
 
   String gradeRequest();
 
-  void storeResult(String replyBody, {required bool recorded});
+  void storeResult(String replyBody);
 
   HeldExamView apply();
 
@@ -254,12 +254,11 @@ class BridgeHeldExam implements HeldExamAccess {
   String gradeRequest() => _tooLongAware(() => bridge.heldExamGradeRequest(rootDir: rootDir, deckId: deckId));
 
   @override
-  void storeResult(String replyBody, {required bool recorded}) => bridge.heldExamStoreResult(
+  void storeResult(String replyBody) => bridge.heldExamStoreResult(
     rootDir: rootDir,
     deckId: deckId,
     replyJson: replyBody,
     receivedMs: BigInt.from(_clock()),
-    recorded: recorded,
   );
 
   @override

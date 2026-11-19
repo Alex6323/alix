@@ -55,12 +55,10 @@ class FakeHeldExam implements HeldExamAccess {
   List<String> answers;
   List<bool> locked;
   final List<(List<String>, List<bool>)> saved = [];
-  final List<(String, bool)> stored = [];
+  final List<String> stored = [];
   final List<String> storedRemediations = [];
-  bool? recorded;
+  bool hasResult = false;
   bool? outcomeRecorded;
-
-  bool get hasResult => recorded != null;
 
   Map<String, dynamic> _document() => {
     'sitting': sitting,
@@ -155,11 +153,11 @@ class FakeHeldExam implements HeldExamAccess {
   }
 
   @override
-  void storeResult(String replyBody, {required bool recorded}) {
+  void storeResult(String replyBody) {
     log.add('storeResult');
     if (storeError case final error?) throw error;
-    stored.add((replyBody, recorded));
-    this.recorded = recorded;
+    stored.add(replyBody);
+    hasResult = true;
   }
 
   @override
@@ -169,7 +167,7 @@ class FakeHeldExam implements HeldExamAccess {
       applyFailures--;
       throw applyError ?? StateError('cannot write the progress folder');
     }
-    outcomeRecorded ??= recorded! && !changed;
+    outcomeRecorded ??= !changed;
     return _view();
   }
 

@@ -64,25 +64,27 @@ void main() {
     );
   }
 
-  testWidgets('on a 360-wide phone no footer label is cut beside submit anyway', (tester) async {
-    await openOnPhone(tester, FakeHeldExam(changed: true), FakeServerClient());
-    expect(find.text('submit anyway'), findsOneWidget, reason: 'changed deck: the filled button reads submit anyway');
-    for (final label in ['Back', 'Continue later', 'submit anyway']) {
-      expectWhole(tester, 'submit anyway', label);
+  testWidgets('on a 360-wide phone no footer label is cut beside Submit, submit again or Discard exam', (tester) async {
+    for (final (state, held, client) in [
+      ('Submit', FakeHeldExam(), FakeServerClient()),
+      ('submit again', FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)])),
+      ('Discard exam', FakeHeldExam(), FakeServerClient()),
+    ]) {
+      await openOnPhone(tester, held, client);
+      await tester.enterText(_field, 'a borrow is a reference');
+      if (state != 'Submit') {
+        held.changed = state == 'Discard exam';
+        await tester.tap(find.text('Submit'));
+        await tester.pump();
+        await tester.pump();
+      }
+      expect(find.widgetWithText(FilledButton, state), findsOneWidget, reason: '$state: the filled button reads $state');
+      expect(find.text(state), findsOneWidget, reason: '$state: one control reads $state');
+      for (final label in ['Back', 'Continue later', state]) {
+        expectWhole(tester, state, label);
+      }
+      expect(tester.takeException(), isNull, reason: '$state: the footer lays out without overflow');
+      await tester.pumpWidget(const SizedBox.shrink());
     }
-    expect(tester.takeException(), isNull, reason: 'submit anyway: the footer lays out without overflow');
-  });
-
-  testWidgets('on a 360-wide phone no footer label is cut beside submit again', (tester) async {
-    await openOnPhone(tester, FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)]));
-    await tester.enterText(_field, 'a borrow is a reference');
-    await tester.tap(find.text('Submit'));
-    await tester.pump();
-    await tester.pump();
-    expect(find.text('submit again'), findsOneWidget, reason: 'refused request: the filled button reads submit again');
-    for (final label in ['Back', 'Continue later', 'submit again']) {
-      expectWhole(tester, 'submit again', label);
-    }
-    expect(tester.takeException(), isNull, reason: 'submit again: the footer lays out without overflow');
   });
 }

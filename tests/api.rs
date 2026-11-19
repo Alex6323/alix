@@ -12676,7 +12676,7 @@ fn a_fresh_server_grades_a_request_for_a_deck_it_does_not_serve_and_writes_nothi
     );
 
     let reply: alix::exam_carried::GradingReply = serde_json::from_value(results.clone()).unwrap();
-    held.store_result(&reply, 1, true).unwrap();
+    held.store_result(&reply, 1).unwrap();
     let joined = serde_json::to_value(held.view().result.expect("a stored result joins")).unwrap();
     assert_eq!(
         exam_view_fields(&browser),

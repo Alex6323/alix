@@ -337,7 +337,6 @@ abstract class RustLibApi extends BaseApi {
     required String deckId,
     required String replyJson,
     required BigInt receivedMs,
-    required bool recorded,
   });
 
   String? crateApiExamHeldExamView({
@@ -2075,7 +2074,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String deckId,
     required String replyJson,
     required BigInt receivedMs,
-    required bool recorded,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -2085,7 +2083,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(deckId, serializer);
           sse_encode_String(replyJson, serializer);
           sse_encode_u_64(receivedMs, serializer);
-          sse_encode_bool(recorded, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
         },
         codec: SseCodec(
@@ -2093,7 +2090,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_AnyhowException,
         ),
         constMeta: kCrateApiExamHeldExamStoreResultConstMeta,
-        argValues: [rootDir, deckId, replyJson, receivedMs, recorded],
+        argValues: [rootDir, deckId, replyJson, receivedMs],
         apiImpl: this,
       ),
     );
@@ -2102,7 +2099,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiExamHeldExamStoreResultConstMeta =>
       const TaskConstMeta(
         debugName: "held_exam_store_result",
-        argNames: ["rootDir", "deckId", "replyJson", "receivedMs", "recorded"],
+        argNames: ["rootDir", "deckId", "replyJson", "receivedMs"],
       );
 
   @override

@@ -382,7 +382,6 @@ pub struct HeldStart {
 #[serde(deny_unknown_fields)]
 pub struct HeldResult {
     pub received_ms: u64,
-    pub recorded: bool,
     pub grades: Vec<GradedAnswer>,
     pub topics: Vec<GradedTopic>,
     pub verdicts: Verdicts,
@@ -563,12 +562,7 @@ impl HeldExam {
         }
         let recorded = match (&self.result, &self.outcome) {
             (None, Some(_)) => bail!("an outcome without a result"),
-            (Some(result), Some(outcome)) => {
-                if outcome.recorded && !result.recorded {
-                    bail!("a recorded outcome for a result not chosen to be recorded");
-                }
-                outcome.recorded
-            }
+            (Some(_), Some(outcome)) => outcome.recorded,
             (_, None) => false,
         };
         if !recorded && !self.remediated.is_empty() {
@@ -649,12 +643,7 @@ impl HeldExam {
         Ok(())
     }
 
-    pub fn store_result(
-        &mut self,
-        reply: &GradingReply,
-        received_ms: u64,
-        recorded: bool,
-    ) -> Result<()> {
+    pub fn store_result(&mut self, reply: &GradingReply, received_ms: u64) -> Result<()> {
         self.refuse_once_graded()?;
         if reply.sitting.as_deref() != Some(self.exam.sitting.as_str()) {
             bail!("the grading reply is for another sitting");
@@ -679,7 +668,6 @@ impl HeldExam {
         };
         self.result = Some(HeldResult {
             received_ms,
-            recorded,
             grades: reply.grades.clone(),
             topics: reply.topics.clone(),
             verdicts,
@@ -1338,7 +1326,7 @@ mod tests {
             .set_answers(strings(&["answer 0", "answer 1"]), vec![true, true])
             .unwrap();
         let reply = fitting_reply(&value);
-        value.store_result(&reply, 1000, true).unwrap();
+        value.store_result(&reply, 1000).unwrap();
         value
     }
 
@@ -1482,7 +1470,7 @@ mod tests {
         let mut value = held();
         value.grade_request().expect("before a result");
         let reply = fitting_reply(&value);
-        value.store_result(&reply, 1, true).unwrap();
+        value.store_result(&reply, 1).unwrap();
         let error = value.grade_request().unwrap_err();
         assert!(
             error.to_string().contains("this exam was already graded"),
@@ -1491,31 +1479,28 @@ mod tests {
     }
 
     #[test]
-    fn store_result_keeps_the_time_and_the_choice() {
-        for (received_ms, choice) in [(1234, false), (5678, true)] {
-            let mut value = held();
-            let reply = fitting_reply(&value);
-            value.store_result(&reply, received_ms, choice).unwrap();
-            let result = value.result.unwrap();
-            assert_eq!(result.received_ms, received_ms, "time");
-            assert_eq!(result.recorded, choice, "choice at {received_ms}");
-            assert_eq!(result.grades, reply.grades, "grades");
-            assert_eq!(result.topics, reply.topics, "topics");
-            assert_eq!(Some(result.verdicts), reply.verdicts, "verdicts");
-            assert_eq!(result.mastered, reply.mastered, "mastered");
-        }
+    fn store_result_keeps_the_time_and_the_reply() {
+        let mut value = held();
+        let reply = fitting_reply(&value);
+        value.store_result(&reply, 1234).unwrap();
+        let result = value.result.unwrap();
+        assert_eq!(result.received_ms, 1234, "time");
+        assert_eq!(result.grades, reply.grades, "grades");
+        assert_eq!(result.topics, reply.topics, "topics");
+        assert_eq!(Some(result.verdicts), reply.verdicts, "verdicts");
+        assert_eq!(result.mastered, reply.mastered, "mastered");
     }
 
     #[test]
     fn a_second_store_result_is_refused_and_the_first_stays() {
         let mut value = held();
         let first = fitting_reply(&value);
-        value.store_result(&first, 1, true).unwrap();
+        value.store_result(&first, 1).unwrap();
         let stored = value.clone();
         let mut second = fitting_reply(&value);
         second.mastered = false;
         assert!(
-            value.store_result(&second, 2, false).is_err(),
+            value.store_result(&second, 2).is_err(),
             "the second store was accepted"
         );
         assert_eq!(value, stored, "value after the second store");
@@ -1532,7 +1517,7 @@ mod tests {
         for (grade, verdict) in reply.grades.iter_mut().zip(["PASS", "PARTIAL", "FAIL"]) {
             grade.verdict = verdict.into();
         }
-        value.store_result(&reply, 1, true).unwrap();
+        value.store_result(&reply, 1).unwrap();
         let idea = |topic: &str, idea, passed| crate::exam_ideas::AskedIdea {
             topic: topic.into(),
             idea,
@@ -1557,7 +1542,7 @@ mod tests {
                 partial: 1,
                 total: 5,
             });
-            value.store_result(&reply, 1, true).unwrap();
+            value.store_result(&reply, 1).unwrap();
             let topic = |id: &str, pass| crate::store::TopicRecord {
                 topic_id: id.into(),
                 fingerprint: format!("fp-{id}"),
@@ -1587,7 +1572,7 @@ mod tests {
             graded_topic(false, &["c gap"]),
             graded_topic(false, &["d gap"]),
         ];
-        value.store_result(&reply, 1, true).unwrap();
+        value.store_result(&reply, 1).unwrap();
         let mut value = recorded(value);
         value.remediated.insert("c".into(), 2);
         assert_eq!(
@@ -1646,7 +1631,7 @@ mod tests {
             graded_topic(false, &["d gap"]),
             graded_topic(false, &["e gap"]),
         ];
-        value.store_result(&reply, 1, true).unwrap();
+        value.store_result(&reply, 1).unwrap();
         let mut value = recorded(value);
         value.remediated.insert("c".into(), 2);
         value
@@ -1823,14 +1808,14 @@ mod tests {
             edit(&mut reply);
             let mut changed = value.clone();
             assert!(
-                changed.store_result(&reply, 1, true).is_err(),
+                changed.store_result(&reply, 1).is_err(),
                 "row {row}: the reply was accepted"
             );
             assert_eq!(changed, value, "row {row}: value after the refusal");
         }
         let mut control = value.clone();
         control
-            .store_result(&fitting_reply(&value), 1, true)
+            .store_result(&fitting_reply(&value), 1)
             .expect("control: the fitting reply");
     }
 
@@ -1850,7 +1835,7 @@ mod tests {
         let mut reply = fitting_reply(&value);
         reply.grades[1].verdict = "FAIL".into();
         reply.topics = vec![graded_topic(false, &["gap a"]), graded_topic(true, &[])];
-        value.store_result(&reply, 1, true).unwrap();
+        value.store_result(&reply, 1).unwrap();
         let value = recorded(value);
         let joined = |i: usize, topic: usize, shape: &'static str| {
             let question = &value.exam.questions[i];
@@ -2060,14 +2045,6 @@ mod tests {
                 h.result = None;
                 h.remediated.clear();
             }),
-            (
-                "a recorded outcome over a result not chosen to be recorded",
-                |h| {
-                    if let Some(result) = h.result.as_mut() {
-                        result.recorded = false;
-                    }
-                },
-            ),
             ("remediation without a recorded outcome", |h| {
                 h.outcome = Some(HeldOutcome {
                     recorded: false,

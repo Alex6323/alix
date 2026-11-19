@@ -94,13 +94,11 @@ void heldExamStoreResult({
   required String deckId,
   required String replyJson,
   required BigInt receivedMs,
-  required bool recorded,
 }) => RustLib.instance.api.crateApiExamHeldExamStoreResult(
   rootDir: rootDir,
   deckId: deckId,
   replyJson: replyJson,
   receivedMs: receivedMs,
-  recorded: recorded,
 );
 
 String heldExamApply({

@@ -110,7 +110,7 @@ void main() {
       reason: 'material check: the deck has no sources manifest, so the material is never unchanged and the real bridge reports a change',
     );
 
-    held.storeResult(_contract('GradingReply.results'), recorded: false);
+    held.storeResult(_contract('GradingReply.results'));
     final stored = held.view()!;
     final grade = stored.result!.grades.single;
     expect(
@@ -133,7 +133,7 @@ void main() {
     expect(
       [applied.outcome?.recorded, applied.outcome?.standing, applied.canRemediate],
       [false, null, false],
-      reason: 'submit anyway applied: an outcome that is not recorded, no standing, nothing to remediate',
+      reason: 'applied on a deck the exam does not fit: an outcome that is not recorded, no standing, nothing to remediate',
     );
     expect(
       held.remediationRequest(),
@@ -146,17 +146,17 @@ void main() {
     expect(root.existsSync(), isTrue, reason: 'removed: only the held file goes');
   });
 
-  test('the recorded path on the corpus exam stores the result and records nothing on a deck it does not fit', () {
+  test('a result stored on the corpus exam records nothing on a deck it does not fit, and a second apply shows it again', () {
     final (root: _, deck: _, :held) = _receivedExam('alix-held-exam-recorded-');
     held.saveAnswers(const ['ownership frees memory'], const [true]);
 
-    held.storeResult(_contract('GradingReply.results'), recorded: true);
+    held.storeResult(_contract('GradingReply.results'));
     final applied = held.apply();
 
     expect(
       [applied.result?.grades.single.verdict, applied.outcome?.recorded, applied.outcome?.standing, applied.canRemediate],
       ['FAIL', false, null, false],
-      reason: 'recorded choice on a deck whose material differs from the exam: the real bridge stores "not recorded"',
+      reason: 'a deck whose material differs from the exam: the real bridge stores "not recorded"',
     );
     expect(
       held.apply().outcome?.recorded,

@@ -34,7 +34,7 @@ const pairingExpiredMessage =
 const _needsDesktop = 'grading needs the paired desktop';
 const _busy = 'the desktop is busy grading; try again shortly';
 const _unreadable = 'the desktop could not read this exam; update alix on both devices';
-const _changedDeck = 'the deck changed since this exam was prepared; its result cannot be recorded';
+const _staleExam = 'the deck changed: this exam is stale and cannot be recorded';
 
 enum _Desk {
   grade(running: 'grading', finished: 'results'),
@@ -46,7 +46,7 @@ enum _Desk {
   final String finished;
 }
 
-enum _Stage { opening, unreadable, answers, grading, unapplied, result }
+enum _Stage { opening, unreadable, stale, answers, grading, unapplied, result }
 
 class ExamScreen extends StatefulWidget {
   const ExamScreen({
@@ -76,8 +76,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   String? _line;
   String? _aside;
   bool _again = false;
-  bool _changed = false;
-  bool _submitAnyway = false;
+  bool _stale = false;
   int _closesPending = 0;
   bool _remediating = false;
   bool _discarding = false;
@@ -130,6 +129,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       _installAnswers(view);
       _stage = _Stage.answers;
       _materialChanged();
+      if (_stale) _stage = _Stage.stale;
     } else if (view.outcome == null) {
       _apply();
     } else {
@@ -153,7 +153,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   bool _materialChanged() {
     try {
       if (!widget.held.materialChanged()) return false;
-      _changed = true;
+      _stale = true;
       _say(null);
     } on Object catch (error) {
       _say(bridgeErrorText(error));
@@ -239,8 +239,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   Future<void> _submit() async {
     if (_stage != _Stage.answers || _departing || !_lockAndSave()) return;
-    final anyway = _changed;
-    if (!anyway && _materialChanged()) {
+    if (_materialChanged()) {
       setState(() {});
       return;
     }
@@ -259,7 +258,6 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       setState(() => _say(_needsDesktop, again: true));
       return;
     }
-    _submitAnyway = anyway;
     setState(() {
       _stage = _Stage.grading;
       _elapsed = null;
@@ -340,7 +338,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   void _storeGrade(ServerClient client, String body) {
     try {
-      widget.held.storeResult(body, recorded: !_submitAnyway);
+      widget.held.storeResult(body);
     } on Object catch (error) {
       _fail(_Desk.grade, bridgeErrorText(error));
       return;
@@ -472,6 +470,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   Widget _body(BuildContext context) => switch (_stage) {
     _Stage.opening => const SizedBox.shrink(),
     _Stage.unreadable => _message(context, null),
+    _Stage.stale => _message(context, OutlinedButton(onPressed: _discard, child: const Text('Discard exam'))),
     _Stage.answers => _answering(context, _view!),
     _Stage.grading => _working(context),
     _Stage.unapplied => _message(context, OutlinedButton(onPressed: () => setState(_apply), child: const Text('try again'))),
@@ -485,7 +484,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _shown ?? '',
+            _shown ?? (_stale ? _staleExam : ''),
             textAlign: TextAlign.center,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
@@ -510,31 +509,18 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   Widget _notice(BuildContext context) {
     final tokens = Theme.of(context).alix;
-    final line = _shown ?? (_stage == _Stage.answers && _changed ? _changedDeck : null);
-    return Column(
+    return Text(
+      _shown ?? _staleExam,
       key: const ValueKey('exam-notice'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (line != null)
-          Text(
-            line,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: tokens.again, fontSize: 13),
-          ),
-        if (_shown == null && _stage == _Stage.answers && _changed)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(onPressed: _discard, child: const Text('Discard exam')),
-          ),
-      ],
+      maxLines: 3,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: tokens.again, fontSize: 13),
     );
   }
 
-  bool get _hasNotice => _shown != null || (_stage == _Stage.answers && _changed);
+  bool get _hasNotice => _shown != null || (_stage == _Stage.answers && _stale);
 
-  String get _submitLabel => _changed ? 'submit anyway' : (_again ? 'submit again' : 'Submit');
+  String get _submitLabel => _stale ? 'Discard exam' : (_again ? 'submit again' : 'Submit');
 
   Widget _answering(BuildContext context, HeldExamView exam) {
     final tokens = Theme.of(context).alix;
@@ -598,7 +584,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
                 constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.55),
                 child: FilledButton(
                   style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
-                  onPressed: last ? _submit : _nextQuestion,
+                  onPressed: last ? (_stale ? _discard : _submit) : _nextQuestion,
                   child: Text(last ? _submitLabel : 'Next', maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
               ),
