@@ -1049,7 +1049,7 @@ void main() {
   );
 
   testWidgets(
-    'the deck sheet reads the held file once when it opens and once per event that can change it',
+    'the deck sheet reads the held file when it opens and after a hand-off attempt or a start check, never because it rebuilt',
     (tester) async {
       final fixture = await examFixture('exam-held-reads');
       final desk = FakeServerClient(
@@ -1077,14 +1077,14 @@ void main() {
       expect(
         exam_bridge.heldExamViewReads,
         afterStart,
-        reason: 'three generating polls rebuild the sheet without a read',
+        reason: 'three generating polls attempt no hand-off and rebuild the sheet without a read',
       );
       desk.replaceExam(deskState('ready', corpusSitting()));
       await tick(tester);
       expect(
         [exam_bridge.heldExamViewReads - afterStart, find.text('Take exam').evaluate().length],
         [1, 1],
-        reason: 'the fetch: one read, and the row offers the exam',
+        reason: 'the hand-off attempt that fetched: one read, and the row offers the exam',
       );
     },
   );
@@ -1818,11 +1818,16 @@ void main() {
       );
 
       desk.replaceExam(deskState('ready', corpusSitting()));
+      final closesBefore = desk.examClosedSittings.length;
       await tester.pumpWidget(const SizedBox.shrink());
       StartedSittings.forgetLoaded();
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await tester.pump();
-      expect(desk.examClosedSittings.contains(corpusSitting()), isTrue, reason: 'the restarted poll handed the ready exam off (closed it)');
+      expect(
+        desk.examClosedSittings.skip(closesBefore).toList(),
+        [corpusSitting()],
+        reason: 'the restarted poll handed the ready exam off: one new close of its sitting',
+      );
       expect(
         find.text('Exam ready: Remote exam.'),
         findsNothing,
@@ -1873,6 +1878,7 @@ void main() {
       examStartSitting: corpusSitting(),
       examGetReplies: const [idleDesk],
       examGetGates: gates,
+      refuseStartWhileGenerating: true,
     );
     await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
     final claimCall = desk.examGetCalls;
@@ -1895,7 +1901,7 @@ void main() {
         find.text('the desktop refused the exam').evaluate().length,
       ],
       [1, 1, 1, 0],
-      reason: 'two taps: one claim, one start, the row preparing without a refusal line',
+      reason: 'two taps on a desk that refuses a second start: one claim, one start, the row preparing without a refusal line',
     );
   });
 
@@ -2014,14 +2020,13 @@ void main() {
     final desk = fetchingDesk();
     await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
     await generateAndFetch(tester);
-    Process.runSync('chmod', ['000', fixture.deck]);
-    addTearDown(() => Process.runSync('chmod', ['644', fixture.deck]));
+    File(fixture.deck).deleteSync();
 
     await openDeck(tester);
     expect(
       [heldFiles(fixture.root).length, find.text('Generate exam').evaluate().length, find.text('Take exam').evaluate().length],
       [1, 1, 0],
-      reason: 'a file is held, but a deck file that cannot be read offers a generation',
+      reason: 'a file is held, but a deck file deleted after the listing cannot be read and offers a generation',
     );
   });
 
@@ -2049,6 +2054,188 @@ void main() {
         find.text('Discard exam'),
         findsOneWidget,
         reason: 'the menu of the held exam offers Discard exam',
+      );
+    },
+  );
+
+  testWidgets(
+    'a claim that writes the file and then meets an expired pairing still announces the exam',
+    (tester) async {
+      final fixture = await examFixture('exam-claim-expired-after-write');
+      writeExamDeck(fixture.root, 'other.md', 'Other exam');
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        idleBeforeStart: true,
+        examStartSitting: corpusSitting(),
+        examGetReplies: [deskState('generating', corpusSitting())],
+        examCarriedReply: contract('CarriedReplyDto'),
+        expireOnExamClose: true,
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      await closeSheet(tester);
+      desk.replaceExam(deskState('ready', corpusSitting()));
+
+      await openDeck(tester, 'Other exam');
+      await tapGenerate(tester);
+      await tester.pump();
+      expect(
+        [
+          heldFiles(fixture.root).length,
+          desk.examStartCalls,
+          find.text('Exam ready: Remote exam.').evaluate().length,
+        ],
+        [1, 1, 1],
+        reason: 'step 1: the claim wrote the file, its close expired: no second start, one announcement',
+      );
+      await closeSheet(tester);
+      await openDeck(tester);
+      expect(
+        find.text('Take exam'),
+        findsOneWidget,
+        reason: 'step 2: the deck whose exam the claim wrote offers Take exam',
+      );
+    },
+  );
+
+  testWidgets(
+    'a claim that writes the file and then fails to save its record still announces the exam',
+    (tester) async {
+      final fixture = await examFixture('exam-claim-unsaved-after-write');
+      writeExamDeck(fixture.root, 'other.md', 'Other exam');
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        idleBeforeStart: true,
+        examStartSitting: corpusSitting(),
+        examGetReplies: [deskState('generating', corpusSitting())],
+        examCarriedReply: contract('CarriedReplyDto'),
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      await closeSheet(tester);
+      blockRecordSaves(fixture.support);
+      desk.replaceExam(deskState('ready', corpusSitting()));
+
+      await openDeck(tester, 'Other exam');
+      await tapGenerate(tester);
+      await tester.pump();
+      expect(
+        [
+          heldFiles(fixture.root).length,
+          desk.examStartCalls,
+          find.text('Exam ready: Remote exam.').evaluate().length,
+        ],
+        [1, 1, 1],
+        reason: 'step 1: the claim wrote the file, its record save threw: no second start, one announcement',
+      );
+      await closeSheet(tester);
+      await openDeck(tester);
+      expect(
+        find.text('Take exam'),
+        findsOneWidget,
+        reason: 'step 2: the deck whose exam the claim wrote offers Take exam',
+      );
+    },
+  );
+
+  testWidgets(
+    'a result left with an outcome is not announced by the next hand-off even when it was never announced',
+    (tester) async {
+      final fixture = await examFixture('exam-leave-unannounced');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await generateAndFetch(tester);
+      final file = File('${fixture.support.path}/exam-sittings.json');
+      file.writeAsStringSync(
+        file.readAsStringSync().replaceAll('"announced":true', '"announced":false'),
+      );
+      StartedSittings.forgetLoaded();
+      desk.replaceExam(idleDesk);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      storeResult(fixture.deck, fixture.root);
+      await openDeck(tester);
+      await tester.tap(find.text('Show result'));
+      await tester.pumpAndSettle();
+      await leaveExam(tester);
+      expect(
+        [heldFiles(fixture.root).length, find.text('Exam ready: Remote exam.').evaluate().length],
+        [0, 0],
+        reason: 'step 1: the result was left, the file is gone, nothing is announced',
+      );
+
+      desk.replaceExam(deskState('ready', corpusSitting()));
+      final closesBefore = desk.examClosedSittings.length;
+      await tester.pumpWidget(const SizedBox.shrink());
+      StartedSittings.forgetLoaded();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await tester.pump();
+      expect(
+        [desk.examClosedSittings.skip(closesBefore).toList(), find.text('Exam ready: Remote exam.').evaluate().length],
+        [
+          [corpusSitting()],
+          0,
+        ],
+        reason: 'step 2: the restarted poll handed the ready exam off (one close) and announced nothing',
+      );
+    },
+  );
+
+  testWidgets(
+    'the discard confirm of a held exam shows the deck title it has now, not the one it had when the exam started',
+    (tester) async {
+      final fixture = await examFixture('exam-discard-renamed');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await generateAndFetch(tester);
+      final deck = File(fixture.deck);
+      deck.writeAsStringSync(
+        deck.readAsStringSync().replaceFirst('title: Remote exam', 'title: Renamed exam'),
+      );
+      desk.replaceExam(idleDesk);
+      await tester.pumpWidget(const SizedBox.shrink());
+      StartedSittings.forgetLoaded();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+
+      await openDeck(tester, 'Renamed exam');
+      await chooseDiscard(tester);
+      expect(
+        [
+          find.descendant(of: find.byType(AlertDialog), matching: find.text('Renamed exam')).evaluate().length,
+          find.descendant(of: find.byType(AlertDialog), matching: find.text('Remote exam')).evaluate().length,
+        ],
+        [1, 0],
+        reason: 'renamed from Remote exam to Renamed exam: the confirm names Renamed exam only',
+      );
+    },
+  );
+
+  testWidgets(
+    'a failed generation this phone did not start is not closed, and the start is still sent',
+    (tester) async {
+      final fixture = await examFixture('exam-failed-not-ours');
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        examStartSitting: corpusSitting(),
+        examGetReplies: const [
+          RemoteExam(
+            sitting: 'a-sitting-of-another-device',
+            phase: 'generating',
+            deck: 'ws/exam.md',
+            thinking: false,
+            error: 'the generation failed',
+          ),
+        ],
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      expect(
+        [desk.examClosedSittings, desk.examStartCalls],
+        [<String>[], 1],
+        reason: 'another device failed generation: no close, one start',
       );
     },
   );

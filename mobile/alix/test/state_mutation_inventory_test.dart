@@ -92,8 +92,8 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:1052',
-        'lib/picker_screen.dart:1303',
+        'lib/picker_screen.dart:1056',
+        'lib/picker_screen.dart:1312',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:226',

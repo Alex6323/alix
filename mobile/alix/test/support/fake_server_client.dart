@@ -44,6 +44,7 @@ class FakeServerClient implements ServerClient {
     this.examCloseGate,
     this.examCloseReply = true,
     this.expireOnExamClose = false,
+    this.refuseStartWhileGenerating = false,
     this.failExamClose = false,
     this.examCarriedReply,
     this.examCarriedReplies,
@@ -146,6 +147,10 @@ class FakeServerClient implements ServerClient {
 
   /// `examClose` throws [PairingExpired] after recording its sitting.
   final bool expireOnExamClose;
+
+  /// `examStart` answers no sitting once an earlier start was answered with
+  /// one, as a desk does while that sitting is being generated.
+  final bool refuseStartWhileGenerating;
   final bool failExamClose;
 
   final String? examCarriedReply;
@@ -317,6 +322,7 @@ class FakeServerClient implements ServerClient {
     startedIdeas = ideas;
     if (expireOnExamStart) throw const PairingExpired();
     if (!examStartReply) return null;
+    if (refuseStartWhileGenerating && call > 0) return null;
     final sittings = examStartSittings;
     return RemoteExam(
       sitting: sittings != null && sittings.isNotEmpty

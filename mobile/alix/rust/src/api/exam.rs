@@ -1510,7 +1510,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
-        store_reply(root, &grading_reply(&exam, &[(true, &[]), (false, &["gap of b"])]), true).unwrap();
+        store_reply(
+            root,
+            &grading_reply(&exam, &[(true, &[]), (false, &["gap of b"])]),
+            true,
+        )
+        .unwrap();
         held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
 
         let start = exam_sitting_start(deck_arg(&path), root_arg(root), true, NOW).unwrap();

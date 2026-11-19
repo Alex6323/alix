@@ -428,9 +428,7 @@ class _PickerScreenState extends State<PickerScreen> {
           await handoff.onReady(sitting);
         } on PairingExpired {
           expired = true;
-        } on Object {
-          // The next tick retries.
-        }
+        } on Object catch (_) {}
       }
     } finally {
       _examPollInFlight = false;
@@ -864,6 +862,7 @@ class _PickerScreenState extends State<PickerScreen> {
     required String deckId,
     required String title,
   }) async {
+    if (!await _confirmDiscard(context, title)) return false;
     String? sitting;
     try {
       sitting = exam_bridge.heldExamSitting(root, deckId);
@@ -872,7 +871,6 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     final sittings = _sittings;
     final record = sittings?.bySitting(sitting);
-    if (!await _confirmDiscard(context, record?.title ?? title)) return false;
     if (sittings != null && record != null) {
       record.fetched = true;
       record.announced = true;
@@ -907,10 +905,11 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<bool> _discardReady(
     BuildContext sheet,
     String deckName,
-    StartedSitting record,
-  ) async {
+    StartedSitting record, {
+    required String title,
+  }) async {
     final handoff = _examHandoff;
-    if (handoff == null || !await _confirmDiscard(sheet, record.title)) {
+    if (handoff == null || !await _confirmDiscard(sheet, title)) {
       return false;
     }
     try {
@@ -930,7 +929,12 @@ class _PickerScreenState extends State<PickerScreen> {
   Future<void> _discardBlocked(BuildContext sheet) async {
     final blocked = _blockedClaim;
     if (blocked == null) return;
-    if (await _discardReady(sheet, blocked.deck, blocked.record)) {
+    if (await _discardReady(
+      sheet,
+      blocked.deck,
+      blocked.record,
+      title: blocked.record.title,
+    )) {
       await blocked.resume();
     }
   }
@@ -1117,7 +1121,12 @@ class _PickerScreenState extends State<PickerScreen> {
                             title: entry.title,
                           )
                         : action == PickerExamAction.fetching && record != null
-                        ? () => _discardReady(sheet, deckName, record)
+                        ? () => _discardReady(
+                            sheet,
+                            deckName,
+                            record,
+                            title: entry.title,
+                          )
                         : blocked != null
                         ? () => _discardBlocked(sheet)
                         : null,
