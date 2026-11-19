@@ -24,8 +24,6 @@ class ExamSittingStart {
   final List<String> unsourcedTopics;
 }
 
-/// An exam sitting this phone started on a paired desktop: the start state
-/// its result is recorded against, and whether its exam was fetched.
 class StartedSitting {
   StartedSitting({
     required this.root,
@@ -103,8 +101,6 @@ class StartedSitting {
   }
 }
 
-/// The sittings this phone started, one per pairing root and deck id, kept in
-/// the app's support folder so an app restart mid-exam still finds them.
 class StartedSittings {
   StartedSittings._(this._file, this._byDeck);
 

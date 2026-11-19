@@ -1,5 +1,3 @@
-// Pure-Dart tests for the start records the phone keeps in the app's support
-// folder. No RustLib, no bridge.
 import 'dart:convert';
 import 'dart:io';
 

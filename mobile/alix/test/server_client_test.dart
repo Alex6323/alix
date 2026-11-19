@@ -469,7 +469,7 @@ void main() {
       final s = await startServer((request) async {
         seenPath = request.uri.path;
         seenBody = await readJsonBody(request);
-        await respondJson(request, 200, {'phase': 'generating'});
+        await respondJson(request, 200, {'phase': 'generating', 'thinking': true});
       });
       final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
       addTearDown(client.close);
@@ -976,6 +976,30 @@ void main() {
         throwsA(isA<PairingExpired>()),
         reason: 'gradingSubmit answered 401',
       );
+    });
+
+    test('a 200 reply without a string phase and a bool thinking is no answer', () async {
+      const bodies = {
+        'empty object': '{}',
+        'phase of another type': '{"phase":5,"thinking":false}',
+        'phase missing': '{"thinking":false}',
+        'thinking missing': '{"phase":"idle"}',
+        'thinking of another type': '{"phase":"idle","thinking":"no"}',
+      };
+      for (final MapEntry(key: row, value: reply) in bodies.entries) {
+        final s = await startServer((request) async {
+          await request.drain<void>();
+          await respondRaw(request, 200, reply);
+        });
+        final client = await clientFor(s);
+
+        expect(await client.gradingSubmit(gradeRequest), isA<GradingNoAnswer>(), reason: 'gradingSubmit, row $row: $reply');
+        expect(await client.gradingRemediate(remediationRequest), isA<GradingNoAnswer>(), reason: 'gradingRemediate, row $row: $reply');
+        expect(await client.gradingGet(), isA<GradingNoAnswer>(), reason: 'gradingGet, row $row: $reply');
+        expect(await client.examGet(), isNull, reason: 'examGet, row $row: $reply');
+        expect(await client.examStart('rust.md'), isNull, reason: 'examStart, row $row: $reply');
+        await s.close(force: true);
+      }
     });
 
     test('a grading call with no server listening is no answer', () async {

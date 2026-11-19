@@ -121,7 +121,6 @@ class FakeServerClient implements ServerClient {
   final Completer<void>? examCloseGate;
   final bool failExamClose;
 
-  /// What `examCarried` answers: the body text, or null for no exam.
   final String? examCarriedReply;
 
   /// Replies to `gradingSubmit`, `gradingRemediate` and `gradingGet`, one per

@@ -409,7 +409,7 @@ class RemoteAsk {
       );
 }
 
-/// One graded exam answer within a `RemoteExam`. Mirrors `ExamGradeDto`;
+/// One graded exam answer. Mirrors `ExamGradeDto`;
 /// `verdict` is uppercase (`PASS` | `PARTIAL` | `FAIL`) on the wire, passed
 /// through as-is.
 class RemoteExamGrade {
@@ -491,7 +491,7 @@ class ExamVerdicts {
   }
 }
 
-/// One examined topic of a sitting. Mirrors `RemoteExamTopicDto`.
+/// One examined topic of a sitting.
 class RemoteExamTopic {
   const RemoteExamTopic({
     required this.topicId,
@@ -529,8 +529,6 @@ class RemoteExamTopic {
   }
 }
 
-/// The generation desk's reply (`RemoteExamDto`): the exam itself is fetched
-/// once, by [ServerClient.examCarried], when the phase is `ready`.
 class RemoteExam {
   const RemoteExam({
     required this.phase,
@@ -552,20 +550,23 @@ class RemoteExam {
   final String? error;
   final String? estimate;
 
-  static RemoteExam fromJson(Map<String, dynamic> json) => RemoteExam(
-        sitting: _asString(json['sitting']),
-        phase: _asString(json['phase']) ?? 'idle',
-        deck: _asString(json['deck']) ?? '',
-        unknownCards: _asStringList(json['unknown_cards']),
-        thinking: _asBool(json['thinking']),
-        elapsed: _asInt(json['elapsed']),
-        error: _asString(json['error']),
-        estimate: _asString(json['estimate']),
-      );
+  static RemoteExam? fromJson(Map<String, dynamic> json) {
+    final phase = json['phase'];
+    final thinking = json['thinking'];
+    if (phase is! String || thinking is! bool) return null;
+    return RemoteExam(
+      sitting: _asString(json['sitting']),
+      phase: phase,
+      deck: _asString(json['deck']) ?? '',
+      unknownCards: _asStringList(json['unknown_cards']),
+      thinking: thinking,
+      elapsed: _asInt(json['elapsed']),
+      error: _asString(json['error']),
+      estimate: _asString(json['estimate']),
+    );
+  }
 }
 
-/// The grading desk's reply (`GradingReply`) reduced to what the phone polls
-/// on; the reply's text is kept whole by [GradingAnswered.body].
 class RemoteGrading {
   const RemoteGrading({
     required this.phase,
@@ -583,14 +584,19 @@ class RemoteGrading {
   final String? error;
   final String? estimate;
 
-  static RemoteGrading fromJson(Map<String, dynamic> json) => RemoteGrading(
-        sitting: _asString(json['sitting']),
-        phase: _asString(json['phase']) ?? 'idle',
-        thinking: _asBool(json['thinking']),
-        elapsed: _asInt(json['elapsed']),
-        error: _asString(json['error']),
-        estimate: _asString(json['estimate']),
-      );
+  static RemoteGrading? fromJson(Map<String, dynamic> json) {
+    final phase = json['phase'];
+    final thinking = json['thinking'];
+    if (phase is! String || thinking is! bool) return null;
+    return RemoteGrading(
+      sitting: _asString(json['sitting']),
+      phase: phase,
+      thinking: thinking,
+      elapsed: _asInt(json['elapsed']),
+      error: _asString(json['error']),
+      estimate: _asString(json['estimate']),
+    );
+  }
 }
 
 sealed class GradingCall {
@@ -612,23 +618,6 @@ final class GradingRefused extends GradingCall {
 
 final class GradingNoAnswer extends GradingCall {
   const GradingNoAnswer();
-}
-
-/// One failed topic's remediation in a [RemoteExam]: its topic id and its
-/// deck-format card text. Mirrors `TopicCardsDto`.
-class RemoteTopicCards {
-  const RemoteTopicCards({required this.topicId, required this.cards});
-
-  final String topicId;
-  final String cards;
-
-  static RemoteTopicCards? fromJson(Object? json) {
-    if (json is! Map<String, dynamic>) return null;
-    final topicId = _asString(json['topic_id']);
-    final cards = _asString(json['cards']);
-    if (topicId == null || cards == null) return null;
-    return RemoteTopicCards(topicId: topicId, cards: cards);
-  }
 }
 
 /// A paired desktop's deck generation from a URL (`POST`/`GET
@@ -684,8 +673,6 @@ class RemoteGenerate {
 ///   a bool-returning call): failure reads as absence, never an exception.
 /// - any other status (400, 403, 409, ...) -> false/null for v1; callers
 ///   treat it as a generic failed tap, there is no per-status exception.
-/// - the grading calls return a [GradingCall] instead: any status but 200 is
-///   [GradingRefused], and only a call with no HTTP reply is [GradingNoAnswer].
 abstract class ServerClient {
   /// The paired server's version and root identity (`GET /api/version`), or
   /// null if it cannot be reached or does not answer with JSON.
@@ -723,26 +710,18 @@ abstract class ServerClient {
     Map<String, dynamic>? ideas,
   });
 
-  /// `GET /api/remote/exam`: polls the generation desk.
   Future<RemoteExam?> examGet();
 
-  /// `GET /api/remote/exam/carried`: the generated exam of [sitting] as the
-  /// desktop sent it, or null.
   Future<String?> examCarried(String sitting);
 
-  /// `POST /api/remote/exam/close`: closes [sitting] on the generation desk.
   Future<bool> examClose(String sitting);
 
-  /// `POST /api/remote/exam/grading`: [requestJson] is sent as given.
   Future<GradingCall> gradingSubmit(String requestJson);
 
-  /// `POST /api/remote/exam/grading/remediate`: [requestJson] is sent as given.
   Future<GradingCall> gradingRemediate(String requestJson);
 
-  /// `GET /api/remote/exam/grading`: polls the grading desk.
   Future<GradingCall> gradingGet();
 
-  /// `POST /api/remote/exam/grading/close`: closes [sitting] on the grading desk.
   Future<bool> gradingClose(String sitting);
 
   /// `POST /api/remote/generate`: starts generating a deck from [url],
@@ -956,7 +935,8 @@ class HttpServerClient implements ServerClient {
     try {
       final decoded = jsonDecode(text);
       if (decoded is! Map<String, dynamic>) return const GradingNoAnswer();
-      return GradingAnswered(text, RemoteGrading.fromJson(decoded));
+      final state = RemoteGrading.fromJson(decoded);
+      return state == null ? const GradingNoAnswer() : GradingAnswered(text, state);
     } on FormatException {
       return const GradingNoAnswer();
     }
