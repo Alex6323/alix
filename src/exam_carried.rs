@@ -764,6 +764,35 @@ impl HeldExam {
             .map(|asked| asked.topic_id.as_str())
     }
 
+    pub fn remediation_cards<'a>(&self, reply: &'a GradingReply) -> Result<Vec<(String, &'a str)>> {
+        if reply.sitting.as_deref() != Some(self.exam.sitting.as_str()) {
+            bail!("the remediation reply is for another sitting");
+        }
+        if reply.phase != "remediated" {
+            bail!("the remediation reply is in phase {}", reply.phase);
+        }
+        let awaiting: Vec<usize> = self
+            .remediation_request()
+            .map(|request| request.topics.iter().map(|topic| topic.topic).collect())
+            .unwrap_or_default();
+        reply
+            .cards_by_topic
+            .iter()
+            .map(|entry| {
+                let topic_id = self
+                    .topic_id_of(entry.topic)
+                    .filter(|_| awaiting.contains(&entry.topic))
+                    .with_context(|| {
+                        format!(
+                            "the remediation reply names topic {}, which is not awaiting remediation",
+                            entry.topic
+                        )
+                    })?;
+                Ok((topic_id.to_string(), entry.cards.as_str()))
+            })
+            .collect()
+    }
+
     pub fn view(&self) -> HeldView {
         HeldView {
             sitting: self.exam.sitting.clone(),
@@ -1604,6 +1633,167 @@ mod tests {
                 .remediation_request()
                 .is_some(),
             "control: a recorded outcome with a failed topic"
+        );
+    }
+
+    fn awaiting_remediation() -> HeldExam {
+        let mut value = held_from(exam(&["a", "b", "c", "d", "e"], &["a", "b", "c", "d", "e"]));
+        let mut reply = fitting_reply(&value);
+        reply.topics = vec![
+            graded_topic(true, &["partial gap"]),
+            graded_topic(false, &[]),
+            graded_topic(false, &["c gap"]),
+            graded_topic(false, &["d gap"]),
+            graded_topic(false, &["e gap"]),
+        ];
+        value.store_result(&reply, 1, true).unwrap();
+        let mut value = recorded(value);
+        value.remediated.insert("c".into(), 2);
+        value
+    }
+
+    fn remediated_reply(value: &HeldExam, topics: &[usize]) -> GradingReply {
+        GradingReply {
+            sitting: Some(value.exam.sitting.clone()),
+            phase: "remediated".into(),
+            grades: Vec::new(),
+            topics: Vec::new(),
+            verdicts: None,
+            mastered: false,
+            cards_by_topic: topics
+                .iter()
+                .map(|&topic| TopicNumberCards {
+                    topic,
+                    cards: format!("## card {topic}\nanswer\n"),
+                })
+                .collect(),
+            thinking: false,
+            elapsed: None,
+            error: None,
+            estimate: None,
+        }
+    }
+
+    #[test]
+    fn a_remediation_reply_not_fitting_the_awaiting_topics_is_refused_whole() {
+        let awaiting = awaiting_remediation();
+        assert_eq!(
+            Some(vec![3, 4]),
+            awaiting.remediation_request().map(|request| request
+                .topics
+                .iter()
+                .map(|topic| topic.topic)
+                .collect()),
+            "control: topics 3 and 4 await remediation"
+        );
+        let unrecorded = {
+            let mut value = awaiting_remediation();
+            value.remediated.clear();
+            value.outcome = Some(HeldOutcome {
+                recorded: false,
+                standing: None,
+            });
+            value
+        };
+        let no_outcome = {
+            let mut value = awaiting_remediation();
+            value.remediated.clear();
+            value.outcome = None;
+            value
+        };
+        let not_awaiting = |topic: usize| {
+            format!("the remediation reply names topic {topic}, which is not awaiting remediation")
+        };
+        let rows: Vec<(&str, &HeldExam, GradingReply, String)> = vec![
+            (
+                "another sitting",
+                &awaiting,
+                GradingReply {
+                    sitting: Some("s2".into()),
+                    ..remediated_reply(&awaiting, &[3])
+                },
+                "the remediation reply is for another sitting".to_string(),
+            ),
+            (
+                "phase results",
+                &awaiting,
+                GradingReply {
+                    phase: "results".into(),
+                    ..remediated_reply(&awaiting, &[3])
+                },
+                "the remediation reply is in phase results".to_string(),
+            ),
+            (
+                "phase remediating",
+                &awaiting,
+                GradingReply {
+                    phase: "remediating".into(),
+                    ..remediated_reply(&awaiting, &[3])
+                },
+                "the remediation reply is in phase remediating".to_string(),
+            ),
+            (
+                "a number the exam did not ask",
+                &awaiting,
+                remediated_reply(&awaiting, &[3, 9]),
+                not_awaiting(9),
+            ),
+            (
+                "a passed topic",
+                &awaiting,
+                remediated_reply(&awaiting, &[3, 0]),
+                not_awaiting(0),
+            ),
+            (
+                "a failed topic without a gap",
+                &awaiting,
+                remediated_reply(&awaiting, &[3, 1]),
+                not_awaiting(1),
+            ),
+            (
+                "a topic already remediated",
+                &awaiting,
+                remediated_reply(&awaiting, &[3, 2]),
+                not_awaiting(2),
+            ),
+            (
+                "an outcome that says not recorded",
+                &unrecorded,
+                remediated_reply(&unrecorded, &[3]),
+                not_awaiting(3),
+            ),
+            (
+                "a result and no outcome",
+                &no_outcome,
+                remediated_reply(&no_outcome, &[3]),
+                not_awaiting(3),
+            ),
+        ];
+        for (row, value, reply, expected) in rows {
+            match value.remediation_cards(&reply) {
+                Ok(cards) => panic!("{row}: refused expected, accepted {cards:?}"),
+                Err(error) => assert_eq!(expected, error.to_string(), "{row}: the refusal"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_remediation_reply_maps_each_number_to_its_topic_in_the_reply_order() {
+        let value = awaiting_remediation();
+        let both = remediated_reply(&value, &[4, 3]);
+        assert_eq!(
+            vec![
+                ("e".to_string(), "## card 4\nanswer\n"),
+                ("d".to_string(), "## card 3\nanswer\n"),
+            ],
+            value.remediation_cards(&both).unwrap(),
+            "both awaiting topics, in the reply's order"
+        );
+        let subset = remediated_reply(&value, &[3]);
+        assert_eq!(
+            vec![("d".to_string(), "## card 3\nanswer\n")],
+            value.remediation_cards(&subset).unwrap(),
+            "a reply for a subset of the awaiting topics"
         );
     }
 

@@ -449,9 +449,7 @@ pub fn held_exam_store_remediation(
     let mut apply = HeldApply::open(&deck_path, &root_dir)?;
     let reply: alix::exam_carried::GradingReply =
         serde_json::from_str(&reply_json).context("unreadable remediation reply")?;
-    if reply.sitting.as_deref() != Some(apply.held.exam.sitting.as_str()) {
-        bail!("the remediation reply is for another sitting");
-    }
+    let cards = apply.held.remediation_cards(&reply)?;
     let fingerprints = apply
         .deck
         .cards
@@ -463,33 +461,22 @@ pub fn held_exam_store_remediation(
         alix::config::ReviewConfig::default(),
         &apply.deck_path,
     );
-    let mut stored = Vec::new();
-    for entry in &reply.cards_by_topic {
-        let topic_id = apply
-            .held
-            .topic_id_of(entry.topic)
-            .with_context(|| {
-                format!(
-                    "the remediation reply names topic {}, which this exam did not ask",
-                    entry.topic
-                )
-            })?
-            .to_string();
+    let mut total = 0;
+    for (topic_id, text) in cards {
         let count = alix::store::store_remediation_cards(
             &mut store,
             Some(&apply.deck_path),
             &apply.deck_id,
             &topic_id,
             &fingerprints,
-            &entry.cards,
+            text,
             retire_after_days,
         )
-        .into_result()?;
-        stored.push((topic_id, count as u32));
+        .into_result()? as u32;
+        apply.held.remediated.insert(topic_id, count);
+        apply.held.save(&apply.held_path)?;
+        total += count;
     }
-    let total = stored.iter().map(|(_, count)| count).sum();
-    apply.held.remediated.extend(stored);
-    apply.held.save(&apply.held_path)?;
     Ok(total)
 }
 
@@ -2415,25 +2402,6 @@ mod tests {
             "control: both failed topics are requested"
         );
 
-        let failed = held_exam_store_remediation(
-            deck_arg(&path),
-            root_arg(root),
-            remediation_reply(
-                &exam.sitting,
-                &[(0, "## Why a?\nbecause a\n"), (9, "## Why z?\nz\n")],
-            ),
-            None,
-        );
-        assert!(
-            failed.is_err(),
-            "a reply naming an unasked topic fails: {failed:?}"
-        );
-        assert_eq!(
-            Some(vec![0, 1]),
-            remediation_topics(root),
-            "a failure before every card set is stored notes no topic"
-        );
-
         held_exam_store_remediation(
             deck_arg(&path),
             root_arg(root),
@@ -2446,6 +2414,101 @@ mod tests {
             Some(vec![1]),
             remediation_topics(root),
             "the remediated topic 0 is left out of the next request"
+        );
+    }
+
+    #[test]
+    fn a_card_set_the_store_refuses_keeps_the_topics_stored_before_it_noted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (path, exam) = applied_with_both_failed(root);
+        let noted = |root: &Path| held_now(root).remediated;
+
+        let failed = held_exam_store_remediation(
+            deck_arg(&path),
+            root_arg(root),
+            remediation_reply(
+                &exam.sitting,
+                &[(0, "## Why a?\nbecause a\n"), (1, "## q\n")],
+            ),
+            None,
+        );
+
+        assert!(
+            failed.is_err(),
+            "the reply whose second card set is malformed fails: {failed:?}"
+        );
+        assert_eq!(
+            std::collections::BTreeMap::from([("topic-a".to_string(), 1)]),
+            noted(root),
+            "after the failure the first topic is noted with its count and the second is not"
+        );
+        assert_eq!(
+            vec![("topic-a".to_string(), "Why a?".to_string())],
+            personal_fronts(&path),
+            "after the failure only the first topic's card is stored"
+        );
+        assert_eq!(
+            Some(vec![1]),
+            remediation_topics(root),
+            "after the failure only the second topic is requested"
+        );
+
+        let stored = held_exam_store_remediation(
+            deck_arg(&path),
+            root_arg(root),
+            remediation_reply(&exam.sitting, &[(1, "## Why b?\nbecause b\n")]),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(1, stored, "the second topic's reply stores its card");
+        assert_eq!(
+            std::collections::BTreeMap::from([
+                ("topic-a".to_string(), 1),
+                ("topic-b".to_string(), 1),
+            ]),
+            noted(root),
+            "after the second reply both topics are noted, topic-a's count unchanged"
+        );
+        assert_eq!(
+            None,
+            remediation_topics(root),
+            "after the second reply no topic is requested"
+        );
+        assert_eq!(
+            vec![
+                ("topic-a".to_string(), "Why a?".to_string()),
+                ("topic-b".to_string(), "Why b?".to_string()),
+            ],
+            personal_fronts(&path),
+            "after the second reply each front exists once"
+        );
+    }
+
+    #[test]
+    fn a_remediation_reply_after_submit_anyway_is_refused_and_writes_no_card() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (path, exam) = held_on_deck(root);
+        store_reply(root, &grading_reply(&exam, BOTH_FAIL), false).unwrap();
+        held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+
+        let refused = held_exam_store_remediation(
+            deck_arg(&path),
+            root_arg(root),
+            remediation_reply(&exam.sitting, &[(0, "## Why a?\nbecause a\n")]),
+            None,
+        );
+
+        assert!(
+            refused.is_err(),
+            "a remediation reply for a result not recorded is refused: {refused:?}"
+        );
+        assert_eq!(
+            Vec::<(String, String)>::new(),
+            personal_fronts(&path),
+            "the refused reply writes no card"
         );
     }
 
