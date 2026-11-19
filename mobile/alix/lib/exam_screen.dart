@@ -1,16 +1,9 @@
-// The AI exam, run on the phone against a paired desktop: it generates
-// questions and grades against its own deck copy while every outcome
-// (the sitting's result, remediation cards) lands in the PHONE's store via
-// the bridge callbacks picker_screen.dart hands in. Data and callbacks only: this file
-// never imports the generated bridge (`src/rust/*`), so its tests run
-// without a Rust dylib, the same seam tutor_sheet.dart plays.
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bridge/bridge_error.dart';
-import 'package:alix_mobile/pairing_sheet.dart';
+import 'package:alix_mobile/bridge/exam_bridge.dart' show AnswerTooLong, HeldExamAccess, HeldExamView;
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
@@ -34,102 +27,43 @@ String examDeckName({required String deckPath, required String rootDir}) {
   return parts.join('/');
 }
 
-/// The exact wording for a 401 at any phase: the paired server is right
-/// there but rejects this app's token. Every [ServerClient] call can throw
-/// [PairingExpired]; every call site here catches it, shows exactly this
-/// line, and pops (there is nothing left to sit an exam against).
 const pairingExpiredMessage =
     'Pairing expired. Pair again from Settings → Connected devices.';
 
-/// Phases `GET /api/remote/exam` cycles through while doing async work: the
-/// screen keeps polling for as long as the last DTO reports one of these
-/// (or `thinking`); `answering` is client-driven (no poll needed) and
-/// `results`/`remediated`/`error` are terminal for their stage.
-const _pollingPhases = {'generating', 'grading', 'remediating'};
+const _needsDesktop = 'grading needs the paired desktop';
+const _busy = 'the desktop is busy grading; try again shortly';
+const _unreadable = 'the desktop could not read this exam; update alix on both devices';
+const _changedDeck = 'the deck changed since this exam was prepared; its result cannot be recorded';
 
-typedef ExamAnswers = ({List<String> answers, List<bool> locked});
+enum _Desk {
+  grade(running: 'grading', finished: 'results', again: 'submit again'),
+  remediate(running: 'remediating', finished: 'remediated', again: 'remediate again');
 
-/// A full-screen AI exam sitting on the paired desktop: one immersive flow,
-/// mirroring how review_screen.dart structures itself (a plain header, the
-/// deck name truncating, a Close affordance). Phase-driven off
-/// [RemoteExam.phase]; see `docs/API.md` 4.10 / `RemoteExamDto`.
+  const _Desk({required this.running, required this.finished, required this.again});
+
+  final String running;
+  final String finished;
+  final String again;
+}
+
+enum _Stage { leaving, unreadable, answers, grading, unapplied, result }
+
 class ExamScreen extends StatefulWidget {
   const ExamScreen({
     super.key,
     required this.deckName,
+    required this.held,
     required this.client,
-    required this.support,
-    required this.buildClient,
-    required this.applyResult,
-    required this.applyRemediation,
-    required this.nowMs,
-    this.cards,
-    this.unsourcedTopics = const [],
-    this.initialExam,
-    this.onStarted,
-    this.ideas,
-    this.loadAnswers,
-    this.saveAnswers,
-    this.clearAnswers,
-    this.saveIdeas,
+    required this.onLeaveResult,
+    required this.onDiscard,
     this.pollInterval = const Duration(milliseconds: 400),
   });
 
-  /// The name the paired server's own catalog resolves this deck by: a bare
-  /// top-level file name, or `<workspace>/<file>` for a workspace member.
-  /// Never a device-absolute path; see [examDeckName].
   final String deckName;
-
-  /// The paired desktop's AI backend, over `/api/remote/*`.
-  final ServerClient client;
-
-  /// The support dir the "Re-pair" action reopens the pairing sheet
-  /// against on a 401 (see `_expirePairingAndPop`); the caller (review or
-  /// trace screen) resolves this once and hands it down.
-  final Directory support;
-
-  /// Builds the pairing sheet's own probe client, the same way the caller
-  /// resolves its own.
-  final ServerClient Function(ServerConfig) buildClient;
-
-  /// Records a settled sitting, whatever its outcome, in the phone's own
-  /// store (a closure over `applyExamResult`). Called at most once per
-  /// sitting, with the terminal DTO; throws when it refuses the result.
-  final ({String text, bool examChanged})? Function(RemoteExam exam, BigInt nowMs)
-  applyResult;
-
-  /// Told the id of the sitting this screen started on the desktop.
-  final void Function(String? sitting)? onStarted;
-
-  /// The card ids whose topics to examine; null sits the full deck.
-  final List<String>? cards;
-
-  /// Labels of the topics no source grounds, listed on the results.
-  final List<String> unsourcedTopics;
-
-  final RemoteExam? initialExam;
-
-  final Map<String, dynamic>? ideas;
-
-  final ExamAnswers Function(List<String> questions)? loadAnswers;
-
-  final void Function(List<String> questions, ExamAnswers answers)? saveAnswers;
-
-  final VoidCallback? clearAnswers;
-
-  final void Function(Map<String, dynamic> ideas)? saveIdeas;
-
-  /// Turns one failed topic's remediation deck-text into phone-store
-  /// personal cards bound to that topic (a closure over
-  /// `applyRemediation`), returning how many were created or revived, or
-  /// null when this phone refuses the sitting.
-  final int? Function(RemoteExam exam, RemoteTopicCards topic) applyRemediation;
-
-  /// The wall clock, injected so tests can fake it.
-  final BigInt Function() nowMs;
-
-  /// How often to poll `GET /api/remote/exam` while the server is working.
-  /// Tests shrink this well below the default.
+  final HeldExamAccess held;
+  final ServerClient? client;
+  final VoidCallback onLeaveResult;
+  final Future<void> Function() onDiscard;
   final Duration pollInterval;
 
   @override
@@ -137,179 +71,105 @@ class ExamScreen extends StatefulWidget {
 }
 
 class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
-  RemoteExam? _exam;
+  _Stage _stage = _Stage.leaving;
+  HeldExamView? _view;
+  String? _line;
+  String? _again;
+  bool _changed = false;
+  bool _submitAnyway = false;
+  bool _closeSettled = true;
+  bool _remediating = false;
+  bool _leaving = false;
+  bool _foreground = true;
+  int? _elapsed;
   Timer? _pollTimer;
+  Future<void> _closing = Future<void>.value();
 
   int _currentQuestion = 0;
   final List<TextEditingController> _answerControllers = [];
   final List<bool> _answerLocked = [];
-  bool _submitting = false;
-  bool _remediating = false;
-  bool _acceptedStart = false;
-  bool _explicitlyClosed = false;
-  bool _closing = false;
-  bool _foreground = true;
-
-  /// Guards against a sitting recording its result more than once: a stray
-  /// extra poll landing on the same terminal `results` DTO (e.g. two
-  /// periodic ticks resolving out of order) must not double-apply.
-  bool _resultApplied = false;
-  bool _resultRefused = false;
-  ({String text, bool examChanged})? _examHighMark;
-
-  /// Same guard, for turning `remediated` cards into store entries.
-  bool _remediationApplied = false;
-
-  /// How many consecutive null first-poll replies to tolerate before
-  /// falling back to the refusal path (Polish 8b): a slow sitting start
-  /// must not strand the screen, but a genuinely dead server must not spin
-  /// forever either.
-  static const _firstPollRetryLimit = 4;
-  int _firstPollAttempts = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final initialExam = widget.initialExam;
-    if (initialExam == null) {
-      _start();
-    } else {
-      _acceptedStart = true;
-      scheduleMicrotask(() => _applyDto(initialExam));
-    }
-  }
-
-  bool get _keepsSitting {
-    final phase = _exam?.phase;
-    return phase == 'generating' ||
-        phase == 'answering' ||
-        (_acceptedStart && phase == null);
+    _open();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
-    final leaving = !_explicitlyClosed && !_keepsSitting
-        ? widget.client.examClose()
-        : Future<void>.value();
-    leaving.catchError((_) {}).whenComplete(widget.client.close);
+    final client = widget.client;
+    if (client != null) unawaited(_closing.whenComplete(client.close));
     for (final c in _answerControllers) {
       c.dispose();
     }
     super.dispose();
   }
 
-  // ── the phase walk ───────────────────────────────────────────────────
-
-  Future<void> _start() async {
-    _acceptedStart = true;
-    RemoteExam? started;
+  void _open() {
+    final HeldExamView? view;
     try {
-      started = await widget.client.examStart(
-        widget.deckName,
-        cards: widget.cards,
-        ideas: widget.ideas,
-      );
-    } on PairingExpired {
-      _expirePairingAndPop();
+      view = widget.held.view();
+    } on Object catch (error) {
+      _stage = _Stage.unreadable;
+      _line = bridgeErrorText(error);
       return;
     }
-    if (started != null) widget.onStarted?.call(started.sitting);
-    if (!mounted) return;
-    if (started == null) {
-      _snackAndPop('The desktop refused the exam.');
+    if (view == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pop());
       return;
     }
-    await _poll();
+    _view = view;
+    if (view.result == null) {
+      _installAnswers(view);
+      _stage = _Stage.answers;
+      _materialChanged();
+    } else if (view.outcome == null) {
+      _apply();
+    } else {
+      _stage = _Stage.result;
+    }
   }
 
-  Future<void> _poll() async {
-    RemoteExam? dto;
+  void _installAnswers(HeldExamView view) {
+    _answerControllers.addAll([
+      for (final answer in view.answers) TextEditingController(text: answer),
+    ]);
+    _answerLocked.addAll(view.locked);
+    final firstOpen = _answerLocked.indexWhere((locked) => !locked);
+    _currentQuestion = firstOpen >= 0
+        ? firstOpen
+        : (view.questions.isEmpty ? 0 : view.questions.length - 1);
+  }
+
+  bool _materialChanged() {
     try {
-      dto = await widget.client.examGet();
-    } on PairingExpired {
-      _pollTimer?.cancel();
-      _expirePairingAndPop();
-      return;
+      if (!widget.held.materialChanged()) return false;
+      _say(_changedDeck);
+      _changed = true;
+    } on Object catch (error) {
+      _say(bridgeErrorText(error));
     }
-    if (!mounted) return;
-    if (dto == null) {
-      _retryFirstPollOrGiveUp();
-      return;
-    }
-    _applyDto(dto);
+    return true;
   }
 
-  /// Polish 8b: the very first poll can return null before the sitting is
-  /// ready on the server (a slow start), which would otherwise strand the
-  /// screen on a blank state forever (no timer is running yet to retry
-  /// it). Once a real DTO has ever landed (`_exam != null`), a later null
-  /// is left to the already-running periodic timer, which retries on its
-  /// own. A bounded number of retries recovers a slow start without
-  /// turning a genuinely dead server into an infinite spinner.
-  void _retryFirstPollOrGiveUp() {
-    if (_exam != null) return;
-    _firstPollAttempts++;
-    if (_firstPollAttempts > _firstPollRetryLimit) {
-      _snackAndPop('The desktop refused the exam.');
-      return;
-    }
-    if (!mounted) return;
-    _pollTimer?.cancel();
-    _pollTimer = Timer(widget.pollInterval, () => _poll());
+  void _say(String? line, {String? again}) {
+    _line = line;
+    _again = again;
+    _changed = false;
   }
 
-  /// The one place a fresh DTO lands: applies its one-shot side effects
-  /// (guarded, so a duplicate delivery is a no-op), builds the answer
-  /// controllers the first time `answering` is seen, renders, then decides
-  /// whether to keep polling.
-  void _applyDto(RemoteExam dto) {
-    if (!mounted) return;
-    if (dto.phase == 'results' && !_resultApplied) {
-      final ideas = dto.ideas;
-      if (ideas != null) widget.saveIdeas?.call(ideas);
-      try {
-        _examHighMark = widget.applyResult(dto, widget.nowMs());
-      } catch (error) {
-        _resultRefused = true;
-        _snack(bridgeErrorText(error));
-      }
-      _resultApplied = true;
-      widget.clearAnswers?.call();
-    }
-    if (dto.phase == 'remediated' && !_remediationApplied) {
-      _applyRemediation(dto);
-    }
-    setState(() {
-      _exam = dto;
-      if (dto.phase == 'answering' && _answerControllers.isEmpty) {
-        _installAnswers(dto.questions);
-      }
-    });
-    _rescheduleTimer(dto);
-  }
-
-  void _applyRemediation(RemoteExam dto) {
-    _remediationApplied = true;
-    var count = 0;
-    var refused = false;
+  void _apply() {
     try {
-      for (final topic in dto.cardsByTopic) {
-        final applied = widget.applyRemediation(dto, topic);
-        if (applied == null) {
-          refused = true;
-        } else {
-          count += applied;
-        }
-      }
-    } catch (error) {
-      _remediationApplied = false;
-      _snack(bridgeErrorText(error));
-      return;
+      _view = widget.held.apply();
+      _stage = _Stage.result;
+      _say(null);
+    } on Object catch (error) {
+      _stage = _Stage.unapplied;
+      _say(bridgeErrorText(error));
     }
-    if (!refused) _snack('$count new cards to drill.');
   }
 
   @override
@@ -318,165 +178,209 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     _foreground = state == AppLifecycleState.resumed;
   }
 
-  void _installAnswers(List<String> questions) {
-    final loaded = widget.loadAnswers?.call(questions);
-    final fits = loaded != null &&
-        loaded.answers.length == questions.length &&
-        loaded.locked.length == questions.length;
-    final answers = fits ? loaded.answers : List.filled(questions.length, '');
-    _answerControllers.addAll([
-      for (final answer in answers) TextEditingController(text: answer),
-    ]);
-    _answerLocked.addAll(fits ? loaded.locked : List.filled(questions.length, false));
-    final firstOpen = _answerLocked.indexWhere((locked) => !locked);
-    _currentQuestion = firstOpen >= 0
-        ? firstOpen
-        : (questions.isEmpty ? 0 : questions.length - 1);
+  void _saveAnswers() => widget.held.saveAnswers(
+    [for (final controller in _answerControllers) controller.text],
+    List.of(_answerLocked),
+  );
+
+  void _saveDraft() {
+    if (_stage != _Stage.answers || _answerControllers.isEmpty) return;
+    if (_answerLocked[_currentQuestion]) return;
+    try {
+      _saveAnswers();
+    } on Object catch (_) {
+      return;
+    }
   }
 
-  bool _persistAnswers() {
+  bool _lockAndSave() {
+    final index = _currentQuestion;
+    final locking = !_answerLocked[index] && _answerControllers[index].text.trim().isNotEmpty;
+    if (locking) _answerLocked[index] = true;
     try {
-      widget.saveAnswers?.call(_exam!.questions, (
-        answers: [for (final controller in _answerControllers) controller.text],
-        locked: List.of(_answerLocked),
-      ));
+      _saveAnswers();
+      return true;
     } on Object catch (error) {
-      _snack('Could not save the answer: $error');
+      if (locking) _answerLocked[index] = false;
+      setState(() => _say(error is AnswerTooLong ? '$error' : bridgeErrorText(error)));
       return false;
     }
-    return true;
-  }
-
-  bool _saveDraft() {
-    if (!_isAnswering || _answerControllers.isEmpty) return true;
-    if (_answerLocked[_currentQuestion]) return true;
-    return _persistAnswers();
-  }
-
-  bool _lockAndPersistCurrent() {
-    if (_answerControllers.isEmpty) return true;
-    final index = _currentQuestion;
-    if (_answerLocked[index] || _answerControllers[index].text.trim().isEmpty) {
-      return true;
-    }
-    _answerLocked[index] = true;
-    if (_persistAnswers()) return true;
-    _answerLocked[index] = false;
-    return false;
   }
 
   void _nextQuestion() {
-    if (!_lockAndPersistCurrent()) return;
-    setState(() => _currentQuestion++);
-  }
-
-  /// Every timer (re)start is mounted-guarded: a dismissed screen must
-  /// never start a poll that outlives it.
-  void _rescheduleTimer(RemoteExam dto) {
-    _pollTimer?.cancel();
-    final keepPolling =
-        dto.error == null && (dto.thinking || _pollingPhases.contains(dto.phase));
-    if (!keepPolling || !mounted) return;
-    _pollTimer = Timer.periodic(widget.pollInterval, (_) => _poll());
-  }
-
-  Future<void> _submit() async {
-    if (_submitting) return;
-    if (!_lockAndPersistCurrent()) return;
-    final answers = [for (final c in _answerControllers) c.text];
-    setState(() => _submitting = true);
-    bool ok;
-    try {
-      ok = await widget.client.examGrade(answers);
-    } on PairingExpired {
-      _expirePairingAndPop();
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (!ok) {
-      _snack('Could not submit. Try again.');
-      return;
-    }
-    await _poll();
-  }
-
-  bool get _isAnswering => _exam?.phase == 'answering';
-
-  void _continueLater() {
-    if (!_isAnswering) {
-      _explicitClose();
-      return;
-    }
-    if (!_saveDraft()) return;
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) navigator.pop();
-  }
-
-  Future<void> _explicitClose() async {
-    if (_closing) return;
+    if (!_lockAndSave()) return;
     setState(() {
-      _closing = true;
-      _explicitlyClosed = true;
+      _currentQuestion++;
+      if (!_changed) _say(null);
     });
-    _pollTimer?.cancel();
+  }
+
+  Future<void> _submit({bool anyway = false}) async {
+    if (_stage != _Stage.answers || !_lockAndSave()) return;
+    if (!anyway && _materialChanged()) {
+      setState(() {});
+      return;
+    }
+    final String request;
     try {
-      await widget.client.examClose();
-    } on Object catch (_) {}
-    widget.clearAnswers?.call();
-    if (!mounted) return;
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) navigator.pop();
+      request = widget.held.gradeRequest();
+    } on AnswerTooLong catch (error) {
+      setState(() => _say('$error'));
+      return;
+    } on Object catch (error) {
+      setState(() => _say(bridgeErrorText(error), again: _Desk.grade.again));
+      return;
+    }
+    final client = widget.client;
+    if (client == null) {
+      setState(() => _say(_needsDesktop, again: _Desk.grade.again));
+      return;
+    }
+    _submitAnyway = anyway;
+    setState(() {
+      _stage = _Stage.grading;
+      _elapsed = null;
+      _say(null);
+    });
+    await _ask(_Desk.grade, client, () => client.gradingSubmit(request));
   }
 
   Future<void> _remediate() async {
-    if (_remediating) return;
-    setState(() => _remediating = true);
-    bool ok;
+    if (_remediating || !_closeSettled) return;
+    final String? request;
     try {
-      ok = await widget.client.examRemediate();
+      request = widget.held.remediationRequest();
+    } on Object catch (error) {
+      setState(() => _fail(_Desk.remediate, bridgeErrorText(error)));
+      return;
+    }
+    if (request == null) return;
+    final client = widget.client;
+    if (client == null) {
+      setState(() => _fail(_Desk.remediate, _needsDesktop));
+      return;
+    }
+    setState(() {
+      _remediating = true;
+      _say(null);
+    });
+    final body = request;
+    await _ask(_Desk.remediate, client, () => client.gradingRemediate(body));
+  }
+
+  Future<void> _ask(_Desk desk, ServerClient client, Future<GradingCall> Function() call) async {
+    final GradingCall reply;
+    try {
+      reply = await call();
     } on PairingExpired {
-      _expirePairingAndPop();
+      if (mounted) setState(() => _fail(desk, pairingExpiredMessage));
       return;
     }
     if (!mounted) return;
-    setState(() => _remediating = false);
-    if (!ok) {
-      _snack('Could not remediate. Try again.');
-      return;
+    final sitting = _view!.sitting;
+    switch (reply) {
+      case GradingNoAnswer():
+        setState(() => _fail(desk, _needsDesktop));
+      case GradingRefused(:final status):
+        setState(() => _fail(desk, switch (status) {
+          409 => _busy,
+          400 => _unreadable,
+          _ => 'the desktop refused this request ($status)',
+        }));
+      case GradingAnswered(:final state) when state.error != null:
+        setState(() => _fail(desk, state.error));
+      case GradingAnswered(:final state) when state.sitting == sitting && state.phase == desk.running:
+        setState(() => _elapsed = state.elapsed);
+        _pollTimer = Timer(widget.pollInterval, () => _ask(desk, client, client.gradingGet));
+      case GradingAnswered(:final body, :final state) when state.sitting == sitting && state.phase == desk.finished:
+        if (desk == _Desk.grade) {
+          setState(() => _storeGrade(client, body));
+        } else {
+          _storeRemediation(client, body);
+        }
+      case GradingAnswered():
+        setState(() => _fail(desk, null));
     }
-    await _poll();
   }
 
-  // ── shared ────────────────────────────────────────────────────────────
+  void _fail(_Desk desk, String? line) {
+    if (desk == _Desk.grade) {
+      _stage = _Stage.answers;
+    } else {
+      _remediating = false;
+    }
+    _say(line, again: desk.again);
+  }
 
-  void _expirePairingAndPop() {
+  void _storeGrade(ServerClient client, String body) {
+    try {
+      widget.held.storeResult(body, recorded: !_submitAnyway);
+    } on Object catch (error) {
+      _fail(_Desk.grade, bridgeErrorText(error));
+      return;
+    }
+    _closeSettled = false;
+    _closing = _closeDesk(client).whenComplete(() {
+      if (mounted) setState(() => _closeSettled = true);
+    });
+    _apply();
+  }
+
+  void _storeRemediation(ServerClient client, String body) {
+    final int count;
+    try {
+      count = widget.held.storeRemediation(body);
+    } on Object catch (error) {
+      setState(() => _fail(_Desk.remediate, bridgeErrorText(error)));
+      return;
+    }
+    _closing = _closeDesk(client);
+    final HeldExamView? view;
+    try {
+      view = widget.held.view();
+    } on Object catch (error) {
+      setState(() {
+        _stage = _Stage.unreadable;
+        _say(bridgeErrorText(error));
+      });
+      return;
+    }
+    if (view == null) {
+      _pop();
+      return;
+    }
+    setState(() {
+      _view = view;
+      _remediating = false;
+      _say(null);
+    });
+    if (count > 0) _snack('$count new cards to drill.');
+  }
+
+  Future<void> _closeDesk(ServerClient client) =>
+      client.gradingClose(_view!.sitting).then<void>((_) {}, onError: (Object _) {});
+
+  void _leave() {
+    if (_leaving) return;
+    _leaving = true;
     _pollTimer?.cancel();
-    if (!mounted) return;
-    // This screen's own context dies the moment it pops below, but a
-    // "Re-pair" tap on the SnackBar (shown on the ROOT messenger, so it
-    // survives) can fire well after that. Capture the navigator itself
-    // (not this screen's context) now: it outlives the pop, and `.mounted`
-    // at tap time guards the one case it wouldn't (the whole app tearing
-    // down in between).
-    final navigator = Navigator.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text(pairingExpiredMessage),
-      action: SnackBarAction(
-        label: 'Re-pair',
-        onPressed: () {
-          if (!navigator.mounted) return;
-          showPairingSheet(navigator.context, support: widget.support, buildClient: widget.buildClient);
-        },
-      ),
-    ));
-    navigator.maybePop();
+    if (_stage == _Stage.answers) _saveDraft();
+    if (_stage == _Stage.result && _view?.outcome != null) widget.onLeaveResult();
+    _pop();
   }
 
-  void _snackAndPop(String message) {
+  Future<void> _discard() async {
+    if (_leaving) return;
+    _leaving = true;
+    _pollTimer?.cancel();
+    await widget.onDiscard();
+    _pop();
+  }
+
+  void _pop() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-    Navigator.of(context).maybePop();
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
   }
 
   void _snack(String text) {
@@ -484,19 +388,12 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  // ── build ─────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: _keepsSitting && !_closing && !_isAnswering,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        if (_isAnswering && !_closing) {
-          _continueLater();
-        } else {
-          _explicitClose();
-        }
+        if (!didPop) _leave();
       },
       child: Scaffold(
         appBar: AppBar(
@@ -517,73 +414,66 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _body(BuildContext context) {
-    final exam = _exam;
-    final error = exam?.error;
-    if (error != null) return _errorState(context, error);
-    final phase = exam?.phase;
-    if (phase == null || _pollingPhases.contains(phase)) {
-      return _working(context, exam?.elapsed, phase);
-    }
-    switch (phase) {
-      case 'answering':
-        return _answering(context, exam!);
-      case 'results':
-        return _results(context, exam!);
-      case 'remediated':
-        return _remediatedDone(context);
-      default:
-        // Open phase vocabulary (docs/API.md): an unrecognized phase reads
-        // as still working rather than a dead end.
-        return _working(context, exam?.elapsed, phase);
-    }
-  }
+  Widget _body(BuildContext context) => switch (_stage) {
+    _Stage.leaving => const SizedBox.shrink(),
+    _Stage.unreadable => _message(context, null),
+    _Stage.answers => _answering(context, _view!),
+    _Stage.grading => _working(context),
+    _Stage.unapplied => _message(context, OutlinedButton(onPressed: () => setState(_apply), child: const Text('try again'))),
+    _Stage.result => _results(context, _view!),
+  };
 
-  Widget _working(BuildContext context, int? elapsed, String? phase) {
-    final tokens = Theme.of(context).alix;
-    final suffix = elapsed != null ? ' ${elapsed}s' : '';
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'The server is working…$suffix',
-            // Matches the web's `.exam-wait` idiom (dim + italic).
-            style: TextStyle(color: tokens.dim, fontStyle: FontStyle.italic),
-          ),
-          if (phase == 'generating') ...[
-            const SizedBox(height: 16),
-            OutlinedButton(
-              onPressed: _closing ? null : _explicitClose,
-              child: const Text('Cancel preparation'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _errorState(BuildContext context, String error) {
+  Widget _message(BuildContext context, Widget? action) {
     final tokens = Theme.of(context).alix;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Matches the web's `.exam-error` color token (red, not neutral).
-          Text('The exam backend failed.', style: TextStyle(color: tokens.again)),
-          const SizedBox(height: 8),
-          Text(error, textAlign: TextAlign.center, style: TextStyle(color: tokens.dim)),
-          const SizedBox(height: 16),
-          OutlinedButton(
-            onPressed: _explicitClose,
-            child: const Text('Close'),
-          ),
+          Text(_line ?? '', textAlign: TextAlign.center, style: TextStyle(color: tokens.again)),
+          if (action != null) ...[const SizedBox(height: 16), action],
         ],
       ),
     );
   }
 
-  Widget _answering(BuildContext context, RemoteExam exam) {
+  Widget _working(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    final suffix = _elapsed != null ? ' ${_elapsed}s' : '';
+    return Center(
+      child: Text(
+        'The server is working…$suffix',
+        style: TextStyle(color: tokens.dim, fontStyle: FontStyle.italic),
+      ),
+    );
+  }
+
+  Widget _notice(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    final again = _stage == _Stage.answers ? _again : null;
+    return Column(
+      key: const ValueKey('exam-notice'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_line case final line?) Text(line, style: TextStyle(color: tokens.again, fontSize: 13)),
+        if (_changed || again != null)
+          Wrap(
+            spacing: 8,
+            children: [
+              if (_changed) ...[
+                TextButton(onPressed: _discard, child: const Text('Discard exam')),
+                TextButton(onPressed: () => _submit(anyway: true), child: const Text('submit anyway')),
+              ],
+              if (again != null) TextButton(onPressed: _submit, child: Text(again)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  bool get _hasNotice => _line != null || _changed || (_stage == _Stage.answers && _again != null);
+
+  Widget _answering(BuildContext context, HeldExamView exam) {
     final tokens = Theme.of(context).alix;
     final total = exam.questions.length;
     final index = _currentQuestion;
@@ -619,6 +509,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
             decoration: const InputDecoration(hintText: 'your answer'),
           ),
         ),
+        if (_hasNotice) ...[const SizedBox(height: 12), _notice(context)],
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -629,7 +520,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
             ),
             Flexible(
               child: TextButton(
-                onPressed: _closing ? null : _continueLater,
+                onPressed: () => Navigator.of(context).maybePop(),
                 child: const Text(
                   'Continue later',
                   maxLines: 1,
@@ -638,9 +529,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
               ),
             ),
             FilledButton(
-              onPressed: last
-                  ? (_submitting ? null : _submit)
-                  : _nextQuestion,
+              onPressed: last ? _submit : _nextQuestion,
               child: Text(last ? 'Submit' : 'Next'),
             ),
           ],
@@ -649,7 +538,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _question(BuildContext context, RemoteExam exam, int index) {
+  Widget _question(BuildContext context, HeldExamView exam, int index) {
     final style = Theme.of(context).textTheme.titleMedium ?? const TextStyle();
     final units = index < exam.questionsUnits.length ? exam.questionsUnits[index] : const <ReviewContentUnitModel>[];
     return _examText(context, units, exam.questions[index], style);
@@ -706,28 +595,32 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   }
 
 
-  Widget _results(BuildContext context, RemoteExam exam) {
+  Widget _results(BuildContext context, HeldExamView view) {
     final tokens = Theme.of(context).alix;
-    final verdicts = exam.verdicts;
+    final result = view.result!;
+    final verdicts = result.verdicts;
+    final outcome = view.outcome;
+    final standing = outcome?.standing;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (verdicts != null)
-          Text(
-            '${_points(verdicts.points)} / ${verdicts.total}',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-              color: tokens.text,
-            ),
+        Text(
+          '${_points(verdicts.points)} / ${verdicts.total}',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: tokens.text,
           ),
-        if (_examHighMark case final mark?)
+        ),
+        if (outcome != null && !outcome.recorded)
+          Text('not recorded', style: TextStyle(color: tokens.dim, fontSize: 13))
+        else if (standing != null)
           Text(
-            mark.text,
+            standing.text,
             style: TextStyle(
               color: tokens.good,
               fontSize: 13,
-              decoration: mark.examChanged ? TextDecoration.underline : null,
+              decoration: standing.examChanged ? TextDecoration.underline : null,
               decorationStyle: TextDecorationStyle.dashed,
             ),
           ),
@@ -735,31 +628,24 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         Expanded(
           child: ListView(
             children: [
-              for (final topic in exam.topics) _topicRow(topic, tokens),
-              if (exam.topics.isNotEmpty) const SizedBox(height: 8),
-              if (widget.unsourcedTopics.isNotEmpty)
+              for (final topic in result.topics) _topicRow(topic, tokens),
+              if (result.topics.isNotEmpty) const SizedBox(height: 8),
+              if (view.unsourcedTopics.isNotEmpty)
                 Text(
-                  'Not examined: ${widget.unsourcedTopics.join(', ')}',
+                  'Not examined: ${view.unsourcedTopics.join(', ')}',
                   style: TextStyle(color: tokens.dim, fontSize: 13),
                 ),
-              for (final g in exam.grades) _gradeRow(context, g, tokens),
-              if (exam.gaps.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('gaps', style: TextStyle(color: tokens.faint, fontSize: 11, letterSpacing: 1.4)),
-                for (final gap in exam.gaps)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text('• $gap', style: TextStyle(color: tokens.dim)),
-                  ),
-              ],
+              for (final g in result.grades) _gradeRow(context, g, tokens),
             ],
           ),
         ),
-        if (exam.canRemediate && !_resultRefused) ...[
+        if (_hasNotice) ...[const SizedBox(height: 12), _notice(context)],
+        if (_remediating) ...[const SizedBox(height: 12), _working(context)],
+        if (view.canRemediate) ...[
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _remediating ? null : _remediate,
-            child: const Text('Turn the gaps into cards'),
+            onPressed: _remediating || !_closeSettled ? null : _remediate,
+            child: Text(_again ?? 'Turn the gaps into cards'),
           ),
         ],
       ],
@@ -837,29 +723,6 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _remediatedDone(BuildContext context) {
-    final tokens = Theme.of(context).alix;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('Done.', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: tokens.text)),
-          const SizedBox(height: 16),
-          if (!_remediationApplied) ...[
-            OutlinedButton(
-              onPressed: () => setState(() => _applyRemediation(_exam!)),
-              child: const Text('Try again'),
-            ),
-            const SizedBox(height: 8),
-          ],
-          FilledButton(
-            onPressed: _explicitClose,
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _QuestionScroll extends StatefulWidget {

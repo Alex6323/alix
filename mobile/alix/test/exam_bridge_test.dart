@@ -1,117 +1,248 @@
-import 'package:alix_mobile/exam_screen.dart' show ExamAnswers;
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:alix_mobile/bridge/exam_bridge.dart' as exam_bridge;
+import 'package:alix_mobile/bridge/exam_bridge.dart';
+import 'package:alix_mobile/src/rust/api/exam.dart' as bridge;
 import 'package:alix_mobile/src/rust/frb_generated.dart';
+
+const _deckText = '---\nformat-version: 1\nid: deck-rust\n---\n## q\na\n<!-- id: card-q -->\n';
+
+String _contract(String name) => File('../../tests/contracts/$name.json').readAsStringSync();
+
+({Directory root, File deck, BridgeHeldExam held}) _receivedExam(String prefix) {
+  final root = Directory.systemTemp.createTempSync(prefix);
+  addTearDown(() => root.deleteSync(recursive: true));
+  final deck = File('${root.path}/rust.md')..writeAsStringSync(_deckText);
+  final start = bridge.examSittingStart(
+    deckPath: deck.path,
+    rootDir: root.path,
+    needsWorkOnly: false,
+    nowMs: BigInt.from(1000),
+  );
+  final held = BridgeHeldExam(
+    deckPath: deck.path,
+    deckId: start.deckId,
+    rootDir: root.path,
+    clock: () => 2000,
+  );
+  expect(held.view(), isNull, reason: 'before the receive: no file, view is null');
+  bridge.heldExamReceive(rootDir: root.path, carriedJson: _contract('CarriedReplyDto'), start: start);
+  return (root: root, deck: deck, held: held);
+}
 
 void main() {
   setUpAll(RustLib.init);
 
-  test('exam ideas round trip through the phone store', () {
+  test('exam ideas load nothing for a deck without an ideas document', () {
     final root = Directory.systemTemp.createTempSync('alix-exam-ideas-');
     addTearDown(() => root.deleteSync(recursive: true));
-    final deck = File('${root.path}/rust.md')
-      ..writeAsStringSync(
-        '---\nformat-version: 1\nid: deck-rust\n---\n## q\na\n<!-- id: card-q -->\n',
-      );
+    final deck = File('${root.path}/rust.md')..writeAsStringSync(_deckText);
 
     expect(
-      exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path),
+      examIdeasLoad(deckPath: deck.path, rootDir: root.path),
       isNull,
-    );
-
-    const first = '{"version":1,"topics":{}}';
-    exam_bridge.examIdeasSave(
-      deckPath: deck.path,
-      rootDir: root.path,
-      json: first,
-    );
-    expect(
-      jsonDecode(exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path)!),
-      jsonDecode(first),
-    );
-
-    const second = '{"version":1,"topics":{"topic-a":{"fingerprint":"f","ideas":[]}}}';
-    exam_bridge.examIdeasSave(
-      deckPath: deck.path,
-      rootDir: root.path,
-      json: second,
-    );
-    expect(
-      jsonDecode(exam_bridge.examIdeasLoad(deckPath: deck.path, rootDir: root.path)!),
-      jsonDecode(second),
-    );
-    expect(
-      jsonDecode(File('${root.path}/.alix/exam/deck-rust.json').readAsStringSync()),
-      jsonDecode(second),
-    );
-    expect(
-      () => exam_bridge.examIdeasSave(
-        deckPath: deck.path,
-        rootDir: root.path,
-        json: '{"version":1,"unknown":true}',
-      ),
-      throwsA(anything),
+      reason: 'a fresh root holds no ideas document, so the load is null',
     );
   });
 
-  test('exam answers resume only the exact question list', () {
-    final root = Directory.systemTemp.createTempSync('alix-exam-answers-');
-    addTearDown(() => root.deleteSync(recursive: true));
-    final deck = File('${root.path}/rust.md')
-      ..writeAsStringSync(
-        '---\nformat-version: 1\nid: deck-rust\n---\n## q\na\n<!-- id: card-q -->\n',
+  test('a held exam is answered, graded, applied and removed through the real bridge', () {
+    final (:root, :deck, :held) = _receivedExam('alix-held-exam-');
+    final carried = jsonDecode(_contract('CarriedReplyDto'))['exam'] as Map<String, dynamic>;
+    final sitting = carried['sitting'] as String;
+
+    final received = held.view()!;
+    expect(
+      [received.sitting, received.deck, received.questions, received.answers, received.locked],
+      [sitting, carried['deck'], ['Why does Rust use ownership?'], [''], [false]],
+      reason: 'received: the view carries the document sitting, deck and question with empty answers',
+    );
+    expect(
+      [received.result, received.outcome, received.canRemediate],
+      [null, null, false],
+      reason: 'received: no result, no outcome, nothing to remediate',
+    );
+
+    held.saveAnswers(const ['ownership frees memory'], const [true]);
+    final saved = held.view()!;
+    expect(
+      [saved.answers, saved.locked],
+      [['ownership frees memory'], [true]],
+      reason: 'saved: a reload gives back the answer and its lock',
+    );
+
+    final tooLong = 'x' * (256 * 1024 + 1);
+    expect(
+      () => held.saveAnswers([tooLong], const [true]),
+      throwsA(isA<AnswerTooLong>()),
+      reason: 'lock over the limit: the bridge refusal is raised as AnswerTooLong',
+    );
+    expect(
+      held.view()!.answers,
+      ['ownership frees memory'],
+      reason: 'lock over the limit: the stored answers stay as they were',
+    );
+    expect(
+      () => held.saveAnswers(const [], const []),
+      throwsA(isNot(isA<AnswerTooLong>())),
+      reason: 'wrong answer count: another refusal passes through, not as AnswerTooLong',
+    );
+
+    held.saveAnswers([tooLong], const [false]);
+    expect(
+      () => held.gradeRequest(),
+      throwsA(isA<AnswerTooLong>()),
+      reason: 'an unlocked draft over the limit saves, and the grade request is refused as AnswerTooLong',
+    );
+    held.saveAnswers(const ['ownership frees memory'], const [true]);
+
+    final request = jsonDecode(held.gradeRequest()) as Map<String, dynamic>;
+    expect(
+      [request['sitting'], request['answers']],
+      [sitting, ['ownership frees memory']],
+      reason: 'grade request: JSON naming the sitting and the saved answer',
+    );
+
+    final materialChanged = held.materialChanged();
+    expect(
+      materialChanged,
+      isTrue,
+      reason: 'material check: the corpus topic fingerprint is not this deck\'s, so the real bridge reports a change',
+    );
+    deck.writeAsStringSync(_deckText.replaceFirst('\na\n', '\nanother answer\n'));
+    expect(
+      held.materialChanged(),
+      isTrue,
+      reason: 'material check after the card text changed: still a change',
+    );
+
+    held.storeResult(_contract('GradingReply.results'), recorded: false);
+    final stored = held.view()!;
+    final grade = stored.result!.grades.single;
+    expect(
+      [grade.answer, grade.verdict, grade.feedback, stored.outcome],
+      ['ownership frees memory', 'FAIL', 'Rust has no GC', null],
+      reason: 'stored: the result joins the saved answer with the reply verdict and feedback, before any outcome',
+    );
+    expect(
+      [stored.result!.verdicts.total, stored.result!.topics.single.label, stored.result!.mastered],
+      [1, 'Ownership', false],
+      reason: 'stored: the counts, the topic label and mastered come from the reply joined with the exam',
+    );
+    expect(
+      () => held.gradeRequest(),
+      throwsA(isNot(isA<AnswerTooLong>())),
+      reason: 'graded: the grade request refusal is not AnswerTooLong',
+    );
+
+    final applied = held.apply();
+    expect(
+      [applied.outcome?.recorded, applied.outcome?.standing, applied.canRemediate],
+      [false, null, false],
+      reason: 'submit anyway applied: an outcome that is not recorded, no standing, nothing to remediate',
+    );
+    expect(
+      held.remediationRequest(),
+      isNull,
+      reason: 'not recorded: no remediation request',
+    );
+
+    held.remove();
+    expect(held.view(), isNull, reason: 'removed: view is null again');
+    expect(root.existsSync(), isTrue, reason: 'removed: only the held file goes');
+  });
+
+  test('the recorded path on the corpus exam stores the result and records nothing on a deck it does not fit', () {
+    final (root: _, deck: _, :held) = _receivedExam('alix-held-exam-recorded-');
+    held.saveAnswers(const ['ownership frees memory'], const [true]);
+
+    held.storeResult(_contract('GradingReply.results'), recorded: true);
+    final applied = held.apply();
+
+    expect(
+      [applied.result?.grades.single.verdict, applied.outcome?.recorded, applied.outcome?.standing, applied.canRemediate],
+      ['FAIL', false, null, false],
+      reason: 'recorded choice on a deck whose material differs from the exam: the real bridge stores "not recorded"',
+    );
+    expect(
+      held.apply().outcome?.recorded,
+      false,
+      reason: 'a second apply shows the written outcome again',
+    );
+  });
+
+  test('a view with a recorded outcome and a standing parses its standing and remediated topics', () {
+    final view = HeldExamView.fromJson(_viewJson(
+      outcome: {
+        'recorded': true,
+        'standing': {'text': 'passed (4 Nov)', 'exam_changed': true},
+      },
+      remediated: {'topic-a': 2},
+      canRemediate: true,
+    ));
+
+    expect(
+      [view.outcome?.recorded, view.outcome?.standing?.text, view.outcome?.standing?.examChanged],
+      [true, 'passed (4 Nov)', true],
+      reason: 'outcome: recorded with its standing text and the changed flag',
+    );
+    expect(
+      [view.remediated, view.canRemediate, view.strictness, view.full, view.unsourcedTopics],
+      [{'topic-a': 2}, true, 'balanced', true, ['Terms']],
+      reason: 'the remaining fields read as written',
+    );
+  });
+
+  test('a view document without one of its required fields, or with a wrong type, is refused', () {
+    for (final (key, value) in const [
+      ('sitting', null),
+      ('sitting', 7),
+      ('deck', null),
+      ('questions', null),
+      ('questions', 'Why?'),
+      ('answers', null),
+      ('locked', null),
+      ('locked', ['yes']),
+      ('can_remediate', null),
+      ('can_remediate', 'true'),
+    ]) {
+      final json = _viewJson();
+      if (value == null) {
+        json.remove(key);
+      } else {
+        json[key] = value;
+      }
+      expect(
+        () => HeldExamView.fromJson(json),
+        throwsFormatException,
+        reason: '$key set to $value: fromJson refuses the document',
       );
-    const questions = ['Why ownership?', 'What is borrowing?'];
-
+    }
     expect(
-      _plain(exam_bridge.examAnswersLoad(
-        deckPath: deck.path,
-        rootDir: root.path,
-        questions: questions,
-      )),
-      [['', ''], [false, false]],
+      HeldExamView.fromJson(_viewJson()).sitting,
+      'sitting-1',
+      reason: 'the complete document parses',
     );
-    exam_bridge.examAnswersSave(
-      deckPath: deck.path,
-      rootDir: root.path,
-      questions: questions,
-      answers: (answers: const ['ownership controls destruction', 'a dra'], locked: const [true, false]),
-    );
-    expect(
-      _plain(exam_bridge.examAnswersLoad(
-        deckPath: deck.path,
-        rootDir: root.path,
-        questions: questions,
-      )),
-      [['ownership controls destruction', 'a dra'], [true, false]],
-      reason: 'a draft round-trips unlocked beside a locked answer',
-    );
-
-    final prepared = File('${root.path}/.alix/exam/deck-rust.prepared.json');
-    expect(prepared.existsSync(), isTrue);
-    expect(
-      _plain(exam_bridge.examAnswersLoad(
-        deckPath: deck.path,
-        rootDir: root.path,
-        questions: const ['Replacement?'],
-      )),
-      [[''], [false]],
-    );
-    expect(prepared.existsSync(), isFalse);
-
-    exam_bridge.examAnswersSave(
-      deckPath: deck.path,
-      rootDir: root.path,
-      questions: const ['Replacement?'],
-      answers: (answers: const ['answer'], locked: const [true]),
-    );
-    exam_bridge.examAnswersClear(deckPath: deck.path, rootDir: root.path);
-    expect(prepared.existsSync(), isFalse);
   });
 }
 
-List<Object> _plain(ExamAnswers answers) => [answers.answers, answers.locked];
+Map<String, dynamic> _viewJson({
+  Map<String, dynamic>? outcome,
+  Map<String, dynamic> remediated = const {},
+  bool canRemediate = false,
+}) => {
+  'sitting': 'sitting-1',
+  'deck': 'rust.md',
+  'strictness': 'balanced',
+  'full': true,
+  'questions': ['Why?'],
+  'questions_units': [<Object>[]],
+  'answers': [''],
+  'locked': [false],
+  'unsourced_topics': ['Terms'],
+  'outcome': outcome,
+  'remediated': remediated,
+  'can_remediate': canRemediate,
+  'result': null,
+};

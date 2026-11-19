@@ -1,5 +1,8 @@
-import 'package:alix_mobile/exam_screen.dart' show ExamAnswers;
+import 'dart:convert';
+
+import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/exam_sittings.dart';
+import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/server_client.dart';
 import 'package:alix_mobile/src/rust/api/exam.dart' as bridge;
 
@@ -7,42 +10,6 @@ String? examIdeasLoad({
   required String deckPath,
   required String rootDir,
 }) => bridge.examIdeasLoad(deckPath: deckPath, rootDir: rootDir);
-
-void examIdeasSave({
-  required String deckPath,
-  required String rootDir,
-  required String json,
-}) => bridge.examIdeasSave(deckPath: deckPath, rootDir: rootDir, json: json);
-
-ExamAnswers examAnswersLoad({
-  required String deckPath,
-  required String rootDir,
-  required List<String> questions,
-}) {
-  final loaded = bridge.examAnswersLoad(
-    deckPath: deckPath,
-    rootDir: rootDir,
-    questions: questions,
-  );
-  return (answers: loaded.answers, locked: loaded.locked);
-}
-
-void examAnswersSave({
-  required String deckPath,
-  required String rootDir,
-  required List<String> questions,
-  required ExamAnswers answers,
-}) => bridge.examAnswersSave(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  questions: questions,
-  answers: bridge.PhoneExamAnswers(answers: answers.answers, locked: answers.locked),
-);
-
-void examAnswersClear({
-  required String deckPath,
-  required String rootDir,
-}) => bridge.examAnswersClear(deckPath: deckPath, rootDir: rootDir);
 
 ExamSittingStart examSittingStart({
   required String deckPath,
@@ -66,57 +33,229 @@ ExamSittingStart examSittingStart({
   );
 }
 
-/// The deck's standing after the sitting, worded by the core, and whether
-/// its material has changed since; null while the deck has no standing.
-({String text, bool examChanged})? applyExamResult({
-  required String deckPath,
-  required String rootDir,
-  required RemoteExam exam,
-  required ExamSittingStart start,
-  required BigInt nowMs,
-  String? device,
-}) {
-  final verdicts = exam.verdicts;
-  final applied = bridge.applyExamResult(
-    deckPath: deckPath,
-    rootDir: rootDir,
-    outcome: bridge.ExamOutcome(
-      topics: [
-        for (final topic in exam.topics)
-          bridge.ExamTopicOutcome(
-            topicId: topic.topicId,
-            fingerprint: topic.fingerprint,
-            pass: topic.pass,
-          ),
-      ],
-      full: exam.full,
-      pass: verdicts?.pass ?? 0,
-      partial: verdicts?.partial ?? 0,
-      total: verdicts?.total ?? 0,
-      eligible: start.eligible,
-      stamp: bridge.ExamStamp(
-        sourced: start.sourced,
-        unsourcedCards: start.unsourcedCards,
-      ),
-    ),
-    nowMs: nowMs,
-    device: device,
-  );
-  final text = applied.examHighMark;
-  if (text == null) return null;
-  return (text: text, examChanged: applied.examChanged);
+const answerTooLongText = 'this answer is too long to send';
+
+class AnswerTooLong implements Exception {
+  const AnswerTooLong();
+
+  @override
+  String toString() => answerTooLongText;
 }
 
-int applyExamRemediation({
-  required String deckPath,
-  required String rootDir,
-  required String topicId,
-  required String cardsText,
-  String? device,
-}) => bridge.applyExamRemediation(
-  deckPath: deckPath,
-  rootDir: rootDir,
-  topicId: topicId,
-  cardsText: cardsText,
-  device: device,
-);
+class HeldExamStanding {
+  const HeldExamStanding({required this.text, required this.examChanged});
+
+  final String text;
+  final bool examChanged;
+}
+
+class HeldExamOutcome {
+  const HeldExamOutcome({required this.recorded, this.standing});
+
+  final bool recorded;
+  final HeldExamStanding? standing;
+}
+
+class HeldExamResult {
+  const HeldExamResult({
+    required this.grades,
+    required this.topics,
+    required this.verdicts,
+    required this.mastered,
+  });
+
+  final List<RemoteExamGrade> grades;
+  final List<RemoteExamTopic> topics;
+  final ExamVerdicts verdicts;
+  final bool mastered;
+}
+
+class HeldExamView {
+  const HeldExamView({
+    required this.sitting,
+    required this.deck,
+    required this.strictness,
+    required this.full,
+    required this.questions,
+    required this.questionsUnits,
+    required this.answers,
+    required this.locked,
+    required this.unsourcedTopics,
+    required this.result,
+    required this.outcome,
+    required this.remediated,
+    required this.canRemediate,
+  });
+
+  final String sitting;
+  final String deck;
+  final String strictness;
+  final bool full;
+  final List<String> questions;
+  final List<List<ReviewContentUnitModel>> questionsUnits;
+  final List<String> answers;
+  final List<bool> locked;
+  final List<String> unsourcedTopics;
+  final HeldExamResult? result;
+  final HeldExamOutcome? outcome;
+  final Map<String, int> remediated;
+  final bool canRemediate;
+
+  static HeldExamView fromJson(Map<String, dynamic> json) => HeldExamView(
+    sitting: _required<String>(json, 'sitting'),
+    deck: _required<String>(json, 'deck'),
+    strictness: json['strictness'] is String ? json['strictness'] as String : '',
+    full: json['full'] == true,
+    questions: _requiredList<String>(json, 'questions'),
+    questionsUnits: [
+      if (json['questions_units'] case final List units)
+        for (final unit in units) contentUnitsFromJson(unit),
+    ],
+    answers: _requiredList<String>(json, 'answers'),
+    locked: _requiredList<bool>(json, 'locked'),
+    unsourcedTopics: [
+      if (json['unsourced_topics'] case final List topics) ...topics.whereType<String>(),
+    ],
+    result: _result(json['result']),
+    outcome: _outcome(json['outcome']),
+    remediated: {
+      if (json['remediated'] case final Map remediated)
+        for (final MapEntry(:key, :value) in remediated.entries)
+          if (key is String && value is int) key: value,
+    },
+    canRemediate: _required<bool>(json, 'can_remediate'),
+  );
+}
+
+T _required<T>(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! T) throw FormatException('the held exam view has no $key of type $T');
+  return value;
+}
+
+List<T> _requiredList<T>(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! List || value.any((item) => item is! T)) {
+    throw FormatException('the held exam view has no $key list of $T');
+  }
+  return value.cast<T>();
+}
+
+HeldExamResult? _result(dynamic json) {
+  if (json is! Map) return null;
+  final verdicts = ExamVerdicts.fromJson(json['verdicts']);
+  if (verdicts == null) throw const FormatException('the held exam result has no verdicts');
+  return HeldExamResult(
+    grades: [
+      if (json['grades'] case final List grades)
+        for (final grade in grades) ?RemoteExamGrade.fromJson(grade),
+    ],
+    topics: [
+      if (json['topics'] case final List topics)
+        for (final topic in topics) ?RemoteExamTopic.fromJson(topic),
+    ],
+    verdicts: verdicts,
+    mastered: json['mastered'] == true,
+  );
+}
+
+HeldExamOutcome? _outcome(dynamic json) {
+  if (json is! Map) return null;
+  final standing = json['standing'];
+  return HeldExamOutcome(
+    recorded: json['recorded'] == true,
+    standing: standing is Map && standing['text'] is String
+        ? HeldExamStanding(text: standing['text'] as String, examChanged: standing['exam_changed'] == true)
+        : null,
+  );
+}
+
+abstract class HeldExamAccess {
+  HeldExamView? view();
+
+  void saveAnswers(List<String> answers, List<bool> locked);
+
+  bool materialChanged();
+
+  String gradeRequest();
+
+  void storeResult(String replyBody, {required bool recorded});
+
+  HeldExamView apply();
+
+  String? remediationRequest();
+
+  int storeRemediation(String replyBody);
+
+  void remove();
+}
+
+class BridgeHeldExam implements HeldExamAccess {
+  BridgeHeldExam({
+    required this.deckPath,
+    required this.deckId,
+    required this.rootDir,
+    this.device,
+    int Function()? clock,
+  }) : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
+
+  final String deckPath;
+  final String deckId;
+  final String rootDir;
+  final String? device;
+  final int Function() _clock;
+
+  @override
+  HeldExamView? view() {
+    final json = bridge.heldExamView(rootDir: rootDir, deckId: deckId);
+    return json == null ? null : HeldExamView.fromJson(jsonDecode(json) as Map<String, dynamic>);
+  }
+
+  @override
+  void saveAnswers(List<String> answers, List<bool> locked) => _tooLongAware(
+    () => bridge.heldExamSaveAnswers(rootDir: rootDir, deckId: deckId, answers: answers, locked: locked),
+  );
+
+  @override
+  bool materialChanged() => bridge.heldExamMaterialChanged(deckPath: deckPath, rootDir: rootDir);
+
+  @override
+  String gradeRequest() => _tooLongAware(() => bridge.heldExamGradeRequest(rootDir: rootDir, deckId: deckId));
+
+  @override
+  void storeResult(String replyBody, {required bool recorded}) => bridge.heldExamStoreResult(
+    rootDir: rootDir,
+    deckId: deckId,
+    replyJson: replyBody,
+    receivedMs: BigInt.from(_clock()),
+    recorded: recorded,
+  );
+
+  @override
+  HeldExamView apply() => HeldExamView.fromJson(
+    jsonDecode(bridge.heldExamApply(deckPath: deckPath, rootDir: rootDir, device: device)) as Map<String, dynamic>,
+  );
+
+  @override
+  String? remediationRequest() => bridge.heldExamRemediationRequest(rootDir: rootDir, deckId: deckId);
+
+  @override
+  int storeRemediation(String replyBody) => bridge.heldExamStoreRemediation(
+    deckPath: deckPath,
+    rootDir: rootDir,
+    replyJson: replyBody,
+    device: device,
+  );
+
+  @override
+  void remove() => bridge.heldExamRemove(rootDir: rootDir, deckId: deckId);
+}
+
+T _tooLongAware<T>(T Function() call) {
+  try {
+    return call();
+  } on Object catch (error) {
+    if (bridgeErrorText(error) == answerTooLongText) throw const AnswerTooLong();
+    rethrow;
+  }
+}
