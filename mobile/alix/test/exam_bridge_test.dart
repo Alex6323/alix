@@ -48,7 +48,7 @@ void main() {
   });
 
   test('a held exam is answered, graded, applied and removed through the real bridge', () {
-    final (:root, :deck, :held) = _receivedExam('alix-held-exam-');
+    final (:root, deck: _, :held) = _receivedExam('alix-held-exam-');
     final carried = jsonDecode(_contract('CarriedReplyDto'))['exam'] as Map<String, dynamic>;
     final sitting = carried['sitting'] as String;
 
@@ -104,17 +104,10 @@ void main() {
       reason: 'grade request: JSON naming the sitting and the saved answer',
     );
 
-    final materialChanged = held.materialChanged();
-    expect(
-      materialChanged,
-      isTrue,
-      reason: 'material check: the corpus topic fingerprint is not this deck\'s, so the real bridge reports a change',
-    );
-    deck.writeAsStringSync(_deckText.replaceFirst('\na\n', '\nanother answer\n'));
     expect(
       held.materialChanged(),
       isTrue,
-      reason: 'material check after the card text changed: still a change',
+      reason: 'material check: the deck has no sources manifest, so the material is never unchanged and the real bridge reports a change',
     );
 
     held.storeResult(_contract('GradingReply.results'), recorded: false);

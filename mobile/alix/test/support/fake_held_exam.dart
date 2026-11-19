@@ -19,6 +19,8 @@ class FakeHeldExam implements HeldExamAccess {
     this.remediable = false,
     this.remediationCount = 1,
     this.applyFailures = 0,
+    this.applyError,
+    this.keepRemediable = false,
     this.questionsUnits,
   }) : log = log ?? [],
        questions = List.of(questions),
@@ -38,6 +40,8 @@ class FakeHeldExam implements HeldExamAccess {
   bool remediable;
   int remediationCount;
   int applyFailures;
+  Object? applyError;
+  bool keepRemediable;
 
   bool changed;
   Object? viewError;
@@ -162,7 +166,7 @@ class FakeHeldExam implements HeldExamAccess {
     log.add('apply');
     if (applyFailures > 0) {
       applyFailures--;
-      throw StateError('cannot write the progress folder');
+      throw applyError ?? StateError('cannot write the progress folder');
     }
     outcomeRecorded ??= recorded! && !changed;
     return _view();
@@ -179,7 +183,7 @@ class FakeHeldExam implements HeldExamAccess {
     log.add('storeRemediation');
     if (remediationError case final error?) throw error;
     storedRemediations.add(replyBody);
-    remediable = false;
+    remediable = keepRemediable;
     return remediationCount;
   }
 

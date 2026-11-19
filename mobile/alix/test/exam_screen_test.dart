@@ -79,13 +79,13 @@ void main() {
     required HeldExamAccess held,
     ServerClient? client,
     VoidCallback? onLeaveResult,
-    Future<void> Function()? onDiscard,
+    Future<bool> Function()? onDiscard,
   }) => ExamScreen(
     deckName: 'rust.md',
     held: held,
     client: client,
     onLeaveResult: onLeaveResult ?? () {},
-    onDiscard: onDiscard ?? () async {},
+    onDiscard: onDiscard ?? () async => true,
     pollInterval: _pollInterval,
   );
 
@@ -106,7 +106,7 @@ void main() {
     required HeldExamAccess held,
     ServerClient? client,
     VoidCallback? onLeaveResult,
-    Future<void> Function()? onDiscard,
+    Future<bool> Function()? onDiscard,
   }) async {
     await tester.pumpWidget(MaterialApp(
       home: Builder(
@@ -130,6 +130,18 @@ void main() {
     await tester.tap(find.text('Submit'));
     await tester.pump();
     await tester.pump();
+  }
+
+  Finder submitButton(String label) => find.widgetWithText(FilledButton, label);
+
+  int linesOf(WidgetTester tester, Finder text) {
+    final paragraph = tester.renderObject<RenderParagraph>(text);
+    final oneLine = TextPainter(
+      text: TextSpan(text: 'x', style: paragraph.text.style),
+      textDirection: paragraph.textDirection,
+      textScaler: paragraph.textScaler,
+    )..layout();
+    return (paragraph.size.height / oneLine.height).round();
   }
 
   bool remediateEnabled(WidgetTester tester) =>
@@ -203,16 +215,17 @@ void main() {
     await pumpExam(tester, held: held, client: client);
 
     expect(find.text(_changedDeck), findsOneWidget, reason: 'open: the changed-deck line shows');
-    expect(find.text('Discard exam'), findsOneWidget, reason: 'open: Discard exam is offered');
-    expect(find.text('submit anyway'), findsOneWidget, reason: 'open: submit anyway is offered');
+    expect(find.widgetWithText(TextButton, 'Discard exam'), findsOneWidget, reason: 'open: Discard exam is the line action');
+    expect(find.text('submit anyway'), findsNothing, reason: 'open on question 1: no way to submit there');
+    expect(submitButton('Next'), findsOneWidget, reason: 'open on question 1: the filled button is Next');
     expect(log, ['view', 'materialChanged'], reason: 'open: the material check follows the view, nothing is sent');
 
-    log.clear();
-    await answerAndSubmit(tester);
-    expect(find.text(_changedDeck), findsOneWidget, reason: 'Submit: the changed-deck line shows');
-    expect(log, ['saveAnswers', 'saveAnswers', 'materialChanged'],
-        reason: 'Submit: the answers are saved and checked, nothing is sent');
-
+    await tester.enterText(_field, 'a1');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(find.text(_changedDeck), findsOneWidget, reason: 'question 2: the changed-deck line stays');
+    expect(submitButton('submit anyway'), findsOneWidget, reason: 'question 2: the one button reads submit anyway');
+    await tester.enterText(_field, 'a2');
     await tester.tap(find.text('submit anyway'));
     await tester.pump();
     await tester.pump();
@@ -226,8 +239,72 @@ void main() {
     expect(find.text(_changedDeck), findsNothing, reason: 'unchanged at open: no line');
     checkedLater.changed = true;
     await answerAndSubmit(tester);
+    expect(laterClient.gradingRequests, isEmpty, reason: 'changed by Submit: the first tap sends nothing');
     expect(find.text(_changedDeck), findsOneWidget, reason: 'changed by Submit: the line shows');
-    expect(laterClient.gradingRequests, isEmpty, reason: 'changed by Submit: nothing is sent');
+    expect(submitButton('submit anyway'), findsOneWidget, reason: 'changed by Submit: the button now reads submit anyway');
+
+    await tester.tap(find.text('submit anyway'));
+    await tester.pump();
+    await tester.pump();
+    expect(laterClient.gradingRequests, hasLength(1), reason: 'second tap: the request is sent');
+    expect(checkedLater.stored.map((stored) => stored.$2), [false], reason: 'second tap: stored not recorded');
+  });
+
+  testWidgets('submit anyway saves the typed answers before the grade request', (tester) async {
+    final log = <String>[];
+    final held = FakeHeldExam(log: log, changed: true);
+    final client = FakeServerClient(callLog: log, gradingReplies: [_answered('grading')]);
+    await pumpExam(tester, held: held, client: client);
+    await tester.enterText(_field, 'a1');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.enterText(_field, 'typed on the last question');
+    await tester.tap(submitButton('submit anyway'));
+    await tester.pump();
+
+    expect((jsonDecode(client.gradingRequests.single) as Map)['answers'], ['a1', 'typed on the last question'],
+        reason: 'the request carries the text typed before the tap');
+    final saved = log.lastIndexOf('saveAnswers');
+    expect(log.sublist(saved, saved + 3), ['saveAnswers', 'gradeRequest', 'gradingSubmit'],
+        reason: 'the save precedes the grade request and no material check comes between, log $log');
+  });
+
+  testWidgets('the last question has one submit button whose label follows the state', (tester) async {
+    final held = FakeHeldExam();
+    await pumpExam(tester, held: held, client: FakeServerClient(gradingReplies: const [GradingRefused(409)]));
+    expect(submitButton('Next'), findsOneWidget, reason: 'question 1: the filled button is Next');
+    await tester.enterText(_field, 'a1');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(submitButton('Submit'), findsOneWidget, reason: 'question 2 before a request: Submit');
+
+    await tester.enterText(_field, 'a2');
+    await tester.tap(find.text('Submit'));
+    await tester.pump();
+    await tester.pump();
+    expect(submitButton('submit again'), findsOneWidget, reason: 'after a refused request: submit again');
+    expect(find.text('submit again'), findsOneWidget, reason: 'after a refused request: no second submit control');
+    expect(find.text('Submit'), findsNothing, reason: 'after a refused request: Submit is relabelled, label Submit absent');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpExam(
+      tester,
+      held: FakeHeldExam(changed: true),
+      client: FakeServerClient(gradingReplies: const [GradingRefused(409)]),
+    );
+    await tester.enterText(_field, 'a1');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(submitButton('submit anyway'), findsOneWidget, reason: 'changed deck: submit anyway');
+    expect(find.text('submit anyway'), findsOneWidget, reason: 'changed deck: no second submit control');
+
+    await tester.tap(find.text('submit anyway'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text(_busy), findsOneWidget, reason: 'failed anyway: the failure line takes the slot');
+    expect(find.text(_changedDeck), findsNothing, reason: 'failed anyway: one line slot, the changed-deck line yields');
+    expect(submitButton('submit anyway'), findsOneWidget, reason: 'failed anyway: the button still reads submit anyway');
+    expect(find.text('submit again'), findsNothing, reason: 'failed anyway: no submit again control');
   });
 
   testWidgets('no answer, 409 and 400 each show their line and store nothing', (tester) async {
@@ -277,6 +354,7 @@ void main() {
     for (final (label, gone) in [
       ('idle', _answered('idle', sitting: null)),
       ('another sitting', _answered('grading', sitting: 'sitting-2')),
+      ('another sitting with an error', _answered('grading', sitting: 'sitting-2', error: 'another exam failed')),
     ]) {
       final held = FakeHeldExam();
       await pumpExam(tester, held: held, client: FakeServerClient(gradingReplies: [_answered('grading'), gone]));
@@ -286,7 +364,8 @@ void main() {
       await tester.pump();
 
       expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'grade $label: back to the answers');
-      expect(find.text('submit again'), findsOneWidget, reason: 'grade $label: submit again is offered');
+      expect(submitButton('submit again'), findsOneWidget, reason: 'grade $label: submit again is offered');
+      expect(find.text('another exam failed'), findsNothing, reason: 'grade $label: no other job error is shown');
       expect(held.stored, isEmpty, reason: 'grade $label: nothing is stored');
       await tester.pumpWidget(const SizedBox.shrink());
     }
@@ -541,18 +620,27 @@ void main() {
   });
 
   testWidgets('Remediate is not sent before the grading close has returned', (tester) async {
-    for (final (label, closeReply) in [('returned', true), ('failed', false)]) {
+    for (final (label, closeReply, closeThrows) in [
+      ('returned', true, false),
+      ('failed', false, false),
+      ('throws', true, true),
+    ]) {
       final log = <String>[];
       final closeGate = Completer<void>();
       final held = FakeHeldExam(log: log, remediable: true);
       final client = FakeServerClient(
         callLog: log,
-        gradingReplies: [_answered('results'), _answered('remediating')],
+        gradingReplies: [_answered('grading', elapsed: 7), _answered('results'), _answered('remediating')],
+        gradingGates: {2: Completer<GradingCall>()},
         gradingCloseGate: closeGate,
         gradingCloseReply: closeReply,
+        expireOnGradingClose: closeThrows,
       );
       await pumpExam(tester, held: held, client: client);
       await answerAndSubmit(tester);
+      expect(find.text('The server is working… 7s'), findsOneWidget, reason: '$label: the grading shows its 7 seconds');
+      await tester.pump(_pollInterval);
+      await tester.pump();
 
       expect(remediateEnabled(tester), isFalse, reason: '$label: Remediate waits for the close');
       await tester.tap(find.text(_remediate), warnIfMissed: false);
@@ -567,6 +655,9 @@ void main() {
       await tester.pump();
       expect(log.sublist(log.indexOf('gradingClose')), ['gradingClose', 'apply', 'remediationRequest', 'gradingRemediate'],
           reason: '$label: the remediation follows the close, log $log');
+      expect(find.text('The server is working…'), findsOneWidget,
+          reason: '$label: the remediation starts without the grading elapsed seconds');
+      expect(tester.takeException(), isNull, reason: '$label: the settled close leaves no error behind');
       await tester.pumpWidget(const SizedBox.shrink());
     }
   });
@@ -599,7 +690,7 @@ void main() {
   });
 
   testWidgets('Discard exam on the changed-deck line calls the discard callback once and leaves', (tester) async {
-    final discarded = Completer<void>();
+    final discarded = Completer<bool>();
     var discards = 0;
     final held = FakeHeldExam(changed: true);
     await openExam(
@@ -616,7 +707,7 @@ void main() {
     expect(discards, 1, reason: 'Discard exam: the callback is called');
     expect(find.byType(ExamScreen), findsOneWidget, reason: 'Discard exam: the screen waits for the discard');
 
-    discarded.complete();
+    discarded.complete(true);
     await tester.pumpAndSettle();
     expect(find.byType(ExamScreen), findsNothing, reason: 'Discard exam: the screen is left after the discard');
     expect(discards, 1, reason: 'Discard exam: called once');
@@ -647,6 +738,206 @@ void main() {
 
     expect(find.text('the deck cannot be read'), findsOneWidget, reason: 'check failed: its text shows');
     expect(client.gradingRequests, isEmpty, reason: 'check failed: nothing is sent');
+  });
+
+  testWidgets('a draft typed on a question left by Back is saved when the learner leaves or the app pauses',
+      (tester) async {
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    for (final leave in ['Continue later', 'pause', 'Continue later after a refused Back save']) {
+      final held = FakeHeldExam();
+      await openExam(tester, held: held, client: FakeServerClient());
+      await tester.enterText(_field, 'a1');
+      await tester.tap(find.text('Next'));
+      await tester.pump();
+      await tester.enterText(_field, 'a2');
+      var refusals = leave.contains('refused') ? 1 : 0;
+      held.tooLong = (_, _) => refusals-- > 0;
+      await tester.tap(find.text('Back'));
+      await tester.pump();
+      expect(find.text('Question 1 of 2'), findsOneWidget, reason: '$leave: Back moves even when its save is refused');
+      if (leave == 'pause') {
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+        await tester.pump();
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      } else {
+        await tester.tap(find.text('Continue later'));
+        await tester.pumpAndSettle();
+      }
+
+      expect(_plain(held.saved.last), [['a1', 'a2'], [true, false]],
+          reason: '$leave after Back: the last save holds the typed draft, saves ${held.saved}');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('a Next or a pause with nothing changed saves nothing', (tester) async {
+    addTearDown(() {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    });
+    final held = FakeHeldExam(answers: ['a1', ''], locked: [true, false]);
+    await pumpExam(tester, held: held);
+    await tester.tap(find.text('Back'));
+    await tester.pump();
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+
+    expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'Back then Next: back on question 2');
+    expect(held.saved, isEmpty, reason: 'nothing changed since the load: no save, saves ${held.saved}');
+  });
+
+  testWidgets('a declined discard keeps the screen and the typed answer', (tester) async {
+    var discards = 0;
+    final held = FakeHeldExam(changed: true);
+    await openExam(tester, held: held, client: FakeServerClient(), onDiscard: () async {
+      discards++;
+      return false;
+    });
+    await tester.enterText(_field, 'kept text');
+    await tester.tap(find.text('Discard exam'));
+    await tester.pumpAndSettle();
+
+    expect(discards, 1, reason: 'declined: the callback was asked once');
+    expect(find.byType(ExamScreen), findsOneWidget, reason: 'declined: the screen stays');
+    expect(tester.widget<TextField>(_field).controller?.text, 'kept text', reason: 'declined: the typed text stays');
+    expect(find.text(_changedDeck), findsOneWidget, reason: 'declined: the changed-deck line stays');
+    expect(find.text('Discard exam'), findsOneWidget, reason: 'declined: Discard exam is still offered');
+  });
+
+  testWidgets('a discard that throws shows its text and the screen can still be left', (tester) async {
+    final held = FakeHeldExam(changed: true);
+    await openExam(
+      tester,
+      held: held,
+      client: FakeServerClient(),
+      onDiscard: () async => throw AnyhowException('cannot remove the exam'),
+    );
+    await tester.tap(find.text('Discard exam'));
+    await tester.pumpAndSettle();
+    expect(find.text('cannot remove the exam'), findsOneWidget, reason: 'throwing discard: its text shows');
+    expect(find.byType(ExamScreen), findsOneWidget, reason: 'throwing discard: the screen stays');
+
+    await tester.tap(find.text('Continue later'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExamScreen), findsNothing, reason: 'throwing discard: Continue later still leaves');
+  });
+
+  testWidgets('the submit button sends nothing while a discard is awaited', (tester) async {
+    final discarded = Completer<bool>();
+    final client = FakeServerClient(gradingReplies: [_answered('results')]);
+    await openExam(tester, held: FakeHeldExam(changed: true), client: client, onDiscard: () => discarded.future);
+    await tester.enterText(_field, 'a1');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.tap(find.text('Discard exam'));
+    await tester.pump();
+    await tester.tap(submitButton('submit anyway'));
+    await tester.pump();
+
+    expect(client.gradingRequests, isEmpty, reason: 'discard awaited: the submit button sends nothing');
+    discarded.complete(true);
+    await tester.pumpAndSettle();
+    expect(find.byType(ExamScreen), findsNothing, reason: 'discarded: the screen is left');
+    expect(client.gradingRequests, isEmpty, reason: 'discarded: still nothing sent');
+  });
+
+  testWidgets('a leave report that throws still leaves the screen', (tester) async {
+    await openExam(
+      tester,
+      held: _graded(),
+      client: FakeServerClient(),
+      onLeaveResult: () => throw StateError('the picker failed'),
+    );
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'throwing report: nothing escapes');
+    expect(find.byType(ExamScreen), findsNothing, reason: 'throwing report: the screen is left');
+  });
+
+  testWidgets('leaving a result that was not recorded reports the leave once', (tester) async {
+    var leaves = 0;
+    await openExam(tester, held: _graded(recorded: false), client: FakeServerClient(), onLeaveResult: () => leaves++);
+    final popScope = tester.widget<PopScope<Object?>>(find.byWidgetPredicate((widget) => widget is PopScope));
+    popScope.onPopInvokedWithResult!(false, null);
+    popScope.onPopInvokedWithResult!(false, null);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ExamScreen), findsNothing, reason: 'not recorded: the screen is left');
+    expect(leaves, 1, reason: 'two leave gestures during the pop: reported once, got $leaves');
+  });
+
+  testWidgets('leaving a result while a remediation runs reports no leave', (tester) async {
+    var leaves = 0;
+    final held = _graded();
+    final client = FakeServerClient(gradingReplies: [_answered('remediating')]);
+    await openExam(tester, held: held, client: client, onLeaveResult: () => leaves++);
+    await tester.tap(find.text(_remediate));
+    await tester.pump();
+    expect(client.remediateRequests, hasLength(1), reason: 'remediation: the request is under way');
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExamScreen), findsNothing, reason: 'remediation running: the screen is left');
+    expect(leaves, 0, reason: 'remediation running: no leave is reported, the file stays');
+  });
+
+  testWidgets('Remediate waits for a remediation close that is still pending', (tester) async {
+    final closeGate = Completer<void>();
+    final held = _graded()..keepRemediable = true;
+    final client = FakeServerClient(gradingReplies: [_answered('remediated')], gradingCloseGate: closeGate);
+    await pumpExam(tester, held: held, client: client);
+    await tester.tap(find.text(_remediate));
+    await tester.pump();
+    await tester.pump();
+
+    expect(held.storedRemediations, hasLength(1), reason: 'stored: one remediation');
+    expect(remediateEnabled(tester), isFalse, reason: 'remediation close pending: Remediate is disabled');
+    closeGate.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(remediateEnabled(tester), isTrue, reason: 'remediation close settled: Remediate is enabled');
+  });
+
+  testWidgets('the screen closes its client once a pending close has settled', (tester) async {
+    final closeGate = Completer<void>();
+    final client = FakeServerClient(gradingReplies: [_answered('results')], gradingCloseGate: closeGate);
+    await pumpExam(tester, held: FakeHeldExam(), client: client);
+    await answerAndSubmit(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    expect(client.closed, isFalse, reason: 'disposed with the close parked: the client stays open');
+    closeGate.complete();
+    await tester.pump();
+    expect(client.closed, isTrue, reason: 'close settled: the screen closed its client');
+  });
+
+  testWidgets('a long error line shows at most three lines on a phone with the keyboard up', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    addTearDown(tester.view.reset);
+    final error = List.filled(330, 'failure').join(' ');
+
+    await pumpExam(
+      tester,
+      held: FakeHeldExam(),
+      client: FakeServerClient(gradingReplies: [_answered('grading', error: error)]),
+    );
+    await answerAndSubmit(tester);
+    expect(tester.takeException(), isNull, reason: 'answers with a ${error.length} character error: no overflow');
+    expect(linesOf(tester, find.textContaining('failure failure')), lessThanOrEqualTo(3),
+        reason: 'answers: the error line is at most three lines');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pumpExam(tester, held: FakeHeldExam(applyFailures: 1, applyError: StateError(error))..recorded = true);
+    expect(find.text('try again'), findsOneWidget, reason: 'failed apply: try again is offered');
+    expect(tester.takeException(), isNull, reason: 'failed apply with a long error: no overflow');
+    expect(linesOf(tester, find.textContaining('failure failure')), lessThanOrEqualTo(3),
+        reason: 'failed apply: the error line is at most three lines');
   });
 
   testWidgets('at phone size the changed-deck line and a result with standing and Remediate lay out without overflow',

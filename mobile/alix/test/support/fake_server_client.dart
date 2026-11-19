@@ -45,6 +45,7 @@ class FakeServerClient implements ServerClient {
     this.expireOnGrading = false,
     this.gradingCloseReply = true,
     this.gradingCloseGate,
+    this.expireOnGradingClose = false,
     Map<int, Completer<GradingCall>>? gradingGates,
     this.callLog,
     this.generateStartReply = true,
@@ -135,6 +136,9 @@ class FakeServerClient implements ServerClient {
 
   /// When set, `gradingClose` parks on this after recording its sitting.
   final Completer<void>? gradingCloseGate;
+
+  /// `gradingClose` alone throws [PairingExpired], after its gate.
+  final bool expireOnGradingClose;
 
   /// Parks a specific (0-based) grading call, counted across `gradingSubmit`,
   /// `gradingRemediate` and `gradingGet`, on a completer.
@@ -348,6 +352,7 @@ class FakeServerClient implements ServerClient {
     if (expireOnGrading) throw const PairingExpired();
     gradingClosedSittings.add(sitting);
     if (gradingCloseGate != null) await gradingCloseGate!.future;
+    if (expireOnGradingClose) throw const PairingExpired();
     return gradingCloseReply;
   }
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bridge/bridge_error.dart';
@@ -36,17 +37,16 @@ const _unreadable = 'the desktop could not read this exam; update alix on both d
 const _changedDeck = 'the deck changed since this exam was prepared; its result cannot be recorded';
 
 enum _Desk {
-  grade(running: 'grading', finished: 'results', again: 'submit again'),
-  remediate(running: 'remediating', finished: 'remediated', again: 'remediate again');
+  grade(running: 'grading', finished: 'results'),
+  remediate(running: 'remediating', finished: 'remediated');
 
-  const _Desk({required this.running, required this.finished, required this.again});
+  const _Desk({required this.running, required this.finished});
 
   final String running;
   final String finished;
-  final String again;
 }
 
-enum _Stage { leaving, unreadable, answers, grading, unapplied, result }
+enum _Stage { opening, unreadable, answers, grading, unapplied, result }
 
 class ExamScreen extends StatefulWidget {
   const ExamScreen({
@@ -63,7 +63,7 @@ class ExamScreen extends StatefulWidget {
   final HeldExamAccess held;
   final ServerClient? client;
   final VoidCallback onLeaveResult;
-  final Future<void> Function() onDiscard;
+  final Future<bool> Function() onDiscard;
   final Duration pollInterval;
 
   @override
@@ -71,14 +71,15 @@ class ExamScreen extends StatefulWidget {
 }
 
 class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
-  _Stage _stage = _Stage.leaving;
+  _Stage _stage = _Stage.opening;
   HeldExamView? _view;
   String? _line;
-  String? _again;
+  bool _again = false;
   bool _changed = false;
   bool _submitAnyway = false;
-  bool _closeSettled = true;
+  int _closesPending = 0;
   bool _remediating = false;
+  bool _discarding = false;
   bool _leaving = false;
   bool _foreground = true;
   int? _elapsed;
@@ -88,6 +89,8 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   int _currentQuestion = 0;
   final List<TextEditingController> _answerControllers = [];
   final List<bool> _answerLocked = [];
+  List<String> _savedAnswers = const [];
+  List<bool> _savedLocked = const [];
 
   @override
   void initState() {
@@ -138,6 +141,8 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       for (final answer in view.answers) TextEditingController(text: answer),
     ]);
     _answerLocked.addAll(view.locked);
+    _savedAnswers = List.of(view.answers);
+    _savedLocked = List.of(view.locked);
     final firstOpen = _answerLocked.indexWhere((locked) => !locked);
     _currentQuestion = firstOpen >= 0
         ? firstOpen
@@ -147,18 +152,17 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   bool _materialChanged() {
     try {
       if (!widget.held.materialChanged()) return false;
-      _say(_changedDeck);
       _changed = true;
+      _say(null);
     } on Object catch (error) {
       _say(bridgeErrorText(error));
     }
     return true;
   }
 
-  void _say(String? line, {String? again}) {
+  void _say(String? line, {bool again = false}) {
     _line = line;
     _again = again;
-    _changed = false;
   }
 
   void _apply() {
@@ -174,20 +178,23 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_foreground && state != AppLifecycleState.resumed) _saveDraft();
+    if (_foreground && state != AppLifecycleState.resumed) _saveQuietly();
     _foreground = state == AppLifecycleState.resumed;
   }
 
-  void _saveAnswers() => widget.held.saveAnswers(
-    [for (final controller in _answerControllers) controller.text],
-    List.of(_answerLocked),
-  );
+  void _save() {
+    final answers = [for (final controller in _answerControllers) controller.text];
+    final locked = List.of(_answerLocked);
+    if (listEquals(answers, _savedAnswers) && listEquals(locked, _savedLocked)) return;
+    widget.held.saveAnswers(answers, locked);
+    _savedAnswers = answers;
+    _savedLocked = locked;
+  }
 
-  void _saveDraft() {
+  void _saveQuietly() {
     if (_stage != _Stage.answers || _answerControllers.isEmpty) return;
-    if (_answerLocked[_currentQuestion]) return;
     try {
-      _saveAnswers();
+      _save();
     } on Object catch (_) {
       return;
     }
@@ -198,11 +205,11 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     final locking = !_answerLocked[index] && _answerControllers[index].text.trim().isNotEmpty;
     if (locking) _answerLocked[index] = true;
     try {
-      _saveAnswers();
+      _save();
       return true;
     } on Object catch (error) {
       if (locking) _answerLocked[index] = false;
-      setState(() => _say(error is AnswerTooLong ? '$error' : bridgeErrorText(error)));
+      setState(() => _say(error is AnswerTooLong ? '$error' : bridgeErrorText(error), again: _again));
       return false;
     }
   }
@@ -211,12 +218,20 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     if (!_lockAndSave()) return;
     setState(() {
       _currentQuestion++;
-      if (!_changed) _say(null);
+      if (!_again) _line = null;
     });
   }
 
-  Future<void> _submit({bool anyway = false}) async {
-    if (_stage != _Stage.answers || !_lockAndSave()) return;
+  void _previousQuestion() {
+    _saveQuietly();
+    setState(() => _currentQuestion--);
+  }
+
+  bool get _departing => _leaving || _discarding;
+
+  Future<void> _submit() async {
+    if (_stage != _Stage.answers || _departing || !_lockAndSave()) return;
+    final anyway = _changed;
     if (!anyway && _materialChanged()) {
       setState(() {});
       return;
@@ -225,15 +240,15 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     try {
       request = widget.held.gradeRequest();
     } on AnswerTooLong catch (error) {
-      setState(() => _say('$error'));
+      setState(() => _say('$error', again: _again));
       return;
     } on Object catch (error) {
-      setState(() => _say(bridgeErrorText(error), again: _Desk.grade.again));
+      setState(() => _say(bridgeErrorText(error), again: true));
       return;
     }
     final client = widget.client;
     if (client == null) {
-      setState(() => _say(_needsDesktop, again: _Desk.grade.again));
+      setState(() => _say(_needsDesktop, again: true));
       return;
     }
     _submitAnyway = anyway;
@@ -246,7 +261,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _remediate() async {
-    if (_remediating || !_closeSettled) return;
+    if (_remediating || _closesPending > 0 || _departing) return;
     final String? request;
     try {
       request = widget.held.remediationRequest();
@@ -262,6 +277,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     }
     setState(() {
       _remediating = true;
+      _elapsed = null;
       _say(null);
     });
     final body = request;
@@ -287,12 +303,14 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
           400 => _unreadable,
           _ => 'the desktop refused this request ($status)',
         }));
+      case GradingAnswered(:final state) when state.sitting != sitting:
+        setState(() => _fail(desk, null));
       case GradingAnswered(:final state) when state.error != null:
         setState(() => _fail(desk, state.error));
-      case GradingAnswered(:final state) when state.sitting == sitting && state.phase == desk.running:
+      case GradingAnswered(:final state) when state.phase == desk.running:
         setState(() => _elapsed = state.elapsed);
         _pollTimer = Timer(widget.pollInterval, () => _ask(desk, client, client.gradingGet));
-      case GradingAnswered(:final body, :final state) when state.sitting == sitting && state.phase == desk.finished:
+      case GradingAnswered(:final body, :final state) when state.phase == desk.finished:
         if (desk == _Desk.grade) {
           setState(() => _storeGrade(client, body));
         } else {
@@ -309,7 +327,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     } else {
       _remediating = false;
     }
-    _say(line, again: desk.again);
+    _say(line, again: true);
   }
 
   void _storeGrade(ServerClient client, String body) {
@@ -319,10 +337,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       _fail(_Desk.grade, bridgeErrorText(error));
       return;
     }
-    _closeSettled = false;
-    _closing = _closeDesk(client).whenComplete(() {
-      if (mounted) setState(() => _closeSettled = true);
-    });
+    _closeDesk(client);
     _apply();
   }
 
@@ -334,12 +349,13 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       setState(() => _fail(_Desk.remediate, bridgeErrorText(error)));
       return;
     }
-    _closing = _closeDesk(client);
+    _closeDesk(client);
     final HeldExamView? view;
     try {
       view = widget.held.view();
     } on Object catch (error) {
       setState(() {
+        _remediating = false;
         _stage = _Stage.unreadable;
         _say(bridgeErrorText(error));
       });
@@ -357,23 +373,54 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     if (count > 0) _snack('$count new cards to drill.');
   }
 
-  Future<void> _closeDesk(ServerClient client) =>
-      client.gradingClose(_view!.sitting).then<void>((_) {}, onError: (Object _) {});
+  void _closeDesk(ServerClient client) {
+    _closesPending++;
+    final close = client
+        .gradingClose(_view!.sitting)
+        .then<void>((_) {}, onError: (Object _) {})
+        .whenComplete(() {
+          _closesPending--;
+          if (mounted) setState(() {});
+        });
+    _closing = Future.wait([_closing, close]);
+  }
 
   void _leave() {
     if (_leaving) return;
     _leaving = true;
     _pollTimer?.cancel();
-    if (_stage == _Stage.answers) _saveDraft();
-    if (_stage == _Stage.result && _view?.outcome != null) widget.onLeaveResult();
-    _pop();
+    if (_stage == _Stage.answers) _saveQuietly();
+    try {
+      if (_stage == _Stage.result && _view?.outcome != null && !_remediating) widget.onLeaveResult();
+    } on Object catch (_) {
+      return;
+    } finally {
+      _pop();
+    }
   }
 
   Future<void> _discard() async {
-    if (_leaving) return;
+    if (_departing) return;
+    setState(() => _discarding = true);
+    final bool discarded;
+    try {
+      discarded = await widget.onDiscard();
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _discarding = false;
+          _say(bridgeErrorText(error), again: _again);
+        });
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (!discarded) {
+      setState(() => _discarding = false);
+      return;
+    }
     _leaving = true;
     _pollTimer?.cancel();
-    await widget.onDiscard();
     _pop();
   }
 
@@ -415,7 +462,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   }
 
   Widget _body(BuildContext context) => switch (_stage) {
-    _Stage.leaving => const SizedBox.shrink(),
+    _Stage.opening => const SizedBox.shrink(),
     _Stage.unreadable => _message(context, null),
     _Stage.answers => _answering(context, _view!),
     _Stage.grading => _working(context),
@@ -429,7 +476,13 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(_line ?? '', textAlign: TextAlign.center, style: TextStyle(color: tokens.again)),
+          Text(
+            _line ?? '',
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: tokens.again),
+          ),
           if (action != null) ...[const SizedBox(height: 16), action],
         ],
       ),
@@ -449,29 +502,31 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   Widget _notice(BuildContext context) {
     final tokens = Theme.of(context).alix;
-    final again = _stage == _Stage.answers ? _again : null;
+    final line = _line ?? (_stage == _Stage.answers && _changed ? _changedDeck : null);
     return Column(
       key: const ValueKey('exam-notice'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_line case final line?) Text(line, style: TextStyle(color: tokens.again, fontSize: 13)),
-        if (_changed || again != null)
-          Wrap(
-            spacing: 8,
-            children: [
-              if (_changed) ...[
-                TextButton(onPressed: _discard, child: const Text('Discard exam')),
-                TextButton(onPressed: () => _submit(anyway: true), child: const Text('submit anyway')),
-              ],
-              if (again != null) TextButton(onPressed: _submit, child: Text(again)),
-            ],
+        if (line != null)
+          Text(
+            line,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: tokens.again, fontSize: 13),
+          ),
+        if (_line == null && _stage == _Stage.answers && _changed)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(onPressed: _discard, child: const Text('Discard exam')),
           ),
       ],
     );
   }
 
-  bool get _hasNotice => _line != null || _changed || (_stage == _Stage.answers && _again != null);
+  bool get _hasNotice => _line != null || (_stage == _Stage.answers && _changed);
+
+  String get _submitLabel => _changed ? 'submit anyway' : (_again ? 'submit again' : 'Submit');
 
   Widget _answering(BuildContext context, HeldExamView exam) {
     final tokens = Theme.of(context).alix;
@@ -511,28 +566,34 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         ),
         if (_hasNotice) ...[const SizedBox(height: 12), _notice(context)],
         const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            OutlinedButton(
-              onPressed: index > 0 ? () => setState(() => _currentQuestion--) : null,
-              child: const Text('Back'),
-            ),
-            Flexible(
-              child: TextButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text(
-                  'Continue later',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        LayoutBuilder(
+          builder: (context, constraints) => Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              OutlinedButton(
+                onPressed: index > 0 ? _previousQuestion : null,
+                child: const Text('Back'),
+              ),
+              Flexible(
+                child: TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(0, 40)),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: const Text(
+                    'Continue later',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-            ),
-            FilledButton(
-              onPressed: last ? _submit : _nextQuestion,
-              child: Text(last ? 'Submit' : 'Next'),
-            ),
-          ],
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.55),
+                child: FilledButton(
+                  onPressed: last ? _submit : _nextQuestion,
+                  child: Text(last ? _submitLabel : 'Next', maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -644,8 +705,8 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         if (view.canRemediate) ...[
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _remediating || !_closeSettled ? null : _remediate,
-            child: Text(_again ?? 'Turn the gaps into cards'),
+            onPressed: _remediating || _closesPending > 0 ? null : _remediate,
+            child: Text(_again ? 'remediate again' : 'Turn the gaps into cards'),
           ),
         ],
       ],
