@@ -152,6 +152,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ExamOutcome dco_decode_box_autoadd_exam_outcome(dynamic raw);
 
   @protected
+  ExamStart dco_decode_box_autoadd_exam_start(dynamic raw);
+
+  @protected
   ExcerptView dco_decode_box_autoadd_excerpt_view(dynamic raw);
 
   @protected
@@ -685,6 +688,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ExamOutcome sse_decode_box_autoadd_exam_outcome(SseDeserializer deserializer);
+
+  @protected
+  ExamStart sse_decode_box_autoadd_exam_start(SseDeserializer deserializer);
 
   @protected
   ExcerptView sse_decode_box_autoadd_excerpt_view(SseDeserializer deserializer);
@@ -1321,6 +1327,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_exam_outcome(
     ExamOutcome self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_exam_start(
+    ExamStart self,
     SseSerializer serializer,
   );
 

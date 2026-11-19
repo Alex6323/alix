@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 970484286;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1809455659;
 
 // Section: executor
 
@@ -2164,6 +2164,254 @@ fn wire__crate__api__exam__exam_sitting_start_impl(
         },
     )
 }
+fn wire__crate__api__exam__held_exam_grade_request_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_grade_request",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::exam::held_exam_grade_request(api_deck_path, api_root_dir)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__held_exam_material_changed_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_material_changed",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::exam::held_exam_material_changed(api_deck_path, api_root_dir)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__held_exam_receive_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_receive",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_deck_id = <String>::sse_decode(&mut deserializer);
+            let api_carried_json = <String>::sse_decode(&mut deserializer);
+            let api_start = <crate::api::exam::ExamStart>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::exam::held_exam_receive(
+                        api_root_dir,
+                        api_deck_id,
+                        api_carried_json,
+                        api_start,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__held_exam_remove_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_remove",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok =
+                        crate::api::exam::held_exam_remove(api_deck_path, api_root_dir)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__held_exam_save_answers_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_save_answers",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_answers = <Vec<String>>::sse_decode(&mut deserializer);
+            let api_locked = <Vec<bool>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::exam::held_exam_save_answers(
+                        api_deck_path,
+                        api_root_dir,
+                        api_answers,
+                        api_locked,
+                    )?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__held_exam_sitting_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_sitting",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            let api_deck_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::exam::held_exam_sitting(api_root_dir, api_deck_id)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
+fn wire__crate__api__exam__held_exam_view_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "held_exam_view",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_deck_path = <String>::sse_decode(&mut deserializer);
+            let api_root_dir = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                (move || {
+                    let output_ok = crate::api::exam::held_exam_view(api_deck_path, api_root_dir)?;
+                    Ok(output_ok)
+                })(),
+            )
+        },
+    )
+}
 fn wire__crate__api__simple__init_app_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3592,11 +3840,13 @@ impl SseDecode for crate::api::exam::ExamStamp {
 impl SseDecode for crate::api::exam::ExamStart {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_deckId = <String>::sse_decode(deserializer);
         let mut var_cards = <Option<Vec<String>>>::sse_decode(deserializer);
         let mut var_eligible = <bool>::sse_decode(deserializer);
         let mut var_stamp = <crate::api::exam::ExamStamp>::sse_decode(deserializer);
         let mut var_unsourcedTopics = <Vec<String>>::sse_decode(deserializer);
         return crate::api::exam::ExamStart {
+            deck_id: var_deckId,
             cards: var_cards,
             eligible: var_eligible,
             stamp: var_stamp,
@@ -5120,11 +5370,11 @@ fn pde_ffi_dispatcher_primary_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         39 => wire__crate__api__listing__deck_strips_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__listing__list_members_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__listing__list_root_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__listing__list_searchable_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__sync__paired_apply_pull_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5204,21 +5454,28 @@ fn pde_ffi_dispatcher_sync_impl(
         44 => wire__crate__api__exam__exam_ideas_load_impl(ptr, rust_vec_len, data_len),
         45 => wire__crate__api__exam__exam_ideas_save_impl(ptr, rust_vec_len, data_len),
         46 => wire__crate__api__exam__exam_sitting_start_impl(ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__exam__held_exam_grade_request_impl(ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__exam__held_exam_material_changed_impl(ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__exam__held_exam_receive_impl(ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__exam__held_exam_remove_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__exam__held_exam_save_answers_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__exam__held_exam_sitting_impl(ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__exam__held_exam_view_impl(ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__review__keypoint_grade_impl(ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__sync__paired_entries_impl(ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__sync__paired_free_space_impl(ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__sync__paired_needs_space_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__sync__paired_orphans_impl(ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__sync__paired_plan_pushes_impl(ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__sync__paired_record_push_impl(ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__sync__paired_recover_impl(ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__sync__paired_remove_entry_impl(ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__sync__paired_resolve_conflict_impl(ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__sync__paired_root_dir_impl(ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__sync__paired_staging_zip_impl(ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__sync__paired_tidy_renamed_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__review__seed_choice_distractors_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__listing__set_workspace_deadline_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5766,6 +6023,7 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::exam::ExamStamp>
 impl flutter_rust_bridge::IntoDart for crate::api::exam::ExamStart {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
+            self.deck_id.into_into_dart().into_dart(),
             self.cards.into_into_dart().into_dart(),
             self.eligible.into_into_dart().into_dart(),
             self.stamp.into_into_dart().into_dart(),
@@ -7166,6 +7424,7 @@ impl SseEncode for crate::api::exam::ExamStamp {
 impl SseEncode for crate::api::exam::ExamStart {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.deck_id, serializer);
         <Option<Vec<String>>>::sse_encode(self.cards, serializer);
         <bool>::sse_encode(self.eligible, serializer);
         <crate::api::exam::ExamStamp>::sse_encode(self.stamp, serializer);
