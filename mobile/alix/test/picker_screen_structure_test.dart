@@ -1587,6 +1587,32 @@ void main() {
     },
   );
 
+  testWidgets('a cancel whose failed answer arrives after the picker is gone writes nothing to it', (tester) async {
+    final fixture = await examFixture('exam-cancel-after-dispose');
+    final gate = Completer<void>();
+    final desk = FakeServerClient(
+      versionReply: minServerVersion,
+      idleBeforeStart: true,
+      examStartSitting: corpusSitting(),
+      examCloseGate: gate,
+      examCloseReply: false,
+    );
+    await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+    await openDeck(tester);
+    await tapGenerate(tester);
+    await tester.tap(find.text('Generate exam'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel preparation'));
+    await tester.pump();
+    expect(desk.examCloseCalls, 1, reason: 'confirmed cancel: the close is waiting at the desktop');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    gate.complete();
+    await tester.pump();
+
+    expect(tester.takeException(), isNull, reason: 'refused close after the picker is gone: nothing throws');
+  });
+
   testWidgets(
     'picker tree: generate unavailable, idle, busy, failed, and destination states',
     (tester) async {

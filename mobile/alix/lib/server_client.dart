@@ -1,8 +1,7 @@
 // The phone's HTTP client for a paired desktop's `/api/remote/*` surface
 // (the tutor and AI exam borrowed from the desktop's own AI backend), the
 // `alix --lan` pairing-URL parser, the min-version gate, and the small
-// typed DTOs mirroring the wire shapes pinned by tests/contracts/Remote*.json
-// and documented in docs/API.md 4.10 / 6. dart:io only, no
+// typed DTOs of its wire shapes. dart:io only, no
 // package:http: one small `HttpClient`, called rarely, does not earn a dep.
 import 'dart:convert';
 import 'dart:io';
@@ -409,7 +408,7 @@ class RemoteAsk {
       );
 }
 
-/// One graded exam answer. Mirrors `ExamGradeDto`;
+/// One graded exam answer.
 /// `verdict` is uppercase (`PASS` | `PARTIAL` | `FAIL`) on the wire, passed
 /// through as-is.
 class RemoteExamGrade {

@@ -765,6 +765,7 @@ class _PickerScreenState extends State<PickerScreen> {
         ideas: ideas,
       );
     } on PairingExpired {
+      if (!mounted) return;
       _pairingExpiredAtExam(deckName);
       return;
     } on Object {
@@ -821,16 +822,17 @@ class _PickerScreenState extends State<PickerScreen> {
       closed = false;
     }
     if (!closed) {
+      if (!mounted) return;
       _examNotice.value = (
         deck: deckName,
         text: 'could not cancel the preparation',
       );
       return;
     }
-    _examNotice.value = null;
     _examSlotEpoch++;
     _sittings?.remove(record.root, record.deckId);
     if (!mounted) return;
+    _examNotice.value = null;
     _remoteExam = null;
     _keepPolling(null);
     _controller.reload();
@@ -915,9 +917,11 @@ class _PickerScreenState extends State<PickerScreen> {
     try {
       await handoff.discardReady(record);
     } on PairingExpired {
+      if (!mounted) return false;
       _pairingExpiredAtExam(deckName);
       return false;
     } on Object catch (error) {
+      if (!mounted) return false;
       _examNotice.value = (deck: deckName, text: bridgeErrorText(error));
       return false;
     }

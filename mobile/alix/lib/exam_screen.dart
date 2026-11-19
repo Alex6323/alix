@@ -74,6 +74,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   _Stage _stage = _Stage.opening;
   HeldExamView? _view;
   String? _line;
+  String? _aside;
   bool _again = false;
   bool _changed = false;
   bool _submitAnyway = false;
@@ -162,8 +163,11 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   void _say(String? line, {bool again = false}) {
     _line = line;
+    _aside = null;
     _again = again;
   }
+
+  String? get _shown => _aside ?? _line;
 
   void _apply() {
     try {
@@ -209,7 +213,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       return true;
     } on Object catch (error) {
       if (locking) _answerLocked[index] = false;
-      setState(() => _say(error is AnswerTooLong ? '$error' : bridgeErrorText(error), again: _again));
+      setState(() => _aside = error is AnswerTooLong ? '$error' : bridgeErrorText(error));
       return false;
     }
   }
@@ -218,13 +222,17 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     if (!_lockAndSave()) return;
     setState(() {
       _currentQuestion++;
+      _aside = null;
       if (!_again) _line = null;
     });
   }
 
   void _previousQuestion() {
     _saveQuietly();
-    setState(() => _currentQuestion--);
+    setState(() {
+      _currentQuestion--;
+      _aside = null;
+    });
   }
 
   bool get _departing => _leaving || _discarding;
@@ -240,7 +248,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     try {
       request = widget.held.gradeRequest();
     } on AnswerTooLong catch (error) {
-      setState(() => _say('$error', again: _again));
+      setState(() => _aside = '$error');
       return;
     } on Object catch (error) {
       setState(() => _say(bridgeErrorText(error), again: true));
@@ -409,7 +417,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           _discarding = false;
-          _say(bridgeErrorText(error), again: _again);
+          _aside = bridgeErrorText(error);
         });
       }
       return;
@@ -477,7 +485,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _line ?? '',
+            _shown ?? '',
             textAlign: TextAlign.center,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
@@ -502,7 +510,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   Widget _notice(BuildContext context) {
     final tokens = Theme.of(context).alix;
-    final line = _line ?? (_stage == _Stage.answers && _changed ? _changedDeck : null);
+    final line = _shown ?? (_stage == _Stage.answers && _changed ? _changedDeck : null);
     return Column(
       key: const ValueKey('exam-notice'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -515,7 +523,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: tokens.again, fontSize: 13),
           ),
-        if (_line == null && _stage == _Stage.answers && _changed)
+        if (_shown == null && _stage == _Stage.answers && _changed)
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton(onPressed: _discard, child: const Text('Discard exam')),
@@ -524,7 +532,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     );
   }
 
-  bool get _hasNotice => _line != null || (_stage == _Stage.answers && _changed);
+  bool get _hasNotice => _shown != null || (_stage == _Stage.answers && _changed);
 
   String get _submitLabel => _changed ? 'submit anyway' : (_again ? 'submit again' : 'Submit');
 
@@ -571,6 +579,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               OutlinedButton(
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
                 onPressed: index > 0 ? _previousQuestion : null,
                 child: const Text('Back'),
               ),
@@ -588,6 +597,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.55),
                 child: FilledButton(
+                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
                   onPressed: last ? _submit : _nextQuestion,
                   child: Text(last ? _submitLabel : 'Next', maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),

@@ -207,6 +207,50 @@ void main() {
     expect(find.text(answerTooLongText), findsOneWidget, reason: 'grade request: the too-long line shows');
   });
 
+  testWidgets('a line no request produced is cleared by the next accepted Next or Back while the failed request line returns',
+      (tester) async {
+    final held = FakeHeldExam(questions: const ['Q one?', 'Q two?', 'Q three?'])
+      ..tooLong = (answers, locked) => [
+        for (var i = 0; i < answers.length; i++) locked[i] && answers[i].length > 10,
+      ].contains(true);
+    await pumpExam(tester, held: held, client: FakeServerClient(gradingReplies: const [GradingRefused(409)]));
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.enterText(_field, 'a3');
+    await tester.tap(find.text('Submit'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text(_busy), findsOneWidget, reason: 'failed request: the busy line shows');
+
+    await tester.tap(find.text('Back'));
+    await tester.pump();
+    await tester.enterText(_field, 'far too long an answer');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(find.text(answerTooLongText), findsOneWidget, reason: 'refused lock on question 2: the too-long line shows');
+    expect(find.text(_busy), findsNothing, reason: 'refused lock on question 2: the too-long line takes the slot');
+
+    await tester.tap(find.text('Back'));
+    await tester.pump();
+    expect(find.text('Question 1 of 3'), findsOneWidget, reason: 'Back: question 1 shows');
+    expect(find.text(answerTooLongText), findsNothing, reason: 'Back: the too-long line is gone');
+    expect(find.text(_busy), findsOneWidget, reason: 'Back: the busy line returns');
+
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(find.text(answerTooLongText), findsOneWidget, reason: 'refused lock again: the too-long line shows');
+    await tester.enterText(_field, 'short');
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(find.text('Question 3 of 3'), findsOneWidget, reason: 'accepted Next: question 3 shows');
+    expect(find.text(answerTooLongText), findsNothing, reason: 'accepted Next: the too-long line is gone');
+    expect(find.text(_busy), findsOneWidget, reason: 'accepted Next: the busy line returns');
+  });
+
   testWidgets('a changed deck is reported on open and on Submit before any client call; submit anyway stores not recorded',
       (tester) async {
     final log = <String>[];

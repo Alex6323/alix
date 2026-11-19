@@ -149,6 +149,7 @@ class FakeHeldExam implements HeldExamAccess {
   @override
   String gradeRequest() {
     log.add('gradeRequest');
+    if (hasResult) throw StateError('this exam was already graded');
     if (gradeRequestTooLong) throw const AnswerTooLong();
     return jsonEncode({'sitting': sitting, 'answers': answers});
   }

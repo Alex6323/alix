@@ -92,8 +92,8 @@ void main() {
       ],
       [
         'lib/review_screen.dart:391',
-        'lib/picker_screen.dart:1056',
-        'lib/picker_screen.dart:1312',
+        'lib/picker_screen.dart:1060',
+        'lib/picker_screen.dart:1316',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:226',
@@ -139,6 +139,8 @@ void main() {
           'line above both; '
           "the held exam's hand-off, discard and opening added fields and "
           'methods above both; '
+          'the exam routines checking that the picker is still mounted '
+          'added lines above both; '
           'generate_sheet.dart is unchanged',
     );
   });
