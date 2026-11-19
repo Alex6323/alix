@@ -234,12 +234,16 @@ exam was prepared from. That material is the sources of the deck's topics and,
 for a topic no source grounds, its cards (see [What a standing
 means](#what-a-standing-means)). The phone compares it with its own copy of the
 deck, which a sync with the desktop updates. If a source changed, or a card was
-added to a topic no source grounds, the exam screen says `the deck changed
-since this exam was prepared; its result cannot be recorded` and offers
-**Discard exam**; the last button then reads `submit anyway`. Submitting anyway
-still grades the exam and shows the points and each answer's breakdown, with
-`not recorded` under the points: no topic result or standing is recorded, and
-no remediation cards are offered. In the browser too a result is recorded only
+added to a topic no source grounds, the exam is stale and nothing of it is sent
+to be graded. Found on **Take exam**, the exam screen shows only the line `the
+deck changed: this exam is stale and cannot be recorded` and a **Discard exam**
+button; the close button leaves and keeps the exam. Found when you tap
+**Submit**, your answers are saved, nothing is sent, the same line shows, and
+the button that read **Submit** reads **Discard exam**. Either **Discard exam**
+asks `Discard exam?` as the ⋮ menu does (below). If the deck changes after
+**Submit**, while the desktop grades, the result is shown with `not recorded`
+under the points: no topic result or standing is recorded, and no remediation
+cards are offered. In the browser too a result is recorded only
 against unchanged material: a prepared exam that became stale is not opened,
 and a sitting whose material changes while it is open records nothing (both
 below).

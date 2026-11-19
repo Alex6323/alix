@@ -294,7 +294,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the gaps it is sent, and keeps nothing about a fetched exam. The
   `/api/remote/exam/*` calls change to match (`docs/API.md`) and now send the
   exam's key points to the phone. An exam open across this update is lost on
-  both devices.
+  both devices. An exam whose deck's exam material changed since it was
+  generated is stale: the phone sends nothing of it to be graded and offers
+  only **Discard exam**, on **Take exam** and in place of **Submit**.
 
 - A walk serves the cards you have never walked before the ones you missed,
   each in deck order, so coming back to a walk continues with new cards
