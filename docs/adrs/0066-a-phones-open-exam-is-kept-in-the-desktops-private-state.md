@@ -1,6 +1,6 @@
 # 0066: A phone's open exam is kept in the desktop's private state
 
-- Status: Accepted
+- Status: Superseded by 0067
 - Recorded: 2026-11-17
 - Retrospective: No
 - Evidence: fn a_paused_remote_exam_survives_a_server_restart_until_it_is_closed in tests/api.rs

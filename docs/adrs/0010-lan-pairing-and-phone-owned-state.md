@@ -1,9 +1,8 @@
 # 0010: LAN pairing and phone-owned state
 
 - Status: Accepted
-- Amended by: 0066 (remote handlers keep nothing on the desktop, for an open
-  exam's sitting: it is kept in the served folder's private state until the
-  phone closes it)
+- Amended by: 0067 (remote handlers keep nothing on the desktop, for a
+  generated exam the phone has not fetched yet)
 - Evidence: remote_endpoints_never_write_the_server_store in tests/api.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes
