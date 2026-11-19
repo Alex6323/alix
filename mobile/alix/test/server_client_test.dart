@@ -463,40 +463,6 @@ void main() {
       expect(ask.draft!.back, ['so drops are deterministic', 'no GC needed']);
     });
 
-    test('examGet maps the remediated corpus shape, including cards', () async {
-      final corpus =
-          jsonDecode(File('../../tests/contracts/RemoteExamDto.remediated.json').readAsStringSync());
-      final s = await startServer((request) async {
-        await request.drain<void>();
-        await respondJson(request, 200, corpus);
-      });
-      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: s.port, token: 'x'));
-      addTearDown(client.close);
-
-      final exam = await client.examGet();
-      expect(exam, isNotNull);
-      expect(exam!.phase, 'remediated');
-      expect(exam.deck, 'rust.md');
-      expect(exam.cardsByTopic.single.topicId, 'topic-0wnersh1pt0p1c0000000000');
-      expect(exam.cardsByTopic.single.cards, contains('Why does Rust use ownership?'));
-      expect(exam.grades, hasLength(1));
-      expect(exam.grades.single.verdict, 'FAIL');
-      expect(exam.gaps, ['ownership and the GC-free memory model']);
-      expect(exam.canRemediate, isFalse);
-      expect(exam.full, isTrue);
-      expect(exam.mastered, isFalse);
-      expect(exam.unknownCards, isEmpty);
-      expect(exam.verdicts, isNotNull);
-      expect(exam.verdicts!.total, 1);
-      expect(exam.topics, hasLength(1));
-      expect(exam.topics.single.label, 'Ownership');
-      expect(exam.topics.single.pass, isFalse);
-      expect(exam.topics.single.cards, ['card-0123456789abcdefghjkmnpqrs']);
-      expect(exam.grades.single.topic, 0);
-      expect(exam.grades.single.shape, 'instance');
-      expect(exam.grades.single.mentalModel, '');
-    });
-
     test('examGet maps the preparation estimate, ideas document, and mental model key', () async {
       final s = await startServer((request) async {
         await request.drain<void>();

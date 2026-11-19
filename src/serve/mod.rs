@@ -339,7 +339,7 @@ pub fn run_review(
         ),
     );
 
-    let kept_exam = jobs_owner::kept_remote_exam(&catalog, &jobs_cfg, &exam_cfg, &ask_cfg);
+    let remote_exam = jobs_owner::ready_remote_exam(&jobs_cfg);
     let (jobs, jobs_thread) = jobs_owner::spawn(
         failure.clone(),
         JobsState {
@@ -350,7 +350,7 @@ pub fn run_review(
             sharing: None,
             receiving: None,
             remote_ask: None,
-            remote_exam: kept_exam,
+            remote_exam,
             grading: GradingDesk::Idle,
             remote_generate: None,
             preparing: Vec::new(),
@@ -2067,47 +2067,43 @@ pub fn run_review(
                     ask_cfg.clone(),
                 ) {
                     None => respond_status(request, 503),
-                    Some(Started::Conflict) => respond_status(request, 409),
-                    Some(Started::Dto(dto)) => respond_json(request, &dto),
+                    Some(RemoteStartReply::Conflict) => respond_status(request, 409),
+                    Some(RemoteStartReply::CannotReplace) => respond_status(request, 500),
+                    Some(RemoteStartReply::Dto(dto)) => respond_json(request, &dto),
                 }
             }
-            // advance() only, never poll(): poll() writes the store, which
-            // remote handlers must never touch.
             (Method::Get, "/api/remote/exam") => match jobs.remote_exam_poll() {
                 Some(dto) => respond_json(request, &dto),
                 None => respond_status(request, 503),
             },
-            (Method::Post, "/api/remote/exam/grade") => {
+            (Method::Get, "/api/remote/exam/carried") => {
+                let Some(sitting) = query_param(request.url(), "sitting") else {
+                    respond_status(request, 400);
+                    continue;
+                };
+                match jobs.remote_exam_carried(sitting) {
+                    None => respond_status(request, 503),
+                    Some(None) => respond_status(request, 404),
+                    Some(Some(reply)) => respond_json(request, &reply),
+                }
+            }
+            (Method::Post, "/api/remote/exam/close") => {
                 #[derive(Deserialize)]
                 struct Body {
-                    answers: Vec<String>,
+                    sitting: String,
                 }
-                let Some(bytes) = read_capped(request.as_reader(), MAX_REMOTE_BODY) else {
+                let Some(body) = read_capped(request.as_reader(), MAX_REMOTE_BODY)
+                    .and_then(|bytes| serde_json::from_slice::<Body>(&bytes).ok())
+                else {
                     respond_status(request, 400);
                     continue;
                 };
-                let Ok(body) = serde_json::from_slice::<Body>(&bytes) else {
-                    respond_status(request, 400);
-                    continue;
-                };
-                match jobs.remote_exam_grade(body.answers) {
+                match jobs.remote_exam_close(body.sitting) {
                     None => respond_status(request, 503),
-                    Some(RemoteGradeReply::NoSitting) => respond_status(request, 409),
-                    Some(RemoteGradeReply::WrongPhaseOrCount) => respond_status(request, 400),
-                    Some(RemoteGradeReply::Dto(dto)) => respond_json(request, &dto),
+                    Some(RemoteCloseReply::Done) => respond_status(request, 200),
+                    Some(RemoteCloseReply::CannotRemove) => respond_status(request, 500),
                 }
             }
-            (Method::Post, "/api/remote/exam/remediate") => {
-                match jobs.remote_exam_remediate() {
-                    None => respond_status(request, 503),
-                    Some(None) => respond_status(request, 409),
-                    Some(Some(dto)) => respond_json(request, &dto),
-                }
-            }
-            (Method::Post, "/api/remote/exam/close") => match jobs.remote_exam_close() {
-                Some(()) => respond_status(request, 200),
-                None => respond_status(request, 503),
-            },
             (Method::Post, "/api/remote/exam/grading" | "/api/remote/exam/grading/remediate") => {
                 let Some(carried) = read_capped(request.as_reader(), MAX_GRADING_BODY)
                     .and_then(|bytes| grading_request(&path, &bytes))

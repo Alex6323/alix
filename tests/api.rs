@@ -9779,24 +9779,34 @@ fn remote_exam_start_examines_topics_of_the_named_cards_reports_unknown_ids_and_
         "examws/twosect.md", body["deck"],
         "start: the sitting names its deck as the client did: {body}"
     );
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
+    let sitting = body["sitting"].as_str().unwrap_or_default().to_string();
+    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "ready");
     assert_eq!(
         "examws/twosect.md", body["deck"],
         "poll: the sitting names its deck as the client did: {body}"
     );
-    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["b"]}"#);
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
+    let carried = get_json(
+        &base,
+        &format!("/api/remote/exam/carried?sitting={sitting}"),
+    );
+    let exam = &carried["exam"];
 
-    let topics = body["topics"].as_array().expect("topics");
-    assert_eq!(1, topics.len(), "only the named card's topic: {body}");
+    let topics = exam["topics"].as_array().expect("topics");
+    assert_eq!(1, topics.len(), "only the named card's topic: {exam}");
+    assert_eq!("topic-sb", topics[0]["topic_id"], "{exam}");
     assert_eq!(
         serde_json::json!(["card-sb1"]),
         topics[0]["cards"],
-        "{body}"
+        "{exam}"
     );
-    assert_eq!(false, body["full"], "{body}");
+    assert_eq!(false, exam["full"], "{exam}");
+    assert_eq!(
+        serde_json::json!(["card-gone"]),
+        exam["unknown_cards"],
+        "{exam}"
+    );
 
-    post_json(&base, "/api/remote/exam/close", "{}");
+    close_exam(&base, &sitting);
     let store = alix::state::open_store(
         &guard.dir().join("examws/decks/twosect.md"),
         &guard.dir().join(EXAM_WS),
@@ -10287,351 +10297,665 @@ fn remote_generate_rejects_a_non_http_url_and_a_missing_url_with_400() {
     assert!(resp.body.is_empty(), "body: {:?}", resp.body);
 }
 
-/// The full remote-exam walk over a fact deck: generate → answering (prompts
-/// only) → grade → results (a fail, with gaps) → remediate → the deck-format
-/// `cards` payload → close → idle.
-#[test]
-fn remote_exam_walks_generate_answer_grade_fail_remediate_to_cards_payload() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let grades_path = scripts.path().join("grades");
-    std::fs::write(
-        &grades_path,
-        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
-    )
-    .unwrap();
-    let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, _guard) =
-        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
+const EXAM_DESK: &str = "/api/remote/exam";
+const EXAM_START: &str = "/api/remote/exam/start";
+const EXAM_CARRIED: &str = "/api/remote/exam/carried";
+const EXAM_CLOSE: &str = "/api/remote/exam/close";
+const EXAM_DECK_START: &str = r#"{"deck":"examws/examdeck.md"}"#;
+const EXAM_PROMPT: &str = "question-one?";
+const EXAM_POINT: &str = "key-point-one";
+const OTHER_SITTING: &str = "sitting-other";
 
-    let resp = post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examws/examdeck.md"}"#,
-    );
-    assert_eq!(200, resp.status);
-
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    let questions = body["questions"].as_array().expect("questions is an array");
-    assert_eq!(1, questions.len(), "body: {body}");
-    assert!(
-        questions[0].as_str().is_some_and(|q| !q.is_empty()),
-        "body: {body}"
-    );
-
-    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
-    assert_eq!(200, resp.status);
-
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(false, body["topics"][0]["pass"], "body: {body}");
-    assert!(!body["gaps"].as_array().unwrap().is_empty(), "body: {body}");
-    assert_eq!(true, body["can_remediate"], "body: {body}");
-
-    let resp = post_json(&base, "/api/remote/exam/remediate", "{}");
-    assert_eq!(200, resp.status);
-
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
-    let cards = body["cards_by_topic"][0]["cards"]
-        .as_str()
-        .expect("cards is a deck-format string");
-    assert!(cards.trim_start().starts_with('#'), "cards: {cards}");
-
-    let resp = post_json(&base, "/api/remote/exam/close", "{}");
-    assert_eq!(200, resp.status);
-
-    let resp = http(&base, "GET", "/api/remote/exam", &[], &[]);
-    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_eq!("idle", body["phase"], "body: {body}");
+/// A fake model for the generation desk. Every call appends a line to
+/// `calls.log`; while `hold` exists a call parks on the `gate` fifo, which
+/// this value keeps open read-write so a release is never lost and an open
+/// never blocks; while `fail` exists a call answers with text no generator
+/// accepts.
+struct ExamModel {
+    dir: TempDir,
+    gate: std::fs::File,
+    fake: PathBuf,
 }
 
-#[test]
-fn a_remote_exam_returns_remediation_cards_per_failed_topic() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let grades_path = scripts.path().join("grades");
-    std::fs::write(
-        &grades_path,
-        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap a"]},{"verdict":"fail","feedback":"no","missed":["gap b"]}]}"#,
-    )
-    .unwrap();
-    let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, _guard) = spawn_full_server_fixture(
-        Some(&fake),
-        |dir| {
-            write_sourced_member(
-                dir,
-                "twofail.md",
-                "---\nformat-version: 1\nid: \"deck-twofail\"\n---\n\
-                 # A\n<!-- id: topic-fa -->\n\n## a\n1\n<!-- id: card-fa1 -->\n\n\
-                 # B\n<!-- id: topic-fb -->\n\n## b\n2\n<!-- id: card-fb1 -->\n",
-                &[(
-                    "examsource.txt",
-                    "a and b are concepts.\n",
-                    &["topic-fa", "topic-fb"],
-                )],
-            );
-        },
-        |_opts| {},
-    );
-
-    let resp = post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examws/twofail.md"}"#,
-    );
-    assert_eq!(200, resp.status, "start");
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    assert_eq!(
-        2,
-        body["questions"].as_array().unwrap().len(),
-        "answering: {body}"
-    );
-    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a","b"]}"#);
-    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    post_json(&base, "/api/remote/exam/remediate", "{}");
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
-
-    let entries = body["cards_by_topic"]
-        .as_array()
-        .expect("remediated: cards_by_topic is an array");
-    assert_eq!(
-        vec!["topic-fa", "topic-fb"],
-        entries
-            .iter()
-            .map(|entry| entry["topic_id"].as_str().unwrap_or_default())
-            .collect::<Vec<_>>(),
-        "remediated: one entry per failed topic, in deck order: {body}"
-    );
-    assert!(
-        entries.iter().all(|entry| entry["cards"]
-            .as_str()
-            .is_some_and(|c| c.starts_with("## "))),
-        "remediated: each entry carries its deck-format text: {body}"
-    );
-}
-
-#[test]
-fn a_remote_exam_sitting_carries_one_id_from_start_until_close() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let grades_path = scripts.path().join("grades");
-    std::fs::write(
-        &grades_path,
-        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
-    )
-    .unwrap();
-    let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, _guard) =
-        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
-    let start = r#"{"deck":"examws/examdeck.md"}"#;
-
-    let idle = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "idle");
-    assert!(
-        idle["sitting"].is_null(),
-        "step 1: idle has no sitting: {idle}"
-    );
-
-    let resp = post_json(&base, "/api/remote/exam/start", start);
-    assert_eq!(200, resp.status, "step 2: start");
-    let started: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    let first = started["sitting"].as_str().unwrap_or_default().to_string();
-    assert_eq!(
-        26,
-        first.len(),
-        "step 2: the start names its sitting: {started}"
-    );
-    let answering = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    assert_eq!(
-        first, answering["sitting"],
-        "step 3: polls name the same sitting"
-    );
-
-    assert_eq!(200, post_json(&base, "/api/remote/exam/close", "{}").status);
-    let resp = post_json(&base, "/api/remote/exam/start", start);
-    assert_eq!(200, resp.status, "step 4: a replacement start");
-    let replaced: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-    assert_ne!(
-        first, replaced["sitting"],
-        "step 4: a replacement sitting on the same deck has its own id: {replaced}"
-    );
-}
-
-#[test]
-fn a_paused_remote_exam_survives_a_server_restart_until_it_is_closed() {
-    let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let grades_path = scripts.path().join("grades");
-    std::fs::write(
-        &grades_path,
-        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
-    )
-    .unwrap();
-    let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, guard) = spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
-
-    let kept = alix::state::UserFiles::new(state_root(guard.dir())).exam_kept();
-    let resp = post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examws/examdeck.md","cards":["card-e1","card-unknown"]}"#,
-    );
-    assert_eq!(200, resp.status, "step 1: start");
-    let paused = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    assert_eq!(
-        serde_json::json!(["card-unknown"]),
-        paused["unknown_cards"],
-        "step 1: setup, the sitting carries an unknown card: {paused}"
-    );
-
-    let (base, guard) = restart_full_server(guard, Some(&fake));
-    let restored = get_json(&base, "/api/remote/exam");
-    for key in [
-        "phase",
-        "sitting",
-        "deck",
-        "strictness",
-        "questions",
-        "questions_units",
-        "full",
-        "unknown_cards",
-        "error",
-    ] {
-        assert_eq!(
-            paused[key], restored[key],
-            "step 2: the restarted server still holds the paused exam's `{key}`: {restored}"
-        );
+impl ExamModel {
+    fn new() -> Self {
+        let dir = TempDir::new().unwrap();
+        let gate_path = dir.path().join("gate");
+        mkfifo_at(&gate_path);
+        let gate = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&gate_path)
+            .expect("a fifo opens read-write without a reader");
+        let fake = dir.path().join("fake-claude");
+        let at = |name: &str| dir.path().join(name).display().to_string();
+        let questions = serde_json::json!({"questions": [{
+            "shape": "instance", "idea": 1, "prompt": EXAM_PROMPT, "points": [EXAM_POINT]
+        }]})
+        .to_string();
+        std::fs::write(dir.path().join("questions"), questions).unwrap();
+        std::fs::write(dir.path().join("ideas"), r#"{"ideas":["m"]}"#).unwrap();
+        std::fs::write(
+            &fake,
+            format!(
+                "#!/bin/sh\nPATH=/usr/bin:/bin\ninput=$(cat)\n\
+                 printf 'call\\n' >> {calls}\n\
+                 if [ -e {hold} ]; then read _ < {gate}; fi\n\
+                 if [ -e {fail} ]; then printf 'no exam here'; exit 0; fi\n\
+                 case \"$input\" in\n\
+                 *'\"questions\"'*) cat {questions} ;;\n\
+                 *'\"ideas\"'*) cat {ideas} ;;\n\
+                 *) printf 'unexpected call' ;;\n\
+                 esac\n",
+                calls = at("calls.log"),
+                hold = at("hold"),
+                gate = gate_path.display(),
+                fail = at("fail"),
+                questions = at("questions"),
+                ideas = at("ideas"),
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Self { dir, gate, fake }
     }
 
-    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a"]}"#);
+    fn switch(&self, name: &str, on: bool) {
+        let path = self.dir.path().join(name);
+        if on {
+            std::fs::write(path, "").unwrap();
+        } else if path.exists() {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    fn hold(&self, on: bool) {
+        self.switch("hold", on);
+    }
+
+    fn fail(&self, on: bool) {
+        self.switch("fail", on);
+    }
+
+    fn release(&self) {
+        let _ = std::fs::remove_file(self.dir.path().join("hold"));
+        let _ = (&self.gate).write_all(b"go\ngo\ngo\ngo\n");
+    }
+
+    fn calls(&self) -> usize {
+        std::fs::read_to_string(self.dir.path().join("calls.log"))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
+}
+
+impl Drop for ExamModel {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Makes a folder read-only until restored, on an explicit call or on drop
+/// (including a panic unwind).
+struct ReadOnlyFolder {
+    path: PathBuf,
+}
+
+impl ReadOnlyFolder {
+    fn new(path: &Path) -> Self {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o555)).unwrap();
+        Self {
+            path: path.to_path_buf(),
+        }
+    }
+
+    fn restore(&self) {
+        let _ = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o755));
+    }
+}
+
+impl Drop for ReadOnlyFolder {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
+fn exam_file(dir: &Path) -> PathBuf {
+    alix::state::UserFiles::new(state_root(dir)).exam_kept()
+}
+
+fn exam_desk_server(model: &ExamModel) -> (String, Guard) {
+    spawn_full_server_fixture(Some(&model.fake), write_exam_deck_fixture, |_| {})
+}
+
+fn settled_generation(base: &str) -> serde_json::Value {
+    poll_until(base, EXAM_DESK, |b| b["thinking"] == false)
+}
+
+fn carried_of(base: &str, sitting: &str) -> HttpResp {
+    http(
+        base,
+        "GET",
+        &format!("{EXAM_CARRIED}?sitting={sitting}"),
+        &[],
+        &[],
+    )
+}
+
+fn close_exam(base: &str, sitting: &str) -> HttpResp {
+    post_json(
+        base,
+        EXAM_CLOSE,
+        &serde_json::json!({ "sitting": sitting }).to_string(),
+    )
+}
+
+fn start_exam(base: &str, cell: &str) -> String {
+    let resp = post_json(base, EXAM_START, EXAM_DECK_START);
     assert_eq!(
         200, resp.status,
-        "step 3: the restored exam accepts answers"
+        "{cell}: setup start, status {}",
+        resp.status
     );
-    let results = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(
-        true, results["topics"][0]["pass"],
-        "step 3: the restored exam grades against its kept answer key: {results}"
-    );
-    assert!(
-        results["ideas"].is_object(),
-        "step 3: the restored exam still returns its idea list: {results}"
-    );
-    assert!(
-        kept.is_file(),
-        "step 3: a graded exam stays kept until the phone closes it"
-    );
+    let reply: serde_json::Value = serde_json::from_slice(&resp.body).unwrap_or_default();
+    reply["sitting"].as_str().unwrap_or_default().to_string()
+}
 
-    assert_eq!(
-        200,
-        post_json(&base, "/api/remote/exam/close", "{}").status,
-        "step 4: close"
-    );
-    let (base, _guard) = restart_full_server(guard, Some(&fake));
-    let idle = get_json(&base, "/api/remote/exam");
-    assert_eq!(
-        "idle", idle["phase"],
-        "step 4: a closed exam does not come back after a restart: {idle}"
-    );
-    assert!(!kept.exists(), "step 4: close removes the kept exam");
+fn carried_exam_for(sitting: &str) -> alix::exam_carried::CarriedExam {
+    use alix::exam_carried::{CarriedExam, CarriedQuestion, CarriedTopic, Shape};
+    CarriedExam {
+        version: 1,
+        sitting: sitting.to_string(),
+        deck: "examws/examdeck.md".to_string(),
+        strictness: alix::config::Strictness::Balanced,
+        full: true,
+        unknown_cards: Vec::new(),
+        topics: vec![CarriedTopic {
+            topic_id: "topic-raced".to_string(),
+            fingerprint: "raced-fingerprint".to_string(),
+            label: "Raced".to_string(),
+            cards: vec!["card-e1".to_string()],
+        }],
+        questions: vec![CarriedQuestion {
+            topic_id: "topic-raced".to_string(),
+            idea: 0,
+            prompt: "raced?".to_string(),
+            points: vec!["a raced point".to_string()],
+            shape: Shape::Instance,
+            mental_model: String::new(),
+        }],
+        ideas: alix::exam_ideas::IdeasDocument::default(),
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum GenerationState {
+    Idle,
+    Generating,
+    Failed,
+    Ready,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum GenerationRow {
+    Start,
+    Poll,
+    CarriedOwn,
+    CarriedOther,
+    CloseOwn,
+    CloseOther,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum GenerationAfter {
+    Idle,
+    Generating,
+    Failed,
+    Ready,
+    Started,
+}
+
+fn drive_generation_desk(
+    base: &str,
+    model: &ExamModel,
+    state: GenerationState,
+    cell: &str,
+) -> String {
+    match state {
+        GenerationState::Idle => "sitting-own".to_string(),
+        GenerationState::Generating => {
+            model.hold(true);
+            let sitting = start_exam(base, cell);
+            poll_until(base, "/api/version", |_| model.calls() == 1);
+            sitting
+        }
+        GenerationState::Failed => {
+            model.fail(true);
+            let sitting = start_exam(base, cell);
+            poll_until(base, EXAM_DESK, |b| b["error"].is_string());
+            model.fail(false);
+            sitting
+        }
+        GenerationState::Ready => {
+            let sitting = start_exam(base, cell);
+            poll_until(base, EXAM_DESK, |b| b["phase"] == "ready");
+            sitting
+        }
+    }
+}
+
+fn send_generation_row(base: &str, row: GenerationRow, own: &str) -> HttpResp {
+    match row {
+        GenerationRow::Start => post_json(base, EXAM_START, EXAM_DECK_START),
+        GenerationRow::Poll => http(base, "GET", EXAM_DESK, &[], &[]),
+        GenerationRow::CarriedOwn => carried_of(base, own),
+        GenerationRow::CarriedOther => carried_of(base, OTHER_SITTING),
+        GenerationRow::CloseOwn => close_exam(base, own),
+        GenerationRow::CloseOther => close_exam(base, OTHER_SITTING),
+    }
+}
+
+fn assert_generation_desk(
+    cell: &str,
+    poll: &serde_json::Value,
+    after: GenerationAfter,
+    own: &str,
+    started: &serde_json::Value,
+) {
+    let (phase, sitting, error) = match after {
+        GenerationAfter::Idle => ("idle", serde_json::Value::Null, false),
+        GenerationAfter::Generating => ("generating", own.into(), false),
+        GenerationAfter::Failed => ("generating", own.into(), true),
+        GenerationAfter::Ready => ("ready", own.into(), false),
+        GenerationAfter::Started => ("generating", started.clone(), false),
+    };
+    assert_eq!(phase, poll["phase"], "{cell}: phase: {poll}");
+    assert_eq!(sitting, poll["sitting"], "{cell}: sitting: {poll}");
+    assert_eq!(error, poll["error"].is_string(), "{cell}: error: {poll}");
+    if after == GenerationAfter::Started {
+        assert!(
+            started.is_string() && *started != own,
+            "{cell}: a new sitting, not {own}: {poll}"
+        );
+    }
 }
 
 #[test]
-fn an_unreadable_kept_remote_exam_leaves_the_slot_idle_and_the_file_in_place() {
+fn the_generation_desk_answers_every_request_in_every_state_as_tabled() {
+    use GenerationAfter::{Failed, Generating, Idle as NowIdle, Ready, Started as NewGenerating};
+    use GenerationRow::*;
+    use GenerationState::{
+        Failed as WasFailed, Generating as WasGenerating, Idle as WasIdle, Ready as WasReady,
+    };
+    let _lock = exec_lock();
+    let table: [(GenerationRow, GenerationState, u16, GenerationAfter, bool); 24] = [
+        (Start, WasIdle, 200, NewGenerating, false),
+        (Poll, WasIdle, 200, NowIdle, false),
+        (CarriedOwn, WasIdle, 404, NowIdle, false),
+        (CarriedOther, WasIdle, 404, NowIdle, false),
+        (CloseOwn, WasIdle, 200, NowIdle, false),
+        (CloseOther, WasIdle, 200, NowIdle, false),
+        (Start, WasGenerating, 409, Generating, false),
+        (Poll, WasGenerating, 200, Generating, false),
+        (CarriedOwn, WasGenerating, 404, Generating, false),
+        (CarriedOther, WasGenerating, 404, Generating, false),
+        (CloseOwn, WasGenerating, 200, NowIdle, false),
+        (CloseOther, WasGenerating, 200, Generating, false),
+        (Start, WasFailed, 200, NewGenerating, false),
+        (Poll, WasFailed, 200, Failed, false),
+        (CarriedOwn, WasFailed, 404, Failed, false),
+        (CarriedOther, WasFailed, 404, Failed, false),
+        (CloseOwn, WasFailed, 200, NowIdle, false),
+        (CloseOther, WasFailed, 200, Failed, false),
+        (Start, WasReady, 200, NewGenerating, false),
+        (Poll, WasReady, 200, Ready, true),
+        (CarriedOwn, WasReady, 200, Ready, true),
+        (CarriedOther, WasReady, 404, Ready, true),
+        (CloseOwn, WasReady, 200, NowIdle, false),
+        (CloseOther, WasReady, 200, Ready, true),
+    ];
+    for (row, state, status, after, file) in table {
+        let cell = format!("{row:?} on {state:?}");
+        let model = ExamModel::new();
+        let (base, guard) = exam_desk_server(&model);
+        let own = drive_generation_desk(&base, &model, state, &cell);
+        model.hold(true);
+        let resp = send_generation_row(&base, row, &own);
+        let poll = get_json(&base, EXAM_DESK);
+        let file_exists = exam_file(guard.dir()).exists();
+        model.release();
+        settled_generation(&base);
+        let reply = reply_of(&resp).unwrap_or_default();
+        assert_eq!(status, resp.status, "{cell}: status");
+        assert_generation_desk(&cell, &poll, after, &own, &reply["sitting"]);
+        assert_eq!(file, file_exists, "{cell}: the exam file exists");
+        if matches!(row, CarriedOwn) && status == 200 {
+            assert_eq!(own, reply["exam"]["sitting"], "{cell}: the exam's sitting");
+            assert_eq!(
+                serde_json::json!([EXAM_POINT]),
+                reply["exam"]["questions"][0]["points"],
+                "{cell}: the exam carries its key points: {reply}"
+            );
+            assert_eq!(
+                reply["exam"]["questions"].as_array().map(Vec::len),
+                reply["questions_units"].as_array().map(Vec::len),
+                "{cell}: one question unit list per question: {reply}"
+            );
+        }
+    }
+
+    for (cell, row) in [
+        (
+            "a start on a ready desk whose exam folder is read-only",
+            Start,
+        ),
+        (
+            "a close of a ready desk's sitting whose exam folder is read-only",
+            CloseOwn,
+        ),
+    ] {
+        let model = ExamModel::new();
+        let (base, guard) = exam_desk_server(&model);
+        let own = drive_generation_desk(&base, &model, WasReady, cell);
+        let path = exam_file(guard.dir());
+        let read_only = ReadOnlyFolder::new(path.parent().unwrap());
+        model.hold(true);
+        let resp = send_generation_row(&base, row, &own);
+        let poll = get_json(&base, EXAM_DESK);
+        let file_exists = path.exists();
+        read_only.restore();
+        model.release();
+        settled_generation(&base);
+        assert_eq!(500, resp.status, "{cell}: status");
+        assert_generation_desk(cell, &poll, Ready, &own, &serde_json::Value::Null);
+        assert!(file_exists, "{cell}: the exam file is still there");
+    }
+
+    let cell = "a close of a generating sitting whose raced exam file cannot be removed";
+    let model = ExamModel::new();
+    let (base, guard) = exam_desk_server(&model);
+    let own = drive_generation_desk(&base, &model, WasGenerating, cell);
+    let path = exam_file(guard.dir());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    carried_exam_for(&own).save(&path).unwrap();
+    let read_only = ReadOnlyFolder::new(path.parent().unwrap());
+    let resp = close_exam(&base, &own);
+    let poll = get_json(&base, EXAM_DESK);
+    let file_exists = path.exists();
+    read_only.restore();
+    model.release();
+    settled_generation(&base);
+    let (base, _guard) = restart_full_server(guard, Some(&model.fake));
+    let restarted = get_json(&base, EXAM_DESK);
+    assert_eq!(500, resp.status, "{cell}: status");
+    assert_generation_desk(cell, &poll, Ready, &own, &serde_json::Value::Null);
+    assert!(file_exists, "{cell}: the exam file is still there");
+    assert_generation_desk(
+        &format!("{cell}, after a restart"),
+        &restarted,
+        Ready,
+        &own,
+        &serde_json::Value::Null,
+    );
+
+    for (cell, method, path, body, status) in [
+        (
+            "a carried request without a sitting",
+            "GET",
+            EXAM_CARRIED,
+            "",
+            400,
+        ),
+        (
+            "a close without a readable body",
+            "POST",
+            EXAM_CLOSE,
+            "not json",
+            400,
+        ),
+        (
+            "an answer batch to the deleted grade route",
+            "POST",
+            "/api/remote/exam/grade",
+            r#"{"answers":["a"]}"#,
+            404,
+        ),
+        (
+            "a request to the deleted remediate route",
+            "POST",
+            "/api/remote/exam/remediate",
+            "{}",
+            404,
+        ),
+    ] {
+        let model = ExamModel::new();
+        let (base, guard) = exam_desk_server(&model);
+        let own = drive_generation_desk(&base, &model, WasReady, cell);
+        let before = get_json(&base, EXAM_DESK);
+        let resp = http(
+            &base,
+            method,
+            path,
+            &[("Content-Type", "application/json")],
+            body.as_bytes(),
+        );
+        let poll = get_json(&base, EXAM_DESK);
+        let file_exists = exam_file(guard.dir()).exists();
+        assert_eq!(status, resp.status, "{cell}: status");
+        assert_eq!(
+            before, poll,
+            "{cell}: the following poll shows the same desk"
+        );
+        assert_generation_desk(cell, &poll, Ready, &own, &serde_json::Value::Null);
+        assert!(file_exists, "{cell}: the exam file is still there");
+    }
+
+    let cell = "a carried request after a generation ended unpolled";
+    let model = ExamModel::new();
+    let (base, guard) = exam_desk_server(&model);
+    let own = start_exam(&base, cell);
+    let path = exam_file(guard.dir());
+    poll_until(&base, "/api/version", |_| path.exists());
+    let started = Instant::now();
+    let mut resp = carried_of(&base, &own);
+    while resp.status == 404 && started.elapsed() < HANG_BUDGET {
+        resp = carried_of(&base, &own);
+    }
+    assert_eq!(200, resp.status, "{cell}: status");
+
+    let cell = "a start after a generation ended unpolled";
+    let model = ExamModel::new();
+    let (base, guard) = exam_desk_server(&model);
+    let own = start_exam(&base, cell);
+    let path = exam_file(guard.dir());
+    poll_until(&base, "/api/version", |_| path.exists());
+    model.hold(true);
+    let started = Instant::now();
+    let mut resp = post_json(&base, EXAM_START, EXAM_DECK_START);
+    while resp.status == 409 && started.elapsed() < HANG_BUDGET {
+        resp = post_json(&base, EXAM_START, EXAM_DECK_START);
+    }
+    let poll = get_json(&base, EXAM_DESK);
+    model.release();
+    settled_generation(&base);
+    let reply = reply_of(&resp).unwrap_or_default();
+    assert_eq!(200, resp.status, "{cell}: status");
+    assert_generation_desk(cell, &poll, NewGenerating, &own, &reply["sitting"]);
+}
+
+#[test]
+fn a_close_that_races_the_keep_leaves_no_exam_file_and_an_idle_desk_after_a_restart() {
+    let _lock = exec_lock();
+    let model = ExamModel::new();
+    let (base, guard) = exam_desk_server(&model);
+    let own = drive_generation_desk(&base, &model, GenerationState::Generating, "setup");
+    let path = exam_file(guard.dir());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    carried_exam_for(&own).save(&path).unwrap();
+
+    let carried = carried_of(&base, &own);
+    let resp = close_exam(&base, &own);
+    let poll = get_json(&base, EXAM_DESK);
+    let file_exists = path.exists();
+    model.release();
+    settled_generation(&base);
+    let (base, _guard) = restart_full_server(guard, Some(&model.fake));
+    let restarted = get_json(&base, EXAM_DESK);
+
+    assert_eq!(
+        404, carried.status,
+        "before the close: a generating desk hands nothing over, file or not"
+    );
+    assert_eq!(200, resp.status, "close: status");
+    assert!(!file_exists, "close: the raced exam file is removed");
+    let none = serde_json::Value::Null;
+    assert_generation_desk("close", &poll, GenerationAfter::Idle, &own, &none);
+    assert_generation_desk(
+        "after a restart",
+        &restarted,
+        GenerationAfter::Idle,
+        &own,
+        &none,
+    );
+}
+
+#[test]
+fn a_ready_exam_survives_a_restart_and_a_deleted_deck_with_equal_question_units() {
+    let _lock = exec_lock();
+    let model = ExamModel::new();
+    let (base, guard) = exam_desk_server(&model);
+    let own = drive_generation_desk(&base, &model, GenerationState::Ready, "step 1");
+    let before = carried_of(&base, &own);
+    assert_eq!(200, before.status, "step 1: the ready exam is handed over");
+    let before: serde_json::Value = serde_json::from_slice(&before.body).unwrap();
+
+    std::fs::remove_file(guard.dir().join(EXAM_WS).join("decks").join("examdeck.md")).unwrap();
+    let (base, _guard) = restart_full_server(guard, Some(&model.fake));
+    let poll = get_json(&base, EXAM_DESK);
+    assert_generation_desk(
+        "step 2: after a restart without the deck",
+        &poll,
+        GenerationAfter::Ready,
+        &own,
+        &serde_json::Value::Null,
+    );
+    let after = carried_of(&base, &own);
+    assert_eq!(
+        200, after.status,
+        "step 3: the restored exam is handed over"
+    );
+    let after: serde_json::Value = serde_json::from_slice(&after.body).unwrap();
+    assert_eq!(
+        before["questions_units"], after["questions_units"],
+        "step 3: the question units are the same before and after"
+    );
+    assert_eq!(
+        before["exam"], after["exam"],
+        "step 3: the exam is the same before and after"
+    );
+}
+
+#[test]
+fn an_unreadable_exam_file_leaves_the_desk_idle_and_the_next_generation_replaces_it() {
+    let _lock = exec_lock();
+    let model = ExamModel::new();
     let (base, guard) = spawn_full_server_fixture(
-        None,
+        Some(&model.fake),
         |dir| {
-            let kept = alix::state::UserFiles::new(state_root(dir)).exam_kept();
-            std::fs::create_dir_all(kept.parent().unwrap()).unwrap();
-            std::fs::write(kept, "not a kept exam").unwrap();
+            write_exam_deck_fixture(dir);
+            let path = exam_file(dir);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "not an exam").unwrap();
         },
         |_opts| {},
     );
-    let idle = get_json(&base, "/api/remote/exam");
-    assert_eq!("idle", idle["phase"], "the server starts idle: {idle}");
-    let kept = alix::state::UserFiles::new(state_root(guard.dir())).exam_kept();
+    let path = exam_file(guard.dir());
+    let idle = get_json(&base, EXAM_DESK);
+    assert_generation_desk(
+        "step 1: the server starts",
+        &idle,
+        GenerationAfter::Idle,
+        "",
+        &serde_json::Value::Null,
+    );
     assert_eq!(
-        "not a kept exam",
-        std::fs::read_to_string(kept).unwrap(),
-        "the unreadable file is not discarded"
+        Some("not an exam".to_string()),
+        std::fs::read_to_string(&path).ok(),
+        "step 1: the unreadable file is left in place"
+    );
+
+    let own = drive_generation_desk(&base, &model, GenerationState::Ready, "step 2");
+    let kept = alix::exam_carried::CarriedExam::load(&path);
+    assert_eq!(
+        Some(own.as_str()),
+        kept.as_ref()
+            .ok()
+            .and_then(|exam| exam.as_ref())
+            .map(|exam| exam.sitting.as_str()),
+        "step 2: the next generation replaced the file with its own exam: {kept:?}"
     );
 }
 
 #[test]
-fn a_remote_exam_that_cannot_be_kept_reports_the_failure_instead_of_its_questions() {
+fn a_generation_that_cannot_write_its_file_is_failed_and_reports_why() {
     let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let fake = branching_exam_cli(scripts.path(), &scripts.path().join("grades"));
-    let (base, _guard) = spawn_full_server_fixture(
-        Some(&fake),
+    let model = ExamModel::new();
+    let (base, guard) = spawn_full_server_fixture(
+        Some(&model.fake),
         |dir| {
             write_exam_deck_fixture(dir);
-            let kept = alix::state::UserFiles::new(state_root(dir)).exam_kept();
-            let blocked = kept.parent().unwrap();
+            let blocked = exam_file(dir).parent().unwrap().to_path_buf();
             std::fs::create_dir_all(blocked.parent().unwrap()).unwrap();
             std::fs::write(blocked, "a file where the exam folder belongs").unwrap();
         },
         |_opts| {},
     );
-    let resp = post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examws/examdeck.md"}"#,
+    let own = start_exam(&base, "start");
+    let failed = poll_until(&base, EXAM_DESK, |b| b["error"].is_string());
+    assert_generation_desk(
+        "failed",
+        &failed,
+        GenerationAfter::Failed,
+        &own,
+        &serde_json::Value::Null,
     );
-    assert_eq!(200, resp.status, "start");
-    let failed = poll_until(&base, "/api/remote/exam", |b| b["error"].is_string());
     assert!(
         failed["error"]
             .as_str()
             .is_some_and(|error| error.starts_with("keeping the exam for the other device")),
-        "the failure names the keep: {failed}"
+        "failed: the error names the keep: {failed}"
     );
-    assert_eq!(
-        serde_json::json!([]),
-        failed["questions"],
-        "no questions are handed out for an exam that would not survive: {failed}"
+    assert!(
+        exam_file(guard.dir()).parent().unwrap().is_file(),
+        "failed: no exam file was written"
     );
 }
 
 #[test]
-fn remote_exam_grade_rejects_wrong_arity_with_400_and_wrong_phase_with_409() {
+fn the_poll_never_carries_a_question_or_a_key_point() {
     let _lock = exec_lock();
-    let scripts = TempDir::new().unwrap();
-    let grades_path = scripts.path().join("grades");
-    std::fs::write(
-        &grades_path,
-        r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#,
-    )
-    .unwrap();
-    let fake = branching_exam_cli(scripts.path(), &grades_path);
-    let (base, _guard) =
-        spawn_full_server_fixture(Some(&fake), write_exam_deck_fixture, |_opts| {});
-
-    post_json(
-        &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examws/examdeck.md"}"#,
-    );
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    assert_eq!(
-        1,
-        body["questions"].as_array().unwrap().len(),
-        "body: {body}"
-    );
-
-    // Wrong arity while answering: 400, the sitting stays in `answering`.
-    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":[]}"#);
-    assert_eq!(400, resp.status);
-    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
-    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a","b"]}"#);
-    assert_eq!(400, resp.status);
-    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
-
-    // Close (back to idle), then any grade against the empty slot: 409.
-    let resp = post_json(&base, "/api/remote/exam/close", "{}");
-    assert_eq!(200, resp.status);
-    let resp = post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a"]}"#);
-    assert_eq!(409, resp.status);
-    assert!(resp.body.is_empty(), "body: {:?}", resp.body);
+    for state in [
+        GenerationState::Generating,
+        GenerationState::Failed,
+        GenerationState::Ready,
+    ] {
+        let cell = format!("{state:?}");
+        let model = ExamModel::new();
+        let (base, _guard) = exam_desk_server(&model);
+        drive_generation_desk(&base, &model, state, &cell);
+        let poll = http(&base, "GET", EXAM_DESK, &[], &[]);
+        model.release();
+        settled_generation(&base);
+        let text = String::from_utf8_lossy(&poll.body).to_string();
+        assert_eq!(200, poll.status, "{cell}: status");
+        for absent in ["\"questions\"", EXAM_PROMPT, EXAM_POINT] {
+            assert!(
+                !text.contains(absent),
+                "{cell}: the poll holds no {absent}: {text}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -10720,6 +11044,10 @@ fn remote_endpoints_require_the_token_like_the_rest_of_the_api() {
     assert_ne!(401, resp.status, "body: {:?}", resp.body);
 
     for (method, path) in [
+        ("POST", "/api/remote/exam/start"),
+        ("GET", "/api/remote/exam"),
+        ("GET", "/api/remote/exam/carried?sitting=sitting-one"),
+        ("POST", "/api/remote/exam/close"),
         ("POST", "/api/remote/exam/grading"),
         ("GET", "/api/remote/exam/grading"),
         ("POST", "/api/remote/exam/grading/remediate"),
@@ -10785,16 +11113,16 @@ fn snapshot_dir(dir: &Path) -> HashMap<PathBuf, Vec<u8>> {
 /// THE IRON RULE, pinned: nothing under `/api/remote/*` ever writes the
 /// server's own store OR places a file into its decks dir. A paired phone
 /// owns its mastery/progress/cards (and, for generation, its own
-/// destination), and the desktop only computes answers for it. Runs a full
-/// PASSING remote exam, a full FAILING-then-remediated remote exam, a
-/// tutor ask+draft+note round trip, and a full remote deck generation against ONE
-/// server, then diffs the store file's bytes AND a whole-tree snapshot of the
-/// decks dir before and after: a passing exam must not mark the deck
-/// mastered, a remediation must not create server-side virtual cards, a
-/// generation must not save the deck it returns: any of those would show up
-/// here as changed bytes or a new file. The bounded writes are asserted where
-/// they happen: an open exam's kept sitting, gone again at its close, and
-/// the sidecar a card create appends.
+/// destination), and the desktop only computes answers for it. Runs a remote
+/// exam's generation, hand-off and close, a grade and remediation on the
+/// grading desk, a tutor ask+draft+note round trip, and a full remote deck
+/// generation against ONE server, then diffs the store file's bytes AND a
+/// whole-tree snapshot of the decks dir before and after: a grade must not
+/// mark the deck mastered, a remediation must not create server-side virtual
+/// cards, a generation must not save the deck it returns: any of those would
+/// show up here as changed bytes or a new file. The bounded writes are
+/// asserted where they happen: a ready exam's file, gone again at its close,
+/// and the sidecar a card create appends.
 #[test]
 fn remote_endpoints_never_write_the_server_store() {
     let _lock = exec_lock();
@@ -10812,77 +11140,78 @@ fn remote_endpoints_never_write_the_server_store() {
     let before = snapshot_dir(&fixture_state);
     let decks_before = snapshot_dir(guard.dir());
 
-    // (a) a full remote exam that PASSES.
-    post_json(
+    // (a) a remote exam generated, handed over, and closed.
+    let started = post_json(
         &base,
         "/api/remote/exam/start",
         r#"{"deck":"examws/examdeck.md"}"#,
     );
-    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    let kept = alix::state::UserFiles::new(state_root(guard.dir())).exam_kept();
+    let started: serde_json::Value = serde_json::from_slice(&started.body).unwrap();
+    let sitting = started["sitting"].as_str().unwrap_or_default().to_string();
+    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "ready");
+    let kept = exam_file(guard.dir());
     let mut decks_open = snapshot_dir(guard.dir());
     assert!(
         decks_open
             .remove(kept.strip_prefix(guard.dir()).unwrap())
             .is_some(),
-        "(a) an open remote exam is kept in the store until its close"
+        "(a) a ready remote exam is kept in its file until its close"
     );
     assert_eq!(
         decks_before, decks_open,
-        "(a) an open remote exam writes no file but its kept sitting"
+        "(a) a ready remote exam writes no file but its exam file"
     );
-    let kept_at_answering = std::fs::read(&kept).unwrap();
-    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(true, body["topics"][0]["pass"], "body: {body}");
+    let kept_at_ready = std::fs::read(&kept).unwrap();
+    let carried = carried_of(&base, &sitting);
+    assert_eq!(200, carried.status, "(a) the exam is handed over");
     assert_eq!(
-        kept_at_answering,
+        kept_at_ready,
         std::fs::read(&kept).unwrap(),
-        "(a) grading writes nothing into the kept sitting"
+        "(a) the hand-off writes nothing into the exam file"
     );
-    post_json(&base, "/api/remote/exam/close", "{}");
+    assert_eq!(200, close_exam(&base, &sitting).status, "(a) close");
+    assert!(!kept.exists(), "(a) the close removes the exam file");
+    assert_eq!(
+        decks_before,
+        snapshot_dir(guard.dir()),
+        "(a) a closed remote exam leaves no file behind"
+    );
 
-    // (b) a full remote exam that FAILS and remediates through to cards.
+    // (b) a grade and a remediation on the grading desk.
     std::fs::write(
         &grades_path,
         r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap one"]}]}"#,
     )
     .unwrap();
+    let grade = post_json(
+        &base,
+        GRADING,
+        &grade_body(&sitting, "examws/examdeck.md", "a1"),
+    );
+    assert_eq!(200, grade.status, "(b) grade");
+    let graded = settled_grading(&base);
+    assert_eq!("results", graded["phase"], "(b) graded: {graded}");
+    let remediate = post_json(
+        &base,
+        GRADING_REMEDIATE,
+        &remediation_body(&sitting, "examws/examdeck.md", "gap one"),
+    );
+    assert_eq!(200, remediate.status, "(b) remediate");
+    let remediated = settled_grading(&base);
+    assert_eq!(
+        "remediated", remediated["phase"],
+        "(b) remediated: {remediated}"
+    );
+    assert_eq!(
+        decks_before,
+        snapshot_dir(guard.dir()),
+        "(b) a graded and remediated remote exam writes no file"
+    );
     post_json(
         &base,
-        "/api/remote/exam/start",
-        r#"{"deck":"examws/examdeck.md"}"#,
+        GRADING_CLOSE,
+        &serde_json::json!({ "sitting": sitting }).to_string(),
     );
-    poll_until(&base, "/api/remote/exam", |b| b["phase"] == "answering");
-    let kept_at_answering = std::fs::read(&kept).unwrap();
-    post_json(&base, "/api/remote/exam/grade", r#"{"answers":["a1"]}"#);
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "results");
-    assert_eq!(false, body["topics"][0]["pass"], "body: {body}");
-    assert_eq!(
-        kept_at_answering,
-        std::fs::read(&kept).unwrap(),
-        "(b) a failed grading writes nothing into the kept sitting"
-    );
-    post_json(&base, "/api/remote/exam/remediate", "{}");
-    let body = poll_until(&base, "/api/remote/exam", |b| b["phase"] == "remediated");
-    assert!(
-        body["cards_by_topic"][0]["cards"]
-            .as_str()
-            .is_some_and(|c| c.trim_start().starts_with('#')),
-        "body: {body}"
-    );
-    assert_eq!(
-        kept_at_answering,
-        std::fs::read(&kept).unwrap(),
-        "(b) remediation writes nothing into the kept sitting"
-    );
-    let mut decks_remediated = snapshot_dir(guard.dir());
-    decks_remediated.remove(kept.strip_prefix(guard.dir()).unwrap());
-    assert_eq!(
-        decks_before, decks_remediated,
-        "(b) a graded and remediated remote exam writes no file but its kept sitting"
-    );
-    post_json(&base, "/api/remote/exam/close", "{}");
 
     // (c) a tutor ask + draft round trip.
     post_json(

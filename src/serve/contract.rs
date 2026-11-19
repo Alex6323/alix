@@ -2732,173 +2732,75 @@ fn remoteaskdto_note_wire_shape() {
     );
 }
 
-fn dto_questions_units(questions: &[String]) -> Vec<Vec<ContentUnit>> {
-    questions
-        .iter()
-        .map(|q| crate::render::exam_text_units(q))
-        .collect()
-}
-
 #[test]
 fn remoteexamdto_idle_wire_shape() {
-    let dto = RemoteExamDto {
-        sitting: None,
-        phase: "idle",
-        deck: String::new(),
-        strictness: "balanced",
-        questions: Vec::new(),
-        questions_units: dto_questions_units(&[]),
-        topics: Vec::new(),
-        verdicts: None,
-        full: false,
-        mastered: false,
-        unknown_cards: Vec::new(),
-        grades: Vec::new(),
-        gaps: Vec::new(),
-        can_remediate: false,
-        cards_by_topic: Vec::new(),
-        thinking: false,
-        elapsed: None,
-        error: None,
-        estimate: None,
-        ideas: None,
-    };
     pin(
         "RemoteExamDto.idle",
-        &dto,
+        &GenerationDesk::Idle.dto(),
         json!({
             "sitting": null,
             "phase": "idle",
             "deck": "",
-            "strictness": "balanced",
-            "questions": [],
-            "questions_units": [],
-            "topics": [],
-            "verdicts": null,
-            "full": false,
-            "mastered": false,
             "unknown_cards": [],
-            "grades": [],
-            "gaps": [],
-            "can_remediate": false,
-            "cards_by_topic": [],
             "thinking": false,
             "elapsed": null,
             "error": null,
-            "estimate": null,
-            "ideas": null
+            "estimate": null
         }),
     );
 }
 
 #[test]
-fn remoteexamdto_answering_wire_shape() {
+fn remoteexamdto_generating_wire_shape() {
     let dto = RemoteExamDto {
         sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
-        phase: "answering",
+        phase: "generating",
         deck: "rust.md".to_string(),
-        strictness: "balanced",
-        questions: vec![
-            "Why does Rust use ownership?".to_string(),
-            "What is borrowing?".to_string(),
-        ],
-        questions_units: dto_questions_units(&[
-            "Why does Rust use ownership?".to_string(),
-            "What is borrowing?".to_string(),
-        ]),
-        topics: Vec::new(),
-        verdicts: None,
-        full: true,
-        mastered: false,
-        unknown_cards: Vec::new(),
-        grades: Vec::new(),
-        gaps: Vec::new(),
-        can_remediate: false,
-        cards_by_topic: Vec::new(),
-        thinking: false,
-        elapsed: None,
+        unknown_cards: vec!["card-gone".to_string()],
+        thinking: true,
+        elapsed: Some(12),
         error: None,
-        estimate: None,
-        ideas: None,
+        estimate: Some("usually 10 to 20 minutes"),
     };
     pin(
-        "RemoteExamDto.answering",
+        "RemoteExamDto.generating",
         &dto,
         json!({
             "sitting": "0123456789abcdefghjkmnpqrs",
-            "phase": "answering",
+            "phase": "generating",
             "deck": "rust.md",
-            "strictness": "balanced",
-            "questions": ["Why does Rust use ownership?", "What is borrowing?"],
-            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}], [{"kind": "sentence", "text": "What is borrowing?", "runs": [{"text": "What is borrowing?"}]}]],
-            "topics": [],
-            "verdicts": null,
-            "full": true,
-            "mastered": false,
-            "unknown_cards": [],
-            "grades": [],
-            "gaps": [],
-            "can_remediate": false,
-            "cards_by_topic": [],
-            "thinking": false,
-            "elapsed": null,
+            "unknown_cards": ["card-gone"],
+            "thinking": true,
+            "elapsed": 12,
             "error": null,
-            "estimate": null,
-            "ideas": null
+            "estimate": "usually 10 to 20 minutes"
         }),
     );
 }
 
-#[test]
-fn remoteexamdto_results_wire_shape() {
-    let dto = RemoteExamDto {
-        sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
-        phase: "results",
+fn carried_exam() -> crate::exam_carried::CarriedExam {
+    crate::exam_carried::CarriedExam {
+        version: 1,
+        sitting: "0123456789abcdefghjkmnpqrs".to_string(),
         deck: "rust.md".to_string(),
-        strictness: "balanced",
-        questions: vec!["Why does Rust use ownership?".to_string()],
-        questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
-        topics: vec![ExamTopicDto {
+        strictness: crate::config::Strictness::Balanced,
+        full: true,
+        unknown_cards: Vec::new(),
+        topics: vec![crate::exam_carried::CarriedTopic {
             topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
             fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
             label: "Ownership".to_string(),
             cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
-            pass: false,
-            verdicts: VerdictsDto {
-                pass: 0,
-                partial: 0,
-                total: 1,
-            },
         }],
-        verdicts: Some(VerdictsDto {
-            pass: 0,
-            partial: 0,
-            total: 1,
-        }),
-        full: true,
-        mastered: false,
-        unknown_cards: Vec::new(),
-        grades: vec![exam_grade_dto(
-            &exam::ExamQuestion {
-                prompt: "Why does Rust use ownership?".to_string(),
-                points: vec!["memory safety without a GC".to_string()],
-                ..Default::default()
-            },
-            "it has a garbage collector",
-            &exam::AnswerGrade {
-                verdict: exam::Verdict::Fail,
-                feedback: "Rust has no GC".to_string(),
-                missed: vec!["memory safety without a GC".to_string()],
-            },
-        )],
-        gaps: vec!["ownership and the GC-free memory model".to_string()],
-        can_remediate: true,
-        cards_by_topic: Vec::new(),
-        thinking: false,
-        elapsed: None,
-        error: None,
-        estimate: None,
-        ideas: Some(crate::exam_ideas::IdeasDocument {
+        questions: vec![crate::exam_carried::CarriedQuestion {
+            topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
+            idea: 0,
+            prompt: "Why does Rust use ownership?".to_string(),
+            points: vec!["memory safety without a GC".to_string()],
+            shape: exam::Shape::Instance,
+            mental_model: "moves transfer ownership".to_string(),
+        }],
+        ideas: crate::exam_ideas::IdeasDocument {
             version: 1,
             topics: std::collections::BTreeMap::from([(
                 "topic-0wnersh1pt0p1c0000000000".to_string(),
@@ -2906,165 +2808,66 @@ fn remoteexamdto_results_wire_shape() {
                     fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
                     ideas: vec![crate::exam_ideas::Idea {
                         text: "moves transfer ownership".to_string(),
-                        last_tested_ms: Some(1_762_300_800_000),
-                        last_test_passed: Some(false),
+                        last_tested_ms: None,
+                        last_test_passed: None,
                     }],
                 },
             )]),
-        }),
-    };
+        },
+    }
+}
+
+#[test]
+fn remoteexamdto_ready_wire_shape() {
     pin(
-        "RemoteExamDto.results",
-        &dto,
+        "RemoteExamDto.ready",
+        &GenerationDesk::Ready(Box::new(carried_exam())).dto(),
         json!({
             "sitting": "0123456789abcdefghjkmnpqrs",
-            "phase": "results",
+            "phase": "ready",
             "deck": "rust.md",
-            "strictness": "balanced",
-            "questions": ["Why does Rust use ownership?"],
-            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
-            "topics": [{
-                "topic_id": "topic-0wnersh1pt0p1c0000000000",
-                "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
-                "label": "Ownership",
-                "cards": ["card-0123456789abcdefghjkmnpqrs"],
-                "pass": false,
-                "verdicts": {"pass": 0, "partial": 0, "total": 1}
-            }],
-            "verdicts": {"pass": 0, "partial": 0, "total": 1},
-            "full": true,
-            "mastered": false,
             "unknown_cards": [],
-            "grades": [{
-                "topic": 0,
-                "shape": "instance",
-                "mental_model": "",
-                "question": "Why does Rust use ownership?",
-                "question_units": [{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}],
-                "points": ["memory safety without a GC"],
-                "points_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]],
-                "answer": "it has a garbage collector",
-                "verdict": "FAIL",
-                "feedback": "Rust has no GC",
-                "feedback_units": [{"kind": "sentence", "text": "Rust has no GC", "runs": [{"text": "Rust has no GC"}]}],
-                "missed": ["memory safety without a GC"],
-                "missed_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]]
-            }],
-            "gaps": ["ownership and the GC-free memory model"],
-            "can_remediate": true,
-            "cards_by_topic": [],
             "thinking": false,
             "elapsed": null,
             "error": null,
-            "estimate": null,
-            "ideas": {"version": 1, "topics": {"topic-0wnersh1pt0p1c0000000000": {"fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx", "ideas": [{"text": "moves transfer ownership", "last_tested_ms": 1_762_300_800_000_u64, "last_test_passed": false}]}}}
+            "estimate": null
         }),
     );
 }
 
 #[test]
-fn remoteexamdto_remediated_wire_shape() {
-    let dto = RemoteExamDto {
-        sitting: Some("0123456789abcdefghjkmnpqrs".to_string()),
-        phase: "remediated",
-        deck: "rust.md".to_string(),
-        strictness: "balanced",
-        questions: vec!["Why does Rust use ownership?".to_string()],
-        questions_units: dto_questions_units(&["Why does Rust use ownership?".to_string()]),
-        topics: vec![ExamTopicDto {
-            topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
-            fingerprint: "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx".to_string(),
-            label: "Ownership".to_string(),
-            cards: vec!["card-0123456789abcdefghjkmnpqrs".to_string()],
-            pass: false,
-            verdicts: VerdictsDto {
-                pass: 0,
-                partial: 0,
-                total: 1,
-            },
-        }],
-        verdicts: Some(VerdictsDto {
-            pass: 0,
-            partial: 0,
-            total: 1,
-        }),
-        full: true,
-        mastered: false,
-        unknown_cards: Vec::new(),
-        grades: vec![exam_grade_dto(
-            &exam::ExamQuestion {
-                prompt: "Why does Rust use ownership?".to_string(),
-                points: vec!["memory safety without a GC".to_string()],
-                ..Default::default()
-            },
-            "it has a garbage collector",
-            &exam::AnswerGrade {
-                verdict: exam::Verdict::Fail,
-                feedback: "Rust has no GC".to_string(),
-                missed: vec!["memory safety without a GC".to_string()],
-            },
-        )],
-        gaps: vec!["ownership and the GC-free memory model".to_string()],
-        can_remediate: false,
-        cards_by_topic: vec![TopicCardsDto {
-            topic_id: "topic-0wnersh1pt0p1c0000000000".to_string(),
-            cards: "## Why does Rust use ownership?\nso drops are deterministic, no GC needed"
-                .to_string(),
-        }],
-        thinking: false,
-        elapsed: None,
-        error: None,
-        estimate: None,
-        ideas: None,
-    };
+fn carriedreplydto_wire_shape() {
+    let reply = GenerationDesk::Ready(Box::new(carried_exam()))
+        .carried("0123456789abcdefghjkmnpqrs")
+        .expect("the ready sitting is handed over");
     pin(
-        "RemoteExamDto.remediated",
-        &dto,
+        "CarriedReplyDto",
+        &reply,
         json!({
-            "sitting": "0123456789abcdefghjkmnpqrs",
-            "phase": "remediated",
-            "deck": "rust.md",
-            "strictness": "balanced",
-            "questions": ["Why does Rust use ownership?"],
-            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]],
-            "topics": [{
-                "topic_id": "topic-0wnersh1pt0p1c0000000000",
-                "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
-                "label": "Ownership",
-                "cards": ["card-0123456789abcdefghjkmnpqrs"],
-                "pass": false,
-                "verdicts": {"pass": 0, "partial": 0, "total": 1}
-            }],
-            "verdicts": {"pass": 0, "partial": 0, "total": 1},
-            "full": true,
-            "mastered": false,
-            "unknown_cards": [],
-            "grades": [{
-                "topic": 0,
-                "shape": "instance",
-                "mental_model": "",
-                "question": "Why does Rust use ownership?",
-                "question_units": [{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}],
-                "points": ["memory safety without a GC"],
-                "points_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]],
-                "answer": "it has a garbage collector",
-                "verdict": "FAIL",
-                "feedback": "Rust has no GC",
-                "feedback_units": [{"kind": "sentence", "text": "Rust has no GC", "runs": [{"text": "Rust has no GC"}]}],
-                "missed": ["memory safety without a GC"],
-                "missed_units": [[{"kind": "sentence", "text": "memory safety without a GC", "runs": [{"text": "memory safety without a GC"}]}]]
-            }],
-            "gaps": ["ownership and the GC-free memory model"],
-            "can_remediate": false,
-            "cards_by_topic": [{
-                "topic_id": "topic-0wnersh1pt0p1c0000000000",
-                "cards": "## Why does Rust use ownership?\nso drops are deterministic, no GC needed"
-            }],
-            "thinking": false,
-            "elapsed": null,
-            "error": null,
-            "estimate": null,
-            "ideas": null
+            "exam": {
+                "version": 1,
+                "sitting": "0123456789abcdefghjkmnpqrs",
+                "deck": "rust.md",
+                "strictness": "balanced",
+                "full": true,
+                "unknown_cards": [],
+                "topics": [{
+                    "topic_id": "topic-0wnersh1pt0p1c0000000000",
+                    "fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx",
+                    "label": "Ownership",
+                    "cards": ["card-0123456789abcdefghjkmnpqrs"]
+                }],
+                "questions": [{
+                    "topic_id": "topic-0wnersh1pt0p1c0000000000",
+                    "idea": 0,
+                    "prompt": "Why does Rust use ownership?",
+                    "points": ["memory safety without a GC"],
+                    "shape": "instance",
+                    "mental_model": "moves transfer ownership"
+                }],
+                "ideas": {"version": 1, "topics": {"topic-0wnersh1pt0p1c0000000000": {"fingerprint": "0f8rw3n5t7vxz1c3e5g7j9m1p3r5t7vxz1c3e5g7j9m1p3r5t7vx", "ideas": [{"text": "moves transfer ownership", "last_tested_ms": null, "last_test_passed": null}]}}}
+            },
+            "questions_units": [[{"kind": "sentence", "text": "Why does Rust use ownership?", "runs": [{"text": "Why does Rust use ownership?"}]}]]
         }),
     );
 }

@@ -1,22 +1,10 @@
 {
-  "can_remediate": false,
-  "cards_by_topic": [],
   "deck": "",
   "elapsed": null,
   "error": null,
   "estimate": null,
-  "full": false,
-  "gaps": [],
-  "grades": [],
-  "ideas": null,
-  "mastered": false,
   "phase": "idle",
-  "questions": [],
-  "questions_units": [],
   "sitting": null,
-  "strictness": "balanced",
   "thinking": false,
-  "topics": [],
-  "unknown_cards": [],
-  "verdicts": null
+  "unknown_cards": []
 }

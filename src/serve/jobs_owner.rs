@@ -6,9 +6,14 @@
 //! global lock. On shutdown the owner cancels the wormhole subprocess jobs
 //! before it exits.
 
-use std::{path::PathBuf, sync::mpsc, thread, time::Instant};
+use std::{
+    path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
+    time::Instant,
+};
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 
 use super::{catalog_owner::CatalogHandle, dto::*, jobs::*};
 use crate::{
@@ -28,7 +33,7 @@ pub(super) struct JobsState {
     pub(super) sharing: Option<Sharing>,
     pub(super) receiving: Option<Receiving>,
     pub(super) remote_ask: Option<RemoteAsk>,
-    pub(super) remote_exam: Option<RemoteExamining>,
+    pub(super) remote_exam: GenerationDesk,
     pub(super) grading: GradingDesk,
     pub(super) remote_generate: Option<RemoteGenerating>,
     pub(super) preparing: Vec<Preparing>,
@@ -40,10 +45,15 @@ pub(super) enum Started<T> {
     Conflict,
 }
 
-pub(super) enum RemoteGradeReply {
-    Dto(Box<RemoteExamDto>),
-    NoSitting,
-    WrongPhaseOrCount,
+pub(super) enum RemoteStartReply {
+    Dto(RemoteExamDto),
+    Conflict,
+    CannotReplace,
+}
+
+pub(super) enum RemoteCloseReply {
+    Done,
+    CannotRemove,
 }
 
 fn newly_succeeded<T, E>(was_settled: bool, outcome: &Option<Result<T, E>>) -> bool {
@@ -115,15 +125,17 @@ pub(super) enum JobsCommand {
         ideas: Option<crate::exam_ideas::IdeasDocument>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
-        reply: Reply<Started<RemoteExamDto>>,
+        reply: Reply<RemoteStartReply>,
     },
     RemoteExamPoll(Reply<RemoteExamDto>),
-    RemoteExamGrade {
-        answers: Vec<String>,
-        reply: Reply<RemoteGradeReply>,
+    RemoteExamCarried {
+        sitting: String,
+        reply: Reply<Option<CarriedReplyDto>>,
     },
-    RemoteExamRemediate(Reply<Option<RemoteExamDto>>),
-    RemoteExamClose(Reply<()>),
+    RemoteExamClose {
+        sitting: String,
+        reply: Reply<RemoteCloseReply>,
+    },
     RemoteGradingSubmit {
         request: GradingRequest,
         exam_cfg: ExamConfig,
@@ -287,7 +299,7 @@ impl JobsHandle {
         ideas: Option<crate::exam_ideas::IdeasDocument>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
-    ) -> Option<Started<RemoteExamDto>> {
+    ) -> Option<RemoteStartReply> {
         self.call(|reply| JobsCommand::RemoteExamStart {
             deck,
             path,
@@ -301,14 +313,11 @@ impl JobsHandle {
     pub(super) fn remote_exam_poll(&self) -> Option<RemoteExamDto> {
         self.call(JobsCommand::RemoteExamPoll)
     }
-    pub(super) fn remote_exam_grade(&self, answers: Vec<String>) -> Option<RemoteGradeReply> {
-        self.call(|reply| JobsCommand::RemoteExamGrade { answers, reply })
+    pub(super) fn remote_exam_carried(&self, sitting: String) -> Option<Option<CarriedReplyDto>> {
+        self.call(|reply| JobsCommand::RemoteExamCarried { sitting, reply })
     }
-    pub(super) fn remote_exam_remediate(&self) -> Option<Option<RemoteExamDto>> {
-        self.call(JobsCommand::RemoteExamRemediate)
-    }
-    pub(super) fn remote_exam_close(&self) -> Option<()> {
-        self.call(JobsCommand::RemoteExamClose)
+    pub(super) fn remote_exam_close(&self, sitting: String) -> Option<RemoteCloseReply> {
+        self.call(|reply| JobsCommand::RemoteExamClose { sitting, reply })
     }
     pub(super) fn remote_grading_submit(
         &self,
@@ -614,65 +623,21 @@ impl JobsState {
                 ask_cfg,
                 reply,
             } => {
+                self.advance_remote_exam();
                 let _ =
                     reply.send(self.remote_exam_start(deck, path, cards, ideas, exam_cfg, ask_cfg));
             }
             JobsCommand::RemoteExamPoll(reply) => {
-                // advance() only, never poll(): poll() writes the store,
-                // which remote handlers must never touch.
-                let dto = match self.remote_exam.as_mut() {
-                    Some(ex) => {
-                        ex.advance();
-                        ex.dto()
-                    }
-                    None => remote_exam_idle_dto(),
-                };
-                let _ = reply.send(dto);
+                self.advance_remote_exam();
+                let _ = reply.send(self.remote_exam.dto());
             }
-            JobsCommand::RemoteExamGrade { answers, reply } => {
-                let out = match self.remote_exam.as_mut() {
-                    None => RemoteGradeReply::NoSitting,
-                    Some(ex) => {
-                        if !matches!(ex.sitting.phase(), exam::Phase::Answering) {
-                            RemoteGradeReply::NoSitting
-                        } else {
-                            let got = answers.len();
-                            if !ex.sitting.set_answers(answers) {
-                                eprintln!(
-                                    "remote exam grade: expected {} answers, got {got}",
-                                    ex.sitting.total()
-                                );
-                                RemoteGradeReply::WrongPhaseOrCount
-                            } else {
-                                ex.sitting.submit();
-                                RemoteGradeReply::Dto(Box::new(ex.dto()))
-                            }
-                        }
-                    }
-                };
-                let _ = reply.send(out);
+            JobsCommand::RemoteExamCarried { sitting, reply } => {
+                self.advance_remote_exam();
+                let _ = reply.send(self.remote_exam.carried(&sitting));
             }
-            JobsCommand::RemoteExamRemediate(reply) => {
-                let out = match self.remote_exam.as_mut() {
-                    Some(ex) if ex.sitting.can_remediate() => {
-                        ex.sitting.remediate();
-                        Some(ex.dto())
-                    }
-                    _ => None,
-                };
-                let _ = reply.send(out);
-            }
-            // Drop the slot; an in-flight thread just finds its receiver
-            // gone and its send fails harmlessly.
-            JobsCommand::RemoteExamClose(reply) => {
-                self.remote_exam = None;
-                if let Some(path) = exam_kept_path(&self.config)
-                    && path.exists()
-                    && let Err(error) = crate::fsio::remove_file(&path)
-                {
-                    eprintln!("warning: could not remove the kept exam: {error}");
-                }
-                let _ = reply.send(());
+            JobsCommand::RemoteExamClose { sitting, reply } => {
+                self.advance_remote_exam();
+                let _ = reply.send(self.remote_exam_close(&sitting));
             }
             JobsCommand::RemoteGradingSubmit {
                 request,
@@ -963,6 +928,11 @@ impl JobsState {
         }
     }
 
+    fn advance_remote_exam(&mut self) {
+        let file = exam_kept_path(&self.config);
+        self.remote_exam.advance(file.as_deref());
+    }
+
     fn remote_exam_start(
         &mut self,
         deck_name: String,
@@ -971,16 +941,19 @@ impl JobsState {
         ideas: Option<crate::exam_ideas::IdeasDocument>,
         exam_cfg: ExamConfig,
         ask_cfg: AskConfig,
-    ) -> Started<RemoteExamDto> {
-        if self.remote_exam.is_some() {
-            return Started::Conflict;
+    ) -> RemoteStartReply {
+        if matches!(self.remote_exam, GenerationDesk::Generating(_)) {
+            return RemoteStartReply::Conflict;
         }
+        let Some(file) = exam_kept_path(&self.config) else {
+            return RemoteStartReply::Conflict;
+        };
         let exam_cfg = exam_cfg.for_workspace(&crate::workspace::content_root(&path));
         let Ok(deck) = exam::open_for_exam(&path) else {
-            return Started::Conflict;
+            return RemoteStartReply::Conflict;
         };
         let Ok(Some(sources)) = deck.sources() else {
-            return Started::Conflict;
+            return RemoteStartReply::Conflict;
         };
         let strictness = deck.settings.exam_strictness.unwrap_or(exam_cfg.strictness);
         let scope = match &cards {
@@ -989,18 +962,21 @@ impl JobsState {
         };
         let selection = crate::exam_status::select_topics(&deck, scope);
         if selection.topics.is_empty() {
-            return Started::Conflict;
+            return RemoteStartReply::Conflict;
         }
         let Ok(id) = crate::token::mint() else {
-            return Started::Conflict;
+            return RemoteStartReply::Conflict;
         };
+        if matches!(self.remote_exam, GenerationDesk::Ready(_)) && !remove_exam_file(&file) {
+            return RemoteStartReply::CannotReplace;
+        }
         let estimate = exam::wait_estimate(&ask_cfg);
-        let keep = exam_kept_path(&self.config).map(|path| exam::Keep {
-            path,
+        let keep = exam::Keep {
+            path: file.clone(),
             sitting: id.clone(),
             deck: deck_name.clone(),
             unknown_cards: selection.unknown_cards.clone(),
-        });
+        };
         let sitting = exam::Sitting::start_with(
             &deck,
             selection.topics,
@@ -1010,19 +986,50 @@ impl JobsState {
             strictness,
             exam_cfg,
             ask_cfg,
-            keep,
+            Some(keep),
         );
-        let ex = RemoteExamining {
+        self.remote_exam = GenerationDesk::Generating(Box::new(ExamGenerating {
             id,
             deck: deck_name,
             sitting,
             estimate,
-            cards_by_topic: Vec::new(),
             unknown_cards: selection.unknown_cards,
-        };
-        let dto = ex.dto();
-        self.remote_exam = Some(ex);
-        Started::Dto(dto)
+        }));
+        self.remote_exam.advance(Some(&file));
+        RemoteStartReply::Dto(self.remote_exam.dto())
+    }
+
+    fn remote_exam_close(&mut self, sitting: &str) -> RemoteCloseReply {
+        if self.remote_exam.sitting() != Some(sitting) {
+            return RemoteCloseReply::Done;
+        }
+        let file = exam_kept_path(&self.config);
+        match std::mem::replace(&mut self.remote_exam, GenerationDesk::Idle) {
+            GenerationDesk::Generating(generating) => {
+                drop(generating);
+                let raced = file
+                    .as_deref()
+                    .and_then(|path| crate::exam_carried::CarriedExam::load(path).ok().flatten())
+                    .filter(|exam| exam.sitting == sitting);
+                if let (Some(exam), Some(path)) = (raced, file.as_deref())
+                    && !remove_exam_file(path)
+                {
+                    self.remote_exam = GenerationDesk::Ready(Box::new(exam));
+                    return RemoteCloseReply::CannotRemove;
+                }
+                RemoteCloseReply::Done
+            }
+            GenerationDesk::Ready(exam) => {
+                if let Some(path) = file.as_deref()
+                    && !remove_exam_file(path)
+                {
+                    self.remote_exam = GenerationDesk::Ready(exam);
+                    return RemoteCloseReply::CannotRemove;
+                }
+                RemoteCloseReply::Done
+            }
+            GenerationDesk::Idle | GenerationDesk::Failed(_) => RemoteCloseReply::Done,
+        }
     }
 }
 
@@ -1033,43 +1040,35 @@ pub(super) fn exam_kept_path(config: &AssembleConfig) -> Option<PathBuf> {
         .map(|root| crate::state::UserFiles::new(root).exam_kept())
 }
 
-/// The exam a phone left unfinished before the server last stopped.
-pub(super) fn kept_remote_exam(
-    catalog: &CatalogHandle,
-    config: &AssembleConfig,
-    exam_cfg: &ExamConfig,
-    ask_cfg: &AskConfig,
-) -> Option<RemoteExamining> {
-    let path = exam_kept_path(config)?;
-    let restored = (|| -> anyhow::Result<Option<RemoteExamining>> {
-        let Some(kept) = exam::KeptSitting::load(&path)? else {
-            return Ok(None);
-        };
-        let deck_path = catalog
-            .resolve_path(kept.deck.clone())
-            .flatten()
-            .with_context(|| format!("no deck is named `{}`", kept.deck))?;
-        let deck = exam::open_for_exam(&deck_path)?;
-        let exam_cfg = exam_cfg
-            .clone()
-            .for_workspace(&crate::workspace::content_root(&deck_path));
-        let sitting = exam::Sitting::from_kept(&deck, &kept, exam_cfg, ask_cfg.clone())?;
-        Ok(Some(RemoteExamining {
-            id: kept.sitting,
-            deck: kept.deck,
-            sitting,
-            estimate: None,
-            cards_by_topic: Vec::new(),
-            unknown_cards: kept.unknown_cards,
-        }))
-    })();
-    restored.unwrap_or_else(|error| {
-        eprintln!(
-            "warning: could not reopen the kept exam {}: {error:#}",
-            path.display()
-        );
-        None
-    })
+fn remove_exam_file(path: &Path) -> bool {
+    match crate::fsio::remove_file(path) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+        Err(error) => {
+            eprintln!(
+                "warning: could not remove the exam file {}: {error}",
+                path.display()
+            );
+            false
+        }
+    }
+}
+
+pub(super) fn ready_remote_exam(config: &AssembleConfig) -> GenerationDesk {
+    let Some(path) = exam_kept_path(config) else {
+        return GenerationDesk::Idle;
+    };
+    match crate::exam_carried::CarriedExam::load(&path) {
+        Ok(Some(exam)) => GenerationDesk::Ready(Box::new(exam)),
+        Ok(None) => GenerationDesk::Idle,
+        Err(error) => {
+            eprintln!(
+                "warning: could not read the exam file {}: {error:#}",
+                path.display()
+            );
+            GenerationDesk::Idle
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1092,10 +1091,13 @@ mod tests {
             ("remote_ask_poll", handle.remote_ask_poll().is_none()),
             ("remote_exam_poll", handle.remote_exam_poll().is_none()),
             (
-                "remote_exam_remediate",
-                handle.remote_exam_remediate().is_none(),
+                "remote_exam_carried",
+                handle.remote_exam_carried(String::new()).is_none(),
             ),
-            ("remote_exam_close", handle.remote_exam_close().is_none()),
+            (
+                "remote_exam_close",
+                handle.remote_exam_close(String::new()).is_none(),
+            ),
             (
                 "remote_grading_poll",
                 handle.remote_grading_poll().is_none(),

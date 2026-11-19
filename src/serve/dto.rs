@@ -998,34 +998,21 @@ pub(super) struct PreparingJobsDto {
 }
 
 #[derive(Serialize)]
-pub(super) struct TopicCardsDto {
-    pub(super) topic_id: String,
-    pub(super) cards: String,
-}
-
-#[derive(Serialize)]
 pub(super) struct RemoteExamDto {
     pub(super) sitting: Option<String>,
     pub(super) phase: &'static str,
     pub(super) deck: String,
-    pub(super) strictness: &'static str,
-    /// Prompts only: the rubric never leaves the server.
-    pub(super) questions: Vec<String>,
-    pub(super) questions_units: Vec<Vec<ContentUnit>>,
-    pub(super) grades: Vec<ExamGradeDto>,
-    pub(super) topics: Vec<ExamTopicDto>,
-    pub(super) verdicts: Option<VerdictsDto>,
-    pub(super) full: bool,
-    pub(super) mastered: bool,
     pub(super) unknown_cards: Vec<String>,
-    pub(super) gaps: Vec<String>,
-    pub(super) can_remediate: bool,
-    pub(super) cards_by_topic: Vec<TopicCardsDto>,
     pub(super) thinking: bool,
     pub(super) elapsed: Option<u64>,
     pub(super) error: Option<String>,
     pub(super) estimate: Option<&'static str>,
-    pub(super) ideas: Option<crate::exam_ideas::IdeasDocument>,
+}
+
+#[derive(Serialize)]
+pub(super) struct CarriedReplyDto {
+    pub(super) exam: crate::exam_carried::CarriedExam,
+    pub(super) questions_units: Vec<Vec<ContentUnit>>,
 }
 
 #[derive(Serialize)]

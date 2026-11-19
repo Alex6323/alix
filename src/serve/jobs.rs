@@ -25,7 +25,7 @@ use crate::{
     cite::CitationRoots,
     config::{AiConfig, AskConfig, Audience, ExamConfig, GenerateDeckConfig},
     exam,
-    exam_carried::{GradeRequest, GradingReply, RemediationRequest, TopicNumberCards},
+    exam_carried::{CarriedExam, GradeRequest, GradingReply, RemediationRequest, TopicNumberCards},
     generate, math, parser,
     session::{Session, now_ms},
     share,
@@ -1120,64 +1120,120 @@ impl Preparing {
     }
 }
 
-pub(super) struct RemoteExamining {
+pub(super) struct ExamGenerating {
     pub(super) id: String,
     pub(super) deck: String,
     pub(super) sitting: exam::Sitting,
     pub(super) estimate: Option<&'static str>,
-    pub(super) cards_by_topic: Vec<exam::TopicCards>,
     pub(super) unknown_cards: Vec<String>,
 }
 
-impl RemoteExamining {
-    pub(super) fn advance(&mut self) {
-        match self.sitting.advance(now_ms()) {
-            Some(exam::Effect::RemediationCards(by_topic)) => self.cards_by_topic = by_topic,
-            Some(exam::Effect::Graded) | None => {}
+pub(super) struct ExamFailed {
+    id: String,
+    deck: String,
+    unknown_cards: Vec<String>,
+    error: String,
+}
+
+pub(super) enum GenerationDesk {
+    Idle,
+    Generating(Box<ExamGenerating>),
+    Failed(ExamFailed),
+    Ready(Box<CarriedExam>),
+}
+
+fn generated_exam(file: Option<&Path>, sitting: &str) -> Result<CarriedExam, String> {
+    let path = file.ok_or("the server keeps no exam file")?;
+    match CarriedExam::load(path) {
+        Ok(Some(exam)) if exam.sitting == sitting => Ok(exam),
+        Ok(_) => Err(format!(
+            "{} does not hold the generated exam",
+            path.display()
+        )),
+        Err(error) => Err(format!("{error:#}")),
+    }
+}
+
+impl GenerationDesk {
+    pub(super) fn advance(&mut self, file: Option<&Path>) {
+        let GenerationDesk::Generating(generating) = self else {
+            return;
+        };
+        generating.sitting.advance(now_ms());
+        if generating.sitting.thinking() {
+            return;
         }
+        let outcome = match generating.sitting.error() {
+            Some(error) => Err(error.to_string()),
+            None => generated_exam(file, &generating.id),
+        };
+        *self = match outcome {
+            Ok(exam) => GenerationDesk::Ready(Box::new(exam)),
+            Err(error) => GenerationDesk::Failed(ExamFailed {
+                id: generating.id.clone(),
+                deck: generating.deck.clone(),
+                unknown_cards: generating.unknown_cards.clone(),
+                error,
+            }),
+        };
     }
 
     pub(super) fn dto(&self) -> RemoteExamDto {
-        let s = &self.sitting;
-        let result = s.result();
-        let parts = exam_result_parts(s);
-        let grades = exam_grades(s, &parts);
-        RemoteExamDto {
-            sitting: Some(self.id.clone()),
-            phase: exam_phase_name(s.phase()),
-            deck: self.deck.clone(),
-            strictness: strictness_name(s.strictness()),
-            // prompts only: the rubric never leaves the server outside a
-            // graded result
-            questions: s.questions().iter().map(|q| q.prompt.clone()).collect(),
-            questions_units: s
-                .questions()
-                .iter()
-                .map(|q| crate::render::exam_text_units(&q.prompt))
-                .collect(),
-            grades,
-            topics: parts.topics,
-            verdicts: parts.verdicts,
-            full: s.full(),
-            mastered: parts.mastered,
-            unknown_cards: self.unknown_cards.clone(),
-            gaps: s.gaps(),
-            can_remediate: s.can_remediate(),
-            cards_by_topic: self
-                .cards_by_topic
-                .iter()
-                .map(|topic| TopicCardsDto {
-                    topic_id: topic.topic_id.clone(),
-                    cards: topic.cards.clone(),
-                })
-                .collect(),
-            thinking: s.thinking(),
-            elapsed: s.elapsed_secs(),
-            error: s.error().map(str::to_string),
-            estimate: (*s.phase() == exam::Phase::Generating)
-                .then_some(self.estimate)
-                .flatten(),
-            ideas: result.and(s.ideas()).cloned(),
+        match self {
+            GenerationDesk::Idle => RemoteExamDto {
+                sitting: None,
+                phase: "idle",
+                deck: String::new(),
+                unknown_cards: Vec::new(),
+                thinking: false,
+                elapsed: None,
+                error: None,
+                estimate: None,
+            },
+            GenerationDesk::Generating(generating) => RemoteExamDto {
+                sitting: Some(generating.id.clone()),
+                phase: "generating",
+                deck: generating.deck.clone(),
+                unknown_cards: generating.unknown_cards.clone(),
+                thinking: generating.sitting.thinking(),
+                elapsed: generating.sitting.elapsed_secs(),
+                error: None,
+                estimate: generating.estimate,
+            },
+            GenerationDesk::Failed(failed) => RemoteExamDto {
+                sitting: Some(failed.id.clone()),
+                phase: "generating",
+                deck: failed.deck.clone(),
+                unknown_cards: failed.unknown_cards.clone(),
+                error: Some(failed.error.clone()),
+                ..GenerationDesk::Idle.dto()
+            },
+            GenerationDesk::Ready(exam) => RemoteExamDto {
+                sitting: Some(exam.sitting.clone()),
+                phase: "ready",
+                deck: exam.deck.clone(),
+                unknown_cards: exam.unknown_cards.clone(),
+                ..GenerationDesk::Idle.dto()
+            },
+        }
+    }
+
+    pub(super) fn sitting(&self) -> Option<&str> {
+        match self {
+            GenerationDesk::Idle => None,
+            GenerationDesk::Generating(generating) => Some(&generating.id),
+            GenerationDesk::Failed(failed) => Some(&failed.id),
+            GenerationDesk::Ready(exam) => Some(&exam.sitting),
+        }
+    }
+
+    pub(super) fn carried(&self, sitting: &str) -> Option<CarriedReplyDto> {
+        match self {
+            GenerationDesk::Ready(exam) if exam.sitting == sitting => Some(CarriedReplyDto {
+                questions_units: exam.questions_units(),
+                exam: exam.as_ref().clone(),
+            }),
+            _ => None,
         }
     }
 }
@@ -1363,31 +1419,6 @@ fn grading_idle_reply() -> GradingReply {
         elapsed: None,
         error: None,
         estimate: None,
-    }
-}
-
-pub(super) fn remote_exam_idle_dto() -> RemoteExamDto {
-    RemoteExamDto {
-        sitting: None,
-        phase: "idle",
-        deck: String::new(),
-        strictness: "balanced",
-        questions: Vec::new(),
-        questions_units: Vec::new(),
-        grades: Vec::new(),
-        topics: Vec::new(),
-        verdicts: None,
-        full: false,
-        mastered: false,
-        unknown_cards: Vec::new(),
-        gaps: Vec::new(),
-        can_remediate: false,
-        cards_by_topic: Vec::new(),
-        thinking: false,
-        elapsed: None,
-        error: None,
-        estimate: None,
-        ideas: None,
     }
 }
 

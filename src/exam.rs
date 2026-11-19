@@ -12,7 +12,8 @@ use crate::{
     config::{AskConfig, ExamConfig, Strictness},
     deck::Deck,
     exam_carried::{
-        GradeRequest, GradedAnswer, GradedTopic, RemediationRequest, TopicNumberCards, Verdicts,
+        CarriedExam, CarriedQuestion, CarriedTopic, GradeRequest, GradedAnswer, GradedTopic,
+        RemediationRequest, TopicNumberCards, Verdicts,
     },
     exam_ideas::{Idea, IdeaTopic, IdeasDocument},
     exam_prompt::{
@@ -302,55 +303,6 @@ impl Prepared {
             }
         }
         (topics, questions, answers)
-    }
-}
-
-/// A sitting another device is taking, on disk from the moment its questions
-/// exist until it is closed.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct KeptSitting {
-    pub version: u32,
-    pub sitting: String,
-    pub deck: String,
-    pub strictness: Strictness,
-    pub topics: Vec<KeptTopic>,
-    pub unknown_cards: Vec<String>,
-    pub questions: Vec<PreparedQuestion>,
-    pub ideas: IdeasDocument,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct KeptTopic {
-    pub topic_id: String,
-    pub fingerprint: String,
-}
-
-impl KeptSitting {
-    pub fn load(path: &Path) -> Result<Option<Self>> {
-        match std::fs::read_to_string(path) {
-            Ok(text) => {
-                let kept: Self = serde_json::from_str(&text)
-                    .with_context(|| format!("reading {}", path.display()))?;
-                if kept.version != 1 {
-                    bail!("unreadable kept exam {}", path.display());
-                }
-                Ok(Some(kept))
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error).with_context(|| format!("reading {}", path.display())),
-        }
-    }
-
-    fn save(&self, path: &Path) -> Result<()> {
-        let json = serde_json::to_string_pretty(self).context("encoding the kept exam")?;
-        crate::exam_ideas::write_atomic(path, json.as_bytes())
-    }
-
-    fn keep_for(&self, path: &Path, job: &ask::AskJob) -> Result<()> {
-        job.unless_cancelled(|| self.save(path))
-            .context("the exam was cancelled before it could be kept")?
     }
 }
 
@@ -799,7 +751,7 @@ pub fn spawn_generation(
     ideas: Option<IdeasDocument>,
     cfg: ExamConfig,
     ask_cfg: AskConfig,
-    keep: Option<(PathBuf, KeptSitting)>,
+    keep: Option<(PathBuf, CarriedExam)>,
 ) -> (Receiver<Result<Generated, String>>, ask::AskJob) {
     #[cfg(test)]
     GENERATION_SPAWNS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -819,18 +771,15 @@ pub fn spawn_generation(
         )
         .and_then(|questions| {
             if let Some((path, kept)) = keep {
-                #[cfg(all(test, unix))]
-                tests::hold_before_keeping(&path);
-                KeptSitting {
+                let exam = CarriedExam {
                     questions: questions
                         .iter()
-                        .filter_map(|q| PreparedQuestion::of(q, &topics))
+                        .filter_map(|q| carried_question(q, &topics))
                         .collect(),
                     ideas: ideas.clone(),
                     ..kept
-                }
-                .keep_for(&path, &worker)
-                .context("keeping the exam for the other device")?;
+                };
+                keep_carried(&exam, &path, &worker)?;
             }
             Ok(Generated { questions, ideas })
         })
@@ -838,6 +787,26 @@ pub fn spawn_generation(
         let _ = tx.send(r);
     });
     (rx, job)
+}
+
+fn carried_question(question: &ExamQuestion, topics: &[ExamTopic]) -> Option<CarriedQuestion> {
+    Some(CarriedQuestion {
+        topic_id: topics.get(question.topic)?.topic_id.clone(),
+        idea: question.idea,
+        prompt: question.prompt.clone(),
+        points: question.points.clone(),
+        shape: question.shape,
+        mental_model: question.mental_model.clone(),
+    })
+}
+
+fn keep_carried(exam: &CarriedExam, path: &Path, job: &ask::AskJob) -> Result<()> {
+    exam.check_size()?;
+    #[cfg(all(test, unix))]
+    tests::hold_before_keeping(path);
+    job.unless_cancelled(|| exam.save(path))
+        .context("the exam was cancelled before it could be kept")?
+        .context("keeping the exam for the other device")
 }
 
 /// Where a deck's exam files live: its store root's `.alix/exam/`.
@@ -1193,24 +1162,27 @@ impl Sitting {
         }
         let mut sitting = Self::idle(deck, topics, start, strictness, cfg, ask_cfg);
         let keep = keep.map(|keep| {
-            let kept = KeptSitting {
-                version: 1,
+            let carried = CarriedExam {
+                version: crate::exam_carried::VERSION,
                 sitting: keep.sitting,
                 deck: keep.deck,
                 strictness,
+                full: sitting.full(),
+                unknown_cards: keep.unknown_cards,
                 topics: sitting
                     .topics
                     .iter()
-                    .map(|topic| KeptTopic {
+                    .map(|topic| CarriedTopic {
                         topic_id: topic.topic_id.clone(),
                         fingerprint: topic.fingerprint.clone(),
+                        label: topic.label.clone(),
+                        cards: topic.card_ids.clone(),
                     })
                     .collect(),
-                unknown_cards: keep.unknown_cards,
                 questions: Vec::new(),
                 ideas: IdeasDocument::default(),
             };
-            (keep.path, kept)
+            (keep.path, carried)
         });
         let (rx, job) = spawn_generation(
             sitting.topics.clone(),
@@ -1296,68 +1268,6 @@ impl Sitting {
         sitting.questions = questions;
         sitting.ideas = Some(ideas);
         sitting
-    }
-
-    /// A kept sitting reopened unanswered, over the topics and fingerprints
-    /// it was written for.
-    pub fn from_kept(
-        deck: &Deck,
-        kept: &KeptSitting,
-        cfg: ExamConfig,
-        ask_cfg: AskConfig,
-    ) -> Result<Self> {
-        let current = examined_topics(deck);
-        let topics = kept
-            .topics
-            .iter()
-            .map(|kept_topic| {
-                let topic = current
-                    .iter()
-                    .find(|topic| topic.topic_id == kept_topic.topic_id)
-                    .with_context(|| {
-                        format!("the deck no longer has topic `{}`", kept_topic.topic_id)
-                    })?;
-                Ok(ExamTopic {
-                    fingerprint: kept_topic.fingerprint.clone(),
-                    ..topic.clone()
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let questions = kept
-            .questions
-            .iter()
-            .map(|question| {
-                let at = topics
-                    .iter()
-                    .position(|topic| topic.topic_id == question.topic)
-                    .with_context(|| {
-                        format!(
-                            "the kept exam asks about unknown topic `{}`",
-                            question.topic
-                        )
-                    })?;
-                Ok(question.at(at))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        if questions.is_empty() {
-            bail!("the kept exam has no questions");
-        }
-        let answers = vec![String::new(); questions.len()];
-        let sitting = Self::from_prepared(
-            deck,
-            topics,
-            questions,
-            answers,
-            kept.ideas.clone(),
-            SittingStart::default(),
-            kept.strictness,
-            cfg,
-            ask_cfg,
-        );
-        if let Some(error) = sitting.error() {
-            bail!("{error}");
-        }
-        Ok(sitting)
     }
 
     pub fn ideas(&self) -> Option<&crate::exam_ideas::IdeasDocument> {
@@ -5092,123 +5002,149 @@ mod tests {
         }
     }
 
-    fn kept_over(topics: &[(&str, &str)], question_topics: &[&str]) -> KeptSitting {
-        KeptSitting {
-            version: 1,
+    fn remote_keep(path: &Path) -> Keep {
+        Keep {
+            path: path.to_path_buf(),
             sitting: "sitting-one".to_string(),
             deck: "ws/deck.md".to_string(),
-            strictness: Strictness::Strict,
-            topics: topics
-                .iter()
-                .map(|(topic_id, fingerprint)| KeptTopic {
-                    topic_id: topic_id.to_string(),
-                    fingerprint: fingerprint.to_string(),
-                })
-                .collect(),
-            unknown_cards: Vec::new(),
-            questions: question_topics
-                .iter()
-                .map(|topic| PreparedQuestion {
-                    topic: topic.to_string(),
-                    idea: 1,
-                    prompt: format!("about {topic}?"),
-                    points: vec!["a point".to_string()],
-                    shape: Shape::Instance,
-                    mental_model: String::new(),
-                })
-                .collect(),
-            ideas: IdeasDocument::default(),
+            unknown_cards: vec!["card-gone".to_string()],
         }
     }
 
-    #[test]
-    fn a_kept_sitting_reopens_unanswered_over_the_topics_and_fingerprints_it_was_written_for() {
-        let ws = two_sourced_topics();
-        let deck = opened(&ws);
-        let kept = kept_over(&[("topic-beta", "written-earlier")], &["topic-beta"]);
-
-        let sitting =
-            Sitting::from_kept(&deck, &kept, ExamConfig::default(), AskConfig::default()).unwrap();
-
-        assert_eq!(
-            (&Phase::Answering, false, Strictness::Strict),
-            (sitting.phase(), sitting.thinking(), sitting.strictness()),
-            "answering, nothing pending, at the kept strictness"
-        );
-        assert_eq!(
-            vec![("topic-beta", "written-earlier")],
-            sitting
-                .topics()
-                .iter()
-                .map(|topic| (topic.topic_id.as_str(), topic.fingerprint.as_str()))
-                .collect::<Vec<_>>(),
-            "only the kept topic, at the fingerprint the questions were written for"
-        );
-        assert!(!sitting.full(), "one of the deck's two topics is not full");
-        assert_eq!(
-            vec![("about topic-beta?", 0)],
-            sitting
-                .questions()
-                .iter()
-                .map(|q| (q.prompt.as_str(), q.topic))
-                .collect::<Vec<_>>(),
-            "the question points at its topic's place in the sitting"
-        );
-        assert_eq!(vec![String::new()], sitting.answers(), "unanswered");
+    fn remote_sitting(deck: &Deck, topics: Vec<ExamTopic>, cli: &Path, keep: Keep) -> Sitting {
+        Sitting::start_with(
+            deck,
+            topics,
+            deck.sources().unwrap().unwrap(),
+            None,
+            SittingStart::default(),
+            Strictness::Strict,
+            ExamConfig::default(),
+            ask_config(cli),
+            Some(keep),
+        )
     }
 
     #[test]
-    fn a_kept_sitting_the_deck_can_no_longer_carry_is_refused() {
+    fn a_remote_generation_keeps_a_carried_exam_with_labels_card_ids_and_the_full_flag() {
+        let _lock = exec_lock();
         let ws = two_sourced_topics();
         let deck = opened(&ws);
-        for (label, kept, expected) in [
-            (
-                "a topic the deck lost",
-                kept_over(&[("topic-gone", "f")], &["topic-gone"]),
-                "the deck no longer has topic `topic-gone`",
-            ),
-            (
-                "a question outside the kept topics",
-                kept_over(&[("topic-alpha", "f")], &["topic-beta"]),
-                "the kept exam asks about unknown topic `topic-beta`",
-            ),
-            (
-                "no questions",
-                kept_over(&[("topic-alpha", "f")], &[]),
-                "the kept exam has no questions",
-            ),
+        let all = examined_topics(&deck);
+        let beta: Vec<ExamTopic> = all
+            .iter()
+            .filter(|topic| topic.topic_id == "topic-beta")
+            .cloned()
+            .collect();
+        for (label, topics, full) in [
+            ("every topic", all.clone(), true),
+            ("one topic", beta, false),
         ] {
-            let error =
-                Sitting::from_kept(&deck, &kept, ExamConfig::default(), AskConfig::default())
-                    .err()
-                    .map(|error| format!("{error:#}"));
-            assert_eq!(Some(expected.to_string()), error, "{label}");
+            let keep_dir = tempfile::tempdir().unwrap();
+            let path = keep_dir.path().join("remote.json");
+            let cli_dir = tempfile::tempdir().unwrap();
+            let cli = crate::testutil::fake_replies(
+                cli_dir.path(),
+                &[IDEAS, ONE_QUESTION, IDEAS, ONE_QUESTION],
+            );
+            let mut sitting = remote_sitting(&deck, topics.clone(), &cli, remote_keep(&path));
+            advance_until_idle(&mut sitting);
+            assert_eq!(None, sitting.error(), "{label}: the generation succeeds");
+
+            let exam = CarriedExam::load(&path).unwrap().expect("the exam is kept");
+            assert_eq!(
+                (
+                    crate::exam_carried::VERSION,
+                    "sitting-one",
+                    "ws/deck.md",
+                    Strictness::Strict,
+                    full,
+                    vec!["card-gone".to_string()],
+                ),
+                (
+                    exam.version,
+                    exam.sitting.as_str(),
+                    exam.deck.as_str(),
+                    exam.strictness,
+                    exam.full,
+                    exam.unknown_cards.clone(),
+                ),
+                "{label}: the exam's header"
+            );
+            assert_eq!(
+                topics
+                    .iter()
+                    .map(|topic| CarriedTopic {
+                        topic_id: topic.topic_id.clone(),
+                        fingerprint: topic.fingerprint.clone(),
+                        label: topic.label.clone(),
+                        cards: topic.card_ids.clone(),
+                    })
+                    .collect::<Vec<_>>(),
+                exam.topics,
+                "{label}: each topic with its label and card ids"
+            );
+            assert!(
+                exam.topics
+                    .iter()
+                    .all(|topic| !topic.label.is_empty() && topic.cards.len() == 1),
+                "{label}: setup, every topic has a label and one card: {:?}",
+                exam.topics
+            );
+            assert_eq!(
+                topics
+                    .iter()
+                    .map(|topic| (topic.topic_id.clone(), "Why move?".to_string()))
+                    .collect::<Vec<_>>(),
+                exam.questions
+                    .iter()
+                    .map(|question| (question.topic_id.clone(), question.prompt.clone()))
+                    .collect::<Vec<_>>(),
+                "{label}: one question per topic, named by topic id"
+            );
+            assert_eq!(
+                vec![vec!["avoids double free".to_string()]; topics.len()],
+                exam.questions
+                    .iter()
+                    .map(|question| question.points.clone())
+                    .collect::<Vec<_>>(),
+                "{label}: each question keeps its key points"
+            );
+            assert_eq!(
+                sitting.ideas(),
+                Some(&exam.ideas),
+                "{label}: the ideas document as updated at generation"
+            );
         }
     }
 
     #[test]
-    fn a_kept_exam_of_another_version_or_shape_is_unreadable_and_a_missing_one_is_none() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("remote.json");
-        assert_eq!(None, KeptSitting::load(&path).unwrap(), "missing");
+    fn an_exam_over_the_size_limit_fails_its_generation_and_writes_no_file() {
+        let _lock = exec_lock();
+        let ws = workspace_with("# Alpha\n<!-- id: topic-alpha -->\n\n## a1?\none\n");
+        source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
+        let deck = opened(&ws);
+        let huge = serde_json::json!({"questions": [{
+            "shape": "instance",
+            "idea": 1,
+            "prompt": "x".repeat(crate::exam_carried::MAX_QUESTIONS_REQUEST_BYTES),
+            "points": ["p"],
+        }]})
+        .to_string();
+        let keep_dir = tempfile::tempdir().unwrap();
+        let path = keep_dir.path().join("remote.json");
+        let cli_dir = tempfile::tempdir().unwrap();
+        let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, &huge]);
 
-        let kept = kept_over(&[("topic-alpha", "f")], &["topic-alpha"]);
-        kept.save(&path).unwrap();
+        let mut sitting = remote_sitting(&deck, examined_topics(&deck), &cli, remote_keep(&path));
+        advance_until_idle(&mut sitting);
+
         assert_eq!(
-            Some(kept.clone()),
-            KeptSitting::load(&path).unwrap(),
-            "round trip"
+            Some(crate::exam_carried::EXAM_TOO_LARGE),
+            sitting.error(),
+            "the generation fails with the size message"
         );
-
-        let mut json = serde_json::to_value(&kept).unwrap();
-        json["version"] = 2.into();
-        std::fs::write(&path, json.to_string()).unwrap();
-        assert!(KeptSitting::load(&path).is_err(), "another version");
-
-        json["version"] = 1.into();
-        json["extra"] = true.into();
-        std::fs::write(&path, json.to_string()).unwrap();
-        assert!(KeptSitting::load(&path).is_err(), "an unknown field");
+        assert!(!path.exists(), "no exam file is written");
     }
 
     struct KeepHold {
@@ -5235,7 +5171,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_after_generation_but_before_its_keep_write_cannot_resurrect_the_exam() {
+    fn a_cancelled_generation_keeps_no_carried_exam() {
         let _lock = exec_lock();
         let ws = workspace_with("# Alpha\n<!-- id: topic-alpha -->\n\n## a1?\none\n");
         source(&ws, "alpha.txt", "ALPHA_SOURCE\n", &["topic-alpha"]);
@@ -5244,7 +5180,22 @@ mod tests {
         let cli = crate::testutil::fake_replies(cli_dir.path(), &[IDEAS, ONE_QUESTION]);
         let keep_dir = tempfile::tempdir().unwrap();
         let path = keep_dir.path().join("remote.json");
-        let kept = kept_over(&[("topic-alpha", "written-earlier")], &[]);
+        let kept = CarriedExam {
+            version: crate::exam_carried::VERSION,
+            sitting: "sitting-one".to_string(),
+            deck: "ws/deck.md".to_string(),
+            strictness: Strictness::Strict,
+            full: true,
+            unknown_cards: Vec::new(),
+            topics: vec![CarriedTopic {
+                topic_id: "topic-alpha".to_string(),
+                fingerprint: "written-earlier".to_string(),
+                label: "Alpha".to_string(),
+                cards: Vec::new(),
+            }],
+            questions: Vec::new(),
+            ideas: IdeasDocument::default(),
+        };
         let (reached, at_the_keep) = channel();
         let (let_it_keep, release) = channel();
         *KEEP_HOLD.lock().unwrap() = Some(KeepHold {
@@ -5262,14 +5213,9 @@ mod tests {
         );
         at_the_keep
             .recv_timeout(std::time::Duration::from_secs(60))
-            .expect("setup: generation reached the final keep write");
+            .expect("setup: generation reached the keep write");
 
-        // RemoteExamClose drops the sitting (cancelling its AskJob), then
-        // removes the kept file if it exists. At this instant it does not.
         job.cancel();
-        if path.exists() {
-            std::fs::remove_file(&path).unwrap();
-        }
         let_it_keep.send(()).unwrap();
         let generated = rx.recv().unwrap();
 
@@ -5277,12 +5223,12 @@ mod tests {
             generated
                 .as_ref()
                 .is_err_and(|error| error.contains("cancelled before it could be kept")),
-            "a generation closed before its keep write reports that, got {:?}",
+            "a generation cancelled before its keep write reports that, got {:?}",
             generated.map(|_| "questions")
         );
         assert!(
             !path.exists(),
-            "a completed close must not be followed by a late keep write that restores the exam"
+            "a cancelled generation must not keep its exam afterwards"
         );
     }
 
