@@ -37,7 +37,6 @@ class ExamHandoff {
     final first = _decide(sitting);
     if (first.$1 != _Step.fetch) return _act(sitting, first, null);
     final body = await client.examCarried(sitting);
-    if (body == null) return Handoff.failed;
     return _act(sitting, _decide(sitting), body);
   }
 
@@ -78,7 +77,8 @@ class ExamHandoff {
         if (!record.fetched) _flagFetched(record);
         await client.examClose(sitting);
         return Handoff.closed;
-      case (_Step.fetch, final record?) when body != null:
+      case (_Step.fetch, final record?):
+        if (body == null) return Handoff.failed;
         try {
           receive(record, body);
         } on Object {

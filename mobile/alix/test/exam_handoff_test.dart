@@ -43,6 +43,8 @@ class _Desk extends FakeServerClient {
   String? carried;
   Completer<void>? carriedGate;
   final Map<int, Completer<void>> carriedArrivals = {};
+  final Map<int, Completer<void>> carriedGates = {};
+  final Map<int, String?> carriedReplies = {};
   int _carriedCalls = 0;
   bool closeAnswered = true;
   bool expiredAtGet = false;
@@ -59,10 +61,12 @@ class _Desk extends FakeServerClient {
   @override
   Future<String?> examCarried(String sitting) async {
     log.add('carried $sitting');
-    carriedArrivals[_carriedCalls++]?.complete();
+    final call = _carriedCalls++;
+    carriedArrivals[call]?.complete();
     await carriedGate?.future;
+    await carriedGates[call]?.future;
     if (expiredAtCarried) throw const PairingExpired();
-    return carried;
+    return carriedReplies.containsKey(call) ? carriedReplies[call] : carried;
   }
 
   @override
@@ -264,7 +268,11 @@ void main() {
     final failed = await handoff().onReady('sitting-1');
 
     expect(failed, Handoff.failed, reason: 'carried without a reply: result $failed, expected failed');
-    expect(log, ['held root-a/deck-1', 'carried sitting-1'], reason: 'carried without a reply: no write and no close; got $log');
+    expect(
+      log,
+      ['held root-a/deck-1', 'carried sitting-1', 'held root-a/deck-1'],
+      reason: 'carried without a reply: the held question again, no write and no close; got $log',
+    );
     expect(flagOnDisk('sitting-1'), isFalse, reason: 'carried without a reply: the record stays unfetched on disk');
     expect(held.files, isEmpty, reason: 'carried without a reply: no held file');
 
@@ -369,7 +377,7 @@ void main() {
     expect(blocked, isA<ClaimBlocked>(), reason: 'claim over ready(sitting-2), fetch fails: got $blocked, expected ClaimBlocked');
     final record = (blocked as ClaimBlocked).record;
     expect(record.sitting, 'sitting-2', reason: 'claim blocked: the record names sitting-2');
-    expect(log, ['examGet', 'held root-a/deck-2', 'carried sitting-2'], reason: 'claim blocked: no close; got $log');
+    expect(log, ['examGet', 'held root-a/deck-2', 'carried sitting-2', 'held root-a/deck-2'], reason: 'claim blocked: no close; got $log');
 
     log.clear();
     final again = await handoff().claimBeforeStart();
@@ -573,6 +581,95 @@ void main() {
     );
   });
 
+  test('of two overlapping hand-offs, the second gets no document after the first wrote and closed, and only closes', () async {
+    sittings.put(_sitting());
+    desk.carried = 'the exam';
+    desk.carriedReplies[1] = null;
+    final firstGate = desk.carriedGates[0] = Completer<void>();
+    final secondGate = desk.carriedGates[1] = Completer<void>();
+
+    final first = handoff().onReady('sitting-1');
+    final second = handoff().onReady('sitting-1');
+    firstGate.complete();
+    final firstResult = await first;
+    secondGate.complete();
+    final secondResult = await second;
+
+    expect(firstResult, Handoff.fetched, reason: 'first onReady(sitting-1), document in hand: result $firstResult, expected fetched');
+    expect(secondResult, Handoff.closed, reason: 'second onReady(sitting-1), nothing in hand after the first closed: result $secondResult, expected closed');
+    expect(
+      log,
+      [
+        'held root-a/deck-1',
+        'carried sitting-1',
+        'held root-a/deck-1',
+        'carried sitting-1',
+        'held root-a/deck-1',
+        'receive sitting-1 flag:false',
+        'close sitting-1 flag:true',
+        'close sitting-1 flag:true',
+      ],
+      reason: 'two overlapping onReady(sitting-1), the second fetch empty: one write, then two closes after the flag; got $log',
+    );
+    expect(held.files[('root-a', 'deck-1')], ('sitting-1', 'the exam'), reason: 'after both: root-a/deck-1 holds sitting-1');
+    expect(flagOnDisk('sitting-1'), isTrue, reason: 'after both: the record of sitting-1 is fetched on disk');
+  });
+
+  test('a claim whose fetch gets no document after an overlapping poll wrote and closed the exam is clear', () async {
+    sittings.put(_sitting());
+    desk.carried = 'the exam';
+    desk.reply = _ready('sitting-1');
+    desk.carriedReplies[1] = null;
+    final pollGate = desk.carriedGates[0] = Completer<void>();
+    final claimGate = desk.carriedGates[1] = Completer<void>();
+    final claimFetching = desk.carriedArrivals[1] = Completer<void>();
+
+    final poll = handoff().onReady('sitting-1');
+    final claim = handoff().claimBeforeStart();
+    await claimFetching.future;
+    pollGate.complete();
+    final polled = await poll;
+    claimGate.complete();
+    final claimed = await claim;
+
+    expect(polled, Handoff.fetched, reason: 'poll, document in hand: result $polled, expected fetched');
+    expect(claimed, isA<ClaimClear>(), reason: 'claim, nothing in hand after the poll closed: got $claimed, expected ClaimClear');
+    expect(
+      log,
+      [
+        'held root-a/deck-1',
+        'carried sitting-1',
+        'examGet',
+        'held root-a/deck-1',
+        'carried sitting-1',
+        'held root-a/deck-1',
+        'receive sitting-1 flag:false',
+        'close sitting-1 flag:true',
+        'close sitting-1 flag:true',
+      ],
+      reason: 'poll and claim overlapping, the claim fetch empty: one write, two closes after the flag; got $log',
+    );
+  });
+
+  test('a sitting discarded while its fetch gets no document is not written', () async {
+    sittings.put(_sitting());
+    final gate = desk.carriedGate = Completer<void>();
+    final record = sittings.bySitting('sitting-1')!;
+
+    final poll = handoff().onReady('sitting-1');
+    await handoff().discardReady(record);
+    gate.complete();
+    final result = await poll;
+
+    expect(result, Handoff.none, reason: 'onReady(sitting-1) released empty after the discard: result $result, expected none');
+    expect(
+      log,
+      ['held root-a/deck-1', 'carried sitting-1', 'close sitting-1 flag:false'],
+      reason: 'onReady(sitting-1) released empty after the discard: the discard close only; got $log',
+    );
+    expect(held.files, isEmpty, reason: 'after the discard: no held file; got ${held.files}');
+  });
+
   test('an expired pairing reaches the caller from the poll, the fetch and the close', () async {
     sittings.put(_sitting());
     desk.reply = _ready('sitting-1');
@@ -613,5 +710,13 @@ void main() {
     );
     expect(held.files[('root-a', 'deck-1')], ('sitting-1', 'the exam'), reason: 'onReady, expired at the close: root-a/deck-1 holds sitting-1');
     expect(flagOnDisk('sitting-1'), isTrue, reason: 'onReady, expired at the close: the record is fetched on disk');
+
+    log.clear();
+    await expectLater(
+      handoff().onReady('sitting-1'),
+      throwsA(isA<PairingExpired>()),
+      reason: 'onReady over the fetched sitting-1, expired at the close: PairingExpired reaches the caller',
+    );
+    expect(log, ['close sitting-1 flag:true'], reason: 'onReady over the fetched sitting-1, expired at the close: the close only; got $log');
   });
 }
