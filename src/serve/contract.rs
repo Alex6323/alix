@@ -3103,7 +3103,6 @@ fn gradingreply_grading_wire_shape() {
     let reply = GradingReply {
         thinking: true,
         elapsed: Some(12),
-        estimate: Some("usually 10 to 20 minutes".to_string()),
         ..grading_reply("grading")
     };
     pin(
@@ -3120,7 +3119,7 @@ fn gradingreply_grading_wire_shape() {
             "thinking": true,
             "elapsed": 12,
             "error": null,
-            "estimate": "usually 10 to 20 minutes"
+            "estimate": null
         }),
     );
 }

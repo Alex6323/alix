@@ -1222,7 +1222,6 @@ pub(super) struct GradingJob {
     work: GradingWork,
     job: ask::AskJob,
     started_ms: u64,
-    estimate: Option<&'static str>,
     outcome: Option<Result<GradingOutcome, String>>,
 }
 
@@ -1236,7 +1235,6 @@ impl Drop for GradingJob {
 
 impl GradingJob {
     fn start(request: GradingRequest, cfg: ExamConfig, ask_cfg: AskConfig) -> Self {
-        let estimate = exam::wait_estimate(&ask_cfg);
         let (work, job) = match &request {
             GradingRequest::Grade(grade) => {
                 let (rx, job) = exam::spawn_carried_grade(grade.clone(), cfg, ask_cfg);
@@ -1252,7 +1250,6 @@ impl GradingJob {
             work,
             job,
             started_ms: now_ms(),
-            estimate,
             outcome: None,
         }
     }
@@ -1290,11 +1287,6 @@ impl GradingJob {
             elapsed: self
                 .running()
                 .then(|| now_ms().saturating_sub(self.started_ms) / 1000),
-            estimate: self
-                .running()
-                .then_some(self.estimate)
-                .flatten()
-                .map(str::to_string),
             ..grading_idle_reply()
         };
         match &self.outcome {

@@ -11864,6 +11864,10 @@ impl GradingModel {
         let _ = (&self.gate).write_all(b"go\ngo\n");
     }
 
+    fn release_one(&self) {
+        let _ = (&self.gate).write_all(b"go\n");
+    }
+
     fn lines(&self, name: &str) -> Vec<String> {
         std::fs::read_to_string(self.dir.path().join(name))
             .unwrap_or_default()
@@ -12020,25 +12024,34 @@ fn drive_desk(base: &str, model: &GradingModel, state: DeskState, remediation: b
     }
 }
 
-fn send_row(base: &str, row: DeskRow) -> u16 {
-    let send = |(path, body): (&str, String)| post_json(base, path, &body).status;
+fn reply_of(resp: &HttpResp) -> Option<serde_json::Value> {
+    (resp.status == 200).then(|| serde_json::from_slice(&resp.body).unwrap_or_default())
+}
+
+fn send_row(base: &str, row: DeskRow) -> (u16, Option<serde_json::Value>) {
+    let send = |(path, body): (&str, String)| {
+        let resp = post_json(base, path, &body);
+        (resp.status, reply_of(&resp))
+    };
     match row {
         DeskRow::GradeEqual => send(first_request(false)),
         DeskRow::GradeDifferent => send(second_request(false)),
         DeskRow::RemediateEqual => send(first_request(true)),
         DeskRow::RemediateDifferent => send(second_request(true)),
-        DeskRow::Poll => http(base, "GET", GRADING, &[], &[]).status,
-        DeskRow::CloseOwn => {
+        DeskRow::Poll => (http(base, "GET", GRADING, &[], &[]).status, None),
+        DeskRow::CloseOwn => (
             post_json(
                 base,
                 GRADING_CLOSE,
                 &serde_json::json!({ "sitting": DESK_SITTING }).to_string(),
             )
-            .status
-        }
-        DeskRow::CloseOther => {
-            post_json(base, GRADING_CLOSE, r#"{"sitting":"sitting-two"}"#).status
-        }
+            .status,
+            None,
+        ),
+        DeskRow::CloseOther => (
+            post_json(base, GRADING_CLOSE, r#"{"sitting":"sitting-two"}"#).status,
+            None,
+        ),
     }
 }
 
@@ -12049,24 +12062,14 @@ fn assert_desk(cell: &str, poll: &serde_json::Value, after: DeskAfter) {
         DeskAfter::Done(phase) => (phase, Some(DESK_SITTING), false, false),
         DeskAfter::Failed(phase) => (phase, Some(DESK_SITTING), false, true),
     };
-    assert_eq!(
-        phase, poll["phase"],
-        "{cell}: phase of the following poll: {poll}"
-    );
+    assert_eq!(phase, poll["phase"], "{cell}: phase: {poll}");
     assert_eq!(
         sitting.map_or(serde_json::Value::Null, serde_json::Value::from),
         poll["sitting"],
-        "{cell}: sitting of the following poll: {poll}"
+        "{cell}: sitting: {poll}"
     );
-    assert_eq!(
-        thinking, poll["thinking"],
-        "{cell}: thinking of the following poll: {poll}"
-    );
-    assert_eq!(
-        error,
-        poll["error"].is_string(),
-        "{cell}: error of the following poll: {poll}"
-    );
+    assert_eq!(thinking, poll["thinking"], "{cell}: thinking: {poll}");
+    assert_eq!(error, poll["error"].is_string(), "{cell}: error: {poll}");
 }
 
 #[test]
@@ -12123,13 +12126,16 @@ fn the_grading_desk_answers_every_request_in_every_state_as_tabled() {
         let remediation = matches!(row, RemediateEqual | RemediateDifferent);
         drive_desk(&base, &model, state, remediation, &cell);
         model.hold(true);
-        let got_status = send_row(&base, row);
+        let (got_status, reply) = send_row(&base, row);
         let poll = get_json(&base, GRADING);
         model.release();
         settled_grading(&base);
         let got_calls = model.calls();
         assert_eq!(status, got_status, "{cell}: status");
-        assert_desk(&cell, &poll, after);
+        if let Some(reply) = &reply {
+            assert_desk(&format!("{cell}, its own reply"), reply, after);
+        }
+        assert_desk(&format!("{cell}, the following poll"), &poll, after);
         assert_eq!(calls, got_calls, "{cell}: model calls");
     }
 
@@ -12148,16 +12154,26 @@ fn the_grading_desk_answers_every_request_in_every_state_as_tabled() {
     model.hold(true);
     let (path, body) = second_request(false);
     let started = Instant::now();
-    let mut got_status = post_json(&base, path, &body).status;
-    while got_status == 409 && started.elapsed() < HANG_BUDGET {
-        got_status = post_json(&base, path, &body).status;
+    let mut resp = post_json(&base, path, &body);
+    while resp.status == 409 && started.elapsed() < HANG_BUDGET {
+        resp = post_json(&base, path, &body);
     }
+    let reply = reply_of(&resp);
     let poll = get_json(&base, GRADING);
     model.release();
     settled_grading(&base);
     let got_calls = model.calls();
-    assert_eq!(200, got_status, "{cell}: status");
-    assert_desk(cell, &poll, Running("grading"));
+    assert_eq!(200, resp.status, "{cell}: status");
+    assert_desk(
+        &format!("{cell}, its own reply"),
+        &reply.unwrap_or_default(),
+        Running("grading"),
+    );
+    assert_desk(
+        &format!("{cell}, the following poll"),
+        &poll,
+        Running("grading"),
+    );
     assert_eq!(2, got_calls, "{cell}: model calls");
 
     for (cell, path, body) in [
@@ -12646,4 +12662,94 @@ fn a_remediation_on_a_freshly_started_server_returns_cards_per_topic_number() {
         "remediate: each card set comes back under the number of the topic whose gaps made it: {remediated}"
     );
     assert_eq!(2, model.calls(), "remediate: one call per topic");
+}
+
+fn settled_within_budget(base: &str) -> Option<serde_json::Value> {
+    let started = Instant::now();
+    while started.elapsed() < HANG_BUDGET {
+        let poll = get_json(base, GRADING);
+        if poll["thinking"] == false {
+            return Some(poll);
+        }
+    }
+    None
+}
+
+#[test]
+fn a_running_grading_job_reports_no_estimate_and_its_elapsed_seconds_until_it_ends() {
+    let _lock = exec_lock();
+    let model = GradingModel::new(
+        r#"{"grades":[{"verdict":"fail","feedback":"no","missed":["gap-one"]}]}"#,
+    );
+    let (base, _guard) = grading_server(&model);
+    for (step, (path, body)) in [
+        ("grade", first_request(false)),
+        ("remediate", first_request(true)),
+    ] {
+        model.hold(true);
+        let resp = post_json(&base, path, &body);
+        let reply = reply_of(&resp).unwrap_or_default();
+        let running = get_json(&base, GRADING);
+        model.release_one();
+        let ended = settled_within_budget(&base).unwrap_or_default();
+        assert_eq!(200, resp.status, "{step}: status");
+        for (when, value) in [
+            ("its own reply", &reply),
+            ("a poll while it runs", &running),
+        ] {
+            assert_eq!(
+                (true, serde_json::Value::Null, true),
+                (
+                    value["thinking"] == true,
+                    value["estimate"].clone(),
+                    value["elapsed"].is_u64()
+                ),
+                "{step}, {when}: thinking, estimate and whole elapsed seconds: {value}"
+            );
+        }
+        assert_eq!(
+            (false, serde_json::Value::Null, serde_json::Value::Null),
+            (
+                ended["thinking"] == true,
+                ended["estimate"].clone(),
+                ended["elapsed"].clone()
+            ),
+            "{step}, a poll after it ended: thinking, estimate and elapsed: {ended}"
+        );
+    }
+}
+
+#[test]
+fn closing_a_running_grading_job_ends_its_model_call() {
+    let _lock = exec_lock();
+    let model = GradingModel::new(r#"{"grades":[{"verdict":"pass","feedback":"ok","missed":[]}]}"#);
+    let (base, _guard) = grading_server(&model);
+    model.hold(true);
+    let (path, body) = first_request(false);
+    let started = post_json(&base, path, &body).status;
+    poll_until(&base, "/api/version", |_| model.calls() == 1);
+    let closed = post_json(
+        &base,
+        GRADING_CLOSE,
+        &serde_json::json!({ "sitting": DESK_SITTING }).to_string(),
+    )
+    .status;
+    model.release_one();
+    let (path, body) = second_request(false);
+    let restarted = post_json(&base, path, &body).status;
+    let settled = settled_within_budget(&base);
+    model.release();
+    assert_eq!(
+        (200, 200, 200),
+        (started, closed, restarted),
+        "start, close and second start: statuses"
+    );
+    assert!(
+        settled
+            .as_ref()
+            .is_some_and(|poll| poll["phase"] == "results"),
+        "the second job takes the one release line, so the closed job's call no longer \
+         waits on it: {settled:?}, calls {:?}",
+        model.lines("calls.log")
+    );
 }
