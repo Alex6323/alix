@@ -564,6 +564,7 @@ class PickerExamOffer {
     this.preparingSince,
     required this.onStart,
     this.onCancel,
+    this.onDiscard,
     this.now = DateTime.now,
   });
 
@@ -581,9 +582,13 @@ class PickerExamOffer {
   final DateTime? preparingSince;
   final ValueChanged<bool> onStart;
   final VoidCallback? onCancel;
+  final VoidCallback? onDiscard;
   final DateTime Function() now;
 
-  bool get enabled => !locked && serverLive;
+  bool get needsDesktop =>
+      action != PickerExamAction.take && action != PickerExamAction.result;
+
+  bool get enabled => !locked && (serverLive || !needsDesktop);
 }
 
 String _preparingFor(DateTime? since, DateTime now) {
@@ -594,8 +599,6 @@ String _preparingFor(DateTime? since, DateTime now) {
       ? 'preparing… ${seconds}s'
       : 'preparing… ${minutes}m ${seconds % 60}s';
 }
-
-enum PickerExamAction { generate, preparing, take }
 
 class PickerDepthSheet extends StatefulWidget {
   const PickerDepthSheet({
@@ -640,7 +643,10 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
   }
 
   void _syncTick() {
-    final preparing = widget.exam?.action == PickerExamAction.preparing;
+    final action = widget.exam?.action;
+    final preparing =
+        action == PickerExamAction.preparing ||
+        action == PickerExamAction.fetching;
     if (!preparing) {
       _tick?.cancel();
       _tick = null;
@@ -738,21 +744,27 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                 title: const Text('Only what needs work'),
               ),
               _PickerLaunchRow(
-                label: exam.action == PickerExamAction.take
-                    ? 'Take exam'
-                    : 'Generate exam',
+                label: switch (exam.action) {
+                  PickerExamAction.take => 'Take exam',
+                  PickerExamAction.result => 'Show result',
+                  _ => 'Generate exam',
+                },
                 hint: exam.locked
                     ? 'locked'
-                    : !exam.serverLive
+                    : !exam.serverLive && exam.needsDesktop
                     ? 'needs a paired desktop'
                     : exam.notice ??
                           switch (exam.action) {
-                            PickerExamAction.preparing => _preparingFor(
+                            PickerExamAction.preparing ||
+                            PickerExamAction.fetching => _preparingFor(
                               exam.preparingSince,
                               exam.now(),
                             ),
                             PickerExamAction.take =>
-                              'graded by your paired desktop',
+                              exam.serverLive
+                                  ? 'graded by your paired desktop'
+                                  : 'grading needs your paired desktop',
+                            PickerExamAction.result => 'your graded exam',
                             PickerExamAction.generate =>
                               exam.failed
                                   ? 'the last preparation failed'
@@ -761,11 +773,29 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                 filled:
                     exam.enabled &&
                     (exam.due || exam.action == PickerExamAction.take),
-                onTap: !exam.enabled
+                onTap: !exam.enabled || exam.action == PickerExamAction.fetching
                     ? null
                     : exam.action == PickerExamAction.preparing
                     ? exam.onCancel
                     : () => exam.onStart(exam.filterable && _needsWorkOnly),
+                menu: exam.onDiscard == null
+                    ? null
+                    : PopupMenuButton<bool>(
+                        icon: const Icon(Icons.more_vert),
+                        iconSize: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        onSelected: (_) => exam.onDiscard!(),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem<bool>(
+                            value: true,
+                            child: Text('Discard exam'),
+                          ),
+                        ],
+                      ),
               ),
             ],
           ],
@@ -781,12 +811,14 @@ class _PickerLaunchRow extends StatelessWidget {
     required this.hint,
     required this.onTap,
     this.filled = false,
+    this.menu,
   });
 
   final String label;
   final String hint;
   final VoidCallback? onTap;
   final bool filled;
+  final Widget? menu;
 
   @override
   Widget build(BuildContext context) {
@@ -843,6 +875,7 @@ class _PickerLaunchRow extends StatelessWidget {
                     size: 22,
                     color: filled ? theme.colorScheme.surface : tokens.dim,
                   ),
+                  ?menu,
                 ],
               ),
             ),

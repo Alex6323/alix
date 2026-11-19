@@ -262,6 +262,7 @@ void main() {
     DateTime? preparingSince,
     ValueChanged<bool>? onStart,
     VoidCallback? onCancel,
+    VoidCallback? onDiscard,
     DateTime Function()? now,
   }) => PickerExamOffer(
     locked: locked,
@@ -273,6 +274,7 @@ void main() {
     preparingSince: preparingSince,
     onStart: onStart ?? (_) {},
     onCancel: onCancel,
+    onDiscard: onDiscard,
     now: now ?? DateTime.now,
   );
 
@@ -460,5 +462,145 @@ void main() {
     );
     await tester.tap(find.text('Take exam'));
     expect(starts, [false]);
+  });
+
+  testWidgets(
+    'Take exam and Show result work with the desktop unreachable, Generate '
+    'exam does not',
+    (tester) async {
+      for (final (action, label) in [
+        (PickerExamAction.take, 'Take exam'),
+        (PickerExamAction.result, 'Show result'),
+        (PickerExamAction.generate, 'Generate exam'),
+      ]) {
+        final starts = <bool>[];
+        await tester.pumpWidget(
+          _sheet(
+            (_) {},
+            exam: offer(serverLive: false, action: action, onStart: starts.add),
+          ),
+        );
+        await tester.tap(find.text(label));
+        final expected = action == PickerExamAction.generate ? 0 : 1;
+        expect(
+          starts.length,
+          expected,
+          reason: '$action without a desktop: taps on "$label" reached onStart ${starts.length} times, expected $expected',
+        );
+      }
+    },
+  );
+
+  testWidgets('a locked exam stays disabled for every action', (tester) async {
+    for (final action in PickerExamAction.values) {
+      final starts = <bool>[];
+      await tester.pumpWidget(
+        _sheet(
+          (_) {},
+          exam: offer(locked: true, action: action, onStart: starts.add, onCancel: starts.isEmpty ? () => starts.add(true) : null),
+        ),
+      );
+      await tester.tap(find.text('locked').hitTestable(), warnIfMissed: false);
+      expect(find.text('locked'), findsOneWidget, reason: '$action: the row says locked');
+      expect(starts, isEmpty, reason: '$action: a locked row starts or cancels nothing, got $starts');
+    }
+  });
+
+  testWidgets('the hints of Take exam and Show result do not ask for a desktop to take or show', (tester) async {
+    await tester.pumpWidget(
+      _sheet((_) {}, exam: offer(serverLive: false, action: PickerExamAction.take)),
+    );
+    expect(find.text('grading needs your paired desktop'), findsOneWidget, reason: 'take without a desktop: hint says grading needs it');
+    expect(find.text('needs a paired desktop'), findsNothing, reason: 'take without a desktop: no desktop requirement on taking');
+
+    await tester.pumpWidget(
+      _sheet((_) {}, exam: offer(serverLive: false, action: PickerExamAction.result)),
+    );
+    expect(find.text('your graded exam'), findsOneWidget, reason: 'result without a desktop: hint');
+    expect(find.text('needs a paired desktop'), findsNothing, reason: 'result without a desktop: no desktop requirement');
+  });
+
+  testWidgets('a fetching exam shows the preparing row and a tap does nothing', (tester) async {
+    final starts = <bool>[];
+    var cancels = 0;
+    final since = DateTime(2026, 11, 11, 1, 0, 0);
+    await tester.pumpWidget(
+      _sheet(
+        (_) {},
+        exam: offer(
+          action: PickerExamAction.fetching,
+          preparingSince: since,
+          now: () => since.add(const Duration(seconds: 20)),
+          onStart: starts.add,
+          onCancel: () => cancels++,
+        ),
+      ),
+    );
+    expect(find.text('Generate exam'), findsOneWidget, reason: 'fetching: label kept');
+    expect(find.text('preparing… 20s'), findsOneWidget, reason: 'fetching: same hint as preparing');
+
+    await tester.tap(find.text('Generate exam'));
+    expect(starts, isEmpty, reason: 'fetching: a tap starts nothing, got $starts');
+    expect(cancels, 0, reason: 'fetching: a tap cancels nothing, got $cancels');
+  });
+
+  testWidgets('the exam row has a menu with Discard exam only when the offer carries onDiscard', (tester) async {
+    await tester.pumpWidget(_sheet((_) {}, exam: offer()));
+    expect(find.byIcon(Icons.more_vert), findsNothing, reason: 'no onDiscard: no menu button');
+
+    await tester.pumpWidget(_sheet((_) {}, exam: offer(onDiscard: () {})));
+    expect(find.byIcon(Icons.more_vert), findsOneWidget, reason: 'onDiscard set: one menu button');
+    expect(find.text('Discard exam'), findsNothing, reason: 'the entry shows only once the menu opens');
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('Discard exam'), findsOneWidget, reason: 'menu open: the single entry');
+  });
+
+  testWidgets('choosing Discard exam calls onDiscard once and not the row tap, also on a disabled row', (tester) async {
+    for (final (live, action) in [
+      (true, PickerExamAction.generate),
+      (true, PickerExamAction.preparing),
+      (false, PickerExamAction.take),
+      (false, PickerExamAction.generate),
+    ]) {
+      final starts = <bool>[];
+      var cancels = 0;
+      var discards = 0;
+      await tester.pumpWidget(
+        _sheet(
+          (_) {},
+          exam: offer(
+            serverLive: live,
+            action: action,
+            onStart: starts.add,
+            onCancel: () => cancels++,
+            onDiscard: () => discards++,
+          ),
+        ),
+      );
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Discard exam'));
+      await tester.pumpAndSettle();
+      expect(discards, 1, reason: '$action live=$live: onDiscard calls $discards, expected 1');
+      expect(starts, isEmpty, reason: '$action live=$live: the row start was not triggered, got $starts');
+      expect(cancels, 0, reason: '$action live=$live: the row cancel was not triggered, got $cancels');
+    }
+  });
+
+  testWidgets('the exam row with a menu lays out on a phone for every action', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    for (final action in PickerExamAction.values) {
+      await tester.pumpWidget(
+        _sheet(
+          (_) {},
+          onWalk: (_) {},
+          exam: offer(action: action, preparingSince: DateTime(2026, 11, 11), onDiscard: () {}),
+        ),
+      );
+      expect(tester.takeException(), isNull, reason: '$action at 360x760: the sheet lays out without an exception');
+    }
   });
 }

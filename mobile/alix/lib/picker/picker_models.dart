@@ -1,5 +1,7 @@
 enum PickerDepth { recognize, recall, reconstruct }
 
+enum PickerExamAction { generate, preparing, fetching, take, result }
+
 class PickerDeadline {
   const PickerDeadline({
     required this.date,

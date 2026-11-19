@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alix_mobile/exam_handoff.dart';
 import 'package:alix_mobile/exam_sittings.dart';
+import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/server_client.dart';
 
 import 'support/fake_server_client.dart';
@@ -718,5 +719,46 @@ void main() {
       reason: 'onReady over the fetched sitting-1, expired at the close: PairingExpired reaches the caller',
     );
     expect(log, ['close sitting-1 flag:true'], reason: 'onReady over the fetched sitting-1, expired at the close: the close only; got $log');
+  });
+
+  group('the exam action for a deck', () {
+    RemoteExam generating(String sitting, {String deck = 'Deck', String? error}) =>
+        RemoteExam(sitting: sitting, phase: 'generating', deck: deck, thinking: false, error: error);
+    final idle = const RemoteExam(phase: 'idle', deck: '', thinking: false);
+
+    final rows = <({
+      String name,
+      bool held,
+      bool heldHasResult,
+      StartedSitting? record,
+      RemoteExam? desk,
+      PickerExamAction action,
+      bool failed,
+    })>[
+      (name: 'held without a result, no desk reply', held: true, heldHasResult: false, record: null, desk: null, action: PickerExamAction.take, failed: false),
+      (name: 'held without a result, desk idle', held: true, heldHasResult: false, record: _sitting(fetched: true), desk: idle, action: PickerExamAction.take, failed: false),
+      (name: 'held without a result, desk generating another sitting', held: true, heldHasResult: false, record: _sitting(fetched: true), desk: generating('sitting-2'), action: PickerExamAction.take, failed: false),
+      (name: 'held with a result', held: true, heldHasResult: true, record: _sitting(fetched: true), desk: null, action: PickerExamAction.result, failed: false),
+      (name: 'unfetched record, desk generating its sitting', held: false, heldHasResult: false, record: _sitting(), desk: generating('sitting-1'), action: PickerExamAction.preparing, failed: false),
+      (name: 'unfetched record, desk generating its sitting with an error', held: false, heldHasResult: false, record: _sitting(), desk: generating('sitting-1', error: 'boom'), action: PickerExamAction.generate, failed: true),
+      (name: 'unfetched record, desk ready for its sitting', held: false, heldHasResult: false, record: _sitting(), desk: _ready('sitting-1'), action: PickerExamAction.fetching, failed: false),
+      (name: 'unfetched record, desk generating another sitting of the same deck name', held: false, heldHasResult: false, record: _sitting(), desk: generating('sitting-2', deck: 'Deck deck-1'), action: PickerExamAction.generate, failed: false),
+      (name: 'unfetched record, desk ready for another sitting of the same deck name', held: false, heldHasResult: false, record: _sitting(), desk: RemoteExam(sitting: 'sitting-2', phase: 'ready', deck: 'Deck deck-1', thinking: false), action: PickerExamAction.generate, failed: false),
+      (name: 'unfetched record, another sitting failed', held: false, heldHasResult: false, record: _sitting(), desk: generating('sitting-2', error: 'boom'), action: PickerExamAction.generate, failed: false),
+      (name: 'unfetched record, desk reports its sitting in a phase that is neither running nor ready', held: false, heldHasResult: false, record: _sitting(), desk: const RemoteExam(sitting: 'sitting-1', phase: 'idle', deck: '', thinking: false), action: PickerExamAction.generate, failed: false),
+      (name: 'unfetched record, no desk reply', held: false, heldHasResult: false, record: _sitting(), desk: null, action: PickerExamAction.generate, failed: false),
+      (name: 'no record, desk generating', held: false, heldHasResult: false, record: null, desk: generating('sitting-1'), action: PickerExamAction.generate, failed: false),
+      (name: 'no record, desk ready', held: false, heldHasResult: false, record: null, desk: _ready('sitting-1'), action: PickerExamAction.generate, failed: false),
+      (name: 'fetched record, no file, desk ready for its sitting', held: false, heldHasResult: false, record: _sitting(fetched: true), desk: _ready('sitting-1'), action: PickerExamAction.generate, failed: false),
+      (name: 'fetched record, no file, desk generating its sitting with an error', held: false, heldHasResult: false, record: _sitting(fetched: true), desk: generating('sitting-1', error: 'boom'), action: PickerExamAction.generate, failed: false),
+    ];
+
+    test('each row of the table gives its action and failure flag', () {
+      for (final row in rows) {
+        final got = examActionFor(held: row.held, heldHasResult: row.heldHasResult, record: row.record, desk: row.desk);
+        expect(got.action, row.action, reason: '${row.name}: action ${got.action} vs ${row.action}');
+        expect(got.failed, row.failed, reason: '${row.name}: failed ${got.failed} vs ${row.failed}');
+      }
+    });
   });
 }

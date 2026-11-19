@@ -1,5 +1,33 @@
 import 'exam_sittings.dart';
+import 'picker/picker_models.dart';
 import 'server_client.dart';
+
+({PickerExamAction action, bool failed}) examActionFor({
+  required bool held,
+  required bool heldHasResult,
+  required StartedSitting? record,
+  required RemoteExam? desk,
+}) {
+  if (held) {
+    return (
+      action: heldHasResult ? PickerExamAction.result : PickerExamAction.take,
+      failed: false,
+    );
+  }
+  final ownDesk =
+      record != null && !record.fetched && desk?.sitting == record.sitting
+      ? desk
+      : null;
+  if (ownDesk != null &&
+      ownDesk.phase == 'generating' &&
+      ownDesk.error == null) {
+    return (action: PickerExamAction.preparing, failed: false);
+  }
+  if (ownDesk != null && ownDesk.phase == 'ready') {
+    return (action: PickerExamAction.fetching, failed: false);
+  }
+  return (action: PickerExamAction.generate, failed: ownDesk?.error != null);
+}
 
 enum Handoff { none, fetched, closed, failed }
 
