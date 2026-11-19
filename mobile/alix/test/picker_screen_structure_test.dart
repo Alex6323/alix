@@ -272,8 +272,16 @@ void main() {
       buildClient: (_) => client,
     );
     await openSettings(tester);
-    expect(find.text('Connected devices'), findsOneWidget);
-    expect(find.text('Generate deck'), findsNothing);
+    expect(
+      find.text('Connected devices'),
+      findsOneWidget,
+      reason: 'settings before pairing: one Connected devices entry',
+    );
+    expect(
+      find.text('Generate deck'),
+      findsNothing,
+      reason: 'settings before pairing: no Generate deck entry',
+    );
     await expectWidgetTree(
       tester,
       'picker_pairing_entry',
@@ -288,16 +296,40 @@ void main() {
     );
     await tester.tap(find.text('Pair'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('pairing-url-field')), findsNothing);
-    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pairing-url-field')),
+      findsNothing,
+      reason: 'after Pair: the pairing field is closed',
+    );
+    expect(
+      find.byType(SettingsScreen),
+      findsOneWidget,
+      reason: 'after Pair: one settings screen is back',
+    );
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byType(PickerScreen), findsOneWidget);
-    expect(find.byIcon(Icons.menu), findsOneWidget);
-    expect(find.byType(BackButton), findsNothing);
+    expect(
+      find.byType(PickerScreen),
+      findsOneWidget,
+      reason: 'back from settings: one picker screen',
+    );
+    expect(
+      find.byIcon(Icons.menu),
+      findsOneWidget,
+      reason: 'back from settings: the root picker shows one menu button',
+    );
+    expect(
+      find.byType(BackButton),
+      findsNothing,
+      reason: 'back from settings: the root picker shows no back button',
+    );
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
-    expect(find.text('Generate deck'), findsOneWidget);
+    expect(
+      find.text('Generate deck'),
+      findsOneWidget,
+      reason: 'settings after pairing: one Generate deck entry',
+    );
     await expectWidgetTree(
       tester,
       'picker_pairing_reprobed',
@@ -549,13 +581,14 @@ void main() {
       await tapGenerate(tester);
       await closeSheet(tester);
       desk.replaceExam(deskState('ready', corpusSitting()));
+      final pollsBefore = desk.examGetAnswered;
 
       await openDeck(tester, 'Other exam');
       await tapGenerate(tester);
       expect(
-        [desk.examGetCalls, desk.carriedSittings.length, heldFiles(fixture.root).length, desk.examStartCalls],
-        [0, 1, 1, 2],
-        reason: 'no poll ran; the claim fetched the ready exam, then the other deck started',
+        [desk.examGetAnswered - pollsBefore, desk.carriedSittings.length, heldFiles(fixture.root).length, desk.examStartCalls],
+        [1, 1, 1, 2],
+        reason: 'the claim was the one exam read (no poll ran), it made one fetch, one file is held, then the other deck started',
       );
       await tester.pump();
       expect(
@@ -602,16 +635,25 @@ void main() {
         reason: 'step 2: the blocked claim sends no start for the other deck',
       );
       expect(
-        find.text('The prepared exam for Remote exam could not be fetched.'),
+        find.text('could not fetch the exam for Remote exam'),
         findsOneWidget,
-        reason: 'step 2: the row names the deck whose exam is stuck',
+        reason: 'step 2: the row reads could not fetch the exam for Remote exam',
       );
 
-      await confirmDiscard(tester);
+      await chooseDiscard(tester);
+      expect(
+        find.descendant(of: find.byType(AlertDialog), matching: find.text('Remote exam')),
+        findsOneWidget,
+        reason: 'step 3: the confirm opened from Other exam names Remote exam, whose exam it discards',
+      );
+      await tester.tap(
+        find.descendant(of: find.byType(AlertDialog), matching: find.text('Discard exam')),
+      );
+      await tester.pumpAndSettle();
       expect(
         [desk.examClosedSittings, desk.examStartCalls, desk.startedDeck],
         [[corpusSitting()], 2, 'ws/other.md'],
-        reason: 'step 3: the ready exam is closed, then the held-back start is sent',
+        reason: 'step 4: the ready exam is closed, then the held-back start is sent',
       );
     },
   );
@@ -633,9 +675,13 @@ void main() {
       expect(find.text('Take exam'), findsOneWidget, reason: 'step 2: the held exam is offered');
       await chooseDiscard(tester);
       expect(
-        [find.byType(AlertDialog).evaluate().length, heldFiles(fixture.root).length, records(fixture.support).single['fetched']],
+        [
+          find.descendant(of: find.byType(AlertDialog), matching: find.text('Remote exam')).evaluate().length,
+          heldFiles(fixture.root).length,
+          records(fixture.support).single['fetched'],
+        ],
         [1, 1, false],
-        reason: 'step 3: the confirm shows before anything changes',
+        reason: 'step 3: the confirm names Remote exam before anything changes, the file held and the record unflagged',
       );
       await tester.tap(
         find.descendant(of: find.byType(AlertDialog), matching: find.text('Discard exam')),
@@ -650,6 +696,11 @@ void main() {
         ],
         [0, true, [corpusSitting()], [corpusSitting()]],
         reason: 'step 4: confirmed, the record is flagged, the file is gone, both desks are closed',
+      );
+      expect(
+        [find.text('Take exam').evaluate().length, find.text('Generate exam').evaluate().length],
+        [0, 1],
+        reason: 'step 5: the open sheet re-reads the held state: no Take exam, one Generate exam',
       );
     },
   );
@@ -1014,7 +1065,11 @@ void main() {
       expect(exam_bridge.heldExamViewReads - before, 1, reason: 'opening: one read');
       await tapGenerate(tester);
       final afterStart = exam_bridge.heldExamViewReads;
-      expect(afterStart - before, 2, reason: 'the claim before the start: one more read');
+      expect(
+        afterStart - before,
+        3,
+        reason: 'the claim: one read by the sheet on the bump, one by the start for this deck',
+      );
 
       await tick(tester);
       await tick(tester);
@@ -1178,14 +1233,22 @@ void main() {
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
       await tapGenerate(tester);
-      expect(find.textContaining('preparing…'), findsOneWidget, reason: 'step 1');
+      expect(
+        find.textContaining('preparing…'),
+        findsOneWidget,
+        reason: 'step 1: after the start, one row reads preparing',
+      );
 
       await tester.tap(find.text('Generate exam'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Keep'));
       await tester.pumpAndSettle();
       expect(desk.examClosedSittings, isEmpty, reason: 'step 2: Keep keeps it');
-      expect(find.textContaining('preparing…'), findsOneWidget, reason: 'step 2');
+      expect(
+        find.textContaining('preparing…'),
+        findsOneWidget,
+        reason: 'step 2: after Keep, one row still reads preparing',
+      );
 
       await tester.tap(find.text('Generate exam'));
       await tester.pumpAndSettle();
@@ -1311,7 +1374,11 @@ void main() {
 
     await openDeck(tester);
     await tapGenerate(tester);
-    expect(find.textContaining('preparing…'), findsOneWidget);
+    expect(
+      find.textContaining('preparing…'),
+      findsOneWidget,
+      reason: 'started: one row reads preparing before the stale reply lands',
+    );
 
     stalePoll.complete(idleDesk);
     await tester.pump();
@@ -1340,7 +1407,11 @@ void main() {
 
       await openDeck(tester);
       await tapGenerate(tester);
-      expect(find.textContaining('preparing…'), findsOneWidget);
+      expect(
+        find.textContaining('preparing…'),
+        findsOneWidget,
+        reason: 'started: one row reads preparing before the stale reply lands',
+      );
 
       stalePoll.complete(null);
       await tester.pump();
@@ -1378,7 +1449,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel preparation'));
     await tester.pumpAndSettle();
-    expect(find.text('graded by your paired desktop'), findsOneWidget);
+    expect(
+      find.text('graded by your paired desktop'),
+      findsOneWidget,
+      reason: 'cancelled: one row offers a fresh generation before the stale reply lands',
+    );
 
     stalePoll.complete(deskState('generating', corpusSitting()));
     await tester.pump();
@@ -1417,6 +1492,7 @@ void main() {
         'Pairing expired. Pair again from Settings → Connected devices.',
       ),
       findsOneWidget,
+      reason: 'expired start: one pairing-expired line is shown',
     );
   });
 
@@ -1487,7 +1563,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Cancel preparation'));
       await tester.pumpAndSettle();
-      expect(find.text('could not cancel the preparation'), findsOneWidget);
+      expect(
+        find.text('could not cancel the preparation'),
+        findsOneWidget,
+        reason: 'first cancel fails: one row reads could not cancel the preparation',
+      );
 
       await tester.tap(find.text('Generate exam'));
       await tester.pumpAndSettle();
@@ -1584,11 +1664,391 @@ void main() {
       );
       await tester.pump(const Duration(seconds: 10));
       await tester.pumpAndSettle();
-      expect(find.byType(FolderBrowser), findsOneWidget);
+      expect(
+        find.byType(FolderBrowser),
+        findsOneWidget,
+        reason: 'generated: one folder browser opens for the destination',
+      );
       await expectWidgetTree(
         tester,
         'picker_generate_destination',
         root: find.byType(FolderBrowser),
+      );
+    },
+  );
+  const expiredLine = 'Pairing expired. Pair again from Settings → Connected devices.';
+
+  Future<void> startThenRestart(WidgetTester tester, ({Directory root, Directory support, String deck}) fixture) async {
+    final starter = FakeServerClient(
+      versionReply: minServerVersion,
+      idleBeforeStart: true,
+      examStartSitting: corpusSitting(),
+    );
+    await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => starter);
+    await openDeck(tester);
+    await tapGenerate(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    StartedSittings.forgetLoaded();
+  }
+
+  testWidgets(
+    "a claim that fetches this deck's own exam sends no start and offers the exam",
+    (tester) async {
+      final fixture = await examFixture('exam-claim-own');
+      await startThenRestart(tester, fixture);
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        nullFirstExamGetCalls: 1,
+        examGetReplies: [deskState('ready', corpusSitting())],
+        examCarriedReply: contract('CarriedReplyDto'),
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      expect(
+        find.text('Generate exam'),
+        findsOneWidget,
+        reason: 'step 1: the first poll got no reply, so the row offers Generate exam',
+      );
+
+      await tapGenerate(tester);
+      await tester.pump();
+      expect(
+        [
+          desk.examStartCalls,
+          heldFiles(fixture.root).length,
+          find.text('Take exam').evaluate().length,
+          find.text('Exam ready: Remote exam.').evaluate().length,
+        ],
+        [0, 1, 1, 1],
+        reason: 'step 2: the claim fetched this deck exam: no start, one held file, Take exam, one announcement',
+      );
+    },
+  );
+
+  testWidgets(
+    'a claim that fetches an exam the picker never polled announces it once',
+    (tester) async {
+      final fixture = await examFixture('exam-claim-unpolled');
+      writeExamDeck(fixture.root, 'other.md', 'Other exam');
+      await startThenRestart(tester, fixture);
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        nullFirstExamGetCalls: 1,
+        examStartSittings: const ['sitting-of-the-other-deck'],
+        examGetReplies: [deskState('ready', corpusSitting())],
+        examCarriedReply: contract('CarriedReplyDto'),
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+
+      await openDeck(tester, 'Other exam');
+      await tapGenerate(tester);
+      await tester.pump();
+      expect(
+        [
+          heldFiles(fixture.root).length,
+          find.text('Exam ready: Remote exam.').evaluate().length,
+          desk.startedDeck,
+        ],
+        [1, 1, 'ws/other.md'],
+        reason: 'claim: the unpolled exam of Remote exam is held and announced once, then Other exam starts',
+      );
+      await closeSheet(tester);
+      await tick(tester);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Exam ready: Remote exam.'),
+        findsNothing,
+        reason: 'a later poll of the same ready exam announces nothing a second time',
+      );
+    },
+  );
+
+  testWidgets(
+    'a poll whose hand-off meets an expired pairing after writing the file still announces it, and the open sheet offers Take exam',
+    (tester) async {
+      final fixture = await examFixture('exam-handoff-expired');
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        idleBeforeStart: true,
+        examStartSitting: corpusSitting(),
+        examGetReplies: [deskState('ready', corpusSitting())],
+        examCarriedReply: contract('CarriedReplyDto'),
+        expireOnExamClose: true,
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+
+      await tick(tester);
+      expect(
+        [
+          heldFiles(fixture.root).length,
+          desk.examClosedSittings,
+          find.text('Take exam').evaluate().length,
+          find.text('Exam ready: Remote exam.').evaluate().length,
+        ],
+        [1, [corpusSitting()], 1, 1],
+        reason: 'the file was written and its close expired: the sheet offers Take exam and the exam is announced once',
+      );
+    },
+  );
+
+  testWidgets(
+    'a fetched exam that was never announced and is then discarded is not announced by the next hand-off',
+    (tester) async {
+      final fixture = await examFixture('exam-discard-unannounced');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await generateAndFetch(tester);
+      final file = File('${fixture.support.path}/exam-sittings.json');
+      file.writeAsStringSync(
+        file.readAsStringSync().replaceAll('"announced":true', '"announced":false'),
+      );
+      StartedSittings.forgetLoaded();
+      desk.replaceExam(idleDesk);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await confirmDiscard(tester);
+      await closeSheet(tester);
+      expect(
+        [heldFiles(fixture.root).length, find.text('Exam ready: Remote exam.').evaluate().length],
+        [0, 0],
+        reason: 'discarded: the file is gone and nothing is announced yet',
+      );
+
+      desk.replaceExam(deskState('ready', corpusSitting()));
+      await tester.pumpWidget(const SizedBox.shrink());
+      StartedSittings.forgetLoaded();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await tester.pump();
+      expect(desk.examClosedSittings.contains(corpusSitting()), isTrue, reason: 'the restarted poll handed the ready exam off (closed it)');
+      expect(
+        find.text('Exam ready: Remote exam.'),
+        findsNothing,
+        reason: 'the next hand-off of the discarded exam announces nothing',
+      );
+    },
+  );
+
+  testWidgets(
+    'a blocked claim is cleared once a poll fetches its exam while the sheet is open',
+    (tester) async {
+      final fixture = await examFixture('exam-blocked-cleared');
+      writeExamDeck(fixture.root, 'other.md', 'Other exam');
+      final desk = fetchingDesk(carried: [null, null, contract('CarriedReplyDto')]);
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      await closeSheet(tester);
+      await tick(tester);
+      await openDeck(tester, 'Other exam');
+      await tapGenerate(tester);
+      await tester.pumpAndSettle();
+      expect(
+        find.byIcon(Icons.more_vert),
+        findsOneWidget,
+        reason: 'step 1: the blocked claim gives the Other exam row a discard menu',
+      );
+
+      await tick(tester);
+      expect(
+        [
+          heldFiles(fixture.root).length,
+          find.textContaining('could not').evaluate().length,
+          find.byIcon(Icons.more_vert).evaluate().length,
+          find.text('graded by your paired desktop').evaluate().length,
+        ],
+        [1, 0, 0, 1],
+        reason: 'step 2: the poll fetched the exam: no blocked line, no discard menu, the generate hint',
+      );
+    },
+  );
+
+  testWidgets('a second start tap while a start is under way sends nothing', (tester) async {
+    final fixture = await examFixture('exam-start-guard');
+    final gates = <int, Completer<RemoteExam?>>{};
+    final desk = FakeServerClient(
+      versionReply: minServerVersion,
+      examStartSitting: corpusSitting(),
+      examGetReplies: const [idleDesk],
+      examGetGates: gates,
+    );
+    await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+    final claimCall = desk.examGetCalls;
+    final claim = Completer<RemoteExam?>();
+    gates[claimCall] = claim;
+
+    await openDeck(tester);
+    await tester.tap(find.text('Generate exam'));
+    await tester.pump();
+    await tester.tap(find.text('Generate exam'));
+    await tester.pump();
+    claim.complete(idleDesk);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      [
+        desk.examGetCalls - claimCall,
+        desk.examStartCalls,
+        find.textContaining('preparing…').evaluate().length,
+        find.text('the desktop refused the exam').evaluate().length,
+      ],
+      [1, 1, 1, 0],
+      reason: 'two taps: one claim, one start, the row preparing without a refusal line',
+    );
+  });
+
+  testWidgets(
+    "the fetching row's Discard exam closes the ready exam and removes its record",
+    (tester) async {
+      final fixture = await examFixture('exam-fetching-discard');
+      final desk = fetchingDesk(carried: [null]);
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      await closeSheet(tester);
+      await tick(tester);
+      await openDeck(tester);
+      expect(find.text('fetching…'), findsOneWidget, reason: 'step 1: the unfetched ready exam reads fetching');
+
+      await confirmDiscard(tester);
+      expect(
+        [desk.examClosedSittings, records(fixture.support).length, find.text('graded by your paired desktop').evaluate().length],
+        [[corpusSitting()], 0, 1],
+        reason: 'step 2: the ready sitting is closed, its record removed, the row offers a generation',
+      );
+    },
+  );
+
+  testWidgets(
+    'a failed generation of this phone is closed with its sitting before the next start',
+    (tester) async {
+      final fixture = await examFixture('exam-failed-closed');
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        idleBeforeStart: true,
+        examStartSittings: [corpusSitting(), 'the-next-sitting'],
+        examGetReplies: [
+          RemoteExam(
+            sitting: corpusSitting(),
+            phase: 'generating',
+            deck: 'ws/exam.md',
+            thinking: false,
+            error: 'the generation failed',
+          ),
+        ],
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      await closeSheet(tester);
+      await tick(tester);
+      await openDeck(tester);
+      expect(
+        find.text('the last preparation failed'),
+        findsOneWidget,
+        reason: 'step 1: the failed generation shows on the row',
+      );
+
+      await tapGenerate(tester);
+      expect(
+        [desk.examClosedSittings, desk.examStartCalls],
+        [[corpusSitting()], 2],
+        reason: 'step 2: the failed sitting is closed, then the second start is sent',
+      );
+    },
+  );
+
+  testWidgets('an expired pairing at the claim before a start explains how to recover', (tester) async {
+    final fixture = await examFixture('exam-claim-expired');
+    final desk = FakeServerClient(
+      versionReply: minServerVersion,
+      examStartSitting: corpusSitting(),
+      examGetReplies: const [idleDesk],
+      expireOnExamGetCall: 1,
+    );
+    await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+    await openDeck(tester);
+    await tapGenerate(tester);
+    await tester.pumpAndSettle();
+    expect(
+      [desk.examStartCalls, find.text(expiredLine).evaluate().length],
+      [0, 1],
+      reason: 'the claim poll expired: no start, one pairing-expired line',
+    );
+  });
+
+  testWidgets(
+    'an expired pairing while discarding a blocked claim explains how to recover',
+    (tester) async {
+      final fixture = await examFixture('exam-blocked-discard-expired');
+      writeExamDeck(fixture.root, 'other.md', 'Other exam');
+      final desk = FakeServerClient(
+        versionReply: minServerVersion,
+        idleBeforeStart: true,
+        examStartSitting: corpusSitting(),
+        examGetReplies: [deskState('ready', corpusSitting())],
+        expireOnExamClose: true,
+      );
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tapGenerate(tester);
+      await closeSheet(tester);
+      await tick(tester);
+      await openDeck(tester, 'Other exam');
+      await tapGenerate(tester);
+      await tester.pumpAndSettle();
+
+      await confirmDiscard(tester);
+      expect(
+        [desk.examClosedSittings, desk.examStartCalls, find.text(expiredLine).evaluate().length],
+        [[corpusSitting()], 1, 1],
+        reason: 'the close expired: no held-back start, one pairing-expired line',
+      );
+    },
+  );
+
+  testWidgets('a deck whose file cannot be read when its sheet opens offers Generate exam', (tester) async {
+    final fixture = await examFixture('exam-deck-unreadable');
+    final desk = fetchingDesk();
+    await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+    await generateAndFetch(tester);
+    Process.runSync('chmod', ['000', fixture.deck]);
+    addTearDown(() => Process.runSync('chmod', ['644', fixture.deck]));
+
+    await openDeck(tester);
+    expect(
+      [heldFiles(fixture.root).length, find.text('Generate exam').evaluate().length, find.text('Take exam').evaluate().length],
+      [1, 1, 0],
+      reason: 'a file is held, but a deck file that cannot be read offers a generation',
+    );
+  });
+
+  testWidgets(
+    'a deck that holds an exam keeps its exam row after its sources are removed',
+    (tester) async {
+      final fixture = await examFixture('exam-held-not-examable');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await generateAndFetch(tester);
+      Directory('${fixture.root.path}/ws/sources').deleteSync(recursive: true);
+      desk.replaceExam(idleDesk);
+      await tester.pumpWidget(const SizedBox.shrink());
+      StartedSittings.forgetLoaded();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      expect(
+        [heldFiles(fixture.root).length, find.text('Take exam').evaluate().length, find.byIcon(Icons.more_vert).evaluate().length],
+        [1, 1, 1],
+        reason: 'sources removed, exam held: one file, Take exam, one menu',
+      );
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Discard exam'),
+        findsOneWidget,
+        reason: 'the menu of the held exam offers Discard exam',
       );
     },
   );

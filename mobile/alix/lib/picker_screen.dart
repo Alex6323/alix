@@ -155,6 +155,7 @@ class _PickerScreenState extends State<PickerScreen> {
   final _heldChanged = ValueNotifier<int>(0);
   ({String deck, StartedSitting record, Future<void> Function() resume})?
   _blockedClaim;
+  var _examStartInFlight = false;
   RemoteExam? get _remoteExam => _remoteExamSlot.value.exam;
   set _remoteExam(RemoteExam? exam) =>
       _remoteExamSlot.value = (exam: exam, polledAt: DateTime.now());
@@ -410,7 +411,7 @@ class _PickerScreenState extends State<PickerScreen> {
     _examPollInFlight = true;
     final epoch = _examSlotEpoch;
     RemoteExam? next;
-    Handoff? handed;
+    var handedOff = false;
     var expired = false;
     try {
       try {
@@ -422,19 +423,20 @@ class _PickerScreenState extends State<PickerScreen> {
       }
       final sitting = next?.sitting;
       if (!expired && next?.phase == 'ready' && sitting != null) {
+        handedOff = true;
         try {
-          handed = await handoff.onReady(sitting);
+          await handoff.onReady(sitting);
         } on PairingExpired {
           expired = true;
         } on Object {
-          handed = Handoff.failed;
+          // The next tick retries.
         }
       }
     } finally {
       _examPollInFlight = false;
     }
     if (!mounted) return;
-    if (handed != null) _afterHandoff(next?.sitting, changed: handed == Handoff.fetched);
+    if (handedOff) _afterHandoff();
     if (!identical(client, _examStateClient) || epoch != _examSlotEpoch) {
       return;
     }
@@ -454,15 +456,24 @@ class _PickerScreenState extends State<PickerScreen> {
     if (before != after) _controller.reload();
   }
 
-  void _afterHandoff(String? sitting, {required bool changed}) {
-    if (changed) _heldChanged.value++;
+  void _afterHandoff() {
+    _heldChanged.value++;
     final sittings = _sittings;
-    final record = sittings?.bySitting(sitting);
-    if (sittings == null || record == null || !record.fetched || record.announced) {
-      return;
+    if (sittings == null) return;
+    final unannounced = [
+      for (final record in sittings.all)
+        if (record.fetched && !record.announced) record,
+    ];
+    for (final record in unannounced) {
+      record.announced = true;
+      _snack('Exam ready: ${record.title}.');
     }
-    record.announced = true;
-    _snack('Exam ready: ${record.title}.');
+    final blocked = _blockedClaim;
+    if (blocked != null && blocked.record.fetched) {
+      _blockedClaim = null;
+      if (_examNotice.value?.deck == blocked.deck) _examNotice.value = null;
+    }
+    if (unannounced.isEmpty) return;
     try {
       sittings.save();
     } on Object {
@@ -661,6 +672,24 @@ class _PickerScreenState extends State<PickerScreen> {
     required String root,
     required bool needsWorkOnly,
   }) async {
+    if (_examStartInFlight) return;
+    _examStartInFlight = true;
+    try {
+      await _startExamGenerationOnce(
+        entry,
+        root: root,
+        needsWorkOnly: needsWorkOnly,
+      );
+    } finally {
+      _examStartInFlight = false;
+    }
+  }
+
+  Future<void> _startExamGenerationOnce(
+    PickerEntry entry, {
+    required String root,
+    required bool needsWorkOnly,
+  }) async {
     final client = _examStateClient;
     final handoff = _examHandoff;
     final sittings = _sittings;
@@ -689,12 +718,24 @@ class _PickerScreenState extends State<PickerScreen> {
       notice('could not prepare the exam: $error');
       return;
     }
+    final Claim claim;
+    try {
+      claim = await handoff.claimBeforeStart();
+    } on PairingExpired {
+      if (!mounted) return;
+      _afterHandoff();
+      _pairingExpiredAtExam(deckName);
+      return;
+    } on Object {
+      if (!mounted) return;
+      _afterHandoff();
+      notice('the desktop refused the exam');
+      return;
+    }
+    if (!mounted) return;
+    _afterHandoff();
     RemoteExam? started;
     try {
-      final lastPolled = _remoteExam?.sitting;
-      final claim = await handoff.claimBeforeStart();
-      if (!mounted) return;
-      _afterHandoff(lastPolled, changed: true);
       switch (claim) {
         case ClaimBlocked(:final record):
           _blockedClaim = (
@@ -706,13 +747,13 @@ class _PickerScreenState extends State<PickerScreen> {
               needsWorkOnly: needsWorkOnly,
             ),
           );
-          notice('The prepared exam for ${record.title} could not be fetched.');
+          notice('could not fetch the exam for ${record.title}');
           return;
         case ClaimUnreachable():
           notice('the desktop refused the exam');
           return;
         case ClaimClear():
-          break;
+          if (_readHeld(root, start.deckId).held) return;
       }
       final failedSitting = _remoteExam?.error == null
           ? null
@@ -797,11 +838,12 @@ class _PickerScreenState extends State<PickerScreen> {
     _controller.reload();
   }
 
-  Future<bool> _confirmDiscard(BuildContext context) async =>
+  Future<bool> _confirmDiscard(BuildContext context, String title) async =>
       await showDialog<bool>(
         context: context,
         builder: (dialog) => AlertDialog(
           title: const Text('Discard exam?'),
+          content: Text(title),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialog).pop(false),
@@ -820,8 +862,8 @@ class _PickerScreenState extends State<PickerScreen> {
     BuildContext context, {
     required String root,
     required String deckId,
+    required String title,
   }) async {
-    if (!await _confirmDiscard(context)) return false;
     String? sitting;
     try {
       sitting = exam_bridge.heldExamSitting(root, deckId);
@@ -830,8 +872,10 @@ class _PickerScreenState extends State<PickerScreen> {
     }
     final sittings = _sittings;
     final record = sittings?.bySitting(sitting);
+    if (!await _confirmDiscard(context, record?.title ?? title)) return false;
     if (sittings != null && record != null) {
       record.fetched = true;
+      record.announced = true;
       sittings.save();
     }
     exam_bridge.heldExamRemove(rootDir: root, deckId: deckId);
@@ -849,9 +893,10 @@ class _PickerScreenState extends State<PickerScreen> {
     String deckName, {
     required String root,
     required String deckId,
+    required String title,
   }) async {
     try {
-      if (await _discardHeld(sheet, root: root, deckId: deckId)) {
+      if (await _discardHeld(sheet, root: root, deckId: deckId, title: title)) {
         _heldNotice.value = null;
       }
     } on Object catch (error) {
@@ -865,7 +910,9 @@ class _PickerScreenState extends State<PickerScreen> {
     StartedSitting record,
   ) async {
     final handoff = _examHandoff;
-    if (handoff == null || !await _confirmDiscard(sheet)) return false;
+    if (handoff == null || !await _confirmDiscard(sheet, record.title)) {
+      return false;
+    }
     try {
       await handoff.discardReady(record);
     } on PairingExpired {
@@ -894,6 +941,7 @@ class _PickerScreenState extends State<PickerScreen> {
       final record = sittings?.bySitting(exam_bridge.heldExamSitting(root, deckId));
       if (sittings != null && record != null) {
         record.fetched = true;
+        record.announced = true;
         sittings.save();
       }
       exam_bridge.heldExamRemove(rootDir: root, deckId: deckId);
@@ -926,13 +974,17 @@ class _PickerScreenState extends State<PickerScreen> {
           ),
           client: client,
           onLeaveResult: () => _leaveHeldResult(root: root, deckId: deckId),
-          onDiscard: () => _discardHeld(context, root: root, deckId: deckId),
+          onDiscard: () => _discardHeld(
+            context,
+            root: root,
+            deckId: deckId,
+            title: entry.title,
+          ),
         ),
       ),
     );
     if (!mounted) return;
     _resumeExamPolling();
-    _heldChanged.value++;
     _controller.reload();
   }
 
@@ -1029,7 +1081,7 @@ class _PickerScreenState extends State<PickerScreen> {
               walkCram = cram;
               Navigator.of(sheet).pop();
             },
-            exam: entry.examable
+            exam: entry.examable || held.value.held
                 ? PickerExamOffer(
                     locked: entry.locked,
                     serverLive: isPaired && _controller.serverReachable,
@@ -1062,6 +1114,7 @@ class _PickerScreenState extends State<PickerScreen> {
                             deckName,
                             root: root,
                             deckId: deckId,
+                            title: entry.title,
                           )
                         : action == PickerExamAction.fetching && record != null
                         ? () => _discardReady(sheet, deckName, record)

@@ -1505,6 +1505,44 @@ mod tests {
         (path, exam)
     }
 
+    #[test]
+    fn a_needs_work_start_names_only_the_cards_of_the_topic_the_recorded_result_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (path, exam) = held_on_deck(root);
+        store_reply(root, &grading_reply(&exam, &[(true, &[]), (false, &["gap of b"])]), true).unwrap();
+        held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+
+        let start = exam_sitting_start(deck_arg(&path), root_arg(root), true, NOW).unwrap();
+
+        assert_eq!(
+            Some(vec!["card-b1".to_string()]),
+            start.cards,
+            "after A passed and B failed, the needs-work start names the card of B only"
+        );
+    }
+
+    #[test]
+    fn a_start_with_an_unreviewed_card_in_an_unsourced_topic_is_ineligible_and_names_that_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, format!("{text}\n# C\n\n## c1\nunreviewed\n")).unwrap();
+
+        let start = exam_sitting_start(deck_arg(&path), root_arg(root), false, NOW).unwrap();
+
+        assert!(
+            !start.eligible,
+            "an unreviewed card in the unsourced topic C fails the review condition"
+        );
+        assert_eq!(
+            vec!["C".to_string()],
+            start.unsourced_topics,
+            "the start names C as the topic the exam leaves out"
+        );
+    }
+
     fn personal_fronts(path: &Path) -> Vec<(String, String)> {
         let mut fronts: Vec<(String, String)> = alix::personal::read(path, "deck-d")
             .cards

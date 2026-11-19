@@ -148,6 +148,26 @@ void main() {
     expect(back.forDeck('root-a', 'deck-2')?.sitting, 'sitting-2', reason: 'root-a deck-2 after removing deck-1');
   });
 
+  test('all lists every kept record once and cannot change what is kept', () {
+    final kept = StartedSittings.load(support);
+    kept.put(_sitting());
+    kept.put(_sitting(deckId: 'deck-2', sitting: 'sitting-2'));
+    kept.put(_sitting(root: 'root-b', sitting: 'sitting-3'));
+    kept.put(_sitting(sitting: 'sitting-4'));
+
+    final listed = reload().all;
+    expect(
+      [for (final record in listed) record.sitting]..sort(),
+      ['sitting-2', 'sitting-3', 'sitting-4'],
+      reason: 'all after four puts, one replacing root-a deck-1',
+    );
+    expect(
+      () => listed.removeLast(),
+      throwsUnsupportedError,
+      reason: 'removing from the listing of all is refused',
+    );
+  });
+
   test('a start records file whose records carry a key beyond the record holds no sitting', () {
     writeFile([_record(deckId: 'deck-1'), {..._record(deckId: 'deck-2'), 'invented_extra': 'x'}]);
 

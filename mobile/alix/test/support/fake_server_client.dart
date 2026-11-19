@@ -36,12 +36,14 @@ class FakeServerClient implements ServerClient {
     this.expireOnExamStart = false,
     List<RemoteExam>? examGetReplies,
     this.expireOnExamGet = false,
+    this.expireOnExamGetCall,
     Map<int, Completer<RemoteExam?>>? examGetGates,
     this.nullFirstExamGetCalls = 0,
     this.noSittingBeforeStart = false,
     this.idleBeforeStart = false,
     this.examCloseGate,
     this.examCloseReply = true,
+    this.expireOnExamClose = false,
     this.failExamClose = false,
     this.examCarriedReply,
     this.examCarriedReplies,
@@ -117,6 +119,10 @@ class FakeServerClient implements ServerClient {
   final List<RemoteExam> examGetReplies;
   final bool expireOnExamGet;
 
+  /// The one (0-based, counted) `examGet()` call that throws
+  /// [PairingExpired].
+  final int? expireOnExamGetCall;
+
   /// Parks a specific (0-based) `examGet()` call on a completer instead of
   /// answering immediately: the lever for putting two polls in flight at
   /// once (a periodic tick firing again before the prior call's own
@@ -137,6 +143,9 @@ class FakeServerClient implements ServerClient {
   final bool idleBeforeStart;
   final Completer<void>? examCloseGate;
   final bool examCloseReply;
+
+  /// `examClose` throws [PairingExpired] after recording its sitting.
+  final bool expireOnExamClose;
   final bool failExamClose;
 
   final String? examCarriedReply;
@@ -206,6 +215,10 @@ class FakeServerClient implements ServerClient {
   int _cardCall = 0;
   int _examGetCall = 0;
   int get examGetCalls => _examGetCall;
+
+  /// Every `examGet()` call, including those answered before the counted
+  /// replies (a replacement, an idle desk before any start).
+  int examGetAnswered = 0;
   int _gradingCall = 0;
   int _gradingCallsMade = 0;
   int _generateGetCall = 0;
@@ -317,6 +330,7 @@ class FakeServerClient implements ServerClient {
 
   @override
   Future<RemoteExam?> examGet() async {
+    examGetAnswered++;
     if (expireOnExamGet) throw const PairingExpired();
     if (_replacementExam case final replacement?) return replacement;
     if (noSittingBeforeStart && startedDeck == null) return null;
@@ -325,6 +339,7 @@ class FakeServerClient implements ServerClient {
     }
     final call = _examGetCall;
     _examGetCall++;
+    if (call == expireOnExamGetCall) throw const PairingExpired();
     final gate = examGetGates[call];
     if (gate != null) return gate.future;
     if (call < nullFirstExamGetCalls) return null;
@@ -355,6 +370,7 @@ class FakeServerClient implements ServerClient {
     examCloseCalls++;
     examClosedSittings.add(sitting);
     if (examCloseGate != null) await examCloseGate!.future;
+    if (expireOnExamClose) throw const PairingExpired();
     return examCloseReply;
   }
 

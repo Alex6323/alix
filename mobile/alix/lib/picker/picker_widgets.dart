@@ -577,7 +577,6 @@ class PickerExamOffer {
   /// The last preparation failed; generating again replaces it.
   final bool failed;
 
-  /// This phone's last start or cancel attempt failed.
   final String? notice;
   final DateTime? preparingSince;
   final ValueChanged<bool> onStart;

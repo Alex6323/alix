@@ -136,6 +136,8 @@ class StartedSittings {
 
   StartedSitting? forDeck(String root, String deckId) => _byDeck[(root, deckId)];
 
+  List<StartedSitting> get all => List.unmodifiable(_byDeck.values);
+
   StartedSitting? bySitting(String? sitting) {
     if (sitting == null) return null;
     for (final kept in _byDeck.values) {
