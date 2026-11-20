@@ -690,13 +690,32 @@ void main() {
         await tester.pumpWidget(
           _sheet((_) {}, onWalk: (_) {}, exam: offer(action: action, due: due, onDiscard: withBin ? () {} : null)),
         );
+        final chevrons = find.byIcon(Icons.chevron_right);
         final centres = [
-          for (final chevron in find.byIcon(Icons.chevron_right).evaluate())
-            tester.getCenter(find.byWidget(chevron.widget)).dx,
+          for (var i = 0; i < chevrons.evaluate().length; i++) tester.getCenter(chevrons.at(i)).dx,
         ];
         expect(centres.length, greaterThan(1), reason: '$name bin=$withBin: the exam row and other launch rows show chevrons');
         expect(centres.toSet().length, 1, reason: '$name bin=$withBin: chevron centres $centres are not one column');
       }
+    }
+  });
+
+  testWidgets('the bin sits left of the exam row chevron, filled or not', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    for (final (name, action, due) in [
+      ('filled take', PickerExamAction.take, false),
+      ('unfilled generate', PickerExamAction.generate, false),
+    ]) {
+      await tester.pumpWidget(
+        _sheet((_) {}, onWalk: (_) {}, exam: offer(action: action, due: due, onDiscard: () {})),
+      );
+      final bin = tester.getRect(
+        find.ancestor(of: find.byIcon(Icons.delete_outline), matching: find.byType(IconButton)),
+      );
+      final chevron = tester.getRect(find.byIcon(Icons.chevron_right).last);
+      expect(bin.right, lessThanOrEqualTo(chevron.left), reason: '$name: bin right ${bin.right}, chevron left ${chevron.left}');
     }
   });
 }

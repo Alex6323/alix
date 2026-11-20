@@ -813,11 +813,12 @@ class _PickerLaunchRow extends StatelessWidget {
           onTap: onTap,
           child: Container(
             constraints: const BoxConstraints(minHeight: 54),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: _launchRowSidePadding, vertical: 11),
             decoration: BoxDecoration(
               color: filled ? theme.colorScheme.onSurface : null,
               border: Border.all(
                 color: filled ? Colors.transparent : tokens.line,
+                width: _launchRowBorderWidth,
               ),
               borderRadius: BorderRadius.circular(11),
             ),
@@ -849,7 +850,7 @@ class _PickerLaunchRow extends StatelessWidget {
                   ),
                 ),
                 if (onDiscard != null) const SizedBox(width: _discardButtonSize),
-                Icon(Icons.chevron_right, size: 22, color: foreground),
+                Icon(Icons.chevron_right, size: _chevronSize, color: foreground),
               ],
             ),
           ),
@@ -885,7 +886,10 @@ class _PickerLaunchRow extends StatelessWidget {
 }
 
 const double _discardButtonSize = 48;
-const double _chevronColumnWidth = 16 + 22;
+const double _launchRowBorderWidth = 1;
+const double _launchRowSidePadding = 16;
+const double _chevronSize = 22;
+const double _chevronColumnWidth = _launchRowBorderWidth + _launchRowSidePadding + _chevronSize;
 
 class PickerThemeSheet extends StatelessWidget {
   const PickerThemeSheet({
