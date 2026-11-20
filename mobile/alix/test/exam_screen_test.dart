@@ -312,7 +312,8 @@ void main() {
 
   testWidgets('the last question has one submit button whose label follows the state', (tester) async {
     final held = FakeHeldExam();
-    await pumpExam(tester, held: held, client: FakeServerClient(gradingReplies: const [GradingRefused(409)]));
+    final client = FakeServerClient(gradingReplies: const [GradingRefused(409)]);
+    await pumpExam(tester, held: held, client: client);
     expect(submitButton('Next'), findsOneWidget, reason: 'question 1: the filled button is Next');
     await tester.enterText(_field, 'a1');
     await tester.tap(find.text('Next'));
@@ -333,6 +334,9 @@ void main() {
     expect(submitButton('Discard exam'), findsOneWidget, reason: 'stale on submit again: Discard exam');
     expect(find.text('submit again'), findsNothing, reason: 'stale: submit again is relabelled');
     expect(find.text('Discard exam'), findsOneWidget, reason: 'stale: no second Discard exam control');
+    expect(find.text(_staleExam), findsOneWidget, reason: 'stale on submit again: the stale line takes the slot');
+    expect(find.text(_busy), findsNothing, reason: 'stale on submit again: the busy line is gone');
+    expect(client.gradingRequests, hasLength(1), reason: 'stale on submit again: no second request');
   });
 
   testWidgets('no answer, 409 and 400 each show their line and store nothing', (tester) async {
@@ -582,6 +586,24 @@ void main() {
     expect(leaves, 1, reason: 'apply failed: leaving reports nothing');
   });
 
+  testWidgets('a deck that changes while the desktop grades ends on not recorded with no Remediate', (tester) async {
+    final gate = Completer<GradingCall>();
+    final held = FakeHeldExam(remediable: true);
+    final client = FakeServerClient(gradingGates: {0: gate});
+    await pumpExam(tester, held: held, client: client);
+    await answerAndSubmit(tester);
+    expect(client.gradingRequests, hasLength(1), reason: 'unchanged at Submit: the request is sent');
+
+    held.changed = true;
+    gate.complete(_answered('results'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(held.stored, hasLength(1), reason: 'changed while grading: the result is stored once');
+    expect(find.text('not recorded'), findsOneWidget, reason: 'changed while grading: the result says not recorded');
+    expect(find.text(_remediate), findsNothing, reason: 'changed while grading: no Remediate');
+  });
+
   testWidgets('a reply after the screen is gone stores nothing', (tester) async {
     final gate = Completer<GradingCall>();
     final held = FakeHeldExam();
@@ -793,6 +815,19 @@ void main() {
     expect(find.byType(OutlinedButton), findsNothing, reason: 'unreadable: no action is offered');
   });
 
+  testWidgets('a material check that throws at open shows question 1 with its text and no stale view', (tester) async {
+    final held = FakeHeldExam()..materialError = AnyhowException('the deck cannot be read');
+    final client = FakeServerClient(gradingReplies: [_answered('results')]);
+    await pumpExam(tester, held: held, client: client);
+
+    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'check failed at open: question 1 shows');
+    expect(find.text('Why ownership?'), findsOneWidget, reason: 'check failed at open: the question text shows');
+    expect(find.text('the deck cannot be read'), findsOneWidget, reason: 'check failed at open: its text shows');
+    expect(find.text(_staleExam), findsNothing, reason: 'check failed at open: no stale line');
+    expect(find.widgetWithText(OutlinedButton, 'Discard exam'), findsNothing, reason: 'check failed at open: no stale view');
+    expect(client.gradingRequests, isEmpty, reason: 'check failed at open: nothing is sent');
+  });
+
   testWidgets('a material check that throws at Submit shows its text and sends nothing', (tester) async {
     final held = FakeHeldExam();
     final client = FakeServerClient(gradingReplies: [_answered('results')]);
@@ -872,6 +907,65 @@ void main() {
     expect(tester.widget<TextField>(_field).controller?.text, 'kept text', reason: 'declined: the typed text stays');
     expect(find.text(_staleExam), findsOneWidget, reason: 'declined: the stale line stays');
     expect(submitButton('Discard exam'), findsOneWidget, reason: 'declined: Discard exam is still offered');
+  });
+
+  testWidgets('Continue later on a stale exam found at Submit keeps the answers, and reopening shows the stale view',
+      (tester) async {
+    final held = FakeHeldExam(answers: ['a1', ''], locked: [true, false]);
+    await openExam(tester, held: held, client: FakeServerClient());
+    held.changed = true;
+    await tester.enterText(_field, 'a2');
+    await tester.tap(submitButton('Submit'));
+    await tester.pump();
+    await tester.tap(find.text('Continue later'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExamScreen), findsNothing, reason: 'Continue later: the screen is left');
+    expect(_plain(held.saved.last), [['a1', 'a2'], [true, true]], reason: 'Continue later: the answers are kept');
+    expect(held.log.contains('remove'), isFalse, reason: 'Continue later: the file stays');
+
+    await openExam(tester, held: held, client: FakeServerClient());
+    expect(find.text(_staleExam), findsOneWidget, reason: 'reopened: the stale line shows');
+    expect(find.widgetWithText(OutlinedButton, 'Discard exam'), findsOneWidget, reason: 'reopened: Discard exam is the button');
+    expect(_field, findsNothing, reason: 'reopened: no answer field');
+  });
+
+  testWidgets('a discard that throws on a stale exam found at Submit shows its text and keeps the answers view',
+      (tester) async {
+    final held = FakeHeldExam(answers: ['a1', ''], locked: [true, false]);
+    await openExam(
+      tester,
+      held: held,
+      client: FakeServerClient(),
+      onDiscard: () async => throw AnyhowException('cannot remove the exam'),
+    );
+    held.changed = true;
+    await tester.enterText(_field, 'a2');
+    await tester.tap(submitButton('Submit'));
+    await tester.pump();
+    await tester.tap(submitButton('Discard exam'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('cannot remove the exam'), findsOneWidget, reason: 'throwing discard: its text shows');
+    expect(find.byType(ExamScreen), findsOneWidget, reason: 'throwing discard: the screen stays');
+    expect(submitButton('Discard exam'), findsOneWidget, reason: 'throwing discard: Discard exam is still the button');
+    expect(tester.widget<TextField>(_field).controller?.text, 'a2', reason: 'throwing discard: the answer stays');
+  });
+
+  testWidgets('a failed discard and then a declined one on a stale exam show the stale line again', (tester) async {
+    var calls = 0;
+    await openExam(tester, held: FakeHeldExam(changed: true), client: FakeServerClient(), onDiscard: () async {
+      if (calls++ == 0) throw AnyhowException('cannot remove the exam');
+      return false;
+    });
+    await tester.tap(find.text('Discard exam'));
+    await tester.pumpAndSettle();
+    expect(find.text('cannot remove the exam'), findsOneWidget, reason: 'first discard throws: its text shows');
+
+    await tester.tap(find.text('Discard exam'));
+    await tester.pumpAndSettle();
+    expect(calls, 2, reason: 'second discard: the callback is asked again');
+    expect(find.text('cannot remove the exam'), findsNothing, reason: 'declined after a failure: the error is gone');
+    expect(find.text(_staleExam), findsOneWidget, reason: 'declined after a failure: the stale line shows again');
   });
 
   testWidgets('a discard that throws shows its text and the screen can still be left', (tester) async {

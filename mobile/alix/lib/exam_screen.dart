@@ -407,7 +407,10 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   Future<void> _discard() async {
     if (_departing) return;
-    setState(() => _discarding = true);
+    setState(() {
+      _discarding = true;
+      _aside = null;
+    });
     final bool discarded;
     try {
       discarded = await widget.onDiscard();
@@ -484,7 +487,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _shown ?? (_stale ? _staleExam : ''),
+            _noticeLine ?? '',
             textAlign: TextAlign.center,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
@@ -510,7 +513,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   Widget _notice(BuildContext context) {
     final tokens = Theme.of(context).alix;
     return Text(
-      _shown ?? _staleExam,
+      _noticeLine ?? '',
       key: const ValueKey('exam-notice'),
       maxLines: 3,
       overflow: TextOverflow.ellipsis,
@@ -518,7 +521,9 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     );
   }
 
-  bool get _hasNotice => _shown != null || (_stage == _Stage.answers && _stale);
+  String? get _noticeLine => _shown ?? (_stale ? _staleExam : null);
+
+  bool get _hasNotice => _noticeLine != null;
 
   String get _submitLabel => _stale ? 'Discard exam' : (_again ? 'submit again' : 'Submit');
 
