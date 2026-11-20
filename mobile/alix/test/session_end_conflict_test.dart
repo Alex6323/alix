@@ -4,8 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:alix_mobile/bootstrap.dart';
+import 'package:alix_mobile/bridge/exam_bridge.dart' as exam_bridge;
 import 'package:alix_mobile/picker_screen.dart';
 import 'package:alix_mobile/review_screen.dart';
+import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/src/rust/api/exam.dart' as bridge;
 import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/sync/sync_controller.dart';
 import 'package:alix_mobile/sync/sync_models.dart';
@@ -14,6 +18,7 @@ import 'package:alix_mobile/sync_client.dart';
 import 'package:alix_mobile/trace_screen.dart';
 
 import 'support/deck_fixture.dart';
+import 'support/fake_server_client.dart';
 import 'support/picker_listing.dart';
 
 void main() {
@@ -80,8 +85,20 @@ void main() {
     required String deckPath,
     required String rowTitle,
     bool review = false,
+    FakeServerClient? examClient,
   }) async {
     final fixture = workspace();
+    if (examClient != null) {
+      await savePairing(
+        const ServerConfig(
+          host: '127.0.0.1',
+          port: 7777,
+          token: 'session-end-test',
+          rootId: 'root-test0000000000000000000000',
+        ),
+        support: fixture.support,
+      );
+    }
     final syncController = _MidSessionConflictController(
       deckId: deckId,
       deckPath: deckPath,
@@ -95,6 +112,7 @@ void main() {
           dir: fixture.workspace.path,
           title: 'Ws',
           supportDir: fixture.support,
+          buildClient: examClient == null ? null : (_) => examClient,
           syncController: syncController,
           isPairedSubtree: true,
           isPushedRoute: true,
@@ -328,6 +346,137 @@ void main() {
       await expectDesktopKept(tester, syncController, 'trace finished');
     },
   );
+
+  Future<({_MidSessionConflictController syncController, exam_bridge.BridgeHeldExam held})>
+  takeDesktopThenHoldGradedExam(
+    WidgetTester tester, {
+    FakeServerClient? examClient,
+  }) async {
+    final syncController = await openSession(
+      tester,
+      deckId: 'deck-1',
+      deckPath: 'decks/deck.md',
+      rowTitle: 'Deck',
+      examClient: examClient,
+    );
+    await tester.tap(find.text('Reveal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Seen'));
+    await tester.pumpAndSettle();
+    expect(find.text('SESSION COMPLETE'), findsOneWidget);
+
+    await resolveAndExpectPicker(tester, syncController);
+    final desktop = syncController.pulledDesktop;
+    expect(
+      [progressDocument(syncController.workspace).readAsStringSync(), _cards(syncController.workspace)],
+      [desktop, isEmpty],
+      reason: 'after the resolve: the progress document is the pulled desktop one, with no card progress',
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    final deck ='${syncController.workspace.path}/decks/deck.md';
+    final root = syncController.workspace.parent.path;
+    writeVerifiedTestSources(deck);
+    final start = bridge.examSittingStart(
+      deckPath: deck,
+      rootDir: root,
+      needsWorkOnly: false,
+      nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+    );
+    bridge.heldExamReceive(rootDir: root, carriedJson: _matchedExamFor(deck), start: start);
+    final held = exam_bridge.BridgeHeldExam(deckPath: deck, deckId: start.deckId, rootDir: root);
+    held.storeResult(_contract('GradingReply.results'));
+
+    await tester.tap(find.text('Deck'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Show result'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('this exam is stale'),
+      findsNothing,
+      reason: 'opening the held result: a stale line means the fixture no longer matches the carried exam',
+    );
+    return (syncController: syncController, held: held);
+  }
+
+  void expectRecorded(
+    _MidSessionConflictController syncController,
+    exam_bridge.BridgeHeldExam held,
+    String step,
+  ) {
+    final recorded = held.view()?.outcome?.recorded;
+    final progress = jsonDecode(progressDocument(syncController.workspace).readAsStringSync()) as Map;
+    final fullResult = (progress['deck'] as Map)['full_exam_result'];
+    expect(
+      [recorded, fullResult],
+      [true, {'at_ms': isA<int>(), 'pass': 0, 'partial': 0, 'total': 1}],
+      reason: '$step: the held outcome is recorded ($recorded) and the progress document holds the '
+          "sitting's failed full result ($fullResult)",
+    );
+  }
+
+  testWidgets(
+    'a held exam result applied after taking the desktop side on a finished '
+    'review is recorded and brings no discarded review back',
+    (tester) async {
+      final (:syncController, :held) = await takeDesktopThenHoldGradedExam(tester);
+
+      expectRecorded(syncController, held, 'applied');
+      expect(
+        _cards(syncController.workspace),
+        isEmpty,
+        reason: 'applied: the card progress is still the desktop one, so no discarded phone review came back',
+      );
+    },
+  );
+
+  testWidgets(
+    'remediating a held exam after taking the desktop side on a finished '
+    'review lands the card in the sidecar and brings no discarded review back',
+    (tester) async {
+      final remediated = jsonDecode(_contract('GradingReply.remediated')) as Map<String, dynamic>;
+      final client = FakeServerClient(
+        versionReply: minServerVersion,
+        gradingReplies: [
+          GradingAnswered(_contract('GradingReply.remediated'), RemoteGrading.fromJson(remediated)!),
+        ],
+      );
+      final (:syncController, :held) = await takeDesktopThenHoldGradedExam(tester, examClient: client);
+      expectRecorded(syncController, held, 'before remediating');
+
+      await tester.tap(find.text('Turn the gaps into cards'));
+      await tester.pumpAndSettle();
+
+      final sidecar = File('${syncController.workspace.path}/decks/deck.local.md');
+      expect(
+        sidecar.existsSync() ? sidecar.readAsStringSync() : '<no sidecar>',
+        contains('## Why does Rust use ownership?'),
+        reason: 'remediated: the remediation card lives in the sidecar, remediate requests ${client.remediateRequests.length}',
+      );
+      expect(
+        _cards(syncController.workspace),
+        isEmpty,
+        reason: 'remediated: the card progress is still the desktop one, so no discarded phone review came back',
+      );
+    },
+  );
+}
+
+String _contract(String name) =>
+    File('../../tests/contracts/$name.json').readAsStringSync();
+
+String _matchedExamFor(String deck) {
+  final carried = _contract('CarriedReplyDto');
+  final topic = ((jsonDecode(carried) as Map)['exam'] as Map)['topics'][0] as Map;
+  return carried
+      .replaceAll(topic['topic_id'] as String, exam_bridge.examDeckId(deckPath: deck)!)
+      .replaceAll(topic['fingerprint'] as String, verifiedTestSourceFingerprint);
+}
+
+Map<String, dynamic> _cards(Directory workspace) {
+  final json = jsonDecode(progressDocument(workspace).readAsStringSync());
+  return (json as Map<String, dynamic>)['cards'] as Map<String, dynamic>;
 }
 
 File progressDocument(Directory workspace) {
