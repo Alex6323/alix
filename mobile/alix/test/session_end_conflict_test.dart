@@ -412,7 +412,7 @@ void main() {
     await tester.tap(find.text('Show result'));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('this exam is stale'),
+      find.textContaining('This exam is stale'),
       findsNothing,
       reason:
           'opening the held result: a stale line means the fixture no '

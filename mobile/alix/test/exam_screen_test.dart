@@ -18,7 +18,8 @@ const _pollInterval = Duration(milliseconds: 10);
 const _needsDesktop = 'grading needs the paired desktop';
 const _busy = 'the desktop is busy grading; try again shortly';
 const _unreadable = 'the desktop could not read this exam; update alix on both devices';
-const _staleExam = 'the deck changed: this exam is stale and cannot be recorded';
+const _staleExam =
+    'The deck has changed. This exam is stale and cannot be recorded. Discard it and generate a new one.';
 const _remediate = 'Turn the gaps into cards';
 const _pairingLine = 'Pairing expired. Pair again from Settings → Connected devices.';
 
