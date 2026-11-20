@@ -31,9 +31,9 @@ String examDeckName({required String deckPath, required String rootDir}) {
 const pairingExpiredMessage =
     'Pairing expired. Pair again from Settings → Connected devices.';
 
-const _needsDesktop = 'grading needs the paired desktop';
-const _busy = 'the desktop is busy grading; try again shortly';
-const _unreadable = 'the desktop could not read this exam; update alix on both devices';
+const _needsDesktop = 'Grading needs the paired desktop.';
+const _busy = 'The desktop is busy grading. Try again shortly.';
+const _unreadable = 'The desktop could not read this exam. Update Alix on both devices.';
 const _staleExam =
     'The deck has changed. This exam is stale and cannot be recorded. Discard it and generate a new one.';
 
@@ -308,7 +308,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
         setState(() => _fail(desk, switch (status) {
           409 => _busy,
           400 => _unreadable,
-          _ => 'the desktop refused this request ($status)',
+          _ => 'The desktop refused this request ($status).',
         }));
       case GradingAnswered(:final state) when state.sitting != sitting:
         setState(() => _fail(desk, null));

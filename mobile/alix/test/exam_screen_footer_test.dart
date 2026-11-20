@@ -143,4 +143,21 @@ void main() {
       expectWhole(tester, 'notice on Submit', label);
     }
   });
+
+  testWidgets('each desktop message on Submit shows whole at the default text size on a 360-wide phone', (tester) async {
+    for (final (row, reply) in [
+      ('needs the desktop', const GradingNoAnswer()),
+      ('busy', const GradingRefused(409)),
+      ('unreadable', const GradingRefused(400)),
+      ('refused', const GradingRefused(503)),
+    ]) {
+      await openOnPhone(tester, FakeHeldExam(), FakeServerClient(gradingReplies: [reply]));
+      await tester.enterText(_field, 'a borrow is a reference');
+      await tester.tap(find.text('Submit'));
+      await tester.pump();
+      await tester.pump();
+      expectNotCut(tester, row, find.byKey(const ValueKey('exam-notice')));
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
 }

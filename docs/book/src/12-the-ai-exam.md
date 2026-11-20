@@ -194,7 +194,7 @@ and you can sit it at any time as practice, before drilling too:
   chapter](19-pairing.md#whats-borrowed-once-paired) says when it checks), and
   **Take exam** reads `grading needs your paired desktop` then, or `graded by
   your paired desktop` otherwise: it opens either way. On the exam screen,
-  `grading needs the paired desktop` shows when you submit, or tap **Turn the
+  `Grading needs the paired desktop.` shows when you submit, or tap **Turn the
   gaps into cards**, and the desktop does not answer: your answers stay on the
   phone, and the buttons then read `submit again` and `remediate again`.
 
