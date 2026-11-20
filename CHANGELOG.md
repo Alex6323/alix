@@ -289,7 +289,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Phone exam: each question fills the screen above a one-line answer box that
-  grows to four lines; the question counter moves into the header, and Back
+  grows to four lines, and a hairline under the question marks where it ends,
+  as on review cards; the question counter moves into the header, and Back
   and Next sit under the box, hidden while the keyboard is open (a tap on the
   question closes it). Continue later is gone: the close button and the
   system back gesture ask before leaving, and leaving keeps the exam where it

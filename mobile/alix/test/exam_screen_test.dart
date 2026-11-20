@@ -1228,8 +1228,9 @@ void main() {
 
     final one = await heightWith('');
     final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
-    expect(box().top - question.bottom, inInclusiveRange(0, 12.01),
-        reason: 'empty: the question $question reaches down to the answer box ${box()}');
+    final hairline = tester.getRect(find.byKey(const ValueKey('exam-question-hairline')));
+    expect((hairline.top - question.bottom, box().top - hairline.bottom), (12, 12),
+        reason: 'empty: the question $question reaches down to its hairline $hairline above the box ${box()}');
     final two = await heightWith('a\nb');
     final four = await heightWith('a\nb\nc\nd');
     final six = await heightWith('a\nb\nc\nd\ne\nf');
@@ -1262,13 +1263,32 @@ void main() {
     expect(scrollbar.thumbVisibility, isTrue, reason: 'the scrollbar shows without a touch');
     final counter = find.descendant(of: find.byType(AppBar), matching: find.byKey(const ValueKey('exam-counter')));
     expect(tester.widget<Text>(counter).data, '1/1', reason: 'the question counter sits in the header');
-    final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
     final box = tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
     final footer = tester.getRect(find.byKey(const ValueKey('exam-footer')));
-    expect(box.top - question.bottom, inInclusiveRange(0, 12.01),
-        reason: 'the question $question ends just above the answer box $box');
     expect(footer.top, greaterThanOrEqualTo(box.bottom), reason: 'Back and Next $footer sit under the answer box $box');
     expect(760.0 - footer.bottom, lessThanOrEqualTo(12.01), reason: 'Back and Next $footer sit at the bottom');
+  });
+
+  testWidgets('a hairline sits right under every question: under short text, and just above the box for a long one',
+      (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    for (final (row, held) in [('short', FakeHeldExam()), ('long', longQuestions(1))]) {
+      await pumpExam(tester, held: held);
+      final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
+      final hairline = tester.getRect(find.byKey(const ValueKey('exam-question-hairline')));
+      final box = tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
+      expect(hairline.height, 1, reason: '$row: the hairline $hairline is one pixel');
+      expect(hairline.top - question.bottom, 12, reason: '$row: the hairline $hairline sits right under $question');
+      if (row == 'short') {
+        expect(box.top - hairline.bottom, greaterThan(300),
+            reason: 'short: the free space lies between the hairline $hairline and the box $box');
+      } else {
+        expect(box.top - hairline.bottom, 12, reason: 'long: the hairline $hairline sits just above the box $box');
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
   });
 
   testWidgets('the next question starts at its top, not at the last scroll offset', (tester) async {
@@ -1728,6 +1748,25 @@ void main() {
     await tester.tap(question, warnIfMissed: false);
     await tester.pump();
     expect(focused(), isFalse, reason: 'tapping the question takes the focus');
+  });
+
+  testWidgets('a tap on the empty space under a short question takes the focus from the answer', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpExam(tester, held: FakeHeldExam());
+    bool focused() => tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus;
+    final hairline = tester.getRect(find.byKey(const ValueKey('exam-question-hairline')));
+    final box = tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
+    final empty = Offset(hairline.center.dx, (hairline.bottom + box.top) / 2);
+
+    await tester.tap(_field);
+    await tester.pump();
+    expect(focused(), isTrue, reason: 'tapping the answer focuses it');
+    await tester.tapAt(empty);
+    await tester.pump();
+    expect(focused(), isFalse,
+        reason: 'tapping $empty, between the hairline $hairline and the box $box, takes the focus');
   });
 
   testWidgets('backgrounding the app saves the typed answer as a draft that resumes editable', (tester) async {

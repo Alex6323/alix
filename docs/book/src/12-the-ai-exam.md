@@ -216,7 +216,8 @@ desktop; the phone saves each answer as you move on from it, and the desktop
 keeps nothing about an exam the phone has fetched. The exam is lost with its
 workspace if that is removed from the phone (the **Remove** in the Sync
 sheet). Each question fills the screen above a one-line answer box that
-grows to four lines as you type; the counter in the header shows where you
+grows to four lines as you type, and a hairline under the question marks
+where it ends; the counter in the header shows where you
 are, and **Back** and **Next** sit under the box while the keyboard is
 closed (tap the question to close it). The close button or the system back
 gesture asks before leaving, and **Leave** keeps the exam open: reopen the

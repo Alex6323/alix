@@ -570,9 +570,26 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTap: () => FocusScope.of(context).unfocus(),
-            child: _QuestionScroll(
-              key: ValueKey('exam-question-scroll-$index'),
-              child: _question(context, exam, index),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Flexible(
+                    child: _QuestionScroll(
+                      key: ValueKey('exam-question-scroll-$index'),
+                      child: _question(context, exam, index),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    key: const ValueKey('exam-question-hairline'),
+                    height: 1,
+                    color: Theme.of(context).alix.line,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
