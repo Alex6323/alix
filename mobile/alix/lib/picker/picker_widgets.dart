@@ -583,6 +583,14 @@ class PickerExamOffer {
   final VoidCallback? onDiscard;
   final DateTime Function() now;
 
+  String? get shownFailure =>
+      action == PickerExamAction.generate &&
+          !locked &&
+          (serverLive || !needsDesktop) &&
+          notice == null
+      ? failure
+      : null;
+
   bool get needsDesktop =>
       action != PickerExamAction.take && action != PickerExamAction.result;
 
@@ -761,9 +769,9 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                                   : 'grading needs your paired desktop',
                             PickerExamAction.result => 'your graded exam',
                             PickerExamAction.generate =>
-                              exam.failure == null
+                              exam.shownFailure == null
                                   ? 'graded by your paired desktop'
-                                  : 'failed: ${exam.failure}',
+                                  : 'failed: ${exam.shownFailure}',
                           },
                 filled:
                     exam.enabled &&
@@ -773,13 +781,13 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     : exam.action == PickerExamAction.preparing
                     ? exam.onCancel
                     : () => exam.onStart(exam.filterable && _needsWorkOnly),
-                trailingAction: switch ((exam.onDiscard, exam.failure)) {
+                trailingAction: switch ((exam.onDiscard, exam.shownFailure)) {
                   (final onDiscard?, _) => (
                     icon: Icons.delete_outline,
                     tooltip: 'Discard exam',
                     onPressed: onDiscard,
                   ),
-                  (_, final failure?) when exam.action == PickerExamAction.generate => (
+                  (_, final failure?) => (
                     icon: Icons.info_outline,
                     tooltip: 'Why it failed',
                     onPressed: () => _showExamFailure(context, failure),
@@ -815,6 +823,7 @@ class _PickerLaunchRow extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = theme.alix;
     final foreground = filled ? theme.colorScheme.surface : tokens.dim;
+    final action = trailingAction;
     final row = Opacity(
       opacity: onTap == null ? 0.5 : 1,
       child: Material(
@@ -860,7 +869,7 @@ class _PickerLaunchRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (trailingAction != null) const SizedBox(width: _discardButtonSize),
+                if (action != null) const SizedBox(width: _trailingButtonSize),
                 Icon(Icons.chevron_right, size: _chevronSize, color: foreground),
               ],
             ),
@@ -870,7 +879,7 @@ class _PickerLaunchRow extends StatelessWidget {
     );
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: trailingAction == null
+      child: action == null
           ? row
           : Stack(
               children: [
@@ -879,14 +888,14 @@ class _PickerLaunchRow extends StatelessWidget {
                   top: 0,
                   bottom: 0,
                   right: _chevronColumnWidth,
-                  width: _discardButtonSize,
+                  width: _trailingButtonSize,
                   child: Center(
                     child: IconButton(
-                      icon: Icon(trailingAction!.icon),
+                      icon: Icon(action.icon),
                       iconSize: 20,
                       color: foreground,
-                      tooltip: trailingAction!.tooltip,
-                      onPressed: trailingAction!.onPressed,
+                      tooltip: action.tooltip,
+                      onPressed: action.onPressed,
                     ),
                   ),
                 ),
@@ -914,7 +923,7 @@ Future<void> _showExamFailure(BuildContext context, String failure) {
   );
 }
 
-const double _discardButtonSize = 48;
+const double _trailingButtonSize = 48;
 const double _launchRowBorderWidth = 1;
 const double _launchRowSidePadding = 16;
 const double _chevronSize = 22;

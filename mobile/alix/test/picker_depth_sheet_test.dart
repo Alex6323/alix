@@ -259,6 +259,7 @@ void main() {
     bool filterable = false,
     PickerExamAction action = PickerExamAction.generate,
     String? failure,
+    String? notice,
     DateTime? preparingSince,
     ValueChanged<bool>? onStart,
     VoidCallback? onCancel,
@@ -271,6 +272,7 @@ void main() {
     filterable: filterable,
     action: action,
     failure: failure,
+    notice: notice,
     preparingSince: preparingSince,
     onStart: onStart ?? (_) {},
     onCancel: onCancel,
@@ -462,13 +464,36 @@ void main() {
     expect(starts, [false]);
   });
 
-  testWidgets('a row without a failure has no Why it failed button', (
+  testWidgets('the Why it failed button appears exactly when the hint shows the failure', (
     tester,
   ) async {
-    await tester.pumpWidget(_sheet((_) {}, exam: offer()));
-
-    expect(find.byTooltip('Why it failed'), findsNothing);
-    expect(find.text('graded by your paired desktop'), findsOneWidget);
+    const reason = "'claude' timed out after 600s";
+    final rows = <({String name, PickerExamOffer exam, String hint, bool button})>[
+      (name: 'failure', exam: offer(failure: reason), hint: 'failed: $reason', button: true),
+      (name: 'no failure', exam: offer(), hint: 'graded by your paired desktop', button: false),
+      (name: 'locked', exam: offer(failure: reason, locked: true), hint: 'locked', button: false),
+      (
+        name: 'needs the desktop',
+        exam: offer(failure: reason, serverLive: false),
+        hint: 'needs a paired desktop',
+        button: false,
+      ),
+      (
+        name: 'notice',
+        exam: offer(failure: reason, notice: 'the desktop refused the exam'),
+        hint: 'the desktop refused the exam',
+        button: false,
+      ),
+    ];
+    for (final row in rows) {
+      await tester.pumpWidget(_sheet((_) {}, exam: row.exam));
+      expect(find.text(row.hint), findsOneWidget, reason: '${row.name}: hint ${row.hint}');
+      expect(
+        find.byTooltip('Why it failed'),
+        row.button ? findsOneWidget : findsNothing,
+        reason: '${row.name}: Why it failed button present ${row.button}',
+      );
+    }
   });
 
   testWidgets('Take exam opens the ready sitting and is filled', (

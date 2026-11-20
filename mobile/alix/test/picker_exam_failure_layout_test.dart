@@ -20,8 +20,11 @@ Future<void> _loadFonts() async {
   for (final weight in const ['400', '600']) {
     mono.addFont(bytes('assets/fonts/ibm-plex-mono-$weight.ttf'));
   }
+  final icons = FontLoader('MaterialIcons')
+    ..addFont(bytes('build/unit_test_assets/fonts/MaterialIcons-Regular.otf'));
   await sans.load();
   await mono.load();
+  await icons.load();
 }
 
 const _phone = Size(360, 760);
@@ -32,7 +35,9 @@ final _longFailure = List.filled(
   "'claude' timed out after 600s waiting for the backend",
 ).join(' ');
 
-Future<void> _pumpSheet(WidgetTester tester, double scale) async {
+const _desktopFailure = "'claude' timed out after 600s";
+
+Future<void> _pumpSheet(WidgetTester tester, double scale, {String failure = ''}) async {
   tester.view.physicalSize = const Size(1080, 2280);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -56,7 +61,7 @@ Future<void> _pumpSheet(WidgetTester tester, double scale) async {
               serverLive: true,
               due: false,
               filterable: false,
-              failure: _longFailure,
+              failure: failure,
               onStart: (_) {},
             ),
           ),
@@ -88,7 +93,7 @@ void main() {
 
   for (final scale in [1.0, 1.5]) {
     testWidgets('a long failure keeps the exam row to one cut line at text scale $scale', (tester) async {
-      await _pumpSheet(tester, scale);
+      await _pumpSheet(tester, scale, failure: _longFailure);
 
       final hint = _paragraph(tester, find.text('failed: $_longFailure'));
       expect(hint.maxLines, 1, reason: 'scale $scale, step hint: maxLines ${hint.maxLines}');
@@ -100,7 +105,7 @@ void main() {
       final screen = Offset.zero & _phone;
       for (final (name, finder) in [
         ('Why it failed button', find.byTooltip('Why it failed')),
-        ('chevron', find.byIcon(Icons.chevron_right).last),
+        ('chevron', find.descendant(of: find.widgetWithText(InkWell, 'Generate exam'), matching: find.byIcon(Icons.chevron_right))),
       ]) {
         expect(finder, findsOneWidget, reason: 'scale $scale, step $name: present');
         final rect = tester.getRect(finder);
@@ -108,29 +113,35 @@ void main() {
             reason: 'scale $scale, step $name: $rect on the $_phone screen');
       }
       expect(tester.takeException(), isNull, reason: 'scale $scale, step layout: no exception');
-
-      await _render(tester, 'row-scale-${scale.toString().replaceAll('.', '_')}');
     });
   }
 
-  testWidgets('the failure dialog opens at text scale 1.5 without an exception', (tester) async {
-    await _pumpSheet(tester, 1.5);
+  testWidgets('the failure dialog at text scale 1.5 shows the whole text and throws nothing', (tester) async {
+    await _pumpSheet(tester, 1.5, failure: _longFailure);
 
     await tester.tap(find.byTooltip('Why it failed'));
     await tester.pumpAndSettle();
 
     expect(find.text('The exam could not be generated'), findsOneWidget, reason: 'scale 1.5, step dialog: title');
+    expect(
+      find.descendant(of: find.byType(AlertDialog), matching: find.widgetWithText(SelectableText, _longFailure)),
+      findsOneWidget,
+      reason: 'scale 1.5, step dialog: the whole text in a SelectableText',
+    );
     expect(tester.takeException(), isNull, reason: 'scale 1.5, step dialog: no exception');
   });
 
-  testWidgets('the failure dialog at text scale 1.0 is rendered', (tester) async {
-    await _pumpSheet(tester, 1.0);
+  for (final scale in [1.0, 1.5]) {
+    testWidgets('renders the exam row with a failure at text scale $scale when ALIX_RENDER_DIR is set', (tester) async {
+      await _pumpSheet(tester, scale, failure: _desktopFailure);
+      await _render(tester, 'row-scale-${scale.toString().replaceAll('.', '_')}');
+    });
+  }
 
+  testWidgets('renders the failure dialog at text scale 1.0 when ALIX_RENDER_DIR is set', (tester) async {
+    await _pumpSheet(tester, 1.0, failure: _desktopFailure);
     await tester.tap(find.byTooltip('Why it failed'));
     await tester.pumpAndSettle();
-
-    expect(find.text('The exam could not be generated'), findsOneWidget, reason: 'scale 1.0, step dialog: title');
     await _render(tester, 'dialog-scale-1_0');
-    expect(tester.takeException(), isNull, reason: 'scale 1.0, step dialog: no exception');
   });
 }

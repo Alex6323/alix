@@ -178,15 +178,15 @@ and you can sit it at any time as practice, before drilling too:
   app meanwhile. Tapping the row while it runs asks **Cancel preparation?**;
   confirming stops the writing on the desktop and drops the exam (if the
   cancel fails, the row reads `could not cancel the preparation` and the
-  exam stays). The exam is on the desktop while it is written, and stays
-  there when finished until the phone fetches it. The app fetches it whenever
-  it is open and can reach the paired desktop, and the next time it starts
-  there if it could not: the row reads `fetching…`, a notice says `Exam ready:
-  <deck title>.`, and the row then reads **Take exam**, filled; the exam opens
-  only when you tap it. From then on the exam is only on the phone, and it
-  opens and can be answered to the end without the desktop. If the desktop fails to write the exam, the row reads `failed:` followed by
-  the desktop's reason, **Why it failed** (the info button beside the chevron)
-  shows all of it, and tapping the row generates again. The desktop writes
+  exam stays). If the desktop fails to write the exam, the row reads `failed:`
+  followed by the desktop's reason, **Why it failed** (the info button beside
+  the chevron) shows all of it, and tapping the row generates again. The exam
+  is on the desktop while it is written, and stays there when finished until
+  the phone fetches it. The app fetches it whenever it is open and can reach
+  the paired desktop, and the next time it starts there if it could not: the
+  row reads `fetching…`, a notice says `Exam ready: <deck title>.`, and the
+  row then reads **Take exam**, filled; the exam opens only when you tap it. From then on the exam is only on the phone, and it
+  opens and can be answered to the end without the desktop. The desktop writes
   one exam at a time: the row shows `the desktop refused the exam` when it does
   not take the request, for example while it is writing another exam (wait for
   it, or cancel it from its deck's row), or when it cannot be reached. Three
