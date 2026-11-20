@@ -20,6 +20,7 @@ import 'package:alix_mobile/src/rust/frb_generated.dart';
 import 'package:alix_mobile/sync/sync_port.dart';
 import 'package:alix_mobile/theme.dart';
 
+import 'support/carried_exam_fixture.dart';
 import 'support/deck_fixture.dart';
 import 'support/fake_server_client.dart';
 import 'support/fake_sync_port.dart';
@@ -337,8 +338,6 @@ void main() {
     );
   });
 
-  String contract(String name) =>
-      File('../../tests/contracts/$name.json').readAsStringSync();
   String corpusSitting() =>
       ((jsonDecode(contract('CarriedReplyDto')) as Map)['exam'] as Map)['sitting'] as String;
 
@@ -383,13 +382,6 @@ void main() {
   }
 
   String unmatchedContractExam() => contract('CarriedReplyDto');
-
-  String matchedExamFor(String deck) {
-    final topic = ((jsonDecode(unmatchedContractExam()) as Map)['exam'] as Map)['topics'][0] as Map;
-    return unmatchedContractExam()
-        .replaceAll(topic['topic_id'] as String, exam_bridge.examDeckId(deckPath: deck)!)
-        .replaceAll(topic['fingerprint'] as String, verifiedTestSourceFingerprint);
-  }
 
   FakeServerClient fetchingDesk({
     List<String?>? carried,
