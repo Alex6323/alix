@@ -138,26 +138,35 @@ void main() {
     await tester.tap(find.text('Submit'));
     await tester.pump();
     await tester.pump();
-    expectNotCut(tester, 'notice on Submit', find.byKey(const ValueKey('exam-notice')));
+    const staleText =
+        'The deck has changed. This exam is stale and cannot be recorded. Discard it and generate a new one.';
+    expect(find.text(staleText), findsOneWidget, reason: 'notice on Submit: the stale message is on screen');
+    expectNotCut(tester, 'notice on Submit', find.text(staleText));
     for (final label in ['Back', 'Continue later', 'Discard exam']) {
       expectWhole(tester, 'notice on Submit', label);
     }
   });
 
-  testWidgets('each desktop message on Submit shows whole at the default text size on a 360-wide phone', (tester) async {
-    for (final (row, reply) in [
-      ('needs the desktop', const GradingNoAnswer()),
-      ('busy', const GradingRefused(409)),
-      ('unreadable', const GradingRefused(400)),
-      ('refused', const GradingRefused(503)),
-    ]) {
-      await openOnPhone(tester, FakeHeldExam(), FakeServerClient(gradingReplies: [reply]));
-      await tester.enterText(_field, 'a borrow is a reference');
-      await tester.tap(find.text('Submit'));
-      await tester.pump();
-      await tester.pump();
-      expectNotCut(tester, row, find.byKey(const ValueKey('exam-notice')));
-      await tester.pumpWidget(const SizedBox.shrink());
+  testWidgets('each desktop message on Submit shows whole at the default text size and at text scale 1.5', (tester) async {
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    for (final scale in [1.0, 1.5]) {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      for (final (row, reply, message) in [
+        ('needs the desktop', const GradingNoAnswer(), 'Grading needs the paired desktop.'),
+        ('busy', const GradingRefused(409), 'The desktop is busy grading. Try again shortly.'),
+        ('unreadable', const GradingRefused(400), 'The desktop could not read this exam. Update Alix on both devices.'),
+        ('refused', const GradingRefused(503), 'The desktop refused this request (503).'),
+      ]) {
+        final state = '$row, text scale $scale';
+        await openOnPhone(tester, FakeHeldExam(), FakeServerClient(gradingReplies: [reply]));
+        await tester.enterText(_field, 'a borrow is a reference');
+        await tester.tap(find.text('Submit'));
+        await tester.pump();
+        await tester.pump();
+        expect(find.text(message), findsOneWidget, reason: '$state: the row\'s message is on screen');
+        expectNotCut(tester, state, find.text(message));
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
     }
   });
 }
