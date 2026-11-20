@@ -124,8 +124,9 @@ Once paired, review gains things it doesn't have offline:
   offline grade, matching the rule above: the server computes, the phone keeps.
   [The exam chapter](12-the-ai-exam.md#sitting-the-exam) lists what the rows say,
   how to discard an exam, and what happens when the deck changed since the exam
-  was written (the exam is still graded and shown, but its result is not
-  recorded).
+  was written (a stale exam is not graded and can only be discarded; a
+  deck that changes while the desktop grades gives a result that is shown
+  and not recorded).
 
 A [trace deck](13-trace-decks.md) runs entirely on-device: predict, reveal,
 and self-grade each checkpoint. It has no AI exam or paired-only capstone.

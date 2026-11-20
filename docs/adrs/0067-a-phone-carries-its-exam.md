@@ -72,9 +72,12 @@ results, and progress. It now also owns the exam it is taking.
 
 - A prepared exam is taken offline; only generation and grading need the
   desktop.
-- A desktop restart, a deck rename, and a deck edit no longer lose an open
-  exam. A deck whose material changed since the exam began is still
-  graded but not recorded, as before.
+- A desktop restart, a deck rename, and a deck edit that leaves the exam
+  material alone no longer lose an open exam. If the material changed
+  since the exam was written, the exam is stale: nothing of it is sent to
+  be graded and the phone offers only Discard exam. If the material
+  changes after Submit, while the desktop grades, the result is shown and
+  not recorded.
 - Another deck's exam can be generated while one is being taken.
 - "The key points never leave the server" is withdrawn. A learner can
   read the expected points on the phone before answering.
