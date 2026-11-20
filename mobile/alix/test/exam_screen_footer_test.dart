@@ -54,6 +54,33 @@ void main() {
     await tester.pump();
   }
 
+  Future<void> pumpStaleAtOpen(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: alixDark(),
+      home: ExamScreen(
+        deckName: 'rust.md',
+        held: FakeHeldExam(changed: true),
+        client: FakeServerClient(),
+        onLeaveResult: () {},
+        onDiscard: () async => true,
+        pollInterval: const Duration(milliseconds: 10),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump();
+  }
+
+  void expectNotCut(WidgetTester tester, String state, Finder message) {
+    expect(message, findsOneWidget, reason: '$state: the message shows');
+    final paragraph = tester.renderObject<RenderParagraph>(message);
+    expect(paragraph.didExceedMaxLines, isFalse, reason: '$state: the message is not cut off');
+    expect(tester.takeException(), isNull, reason: '$state: no overflow');
+  }
+
   void expectWhole(WidgetTester tester, String state, String label) {
     final paragraph = tester.renderObject<RenderParagraph>(find.text(label));
     final whole = paragraph.getMaxIntrinsicWidth(double.infinity);
@@ -85,6 +112,35 @@ void main() {
       }
       expect(tester.takeException(), isNull, reason: '$state: the footer lays out without overflow');
       await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  final staleMessage = find.textContaining('Discard it and generate a new one.');
+
+  testWidgets('the stale view at open shows its whole message and Discard exam on a 360-wide phone', (tester) async {
+    await pumpStaleAtOpen(tester);
+    expectNotCut(tester, 'stale at open', staleMessage);
+    expect(find.text('Discard exam'), findsOneWidget, reason: 'stale at open: Discard exam is on screen');
+  });
+
+  testWidgets('the stale view at open shows its whole message at text scale 1.5', (tester) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await pumpStaleAtOpen(tester);
+    expectNotCut(tester, 'stale at open, text scale 1.5', staleMessage);
+  });
+
+  testWidgets('the notice on Submit shows its whole message above the footer on a 360-wide phone', (tester) async {
+    final held = FakeHeldExam();
+    await openOnPhone(tester, held, FakeServerClient());
+    await tester.enterText(_field, 'a borrow is a reference');
+    held.changed = true;
+    await tester.tap(find.text('Submit'));
+    await tester.pump();
+    await tester.pump();
+    expectNotCut(tester, 'notice on Submit', find.byKey(const ValueKey('exam-notice')));
+    for (final label in ['Back', 'Continue later', 'Discard exam']) {
+      expectWhole(tester, 'notice on Submit', label);
     }
   });
 }

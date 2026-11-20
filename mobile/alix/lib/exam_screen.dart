@@ -490,7 +490,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
           Text(
             _noticeLine ?? '',
             textAlign: TextAlign.center,
-            maxLines: 3,
+            maxLines: _noticeMaxLines,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: tokens.again),
           ),
@@ -516,13 +516,15 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     return Text(
       _noticeLine ?? '',
       key: const ValueKey('exam-notice'),
-      maxLines: 3,
+      maxLines: _noticeMaxLines,
       overflow: TextOverflow.ellipsis,
       style: TextStyle(color: tokens.again, fontSize: 13),
     );
   }
 
   String? get _noticeLine => _shown ?? (_stale ? _staleExam : null);
+
+  int get _noticeMaxLines => _noticeLine == _staleExam ? 8 : 3;
 
   bool get _hasNotice => _noticeLine != null;
 
