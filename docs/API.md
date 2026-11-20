@@ -506,9 +506,9 @@ removed first). `GET /api/remote/exam/carried?sitting=<id>` hands over the
 slot holds no ready exam with that id. The phone stores it, then `POST
 /api/remote/exam/close {sitting}` ends the exam on the desktop: it cancels a
 running generation, removing the exam's file only if that file already holds
-the same sitting, or removes a ready exam's file, and answers 500 with the exam
-ready if that file cannot be removed; a sitting the slot does not hold is 200
-and changes nothing; a body that is not JSON with a `sitting` is 400.
+the same sitting, or removes a ready exam's file, and answers 500 with the
+exam ready if that file cannot be removed; a sitting the slot does not hold is
+200 and changes nothing; a body that is not JSON with a `sitting` is 400.
 Once closed, the desktop keeps nothing about the exam. A generation still
 running when the server stops is lost; a ready exam survives a restart. An exam
 whose own grade request, answers left blank, would exceed 2 MiB fails its

@@ -56,10 +56,10 @@ its sources.
    result. Taking the exam needs no desktop. The file is removed when the
    learner leaves the result or discards the exam.
 4. Grading takes the questions, their key points, the answers and the
-   strictness in the request. It opens no deck, reads no source, writes nothing under the
-   served folder, and runs the model without tools, as the grading of
-   every exam now does. Remediation takes the missed points per topic in
-   its request, the same way.
+   strictness in the request. It opens no deck, reads no source, writes
+   nothing under the served folder, and runs the model without tools, as
+   the grading of every exam now does. Remediation takes the missed points
+   per topic in its request, the same way.
 5. The desktop runs two independent job slots, one for generation and one
    for grading and remediation, each holding one job. A finished job does
    not hold its slot against a new one. In the grading slot, a request
@@ -98,9 +98,10 @@ results, and progress. It now also owns the exam it is taking.
   next exam start request does (a start whose removal fails again answers
   an error and the copy stays); a server stopped during generation loses
   that generation; a ready exam nobody fetched is replaced by the next
-  exam start request, without a notice to the phone that began it; a deck deleted on the desktop while
-  its exam is held leaves that exam on the phone unseen; a desktop on
-  another alix version refuses a valid exam until both are updated.
+  exam start request, without a notice to the phone that began it; a deck
+  deleted on the desktop while its exam is held leaves that exam on the
+  phone unseen; a desktop on another alix version refuses a valid exam
+  until both are updated.
 
 ## Alternatives considered
 
@@ -139,8 +140,9 @@ it.
 ## Compatibility
 
 `exam/remote.json` changes its document; a file in ADR 0066's shape is an
-unreadable document when the server next starts, reported and left. The phone's
-start records change shape and its earlier exam file is no longer read.
+unreadable document when the server next starts, reported and left. The
+phone's start records change shape and its earlier exam file is no longer
+read.
 The remote exam contract changes: the generation reply loses the questions
 and everything after generation, and gains a `ready` phase; fetching,
 grading, remediation and both closes are new or changed calls
