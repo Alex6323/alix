@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/bridge/bridge_error.dart';
 import 'package:alix_mobile/bridge/exam_bridge.dart' show AnswerTooLong, HeldExamAccess, HeldExamView;
+import 'package:alix_mobile/leave_guard.dart';
 import 'package:alix_mobile/review/review_models.dart';
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
@@ -447,10 +448,13 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = Theme.of(context).alix;
+    final view = _view;
+    final answering = _stage == _Stage.answers && view != null;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _leave();
+        if (!didPop) _requestLeave();
       },
       child: Scaffold(
         appBar: AppBar(
@@ -460,15 +464,39 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           title: Text(widget.deckName, maxLines: 1, overflow: TextOverflow.ellipsis),
+          actions: [
+            if (answering)
+              Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: Text(
+                  '${_currentQuestion + 1}/${view.questions.length}',
+                  key: const ValueKey('exam-counter'),
+                  style: TextStyle(color: tokens.dim, fontSize: 13),
+                ),
+              ),
+          ],
         ),
         body: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: answering ? const EdgeInsets.fromLTRB(16, 4, 16, 12) : const EdgeInsets.all(20),
             child: _body(context),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _requestLeave() async {
+    if (_stage == _Stage.answers && !_stale) {
+      final leave = await confirmLeaveSession(
+        context,
+        title: 'Leave the exam?',
+        body: 'Your answers are kept, and the exam continues where you left off.',
+        stayLabel: 'Keep answering',
+      );
+      if (!leave || !mounted) return;
+    }
+    _leave();
   }
 
   Widget _body(BuildContext context) => switch (_stage) {
@@ -531,77 +559,83 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
   String get _submitLabel => _stale ? 'Discard exam' : (_again ? 'Submit again' : 'Submit');
 
   Widget _answering(BuildContext context, HeldExamView exam) {
-    final tokens = Theme.of(context).alix;
     final total = exam.questions.length;
     final index = _currentQuestion;
     final last = index == total - 1;
+    final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Question ${index + 1} of $total',
-            style: TextStyle(color: tokens.dim, fontSize: 13)),
-        const SizedBox(height: 12),
-        Flexible(
-          child: _QuestionScroll(
-            key: ValueKey('exam-question-scroll-$index'),
-            child: _question(context, exam, index),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Divider(
-          key: const ValueKey('exam-question-hairline'),
-          height: 1,
-          thickness: 1,
-          color: tokens.line,
-        ),
-        const SizedBox(height: 12),
         Expanded(
-          child: TextField(
-            key: const ValueKey('exam-answer-field'),
-            controller: _answerControllers[index],
-            readOnly: _answerLocked[index],
-            maxLines: null,
-            expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            decoration: const InputDecoration(hintText: 'your answer'),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: _QuestionScroll(
+              key: ValueKey('exam-question-scroll-$index'),
+              child: _question(context, exam, index),
+            ),
           ),
         ),
-        if (_hasNotice) ...[const SizedBox(height: 12), _notice(context)],
+        if (_hasNotice) ...[const SizedBox(height: 8), _notice(context)],
         const SizedBox(height: 12),
-        LayoutBuilder(
-          builder: (context, constraints) => Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
-                onPressed: index > 0 ? _previousQuestion : null,
-                child: const Text('Back'),
-              ),
-              Flexible(
-                child: TextButton(
-                  style: TextButton.styleFrom(minimumSize: const Size(0, 40)),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  child: const Text(
-                    'Continue later',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.55),
-                child: FilledButton(
-                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
-                  onPressed: last ? (_stale ? _discard : _submit) : _nextQuestion,
-                  child: Text(last ? _submitLabel : 'Next', maxLines: 1, overflow: TextOverflow.ellipsis),
-                ),
-              ),
-            ],
-          ),
-        ),
+        _answerBox(context, index),
+        if (!typing) ...[const SizedBox(height: 8), _footer(index, last)],
       ],
     );
   }
+
+  Widget _answerBox(BuildContext context, int index) {
+    final tokens = Theme.of(context).alix;
+    return DecoratedBox(
+      key: const ValueKey('exam-answer-box'),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: tokens.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: TextField(
+          key: const ValueKey('exam-answer-field'),
+          controller: _answerControllers[index],
+          readOnly: _answerLocked[index],
+          minLines: 1,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'your answer',
+            isDense: true,
+            filled: false,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            contentPadding: EdgeInsets.symmetric(vertical: 10),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _footer(int index, bool last) => LayoutBuilder(
+    builder: (context, constraints) => Row(
+      key: const ValueKey('exam-footer'),
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
+          onPressed: index > 0 ? _previousQuestion : null,
+          child: const Text('Back'),
+        ),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.55),
+          child: FilledButton(
+            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16)),
+            onPressed: last ? (_stale ? _discard : _submit) : _nextQuestion,
+            child: Text(last ? _submitLabel : 'Next', maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _question(BuildContext context, HeldExamView exam, int index) {
     final style = Theme.of(context).textTheme.titleMedium ?? const TextStyle();

@@ -135,6 +135,21 @@ void main() {
 
   Finder submitButton(String label) => find.widgetWithText(FilledButton, label);
 
+  Future<void> askToLeave(WidgetTester tester, String way) async {
+    if (way.startsWith('system back')) {
+      await tester.binding.handlePopRoute();
+    } else {
+      await tester.tap(find.byIcon(Icons.close));
+    }
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> leaveAnswering(WidgetTester tester, [String way = 'close button']) async {
+    await askToLeave(tester, way);
+    await tester.tap(find.text('Leave'));
+    await tester.pumpAndSettle();
+  }
+
   int linesOf(WidgetTester tester, Finder text) {
     final paragraph = tester.renderObject<RenderParagraph>(text);
     final oneLine = TextPainter(
@@ -184,7 +199,7 @@ void main() {
     await tester.tap(find.text('Next'));
     await tester.pump();
     expect(find.text(answerTooLongText), findsOneWidget, reason: 'Next: the too-long line shows');
-    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'Next: the pager stays on question 1');
+    expect(find.text('1/2'), findsOneWidget, reason: 'Next: the pager stays on question 1');
     expect(tester.widget<TextField>(_field).readOnly, isFalse, reason: 'Next: the refused answer stays editable');
 
     await tester.enterText(_field, 'short');
@@ -235,7 +250,7 @@ void main() {
 
     await tester.tap(find.text('Back'));
     await tester.pump();
-    expect(find.text('Question 1 of 3'), findsOneWidget, reason: 'Back: question 1 shows');
+    expect(find.text('1/3'), findsOneWidget, reason: 'Back: question 1 shows');
     expect(find.text(answerTooLongText), findsNothing, reason: 'Back: the too-long line is gone');
     expect(find.text(_busy), findsOneWidget, reason: 'Back: the busy line returns');
 
@@ -247,7 +262,7 @@ void main() {
     await tester.enterText(_field, 'short');
     await tester.tap(find.text('Next'));
     await tester.pump();
-    expect(find.text('Question 3 of 3'), findsOneWidget, reason: 'accepted Next: question 3 shows');
+    expect(find.text('3/3'), findsOneWidget, reason: 'accepted Next: question 3 shows');
     expect(find.text(answerTooLongText), findsNothing, reason: 'accepted Next: the too-long line is gone');
     expect(find.text(_busy), findsOneWidget, reason: 'accepted Next: the busy line returns');
   });
@@ -261,10 +276,9 @@ void main() {
     expect(find.text(_staleExam), findsOneWidget, reason: 'stale at open: the line shows');
     expect(find.widgetWithText(OutlinedButton, 'Discard exam'), findsOneWidget, reason: 'stale at open: Discard exam is the button');
     expect(find.byType(FilledButton), findsNothing, reason: 'stale at open: no Next or Submit');
-    expect(find.byType(TextButton), findsNothing, reason: 'stale at open: no Continue later');
     expect(find.text('Back'), findsNothing, reason: 'stale at open: no Back');
     expect(find.text('Why ownership?'), findsNothing, reason: 'stale at open: no question text');
-    expect(find.textContaining('Question 1'), findsNothing, reason: 'stale at open: no question counter');
+    expect(find.byKey(const ValueKey('exam-counter')), findsNothing, reason: 'stale at open: no question counter');
     expect(_field, findsNothing, reason: 'stale at open: no answer field');
     expect(log, ['view', 'materialChanged'], reason: 'stale at open: the material check follows the view, nothing is sent');
     expect(client.gradingRequests, isEmpty, reason: 'stale at open: no request');
@@ -301,7 +315,7 @@ void main() {
 
     await tester.tap(find.text('Back'));
     await tester.pump();
-    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'Back: question 1 shows');
+    expect(find.text('1/2'), findsOneWidget, reason: 'Back: question 1 shows');
     expect(find.text(_staleExam), findsOneWidget, reason: 'question 1: the line stays');
     expect(submitButton('Next'), findsOneWidget, reason: 'question 1: Next as today');
     await tester.tap(find.text('Next'));
@@ -353,7 +367,7 @@ void main() {
 
       expect(find.text(line), findsOneWidget, reason: '$label: the line "$line" shows');
       expect(held.stored, isEmpty, reason: '$label: nothing is stored');
-      expect(find.text('Question 2 of 2'), findsOneWidget, reason: '$label: the answers stay');
+      expect(find.text('2/2'), findsOneWidget, reason: '$label: the answers stay');
       await tester.pumpWidget(const SizedBox.shrink());
     }
   });
@@ -396,7 +410,7 @@ void main() {
       await tester.pump(_pollInterval);
       await tester.pump();
 
-      expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'grade $label: back to the answers');
+      expect(find.text('2/2'), findsOneWidget, reason: 'grade $label: back to the answers');
       expect(submitButton('Submit again'), findsOneWidget, reason: 'grade $label: Submit again is offered');
       expect(find.text('another exam failed'), findsNothing, reason: 'grade $label: no other job error is shown');
       expect(held.stored, isEmpty, reason: 'grade $label: nothing is stored');
@@ -473,7 +487,7 @@ void main() {
     final results = _answered('results');
     final second = FakeServerClient(gradingReplies: [results]);
     await pumpExam(tester, held: held, client: second);
-    expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'reopened: every answer is locked, the last shows');
+    expect(find.text('2/2'), findsOneWidget, reason: 'reopened: every answer is locked, the last shows');
     await tester.tap(find.text('Submit'));
     await tester.pump();
     await tester.pump();
@@ -564,8 +578,7 @@ void main() {
       onLeaveResult: () => leaves++,
     );
     await tester.enterText(_field, 'half an answer');
-    await tester.tap(find.text('Continue later'));
-    await tester.pumpAndSettle();
+    await leaveAnswering(tester);
     expect(find.byType(ExamScreen), findsNothing, reason: 'answers: the screen is left');
     expect(log, ['view', 'materialChanged', 'saveAnswers'], reason: 'answers: the draft is saved and nothing is sent');
     expect(leaves, 0, reason: 'answers: no result is reported');
@@ -830,7 +843,7 @@ void main() {
     final client = FakeServerClient(gradingReplies: [_answered('results')]);
     await pumpExam(tester, held: held, client: client);
 
-    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'check failed at open: question 1 shows');
+    expect(find.text('1/2'), findsOneWidget, reason: 'check failed at open: question 1 shows');
     expect(find.text('Why ownership?'), findsOneWidget, reason: 'check failed at open: the question text shows');
     expect(find.text('the deck cannot be read'), findsOneWidget, reason: 'check failed at open: its text shows');
     expect(find.text(_staleExam), findsNothing, reason: 'check failed at open: no stale line');
@@ -854,7 +867,7 @@ void main() {
     addTearDown(() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     });
-    for (final leave in ['Continue later', 'pause', 'Continue later after a refused Back save']) {
+    for (final leave in ['close button', 'pause', 'close button after a refused Back save']) {
       final held = FakeHeldExam();
       await openExam(tester, held: held, client: FakeServerClient());
       await tester.enterText(_field, 'a1');
@@ -865,14 +878,13 @@ void main() {
       held.tooLong = (_, _) => refusals-- > 0;
       await tester.tap(find.text('Back'));
       await tester.pump();
-      expect(find.text('Question 1 of 2'), findsOneWidget, reason: '$leave: Back moves even when its save is refused');
+      expect(find.text('1/2'), findsOneWidget, reason: '$leave: Back moves even when its save is refused');
       if (leave == 'pause') {
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
         await tester.pump();
         tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       } else {
-        await tester.tap(find.text('Continue later'));
-        await tester.pumpAndSettle();
+        await leaveAnswering(tester);
       }
 
       expect(_plain(held.saved.last), [['a1', 'a2'], [true, false]],
@@ -894,7 +906,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pump();
 
-    expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'Back then Next: back on question 2');
+    expect(find.text('2/2'), findsOneWidget, reason: 'Back then Next: back on question 2');
     expect(held.saved, isEmpty, reason: 'nothing changed since the load: no save, saves ${held.saved}');
   });
 
@@ -919,19 +931,19 @@ void main() {
     expect(submitButton('Discard exam'), findsOneWidget, reason: 'declined: Discard exam is still offered');
   });
 
-  testWidgets('Continue later on a stale exam found at Submit keeps the answers, and reopening shows the stale view',
-      (tester) async {
+  testWidgets('the close button on a stale exam found at Submit leaves without asking, keeps the answers, and '
+      'reopening shows the stale view', (tester) async {
     final held = FakeHeldExam(answers: ['a1', ''], locked: [true, false]);
     await openExam(tester, held: held, client: FakeServerClient());
     held.changed = true;
     await tester.enterText(_field, 'a2');
     await tester.tap(submitButton('Submit'));
     await tester.pump();
-    await tester.tap(find.text('Continue later'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ExamScreen), findsNothing, reason: 'Continue later: the screen is left');
-    expect(_plain(held.saved.last), [['a1', 'a2'], [true, true]], reason: 'Continue later: the answers are kept');
-    expect(held.log.contains('remove'), isFalse, reason: 'Continue later: the file stays');
+    await askToLeave(tester, 'close button');
+    expect(find.text('Leave the exam?'), findsNothing, reason: 'stale: nothing continues, so no question');
+    expect(find.byType(ExamScreen), findsNothing, reason: 'close: the screen is left');
+    expect(_plain(held.saved.last), [['a1', 'a2'], [true, true]], reason: 'close: the answers are kept');
+    expect(held.log.contains('remove'), isFalse, reason: 'close: the file stays');
 
     await openExam(tester, held: held, client: FakeServerClient());
     expect(find.text(_staleExam), findsOneWidget, reason: 'reopened: the stale line shows');
@@ -1100,7 +1112,6 @@ void main() {
   testWidgets('a long error line shows at most three lines on a phone with the keyboard up', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
-    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
     addTearDown(tester.view.reset);
     final error = List.filled(330, 'failure').join(' ');
 
@@ -1110,6 +1121,8 @@ void main() {
       client: FakeServerClient(gradingReplies: [_answered('grading', error: error)]),
     );
     await answerAndSubmit(tester);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    await tester.pump();
     expect(tester.takeException(), isNull, reason: 'answers with a ${error.length} character error: no overflow');
     expect(linesOf(tester, find.textContaining('failure failure')), lessThanOrEqualTo(3),
         reason: 'answers: the error line is at most three lines');
@@ -1173,7 +1186,8 @@ void main() {
     }
   });
 
-  testWidgets('a long question with a code block leaves typing room above the phone keyboard', (tester) async {
+  testWidgets('with the keyboard up, the question fills the space above an answer box that grows to four lines',
+      (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     tester.view.viewInsets = const FakeViewPadding(bottom: 900);
@@ -1205,10 +1219,24 @@ void main() {
     expect(find.textContaining('```'), findsNothing, reason: 'the question renders its units, not raw markdown');
     final screenSize = tester.view.physicalSize / tester.view.devicePixelRatio;
     final keyboardTop = screenSize.height - tester.view.viewInsets.bottom / tester.view.devicePixelRatio;
-    final field = tester.getRect(_field);
-    expect(field.height, greaterThanOrEqualTo(96), reason: 'answer field rect $field must keep typing room');
-    expect(field.bottom, lessThanOrEqualTo(keyboardTop),
-        reason: 'answer field rect $field must stay above keyboard top $keyboardTop');
+    Rect box() => tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
+    Future<double> heightWith(String text) async {
+      await tester.enterText(_field, text);
+      await tester.pump();
+      return box().height;
+    }
+
+    final one = await heightWith('');
+    final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
+    expect(box().top - question.bottom, inInclusiveRange(0, 12.01),
+        reason: 'empty: the question $question reaches down to the answer box ${box()}');
+    final two = await heightWith('a\nb');
+    final four = await heightWith('a\nb\nc\nd');
+    final six = await heightWith('a\nb\nc\nd\ne\nf');
+    expect((two > one, four > two, six), (true, true, four),
+        reason: 'the box grows one line at a time and stops at four: heights $one, $two, $four, $six');
+    expect(box().bottom, lessThanOrEqualTo(keyboardTop),
+        reason: 'six lines typed: the answer box ${box()} stays above keyboard top $keyboardTop');
     expect(tester.takeException(), isNull, reason: 'no layout overflow');
   });
 
@@ -1222,7 +1250,7 @@ void main() {
     );
   }
 
-  testWidgets('a long question shows a scrollbar and a hairline above the answer', (tester) async {
+  testWidgets('a long question shows a scrollbar and fills the screen down to the answer box', (tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -1232,11 +1260,15 @@ void main() {
       find.ancestor(of: find.byKey(const ValueKey('exam-question')), matching: find.byType(Scrollbar)),
     );
     expect(scrollbar.thumbVisibility, isTrue, reason: 'the scrollbar shows without a touch');
+    final counter = find.descendant(of: find.byType(AppBar), matching: find.byKey(const ValueKey('exam-counter')));
+    expect(tester.widget<Text>(counter).data, '1/1', reason: 'the question counter sits in the header');
     final question = tester.getRect(find.byKey(const ValueKey('exam-question')));
-    final hairline = tester.getRect(find.byKey(const ValueKey('exam-question-hairline')));
-    final field = tester.getRect(_field);
-    expect(hairline.top, greaterThanOrEqualTo(question.bottom), reason: 'hairline $hairline below question $question');
-    expect(hairline.bottom, lessThanOrEqualTo(field.top), reason: 'hairline $hairline above field $field');
+    final box = tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
+    final footer = tester.getRect(find.byKey(const ValueKey('exam-footer')));
+    expect(box.top - question.bottom, inInclusiveRange(0, 12.01),
+        reason: 'the question $question ends just above the answer box $box');
+    expect(footer.top, greaterThanOrEqualTo(box.bottom), reason: 'Back and Next $footer sit under the answer box $box');
+    expect(760.0 - footer.bottom, lessThanOrEqualTo(12.01), reason: 'Back and Next $footer sit at the bottom');
   });
 
   testWidgets('the next question starts at its top, not at the last scroll offset', (tester) async {
@@ -1549,16 +1581,16 @@ void main() {
     final client = FakeServerClient(gradingReplies: [_answered('grading')]);
     await pumpExam(tester, held: held, client: client);
 
-    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'opens on question 1');
+    expect(find.text('1/2'), findsOneWidget, reason: 'opens on question 1');
     await tester.enterText(_field, 'a1');
     await tester.tap(find.text('Next'));
     await tester.pump();
-    expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'Next shows question 2');
+    expect(find.text('2/2'), findsOneWidget, reason: 'Next shows question 2');
     await tester.enterText(_field, 'a2');
     await tester.tap(find.text('Back'));
     await tester.pump();
 
-    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'Back shows question 1');
+    expect(find.text('1/2'), findsOneWidget, reason: 'Back shows question 1');
     expect(tester.widget<TextField>(_field).controller?.text, 'a1', reason: 'question 1 keeps its own text');
 
     await tester.tap(find.text('Next'));
@@ -1586,7 +1618,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await pumpExam(tester, held: FakeHeldExam(answers: ['first answer', ''], locked: [true, false]));
 
-    expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'reopened: the first open answer shows');
+    expect(find.text('2/2'), findsOneWidget, reason: 'reopened: the first open answer shows');
     await tester.tap(find.text('Back'));
     await tester.pump();
     final resumed = tester.widget<TextField>(_field);
@@ -1594,7 +1626,7 @@ void main() {
     expect(resumed.readOnly, isTrue, reason: 'reopened: the saved answer stays locked');
   });
 
-  testWidgets('Back, Continue later and Next share one footer row in both orientations', (tester) async {
+  testWidgets('Back and Next share one row under the answer box in both orientations', (tester) async {
     for (final size in const [Size(1080, 2280), Size(2280, 1080)]) {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 3;
@@ -1602,37 +1634,31 @@ void main() {
       await pumpExam(tester, held: FakeHeldExam());
       await tester.pumpAndSettle();
       final back = tester.getRect(find.text('Back'));
-      final later = tester.getRect(find.text('Continue later'));
       final next = tester.getRect(find.text('Next'));
-      expect(
-        (later.center.dy - next.center.dy).abs() < 1 && (back.center.dy - next.center.dy).abs() < 1,
-        isTrue,
-        reason: '$size: one row (back $back, later $later, next $next)',
-      );
-      expect(
-        back.right < later.left && later.right < next.left,
-        isTrue,
-        reason: '$size: Back, Continue later, Next in that order without overlap',
-      );
+      final box = tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
+      expect((back.center.dy - next.center.dy).abs() < 1, isTrue, reason: '$size: one row (back $back, next $next)');
+      expect(back.right < next.left, isTrue, reason: '$size: Back left of Next without overlap');
+      expect(back.top >= box.bottom && next.top >= box.bottom, isTrue,
+          reason: '$size: back $back and next $next sit under the answer box $box');
+      expect(find.text('Continue later'), findsNothing, reason: '$size: no Continue later button');
       expect(tester.takeException(), isNull, reason: '$size: no overflow');
     }
   });
 
-  testWidgets('every way out of an answering exam saves the answer currently being edited', (tester) async {
-    for (final leave in ['Continue later', 'close button', 'system back']) {
+  testWidgets('every way out of an answering exam asks first, and Leave saves the answer being edited',
+      (tester) async {
+    for (final leave in ['close button', 'system back']) {
       final log = <String>[];
       final held = FakeHeldExam(log: log);
       await openExam(tester, held: held, client: FakeServerClient(callLog: log));
       await tester.enterText(_field, 'ownership prevents aliasing writes');
 
-      switch (leave) {
-        case 'Continue later':
-          await tester.tap(find.text('Continue later'));
-        case 'close button':
-          await tester.tap(find.byIcon(Icons.close));
-        default:
-          await tester.binding.handlePopRoute();
-      }
+      await askToLeave(tester, leave);
+      expect(find.text('Leave the exam?'), findsOneWidget, reason: '$leave: the learner is asked first');
+      expect(find.text('Your answers are kept, and the exam continues where you left off.'), findsOneWidget,
+          reason: '$leave: the question says the exam continues');
+      expect(held.saved, isEmpty, reason: '$leave: asking saves nothing yet, saves ${held.saved}');
+      await tester.tap(find.text('Leave'));
       await tester.pumpAndSettle();
 
       expect(find.byType(ExamScreen), findsNothing, reason: '$leave: the screen is left');
@@ -1646,6 +1672,62 @@ void main() {
       expect(log.where((call) => call.startsWith('grading')), isEmpty, reason: '$leave: nothing is sent');
       await tester.pumpWidget(const SizedBox.shrink());
     }
+  });
+
+  testWidgets('Keep answering closes the dialog and leaves the exam and its typed answer as they were',
+      (tester) async {
+    for (final way in ['close button', 'system back']) {
+      final held = FakeHeldExam();
+      await openExam(tester, held: held, client: FakeServerClient());
+      await tester.enterText(_field, 'a draft');
+      await askToLeave(tester, way);
+      await tester.tap(find.text('Keep answering'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave the exam?'), findsNothing, reason: '$way: the question closes');
+      expect(find.byType(ExamScreen), findsOneWidget, reason: '$way: the exam stays');
+      expect(tester.widget<TextField>(_field).controller?.text, 'a draft', reason: '$way: the typed answer stays');
+      expect(held.saved, isEmpty, reason: '$way: staying saves nothing, saves ${held.saved}');
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('Back and Next hide while the keyboard is open and return when it closes', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final footer = find.byKey(const ValueKey('exam-footer'));
+    await pumpExam(tester, held: FakeHeldExam());
+    expect(footer, findsOneWidget, reason: 'keyboard closed: Back and Next show');
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    await tester.pump();
+    expect(footer, findsNothing, reason: 'keyboard open: no Back or Next');
+    final box = tester.getRect(find.byKey(const ValueKey('exam-answer-box')));
+    expect(box.bottom, lessThanOrEqualTo(760.0 - 300.0), reason: 'keyboard open: the answer box $box stays above it');
+
+    tester.view.resetViewInsets();
+    await tester.pump();
+    expect(footer, findsOneWidget, reason: 'keyboard closed again: Back and Next return');
+  });
+
+  testWidgets('a tap on the question takes the focus from the answer, and a drag on it does not', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpExam(tester, held: longQuestions(1));
+    bool focused() => tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus;
+    final question = find.byKey(const ValueKey('exam-question'));
+
+    await tester.tap(_field);
+    await tester.pump();
+    expect(focused(), isTrue, reason: 'tapping the answer focuses it');
+    await tester.drag(question, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    expect(focused(), isTrue, reason: 'scrolling the question keeps the focus');
+    await tester.tap(question, warnIfMissed: false);
+    await tester.pump();
+    expect(focused(), isFalse, reason: 'tapping the question takes the focus');
   });
 
   testWidgets('backgrounding the app saves the typed answer as a draft that resumes editable', (tester) async {
@@ -1672,7 +1754,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await pumpExam(tester, held: held);
 
-    expect(find.text('Question 1 of 2'), findsOneWidget, reason: 'step 2: resume opens the draft question');
+    expect(find.text('1/2'), findsOneWidget, reason: 'step 2: resume opens the draft question');
     final field = tester.widget<TextField>(_field);
     expect(field.controller?.text, 'half a sent', reason: 'step 3: the draft text is back');
     expect(field.readOnly, isFalse, reason: 'step 4: a draft stays editable');

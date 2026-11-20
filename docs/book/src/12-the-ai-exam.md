@@ -215,10 +215,14 @@ only with the results), so it survives closing the app and a restarted
 desktop; the phone saves each answer as you move on from it, and the desktop
 keeps nothing about an exam the phone has fetched. The exam is lost with its
 workspace if that is removed from the phone (the **Remove** in the Sync
-sheet). **Continue later** under each question (or the close button) leaves
-the exam open: reopen the deck's sheet and **Take exam** returns to where you
-left off. The answer you were typing is kept as an editable draft, also when
-the app goes to the background.
+sheet). Each question fills the screen above a one-line answer box that
+grows to four lines as you type; the counter in the header shows where you
+are, and **Back** and **Next** sit under the box while the keyboard is
+closed (tap the question to close it). The close button or the system back
+gesture asks before leaving, and **Leave** keeps the exam open: reopen the
+deck's sheet and **Take exam** returns to where you left off. The answer you
+were typing is kept as an editable draft, also when the app goes to the
+background.
 
 The last question's button reads **Submit** and sends your answers to the
 desktop to be graded; the screen says `The server is working…` meanwhile. The

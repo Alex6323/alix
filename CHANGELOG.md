@@ -288,6 +288,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Phone exam: each question fills the screen above a one-line answer box that
+  grows to four lines; the question counter moves into the header, and Back
+  and Next sit under the box, hidden while the keyboard is open (a tap on the
+  question closes it). Continue later is gone: the close button and the
+  system back gesture ask before leaving, and leaving keeps the exam where it
+  was left.
+
 - Phone exam: a generated exam is fetched once to the phone, which keeps it in
   a file of its own and answers it without the desktop; the desktop writes
   the exam, grades the answers it is sent and writes remediation cards from

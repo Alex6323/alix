@@ -91,12 +91,17 @@ void main() {
     );
   }
 
-  testWidgets('on a 360-wide phone no footer label is cut beside Submit, Submit again or Discard exam', (tester) async {
-    for (final (state, held, client) in [
-      ('Submit', FakeHeldExam(), FakeServerClient()),
-      ('Submit again', FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)])),
-      ('Discard exam', FakeHeldExam(), FakeServerClient()),
+  testWidgets('on a 360-wide phone at text scale 1 and 1.5 no footer label is cut beside Submit, Submit again or '
+      'Discard exam', (tester) async {
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    for (final (scale, state, held, client) in [
+      for (final scale in const [1.0, 1.5]) ...[
+        (scale, 'Submit', FakeHeldExam(), FakeServerClient()),
+        (scale, 'Submit again', FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)])),
+        (scale, 'Discard exam', FakeHeldExam(), FakeServerClient()),
+      ],
     ]) {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
       await openOnPhone(tester, held, client);
       await tester.enterText(_field, 'a borrow is a reference');
       if (state != 'Submit') {
@@ -105,12 +110,13 @@ void main() {
         await tester.pump();
         await tester.pump();
       }
-      expect(find.widgetWithText(FilledButton, state), findsOneWidget, reason: '$state: the filled button reads $state');
-      expect(find.text(state), findsOneWidget, reason: '$state: one control reads $state');
-      for (final label in ['Back', 'Continue later', state]) {
-        expectWhole(tester, state, label);
+      expect(find.widgetWithText(FilledButton, state), findsOneWidget,
+          reason: '$state at $scale: the filled button reads $state');
+      expect(find.text(state), findsOneWidget, reason: '$state at $scale: one control reads $state');
+      for (final label in ['Back', state]) {
+        expectWhole(tester, '$state at $scale', label);
       }
-      expect(tester.takeException(), isNull, reason: '$state: the footer lays out without overflow');
+      expect(tester.takeException(), isNull, reason: '$state at $scale: the footer lays out without overflow');
       await tester.pumpWidget(const SizedBox.shrink());
     }
   });
@@ -147,7 +153,7 @@ void main() {
       reason: 'notice on Submit: the notice above the footer shows the stale message',
     );
     expectNotCut(tester, 'notice on Submit', find.text(staleText));
-    for (final label in ['Back', 'Continue later', 'Discard exam']) {
+    for (final label in ['Back', 'Discard exam']) {
       expectWhole(tester, 'notice on Submit', label);
     }
   });
