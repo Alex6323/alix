@@ -1834,19 +1834,18 @@ shows.
 (`strict` \| `balanced` \| `lenient`, *closed*), `full` (bool: the exam
 examines every topic of the deck that has sources), `unknown_cards` (as in
 `RemoteExamDto`), `topics` (`topic_id`, `fingerprint` of the sources the
-topic was examined over, `label`, `cards`: the topic's card ids),
-`questions` (`topic_id`, `idea`: the
-position of the asked idea in that topic's list in `ideas`, `prompt`, `points`:
-the key points a correct answer hits, `shape`: `instance` \| `boundary` \|
-`fix`, `mental_model`), and `ideas`: the exam ideas document as the generation
-updated it, `{"version": 1, "topics": {"<topic-id>": {"fingerprint", "ideas":
-[{"text", "last_tested_ms", "last_test_passed"}]}}}`, unknown fields rejected.
-The phone records a topic's `pass` under its `topic_id` with its `fingerprint`
-in its own store, with the review condition and evidence stamp it evaluated at
-its own start; the desktop records nothing about a phone's exam. Because
-`points` is part of the document, a holder of the pairing token and the
-learner on the phone can read the key points before answering. Example:
-`tests/contracts/CarriedReplyDto.json`.
+topic was examined over, `label`, `cards`: the topic's card ids), `questions`
+(`topic_id`, `idea`: the position of the asked idea in that topic's list in
+`ideas`, `prompt`, `points`: the key points a correct answer hits, `shape`:
+`instance` \| `boundary` \| `fix`, `mental_model`), and `ideas`: the exam ideas
+document as the generation updated it, `{"version": 1, "topics": {"<topic-id>":
+{"fingerprint", "ideas": [{"text", "last_tested_ms", "last_test_passed"}]}}}`,
+unknown fields rejected. The phone records a topic's `pass` under its
+`topic_id` with its `fingerprint` in its own store, with the review condition
+and evidence stamp it evaluated at its own start; the desktop records nothing
+about a phone's exam. Because `points` is part of the document, a holder of the
+pairing token and the learner on the phone can read the key points before
+answering. Example: `tests/contracts/CarriedReplyDto.json`.
 
 ### GradeRequest and RemediationRequest
 
@@ -1873,7 +1872,7 @@ The answer to either grading call and to `GET /api/remote/exam/grading`.
 | `grades` | [object] | Set in `results`, one per question in order: `topic` (number), `verdict` (`PASS` \| `PARTIAL` \| `FAIL`), `feedback`, `feedback_units` ([ContentUnit]), `missed` ([string]), `missed_units` ([[ContentUnit]]), `points_units` ([[ContentUnit]]: the question's key points). |
 | `topics` | [object] | Set in `results`, one per topic number in order: `pass` (bool), `verdicts` (`{pass, partial, total}`), `gaps` ([string]). |
 | `verdicts` | {pass, partial, total}? | The raw verdict counts, set in `results`. A client shows points as pass + partial / 2 over total. |
-| `mastered` | bool | Every answer was PASS in an exam that covers the whole deck. |
+| `mastered` | bool | Every answer was PASS, and there was at least one, in a full exam (`full` in the request: one that examines every topic of the deck that has sources). |
 | `cards_by_topic` | [object] | Set in `remediated`, one entry per topic of the request: `topic` (number) and `cards` (that topic's deck-format text). The client parses and stores each entry's cards bound to its topic; the server never does. Empty in every other phase. |
 | `thinking` | bool | Poll while true. |
 | `elapsed` | number? | Seconds the running job has run. |

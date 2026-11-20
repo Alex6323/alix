@@ -47,8 +47,9 @@ its sources.
    document as updated at generation. The phone treats the exam as stale
    when an asked topic's fingerprint differs from its deck's, when the
    hash of every sourced topic's id and fingerprint differs from the one
-   it stored when the exam began, or when its deck has a card in a topic
-   without sources that the list it stored then lacks.
+   it stored when the exam began, when its deck has a card in a topic
+   without sources that the list it stored then lacks or that has no id,
+   or when the deck's sources cannot be read.
 2. The desktop keeps that document in `exam/remote.json`, in the served
    folder's private state, from the moment the questions exist until the
    phone closes the exam or a new exam start replaces it. The phone
