@@ -141,6 +141,11 @@ void main() {
     const staleText =
         'The deck has changed. This exam is stale and cannot be recorded. Discard it and generate a new one.';
     expect(find.text(staleText), findsOneWidget, reason: 'notice on Submit: the stale message is on screen');
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('exam-notice'))).data,
+      staleText,
+      reason: 'notice on Submit: the notice above the footer shows the stale message',
+    );
     expectNotCut(tester, 'notice on Submit', find.text(staleText));
     for (final label in ['Back', 'Continue later', 'Discard exam']) {
       expectWhole(tester, 'notice on Submit', label);
@@ -164,6 +169,11 @@ void main() {
         await tester.pump();
         await tester.pump();
         expect(find.text(message), findsOneWidget, reason: '$state: the row\'s message is on screen');
+        expect(
+          tester.widget<Text>(find.byKey(const ValueKey('exam-notice'))).data,
+          message,
+          reason: '$state: the notice above the footer shows the message',
+        );
         expectNotCut(tester, state, find.text(message));
         await tester.pumpWidget(const SizedBox.shrink());
       }
