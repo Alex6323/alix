@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Amended by: 0067 (remote handlers keep nothing on the desktop, for a
-  generated exam the phone has not fetched yet)
+  generated exam waiting to be closed or replaced)
 - Evidence: remote_endpoints_never_write_the_server_store in tests/api.rs
 - Recorded: 2026-07-24
 - Retrospective: Yes

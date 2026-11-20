@@ -1603,7 +1603,7 @@ Example (from the pinned test):
 | `grades` | [ExamGradeDto] | Populated in results. |
 | `topics` | [ExamTopicDto] | The examined topics in deck order, populated in results. |
 | `verdicts` | {pass, partial, total}? | The sitting's raw verdict counts; null until graded. A client shows points as pass + partial / 2 over total. |
-| `full` | bool | The sitting examines every topic of the deck. |
+| `full` | bool | The sitting examines every topic of the deck that has sources. |
 | `mastered` | bool | A full sitting where every answer was PASS. |
 | `exam_high_mark` | string? | The deck's highest exam result after the sitting, worded by the lib: `"mastered (4 Nov)"` or `"passed (2 Nov)"` (local date; the year only outside the current one); null before results or while the deck has neither. |
 | `exam_changed` | bool | After results: the deck holds an exam high mark and the material it was earned on differs from this sitting's evidence stamp, as in `DeckItemDto.exam_changed`. Render the mark dashed. False before results. |
@@ -1808,7 +1808,7 @@ come in `CarriedReplyDto` once the exam is `ready`.
 | `sitting` | string? | The exam's id, minted when it starts (26 lowercase Crockford base32 characters) and unchanged until it is closed; a replacement on the same deck gets a new one. `null` at `idle`. The phone fetches, grades and records only the sitting it started. |
 | `phase` | string | `idle` \| `generating` \| `ready` (open set). `idle` is the baseline when the slot holds no exam. A failed generation stays `generating` with `error` set and `thinking` false. |
 | `deck` | string | The deck name exactly as sent to `/api/remote/exam/start` (so a workspace deck keeps its `<workspace>/<file>` form); empty at `idle`. |
-| `unknown_cards` | [card-id] | Ids from the start request's `cards` that the desktop's copy of the deck does not hold. |
+| `unknown_cards` | [card-id] | Ids from the start request's `cards` that are in no topic with sources in the desktop's copy of the deck (missing from it, or in a topic without sources). |
 | `thinking` | bool | Poll while true. |
 | `elapsed` | number? | Seconds the generation has run, set only while it runs. |
 | `error` | string? | Why the generation failed. |
@@ -1832,9 +1832,10 @@ shows.
 `CarriedExam` (version 1; unknown keys are rejected): `version` (number),
 `sitting` (string), `deck` (string, as in `RemoteExamDto.deck`), `strictness`
 (`strict` \| `balanced` \| `lenient`, *closed*), `full` (bool: the exam
-examines every topic of the deck), `unknown_cards` (as in `RemoteExamDto`),
-`topics` (`topic_id`, `fingerprint` of the sources the topic was examined over,
-`label`, `cards`: the topic's card ids), `questions` (`topic_id`, `idea`: the
+examines every topic of the deck that has sources), `unknown_cards` (as in
+`RemoteExamDto`), `topics` (`topic_id`, `fingerprint` of the sources the
+topic was examined over, `label`, `cards`: the topic's card ids),
+`questions` (`topic_id`, `idea`: the
 position of the asked idea in that topic's list in `ideas`, `prompt`, `points`:
 the key points a correct answer hits, `shape`: `instance` \| `boundary` \|
 `fix`, `mental_model`), and `ideas`: the exam ideas document as the generation

@@ -5,7 +5,7 @@
 - Retrospective: No
 - Supersedes: 0066
 - Amends: 0010 (remote handlers keep nothing on the desktop, for a
-  generated exam the phone has not fetched yet)
+  generated exam waiting to be closed or replaced)
 - Evidence: pub struct CarriedExam in src/exam_carried.rs
 - Evidence: pub fn exam_kept in src/state.rs
 - Evidence: fn the_generation_desk_answers_every_request_in_every_state_as_tabled in tests/api.rs
@@ -39,18 +39,22 @@ its sources.
 ## Decision
 
 1. An exam is one versioned document: its sitting id, the deck's name,
-   the strictness, whether it covers every topic of the deck (so that its
-   result can stand as the deck's whole-exam result), the ids of cards the
-   start request named that the desktop's deck does not hold (reported by
-   the state poll), the topics, each with its id and fingerprint (which the
-   phone compares with its deck to tell a stale exam), the questions with
-   their key points, and the ideas document as updated at generation.
+   the strictness, whether it covers every topic that has sources (so
+   that its result can stand as the deck's whole-exam result), the card
+   ids the start request named that are in no topic with sources
+   (reported by the state poll), the topics, each with its id and
+   fingerprint, the questions with their key points, and the ideas
+   document as updated at generation. The phone treats the exam as stale
+   when an asked topic's fingerprint differs from its deck's, when the
+   hash of every sourced topic's id and fingerprint differs from the one
+   it stored when the exam began, or when its deck has a card in a topic
+   without sources that the list it stored then lacks.
 2. The desktop keeps that document in `exam/remote.json`, in the served
    folder's private state, from the moment the questions exist until the
    phone closes the exam or a new exam start replaces it. The phone
    fetches it by sitting id, which removes nothing, and then closes it;
-   the close removes the file. The desktop keeps nothing about an exam
-   that was closed.
+   the close removes the file. Once the exam is closed, the desktop keeps
+   neither the document nor its file.
 3. The phone keeps a fetched exam in one file per deck, found by pairing
    root and deck id, together with the answers and, after grading, the
    result. Taking the exam needs no desktop. The file is removed when the
@@ -163,12 +167,14 @@ their regression evidence.
 ## Verification
 
 - A table-driven test per slot checks every state against every request.
-  The generation table also checks whether the exam file exists right
-  after each request, and the
-  grading table counts model calls so that "not run again" is observed.
-- `tests/api.rs` restarts a server over an exam that waits to be fetched,
-  deletes the deck, and fetches it; and grades a request for a deck the
-  server does not serve, with the served folder byte-identical afterwards.
+  The generation table also checks whether the exam file exists after
+  each request and the state poll that follows it, before the held
+  generation is released, and the grading table counts model calls so
+  that "not run again" is observed.
+- `tests/api.rs` fetches an exam that waits to be closed, deletes the
+  deck, restarts the server, and fetches the exam again; and grades a
+  request for a deck the server does not serve, with the served folder
+  byte-identical afterwards.
 - The phone's tests kill the app after a fetched exam's file is written and
   before it is flagged as fetched, and check that the next poll writes
   nothing, sets the flag and closes. The bridge's tests kill the recording of
