@@ -1050,6 +1050,82 @@ void main() {
   );
 
   testWidgets(
+    'a needs-work start sends the card list the sitting start returned',
+    (tester) async {
+      final fixture = await examFixture('exam-start-needs-work-cards');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      final expected = exam_bridge
+          .examSittingStart(
+            deckPath: fixture.deck,
+            rootDir: fixture.root.path,
+            needsWorkOnly: true,
+            nowMs: BigInt.from(DateTime.now().millisecondsSinceEpoch),
+          )
+          .cards;
+      expect(expected, isNotEmpty, reason: 'control: the bridge names the deck card for a needs-work start');
+      await openDeck(tester);
+
+      await tapGenerate(tester);
+
+      expect(
+        [desk.examStartCalls, desk.startedCards],
+        [1, expected],
+        reason: 'needs-work start: one start request carrying the bridge card list',
+      );
+    },
+  );
+
+  testWidgets(
+    'a full start sends no card list',
+    (tester) async {
+      final fixture = await examFixture('exam-start-full-cards');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+      await tester.tap(find.text('Only what needs work'));
+      await tester.pump();
+
+      await tapGenerate(tester);
+
+      expect(
+        [desk.examStartCalls, desk.startedCards],
+        [1, null],
+        reason: 'full start: one start request carrying no card list',
+      );
+    },
+  );
+
+  testWidgets(
+    'a start sends the ideas document saved for the deck',
+    (tester) async {
+      final fixture = await examFixture('exam-start-ideas');
+      final deckId = exam_bridge.examDeckId(deckPath: fixture.deck)!;
+      final ideas = {
+        'version': 1,
+        'topics': {
+          'topic-a': {'fingerprint': 'f', 'ideas': <Object>[]},
+        },
+      };
+      final file = File('${fixture.root.path}/.alix/exam/$deckId.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode(ideas));
+      expect(file.existsSync(), isTrue, reason: 'control: the ideas document is saved before the start');
+      final desk = fetchingDesk();
+      await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
+      await openDeck(tester);
+
+      await tapGenerate(tester);
+
+      expect(
+        [desk.examStartCalls, desk.startedIdeas],
+        [1, ideas],
+        reason: 'the start request carries the saved ideas document',
+      );
+    },
+  );
+
+  testWidgets(
     'the deck sheet reads the held file when it opens and after a hand-off attempt or a start check, never because it rebuilt',
     (tester) async {
       final fixture = await examFixture('exam-held-reads');

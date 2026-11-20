@@ -669,6 +669,15 @@ void main() {
     expect(find.text(_remediate), findsNothing, reason: 'apply failed: no Remediate');
   });
 
+  testWidgets('a result that was not recorded still shows its topics and grades', (tester) async {
+    await pumpExam(tester, held: _graded(recorded: false), client: FakeServerClient());
+
+    expect(find.text('not recorded'), findsOneWidget, reason: 'not recorded: the result says so');
+    expect(find.text('Ownership'), findsOneWidget, reason: 'not recorded: the topic is shown');
+    expect(find.text('needs work'), findsOneWidget, reason: 'not recorded: the topic grade is shown');
+    expect(find.text('FAIL'), findsNWidgets(2), reason: 'not recorded: each question grade is shown');
+  });
+
   testWidgets('Remediate is not sent before the grading close has returned', (tester) async {
     for (final (label, closeReply, closeThrows) in [
       ('returned', true, false),
