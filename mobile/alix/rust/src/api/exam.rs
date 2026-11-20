@@ -1013,11 +1013,21 @@ mod tests {
 
     fn held_on_deck(root: &Path) -> (PathBuf, alix::exam_carried::CarriedExam) {
         let path = two_topic_deck(root);
-        let start = exam_sitting_start(deck_arg(&path), root_arg(root), false, NOW).unwrap();
-        let mut exam = carried_exam(&deck_topics(&path), "sitting-1");
+        let exam = held_on_path(root, &path);
+        (path, exam)
+    }
+
+    fn held_on_path(root: &Path, path: &Path) -> alix::exam_carried::CarriedExam {
+        let start = exam_sitting_start(deck_arg(path), root_arg(root), false, NOW).unwrap();
+        let mut exam = carried_exam(&deck_topics(path), "sitting-1");
         exam.ideas = untested_ideas(&exam);
         held_exam_receive(root_arg(root), received_json(&exam), start).unwrap();
-        (path, exam)
+        exam
+    }
+
+    fn add_unreviewed_unsourced_topic(path: &Path) {
+        let text = std::fs::read_to_string(path).unwrap();
+        std::fs::write(path, format!("{text}\n# C\n\n## c1\nunreviewed\n")).unwrap();
     }
 
     fn grading_reply(
@@ -1878,6 +1888,138 @@ mod tests {
                 Some(progress),
                 after.get(card),
                 "{card}'s progress after the remediation that revives a card equals its progress before it"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ineligible_start_records_the_verdicts_and_leaves_no_standing_and_no_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = two_topic_deck(root);
+        add_unreviewed_unsourced_topic(&path);
+        let start = exam_sitting_start(deck_arg(&path), root_arg(root), false, NOW).unwrap();
+        assert!(
+            !start.eligible,
+            "control: an unreviewed card in the unsourced topic C makes the start ineligible"
+        );
+        let mut exam = carried_exam(&deck_topics(&path), "sitting-1");
+        exam.ideas = untested_ideas(&exam);
+        held_exam_receive(root_arg(root), received_json(&exam), start).unwrap();
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
+
+        let view = held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+
+        let outcome = outcome_of(&view).expect("an outcome after the apply");
+        assert_eq!(
+            (true, None),
+            (outcome.recorded, outcome.standing),
+            "the ineligible sitting is recorded and has no standing"
+        );
+        let store = reopened(&path, root);
+        assert_eq!(
+            (None, None, None),
+            (
+                store.deck_passed_at("deck-d"),
+                store.deck_mastered_at("deck-d"),
+                store.exam_stamp("deck-d").cloned()
+            ),
+            "an ineligible sitting writes no passed time, no mastered time and no stamp"
+        );
+        assert_eq!(
+            Some((RECEIVED, true)),
+            store
+                .topic_result("deck-d", "topic-a")
+                .map(|record| (record.at_ms, record.pass)),
+            "topic-a's verdict is recorded at the stored time"
+        );
+    }
+
+    #[test]
+    fn a_later_sitting_whose_stamp_lists_a_card_the_standing_lacks_reports_the_exam_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (path, exam) = held_on_deck(root);
+        store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
+        let first = outcome_of(&held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap())
+            .and_then(|outcome| outcome.standing)
+            .expect("a standing after the first full pass");
+        assert!(
+            !first.exam_changed,
+            "control: the first sitting's standing reports the exam unchanged"
+        );
+        held_exam_remove(root_arg(root), "deck-d".to_string()).unwrap();
+        add_unreviewed_unsourced_topic(&path);
+        let start = exam_sitting_start(deck_arg(&path), root_arg(root), false, NOW).unwrap();
+        assert!(
+            !start.eligible && start.stamp.unsourced_cards.len() == 1,
+            "control: the second start is ineligible and its stamp lists the new card"
+        );
+        let mut again = carried_exam(&deck_topics(&path), "sitting-2");
+        again.ideas = untested_ideas(&again);
+        held_exam_receive(root_arg(root), received_json(&again), start).unwrap();
+        store_reply(root, &grading_reply(&again, BOTH_PASS)).unwrap();
+
+        let view = held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+
+        let outcome = outcome_of(&view).expect("an outcome after the second apply");
+        let standing = outcome
+            .standing
+            .as_ref()
+            .expect("the latched standing stays");
+        assert!(
+            outcome.recorded && standing.exam_changed,
+            "the second sitting reports the exam changed and keeps the standing: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_remediation_block_equal_to_a_card_already_in_the_deck_is_not_stored() {
+        let plain = "## a1\nx\n";
+        let cloze =
+            "## Complete the quote\nTo be or not to be\n<!-- blank: span hidden=\"be\" -->\n";
+        for (row, block) in [("plain", plain), ("cloze", cloze)] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let path = crate::api::testkit::sourced_member(
+                root,
+                "d.md",
+                &format!(
+                    "---\nformat-version: 1\nid: deck-d\n---\n\
+                     # A\nprose\n<!-- id: topic-a -->\n\n{block}<!-- id: card-a1 -->\n\n\
+                     # B\nprose\n<!-- id: topic-b -->\n\n## b1\nx\n<!-- id: card-b1 -->\n"
+                ),
+            );
+            let exam = held_on_path(root, &path);
+            store_reply(root, &grading_reply(&exam, BOTH_FAIL)).unwrap();
+            held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
+            let deck = alix::deck::Deck::load(&path).unwrap();
+            let deck_card = &deck.cards[0];
+            assert_eq!(
+                row == "plain",
+                deck_card.content_fingerprint == deck_card.block_fingerprint,
+                "{row}: the content key equals the block key only for a plain card"
+            );
+
+            let stored = held_exam_store_remediation(
+                deck_arg(&path),
+                root_arg(root),
+                remediation_reply(
+                    &exam.sitting,
+                    &[(0, &format!("{block}\n## Why a?\nbecause a\n"))],
+                ),
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(
+                1, stored,
+                "{row}: only the block that is not in the deck is stored"
+            );
+            assert_eq!(
+                vec![("topic-a".to_string(), "Why a?".to_string())],
+                personal_fronts(&path),
+                "{row}: no personal card holds the deck card's block"
             );
         }
     }
