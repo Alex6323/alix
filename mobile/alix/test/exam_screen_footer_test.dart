@@ -91,10 +91,10 @@ void main() {
     );
   }
 
-  testWidgets('on a 360-wide phone no footer label is cut beside Submit, submit again or Discard exam', (tester) async {
+  testWidgets('on a 360-wide phone no footer label is cut beside Submit, Submit again or Discard exam', (tester) async {
     for (final (state, held, client) in [
       ('Submit', FakeHeldExam(), FakeServerClient()),
-      ('submit again', FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)])),
+      ('Submit again', FakeHeldExam(), FakeServerClient(gradingReplies: const [GradingRefused(409)])),
       ('Discard exam', FakeHeldExam(), FakeServerClient()),
     ]) {
       await openOnPhone(tester, held, client);

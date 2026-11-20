@@ -196,7 +196,7 @@ and you can sit it at any time as practice, before drilling too:
   your paired desktop` otherwise: it opens either way. On the exam screen,
   `Grading needs the paired desktop.` shows when you submit, or tap **Turn the
   gaps into cards**, and the desktop does not answer: your answers stay on the
-  phone, and the buttons then read `submit again` and `remediate again`.
+  phone, and the buttons then read `Submit again` and `Remediate again`.
 
 **Generate exam** offers **only what needs work**, on by default: the exam
 then asks only about the topics that have not passed (those that need
@@ -227,7 +227,7 @@ phone, and the row reads **Generate exam** again. The exam stays, and the row
 reads **Show result** (`your graded exam`), if you close the app on the results
 screen, leave while the cards are still being made, or recording the graded
 result on the phone failed (the screen then shows the error and offers
-`try again`).
+`Try again`).
 
 The phone records a result only if the deck's exam material is still what the
 exam was prepared from. That material is the sources of the deck's topics and,

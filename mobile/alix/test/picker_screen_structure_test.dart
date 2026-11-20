@@ -779,7 +779,7 @@ void main() {
       File(unapplied.deck).deleteSync();
       await tester.tap(find.text('Show result'));
       await tester.pumpAndSettle();
-      expect(find.text('try again'), findsOneWidget, reason: 'failed apply: the screen offers a retry');
+      expect(find.text('Try again'), findsOneWidget, reason: 'failed apply: the screen offers a retry');
       await leaveExam(tester);
       expect(heldFiles(unapplied.root), hasLength(1), reason: 'failed apply: leaving keeps the file');
     },

@@ -477,7 +477,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
     _Stage.stale => _message(context, OutlinedButton(onPressed: _discard, child: const Text('Discard exam'))),
     _Stage.answers => _answering(context, _view!),
     _Stage.grading => _working(context),
-    _Stage.unapplied => _message(context, OutlinedButton(onPressed: () => setState(_apply), child: const Text('try again'))),
+    _Stage.unapplied => _message(context, OutlinedButton(onPressed: () => setState(_apply), child: const Text('Try again'))),
     _Stage.result => _results(context, _view!),
   };
 
@@ -528,7 +528,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
 
   bool get _hasNotice => _noticeLine != null;
 
-  String get _submitLabel => _stale ? 'Discard exam' : (_again ? 'submit again' : 'Submit');
+  String get _submitLabel => _stale ? 'Discard exam' : (_again ? 'Submit again' : 'Submit');
 
   Widget _answering(BuildContext context, HeldExamView exam) {
     final tokens = Theme.of(context).alix;
@@ -710,7 +710,7 @@ class _ExamScreenState extends State<ExamScreen> with WidgetsBindingObserver {
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _remediating || _closesPending > 0 ? null : _remediate,
-            child: Text(_again ? 'remediate again' : 'Turn the gaps into cards'),
+            child: Text(_again ? 'Remediate again' : 'Turn the gaps into cards'),
           ),
         ],
       ],

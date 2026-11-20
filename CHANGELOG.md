@@ -1053,7 +1053,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remediation cards for, and does not offer them again.
 
 - The phone's exam screen shows the error when saving a remediation's cards
-  fails, and its button then reads `remediate again`, instead of failing
+  fails, and its button then reads `Remediate again`, instead of failing
   silently.
 
 - Long prompts no longer fail to start on Codex and Copilot: every backend now

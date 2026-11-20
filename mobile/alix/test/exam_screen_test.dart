@@ -325,19 +325,19 @@ void main() {
     await tester.tap(find.text('Submit'));
     await tester.pump();
     await tester.pump();
-    expect(submitButton('submit again'), findsOneWidget, reason: 'after a refused request: submit again');
-    expect(find.text('submit again'), findsOneWidget, reason: 'after a refused request: no second submit control');
+    expect(submitButton('Submit again'), findsOneWidget, reason: 'after a refused request: Submit again');
+    expect(find.text('Submit again'), findsOneWidget, reason: 'after a refused request: no second submit control');
     expect(find.text('Submit'), findsNothing, reason: 'after a refused request: Submit is relabelled, label Submit absent');
 
     held.changed = true;
-    await tester.tap(find.text('submit again'));
+    await tester.tap(find.text('Submit again'));
     await tester.pump();
-    expect(submitButton('Discard exam'), findsOneWidget, reason: 'stale on submit again: Discard exam');
-    expect(find.text('submit again'), findsNothing, reason: 'stale: submit again is relabelled');
+    expect(submitButton('Discard exam'), findsOneWidget, reason: 'stale on Submit again: Discard exam');
+    expect(find.text('Submit again'), findsNothing, reason: 'stale: Submit again is relabelled');
     expect(find.text('Discard exam'), findsOneWidget, reason: 'stale: no second Discard exam control');
-    expect(find.text(_staleExam), findsOneWidget, reason: 'stale on submit again: the stale line takes the slot');
-    expect(find.text(_busy), findsNothing, reason: 'stale on submit again: the busy line is gone');
-    expect(client.gradingRequests, hasLength(1), reason: 'stale on submit again: no second request');
+    expect(find.text(_staleExam), findsOneWidget, reason: 'stale on Submit again: the stale line takes the slot');
+    expect(find.text(_busy), findsNothing, reason: 'stale on Submit again: the busy line is gone');
+    expect(client.gradingRequests, hasLength(1), reason: 'stale on Submit again: no second request');
   });
 
   testWidgets('no answer, 409 and 400 each show their line and store nothing', (tester) async {
@@ -367,7 +367,7 @@ void main() {
     expect(held.stored, isEmpty, reason: '503: nothing is stored');
   });
 
-  testWidgets('a failed job shows its error with submit again', (tester) async {
+  testWidgets('a failed job shows its error with Submit again', (tester) async {
     final held = FakeHeldExam();
     final client = FakeServerClient(
       gradingReplies: [_answered('grading'), _answered('grading', error: 'the backend failed')],
@@ -378,7 +378,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('the backend failed'), findsOneWidget, reason: 'job error: its text shows');
-    expect(find.text('submit again'), findsOneWidget, reason: 'job error: submit again is offered');
+    expect(find.text('Submit again'), findsOneWidget, reason: 'job error: Submit again is offered');
     expect(held.stored, isEmpty, reason: 'job error: nothing is stored');
   });
 
@@ -397,7 +397,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Question 2 of 2'), findsOneWidget, reason: 'grade $label: back to the answers');
-      expect(submitButton('submit again'), findsOneWidget, reason: 'grade $label: submit again is offered');
+      expect(submitButton('Submit again'), findsOneWidget, reason: 'grade $label: Submit again is offered');
       expect(find.text('another exam failed'), findsNothing, reason: 'grade $label: no other job error is shown');
       expect(held.stored, isEmpty, reason: 'grade $label: nothing is stored');
       await tester.pumpWidget(const SizedBox.shrink());
@@ -414,13 +414,13 @@ void main() {
       await tester.pump();
 
       expect(find.text('Ownership'), findsOneWidget, reason: 'remediate $label: the result stays');
-      expect(find.text('remediate again'), findsOneWidget, reason: 'remediate $label: remediate again is offered');
+      expect(find.text('Remediate again'), findsOneWidget, reason: 'remediate $label: Remediate again is offered');
       expect(held.storedRemediations, isEmpty, reason: 'remediate $label: nothing is stored');
       await tester.pumpWidget(const SizedBox.shrink());
     }
   });
 
-  testWidgets('a poll tick with no answer stops polling with the needs-desktop line and submit again', (tester) async {
+  testWidgets('a poll tick with no answer stops polling with the needs-desktop line and Submit again', (tester) async {
     final log = <String>[];
     final held = FakeHeldExam(log: log);
     await pumpExam(
@@ -434,7 +434,7 @@ void main() {
     }
 
     expect(find.text(_needsDesktop), findsOneWidget, reason: 'poll no answer: the needs-desktop line shows');
-    expect(find.text('submit again'), findsOneWidget, reason: 'poll no answer: submit again is offered');
+    expect(find.text('Submit again'), findsOneWidget, reason: 'poll no answer: Submit again is offered');
     expect(log.where((call) => call == 'gradingGet'), hasLength(1), reason: 'poll no answer: polling stops, log $log');
   });
 
@@ -492,7 +492,7 @@ void main() {
     expect(tester.widget<TextField>(_field).readOnly, isFalse, reason: 'lost reply: the blank answer stays editable');
 
     await tester.enterText(_field, 'filled later');
-    await tester.tap(find.text('submit again'));
+    await tester.tap(find.text('Submit again'));
     await tester.pump();
     await tester.pump();
 
@@ -509,7 +509,7 @@ void main() {
         reason: 'the stored result grades the filled answer');
   });
 
-  testWidgets('a result is stored, then the desk is closed, then it is applied; a failed apply offers try again',
+  testWidgets('a result is stored, then the desk is closed, then it is applied; a failed apply offers Try again',
       (tester) async {
     final log = <String>[];
     final closeGate = Completer<void>();
@@ -531,13 +531,13 @@ void main() {
     expect(client.gradingClosedSittings, ['sitting-1'], reason: 'the close names the sitting');
     expect(find.text('Bad state: cannot write the progress folder'), findsOneWidget,
         reason: 'failed apply: its text shows');
-    expect(find.text('try again'), findsOneWidget, reason: 'failed apply: try again is offered');
+    expect(find.text('Try again'), findsOneWidget, reason: 'failed apply: Try again is offered');
 
-    await tester.tap(find.text('try again'));
+    await tester.tap(find.text('Try again'));
     await tester.pump();
-    expect(log.where((call) => call == 'apply'), hasLength(2), reason: 'try again: apply runs again');
-    expect(find.text('try again'), findsNothing, reason: 'try again: the result shows');
-    expect(find.text('Ownership'), findsOneWidget, reason: 'try again: the topic of the result shows');
+    expect(log.where((call) => call == 'apply'), hasLength(2), reason: 'Try again: apply runs again');
+    expect(find.text('Try again'), findsNothing, reason: 'Try again: the result shows');
+    expect(find.text('Ownership'), findsOneWidget, reason: 'Try again: the topic of the result shows');
   });
 
   testWidgets('a storeResult that throws sends no close and applies nothing', (tester) async {
@@ -550,7 +550,7 @@ void main() {
     expect(log.contains('gradingClose') || log.contains('apply'), isFalse,
         reason: 'store refused: no close and no apply, log $log');
     expect(find.text('the reply does not fit the exam'), findsOneWidget, reason: 'store refused: its text shows');
-    expect(find.text('submit again'), findsOneWidget, reason: 'store refused: submit again is offered');
+    expect(find.text('Submit again'), findsOneWidget, reason: 'store refused: Submit again is offered');
   });
 
   testWidgets('leaving the answers sends nothing; leaving a result with an outcome reports it once', (tester) async {
@@ -580,7 +580,7 @@ void main() {
 
     final unapplied = FakeHeldExam(applyFailures: 9)..hasResult = true;
     await openExam(tester, held: unapplied, client: FakeServerClient(), onLeaveResult: () => leaves++);
-    expect(find.text('try again'), findsOneWidget, reason: 'apply failed: try again is offered');
+    expect(find.text('Try again'), findsOneWidget, reason: 'apply failed: Try again is offered');
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(ExamScreen), findsNothing, reason: 'apply failed: the screen is left');
@@ -654,7 +654,7 @@ void main() {
     await answerAndSubmit(tester);
 
     expect(held.stored, isEmpty, reason: 'another sitting: nothing is stored');
-    expect(find.text('submit again'), findsOneWidget, reason: 'another sitting: submit again is offered');
+    expect(find.text('Submit again'), findsOneWidget, reason: 'another sitting: Submit again is offered');
   });
 
   testWidgets('a result that was not recorded, and one whose apply failed, offer no Remediate', (tester) async {
@@ -666,7 +666,7 @@ void main() {
 
     final unapplied = FakeHeldExam(applyFailures: 1, remediable: true)..hasResult = true;
     await pumpExam(tester, held: unapplied, client: FakeServerClient());
-    expect(find.text('try again'), findsOneWidget, reason: 'apply failed: try again is offered');
+    expect(find.text('Try again'), findsOneWidget, reason: 'apply failed: Try again is offered');
     expect(find.text(_remediate), findsNothing, reason: 'apply failed: no Remediate');
   });
 
@@ -722,7 +722,7 @@ void main() {
     }
   });
 
-  testWidgets('a storeRemediation that throws shows its text with remediate again and sends no close', (tester) async {
+  testWidgets('a storeRemediation that throws shows its text with Remediate again and sends no close', (tester) async {
     final held = _graded()..remediationError = AnyhowException('cannot save progress');
     final client = FakeServerClient(gradingReplies: [_answered('remediated')]);
     await pumpExam(tester, held: held, client: client);
@@ -731,7 +731,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('cannot save progress'), findsOneWidget, reason: 'store refused: its text shows');
-    expect(find.text('remediate again'), findsOneWidget, reason: 'store refused: remediate again is offered');
+    expect(find.text('Remediate again'), findsOneWidget, reason: 'store refused: Remediate again is offered');
     expect(client.gradingClosedSittings, isEmpty, reason: 'store refused: no close is sent');
   });
 
@@ -1116,7 +1116,7 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await pumpExam(tester, held: FakeHeldExam(applyFailures: 1, applyError: StateError(error))..hasResult = true);
-    expect(find.text('try again'), findsOneWidget, reason: 'failed apply: try again is offered');
+    expect(find.text('Try again'), findsOneWidget, reason: 'failed apply: Try again is offered');
     expect(tester.takeException(), isNull, reason: 'failed apply with a long error: no overflow');
     expect(linesOf(tester, find.textContaining('failure failure')), lessThanOrEqualTo(3),
         reason: 'failed apply: the error line is at most three lines');
