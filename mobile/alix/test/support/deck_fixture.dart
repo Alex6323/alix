@@ -24,6 +24,12 @@ void writeTestSources(String deckPath) {
   );
 }
 
+// The id `alix deck source add` gives a copy of exactly 'alpha\nbeta\n'.
+const verifiedTestSourceId = 'source-1s4wg7hd5y2e4pem1rqvg69f7f6hk2sna6288qbpv3trg1ygty7e';
+
+// The lib's topic fingerprint for [verifiedTestSourceId] bound alone to a deck.
+const verifiedTestSourceFingerprint = '0pp0sejc00cb7z27y6m6h6mc5kchhc7hfrhx2kafkytjpb7kctey';
+
 /// Like [writeTestSources], but with a frozen copy the core verifies, so an
 /// exam result on the deck is recorded rather than refused.
 void writeVerifiedTestSources(String deckPath) {
@@ -32,8 +38,7 @@ void writeVerifiedTestSources(String deckPath) {
       .firstMatch(File(deckPath).readAsStringSync())!
       .group(1)!;
   final dir = '${File(deckPath).parent.parent.path}/sources/$deckId';
-  // The id `alix deck source add` gives a copy of exactly 'alpha\nbeta\n'.
-  const id = 'source-1s4wg7hd5y2e4pem1rqvg69f7f6hk2sna6288qbpv3trg1ygty7e';
+  const id = verifiedTestSourceId;
   File('$dir/$id.txt').writeAsStringSync('alpha\nbeta\n');
   File('$dir/manifest.toml').writeAsStringSync(
     'version = 1\n\n[sources]\n'

@@ -382,14 +382,13 @@ void main() {
     return (root: root, support: support, deck: deck);
   }
 
-  // The lib's topic fingerprint for the source writeVerifiedTestSources binds to the deck.
-  const examFixtureFingerprint = '0pp0sejc00cb7z27y6m6h6mc5kchhc7hfrhx2kafkytjpb7kctey';
+  String unmatchedContractExam() => contract('CarriedReplyDto');
 
-  String carriedForExamFixture(String deck) {
-    final topic = ((jsonDecode(contract('CarriedReplyDto')) as Map)['exam'] as Map)['topics'][0] as Map;
-    return contract('CarriedReplyDto')
+  String matchedExamFor(String deck) {
+    final topic = ((jsonDecode(unmatchedContractExam()) as Map)['exam'] as Map)['topics'][0] as Map;
+    return unmatchedContractExam()
         .replaceAll(topic['topic_id'] as String, exam_bridge.examDeckId(deckPath: deck)!)
-        .replaceAll(topic['fingerprint'] as String, examFixtureFingerprint);
+        .replaceAll(topic['fingerprint'] as String, verifiedTestSourceFingerprint);
   }
 
   FakeServerClient fetchingDesk({
@@ -403,7 +402,7 @@ void main() {
     idleBeforeStart: true,
     examStartSitting: corpusSitting(),
     examGetReplies: [deskState('ready', corpusSitting())],
-    examCarriedReply: contract('CarriedReplyDto'),
+    examCarriedReply: unmatchedContractExam(),
     examCarriedReplies: carried,
     examCloseGate: examCloseGate,
     examCloseReply: examCloseReply,
@@ -518,7 +517,7 @@ void main() {
     'the picker polls every interval while its own exam is ready and unfetched, and stops once fetched',
     (tester) async {
       final fixture = await examFixture('exam-ready-unfetched');
-      final desk = fetchingDesk(carried: [null, contract('CarriedReplyDto')]);
+      final desk = fetchingDesk(carried: [null, unmatchedContractExam()]);
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
       await tapGenerate(tester);
@@ -551,7 +550,7 @@ void main() {
     '"Exam ready" appears when the held file is written, not when a poll first shows ready',
     (tester) async {
       final fixture = await examFixture('exam-ready-when-written');
-      final desk = fetchingDesk(carried: [null, contract('CarriedReplyDto')]);
+      final desk = fetchingDesk(carried: [null, unmatchedContractExam()]);
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
       await tapGenerate(tester);
@@ -582,7 +581,7 @@ void main() {
         idleBeforeStart: true,
         examStartSittings: [corpusSitting(), 'sitting-of-the-other-deck'],
         examGetReplies: [deskState('generating', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
@@ -771,7 +770,7 @@ void main() {
       await openDeck(tester);
       await tester.tap(find.text('Show result'));
       await tester.pumpAndSettle();
-      expect(find.text('not recorded'), findsOneWidget, reason: 'outcome: the applied result shows');
+      expect(find.text('not recorded'), findsOneWidget, reason: 'outcome: the applied result shows, not recorded since the unmatched contract exam does not fit the fixture deck');
       await leaveExam(tester);
       expect(
         [heldFiles(applied.root).length, records(applied.support).single['fetched']],
@@ -796,7 +795,7 @@ void main() {
 
   testWidgets('a deck with a held exam opens it with the desktop unreachable', (tester) async {
     final fixture = await examFixture('exam-held-offline');
-    final desk = fetchingDesk(carried: [carriedForExamFixture(fixture.deck)]);
+    final desk = fetchingDesk(carried: [matchedExamFor(fixture.deck)]);
     await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
     await generateAndFetch(tester);
     final offline = FakeServerClient();
@@ -813,7 +812,7 @@ void main() {
     expect(
       find.text('Why does Rust use ownership?'),
       findsOneWidget,
-      reason: 'offline: the exam screen shows the held question; the stale line instead means examFixtureFingerprint no longer matches what the lib computes for the fixture',
+      reason: 'offline: the exam screen shows the held question; the stale line instead means verifiedTestSourceFingerprint no longer matches what the lib computes for the fixture',
     );
   });
 
@@ -826,7 +825,7 @@ void main() {
         idleBeforeStart: true,
         examStartSitting: corpusSitting(),
         examGetReplies: [deskState('generating', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       final other = FakeServerClient(versionReply: minServerVersion, examGetReplies: const [idleDesk]);
       FakeServerClient deskFor(ServerConfig config) => config.rootId == pairedRootId ? desk : other;
@@ -926,6 +925,8 @@ void main() {
       await openDeck(tester);
       await tester.tap(find.text('Take exam'));
       await tester.pumpAndSettle();
+      expect(find.descendant(of: find.byType(ExamScreen), matching: find.text('Discard exam')), findsOneWidget,
+          reason: 'the unmatched contract exam opens stale, so the exam screen offers Discard exam');
       await tester.tap(find.descendant(of: find.byType(ExamScreen), matching: find.text('Discard exam')));
       await tester.pumpAndSettle();
       await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('Discard exam')));
@@ -954,7 +955,7 @@ void main() {
     'a deck file renamed after its exam was fetched still shows Take exam and opens it',
     (tester) async {
       final fixture = await examFixture('exam-renamed-deck');
-      final desk = fetchingDesk(carried: [carriedForExamFixture(fixture.deck)]);
+      final desk = fetchingDesk(carried: [matchedExamFor(fixture.deck)]);
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await generateAndFetch(tester);
       File(fixture.deck).renameSync('${fixture.root.path}/ws/decks/renamed.md');
@@ -968,7 +969,7 @@ void main() {
       expect(
         find.text('Why does Rust use ownership?'),
         findsOneWidget,
-        reason: 'renamed: the exam opens on its question; the stale line instead means examFixtureFingerprint no longer matches what the lib computes for the fixture',
+        reason: 'renamed: the exam opens on its question; the stale line instead means verifiedTestSourceFingerprint no longer matches what the lib computes for the fixture',
       );
     },
   );
@@ -1065,7 +1066,7 @@ void main() {
         idleBeforeStart: true,
         examStartSitting: corpusSitting(),
         examGetReplies: [deskState('generating', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       final before = exam_bridge.heldExamViewReads;
@@ -1142,7 +1143,7 @@ void main() {
     final desk = FakeServerClient(
       versionReply: minServerVersion,
       examGetReplies: [deskState('ready', 'a-sitting-another-client-started')],
-      examCarriedReply: contract('CarriedReplyDto'),
+      examCarriedReply: unmatchedContractExam(),
     );
     await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
     await tester.pump();
@@ -1176,7 +1177,7 @@ void main() {
       final after = FakeServerClient(
         versionReply: minServerVersion,
         examGetReplies: [deskState('ready', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => after);
       expect(
@@ -1203,7 +1204,7 @@ void main() {
     final shared = FakeServerClient(
       versionReply: minServerVersion,
       examGetReplies: [deskState('ready', corpusSitting())],
-      examCarriedReply: contract('CarriedReplyDto'),
+      examCarriedReply: unmatchedContractExam(),
     );
     Widget picker() => Expanded(
       child: ScaffoldMessenger(
@@ -1290,7 +1291,7 @@ void main() {
           deskState('ready', corpusSitting()),
         ],
         examGetGates: {1: unanswered},
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
@@ -1408,7 +1409,7 @@ void main() {
         examStartSitting: corpusSitting(),
         examGetReplies: [idleDesk, idleDesk, deskState('ready', corpusSitting())],
         examGetGates: {0: stalePoll},
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       expect(desk.examGetCalls, 1, reason: 'the pre-start poll is in flight');
@@ -1734,7 +1735,7 @@ void main() {
         versionReply: minServerVersion,
         nullFirstExamGetCalls: 1,
         examGetReplies: [deskState('ready', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
@@ -1770,7 +1771,7 @@ void main() {
         nullFirstExamGetCalls: 1,
         examStartSittings: const ['sitting-of-the-other-deck'],
         examGetReplies: [deskState('ready', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
 
@@ -1806,7 +1807,7 @@ void main() {
         idleBeforeStart: true,
         examStartSitting: corpusSitting(),
         examGetReplies: [deskState('ready', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
         expireOnExamClose: true,
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
@@ -1875,7 +1876,7 @@ void main() {
     (tester) async {
       final fixture = await examFixture('exam-blocked-cleared');
       writeExamDeck(fixture.root, 'other.md', 'Other exam');
-      final desk = fetchingDesk(carried: [null, null, contract('CarriedReplyDto')]);
+      final desk = fetchingDesk(carried: [null, null, unmatchedContractExam()]);
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);
       await tapGenerate(tester);
@@ -2100,7 +2101,7 @@ void main() {
         idleBeforeStart: true,
         examStartSitting: corpusSitting(),
         examGetReplies: [deskState('generating', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
         expireOnExamClose: true,
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
@@ -2141,7 +2142,7 @@ void main() {
         idleBeforeStart: true,
         examStartSitting: corpusSitting(),
         examGetReplies: [deskState('generating', corpusSitting())],
-        examCarriedReply: contract('CarriedReplyDto'),
+        examCarriedReply: unmatchedContractExam(),
       );
       await pumpExamPicker(tester, root: fixture.root, support: fixture.support, deskFor: (_) => desk);
       await openDeck(tester);

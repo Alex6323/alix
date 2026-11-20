@@ -1433,7 +1433,8 @@ mod tests {
     }
 
     #[test]
-    fn a_result_applied_after_the_deck_changed_records_nothing_stamps_no_idea_and_stores_not_recorded() {
+    fn a_result_applied_after_the_deck_changed_records_nothing_stamps_no_idea_and_stores_not_recorded(
+    ) {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
@@ -1471,17 +1472,7 @@ mod tests {
         let root = dir.path();
         let (path, exam) = held_on_deck(root);
         store_reply(root, &grading_reply(&exam, BOTH_PASS)).unwrap();
-        let live = root.join("live").join("d.md.txt");
-        std::fs::write(&live, "the changed source of d.md\n").unwrap();
-        alix::sources::commands::update(
-            &path,
-            &alix::sources::source_id(b"the source of d.md\n"),
-            &live,
-            None,
-            false,
-            &alix::config::ExamConfig::default(),
-        )
-        .unwrap();
+        change_the_examined_source(root, &path);
 
         let view = held_exam_apply(deck_arg(&path), root_arg(root), None).unwrap();
 
