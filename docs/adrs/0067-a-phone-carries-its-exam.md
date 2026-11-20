@@ -25,9 +25,10 @@ lost it.
 
 Three things stayed wrong for the learner. A prepared exam could not be
 opened away from the desktop, although answering needs nothing from it.
-Answers could outlive their exam: after a restart the desktop rebuilt a
-kept exam from the deck, so a deck renamed, moved or changed in the
-meantime left the phone with answers nothing could grade. And the
+Answers could outlive their exam: after a restart the desktop reopened a
+kept exam only by finding its deck by name and its topics in that deck,
+so a deck renamed, moved or changed in the meantime could leave the phone
+with answers nothing could grade. And the
 desktop's one slot stayed taken for as long as an exam was open, which can
 be days.
 
@@ -38,19 +39,24 @@ its sources.
 ## Decision
 
 1. An exam is one versioned document: its sitting id, the deck's name,
-   the strictness, the topics, the questions with their key points, and
-   the ideas document as updated at generation.
+   the strictness, whether it covers every topic of the deck (so that its
+   result can stand as the deck's whole-exam result), the ids of cards the
+   start request named that the desktop's deck does not hold (reported by
+   the state poll), the topics, each with its id and fingerprint (which the
+   phone compares with its deck to tell a stale exam), the questions with
+   their key points, and the ideas document as updated at generation.
 2. The desktop keeps that document in `exam/remote.json`, in the served
    folder's private state, from the moment the questions exist until the
-   phone has fetched it. The phone fetches it by sitting id and then
-   closes it; the close removes the file. The desktop keeps nothing about
-   an exam that was fetched and closed.
+   phone closes the exam or a new exam start replaces it. The phone
+   fetches it by sitting id, which removes nothing, and then closes it;
+   the close removes the file. The desktop keeps nothing about an exam
+   that was closed.
 3. The phone keeps a fetched exam in one file per deck, found by pairing
    root and deck id, together with the answers and, after grading, the
    result. Taking the exam needs no desktop. The file is removed when the
    learner leaves the result or discards the exam.
-4. Grading takes the questions, their key points and the answers in the
-   request. It opens no deck, reads no source, writes nothing under the
+4. Grading takes the questions, their key points, the answers and the
+   strictness in the request. It opens no deck, reads no source, writes nothing under the
    served folder, and runs the model without tools, as the grading of
    every exam now does. Remediation takes the missed points per topic in
    its request, the same way.
@@ -86,12 +92,13 @@ results, and progress. It now also owns the exam it is taking.
   app data, or a removed workspace loses it.
 - "No remote call changes a file under the served folder" keeps the one
   exception ADR 0066 named, for a shorter time: while a generated exam
-  waits to be fetched.
+  waits to be closed.
 - Not covered: a close that is lost, or that cannot remove the file,
-  leaves the desktop's copy until the next close or the next start; a
-  server stopped during generation loses that generation;
-  a ready exam nobody fetched is replaced by the next start, without a
-  notice to the phone that began it; a deck deleted on the desktop while
+  leaves the desktop's copy ready until a later close removes it or the
+  next exam start request does (a start whose removal fails again answers
+  an error and the copy stays); a server stopped during generation loses
+  that generation; a ready exam nobody fetched is replaced by the next
+  exam start request, without a notice to the phone that began it; a deck deleted on the desktop while
   its exam is held leaves that exam on the phone unseen; a desktop on
   another alix version refuses a valid exam until both are updated.
 
@@ -132,7 +139,7 @@ it.
 ## Compatibility
 
 `exam/remote.json` changes its document; a file in ADR 0066's shape is an
-unreadable document at the next start, reported and left. The phone's
+unreadable document when the server next starts, reported and left. The phone's
 start records change shape and its earlier exam file is no longer read.
 The remote exam contract changes: the generation reply loses the questions
 and everything after generation, and gains a `ready` phase; fetching,
@@ -142,7 +149,7 @@ grading, remediation and both closes are new or changed calls
 ## Security
 
 A pairing-token holder can read the key points of an exam that waits to be
-fetched; discard such an exam by starting another or by closing it, since
+closed; discard such an exam by starting another or by closing it, since
 the state poll shows its sitting id; and have the desktop run grading and
 remediation calls on a document of their own making, up to 4 MiB a
 request. Those calls run without tools, so text placed in the key points
@@ -154,7 +161,8 @@ their regression evidence.
 ## Verification
 
 - A table-driven test per slot checks every state against every request.
-  The generation table also checks the exam file after each cell, and the
+  The generation table also checks whether the exam file exists right
+  after each request, and the
   grading table counts model calls so that "not run again" is observed.
 - `tests/api.rs` restarts a server over an exam that waits to be fetched,
   deletes the deck, and fetches it; and grades a request for a deck the
@@ -166,7 +174,7 @@ their regression evidence.
   is saved, after the ideas are saved) and compare the progress and ideas
   records with an uninterrupted run.
 - `remote_endpoints_never_write_the_server_store` asserts that the only
-  file a remote call adds is the exam waiting to be fetched, and that it
+  file a remote call adds is the exam waiting to be closed, and that it
   is gone after the close.
 
 ## Reversal

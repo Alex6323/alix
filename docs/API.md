@@ -418,9 +418,9 @@ call below), so the desktop holds it and the next sync pull carries it to the
 phone. A card created through `POST /api/remote/ask/card` on a served deck is
 appended to the same sidecar. A generated exam waits in the served
 folder's private state (`.alix/exam/remote.json`) from the moment its
-questions exist until the phone has fetched it and closed it (see the exam
-calls below), so a restarted server still holds it; a close whose file
-cannot be removed answers 500 and the exam stays.
+questions exist until the phone closes it or a new exam start replaces it
+(see the exam calls below), so a restarted server still holds it; a close
+whose file cannot be removed answers 500 and the exam stays.
 
 A remote tutor turn is stateless on the server: `POST /api/remote/ask
 {card, history, question}` re-sends the card's required stable `deck_id` and
@@ -505,7 +505,8 @@ removed first). `GET /api/remote/exam/carried?sitting=<id>` hands over the
 `ready` exam as a `CarriedReplyDto` (§6): 400 without `sitting`, 404 when the
 slot holds no ready exam with that id. The phone stores it, then `POST
 /api/remote/exam/close {sitting}` ends the exam on the desktop: it cancels a
-running generation and removes the exam's file, and answers 500 with the exam
+running generation, removing the exam's file only if that file already holds
+the same sitting, or removes a ready exam's file, and answers 500 with the exam
 ready if that file cannot be removed; a sitting the slot does not hold is 200
 and changes nothing; a body that is not JSON with a `sitting` is 400.
 Once closed, the desktop keeps nothing about the exam. A generation still
@@ -906,7 +907,7 @@ double `POST`.
 | POST | `/api/remote/ask/draft` | `{card, history}` (`RemoteDraftReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 403 kids; 409 a turn is already thinking |
 | POST | `/api/remote/ask/note` | `{card, history}` (`RemoteNoteReq`) | `RemoteAskDto` | 400 bad/oversized body / missing deck or card id / empty `history`; 409 a turn is already thinking |
 | POST | `/api/remote/ask/card` | `{deck_id, card_id, front, back}` (`RemoteCreateCardReq`) | `RemoteCreateCardResp` | 400 bad/oversized body / a `card_id` the served deck does not hold, or one whose topic has no topic id (plain-text message naming it); 403 kids; 404 the desktop does not serve `deck_id`; 422 duplicate (except an identical retry of a sidecar card, which answers 200 with it), malformed, or a topic id two topics share; 500 the id could not be minted or the deck no longer loads |
-| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 an exam is already generating (close it first) / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck; 500 the ready exam it would replace cannot be removed |
+| POST | `/api/remote/exam/start` | `{deck, cards?: [card-id], ideas?: object}` | `RemoteExamDto` | 400 bad/oversized body / unknown or ambiguous deck name; 409 an exam is already generating (close it first) / the server has no instance store / the deck fails to load / the deck declares no sources, its sources folder fails verification, a topic id is duplicated, or no topic has a source / `cards` names no card of the deck / the sitting id cannot be minted; 500 the ready exam it would replace cannot be removed |
 | GET | `/api/remote/exam` | – | `RemoteExamDto` (poll; `phase:"idle"` when the slot holds no exam) | – |
 | GET | `/api/remote/exam/carried?sitting=<id>` | – | `CarriedReplyDto` | 400 no `sitting`; 404 no ready exam with that id |
 | POST | `/api/remote/exam/close` | `{sitting}` | 200 (also for a sitting the slot does not hold) | 400 no readable body; 500 the exam's file cannot be removed (the exam is then ready) |
