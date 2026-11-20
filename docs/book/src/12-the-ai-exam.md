@@ -184,7 +184,9 @@ and you can sit it at any time as practice, before drilling too:
   there if it could not: the row reads `fetching…`, a notice says `Exam ready:
   <deck title>.`, and the row then reads **Take exam**, filled; the exam opens
   only when you tap it. From then on the exam is only on the phone, and it
-  opens and can be answered to the end without the desktop. The desktop writes
+  opens and can be answered to the end without the desktop. If the desktop fails to write the exam, the row reads `failed:` followed by
+  the desktop's reason, **Why it failed** (the info button beside the chevron)
+  shows all of it, and tapping the row generates again. The desktop writes
   one exam at a time: the row shows `the desktop refused the exam` when it does
   not take the request, for example while it is writing another exam (wait for
   it, or cancel it from its deck's row), or when it cannot be reached. Three

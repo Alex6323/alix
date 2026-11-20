@@ -559,7 +559,7 @@ class PickerExamOffer {
     required this.due,
     required this.filterable,
     this.action = PickerExamAction.generate,
-    this.failed = false,
+    this.failure,
     this.notice,
     this.preparingSince,
     required this.onStart,
@@ -574,8 +574,7 @@ class PickerExamOffer {
   final bool filterable;
   final PickerExamAction action;
 
-  /// The last preparation failed; generating again replaces it.
-  final bool failed;
+  final String? failure;
 
   final String? notice;
   final DateTime? preparingSince;
@@ -762,9 +761,9 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                                   : 'grading needs your paired desktop',
                             PickerExamAction.result => 'your graded exam',
                             PickerExamAction.generate =>
-                              exam.failed
-                                  ? 'the last preparation failed'
-                                  : 'graded by your paired desktop',
+                              exam.failure == null
+                                  ? 'graded by your paired desktop'
+                                  : 'failed: ${exam.failure}',
                           },
                 filled:
                     exam.enabled &&
@@ -774,7 +773,19 @@ class _PickerDepthSheetState extends State<PickerDepthSheet> {
                     : exam.action == PickerExamAction.preparing
                     ? exam.onCancel
                     : () => exam.onStart(exam.filterable && _needsWorkOnly),
-                onDiscard: exam.onDiscard,
+                trailingAction: switch ((exam.onDiscard, exam.failure)) {
+                  (final onDiscard?, _) => (
+                    icon: Icons.delete_outline,
+                    tooltip: 'Discard exam',
+                    onPressed: onDiscard,
+                  ),
+                  (_, final failure?) when exam.action == PickerExamAction.generate => (
+                    icon: Icons.info_outline,
+                    tooltip: 'Why it failed',
+                    onPressed: () => _showExamFailure(context, failure),
+                  ),
+                  _ => null,
+                },
               ),
             ],
           ],
@@ -790,14 +801,14 @@ class _PickerLaunchRow extends StatelessWidget {
     required this.hint,
     required this.onTap,
     this.filled = false,
-    this.onDiscard,
+    this.trailingAction,
   });
 
   final String label;
   final String hint;
   final VoidCallback? onTap;
   final bool filled;
-  final VoidCallback? onDiscard;
+  final _RowAction? trailingAction;
 
   @override
   Widget build(BuildContext context) {
@@ -849,7 +860,7 @@ class _PickerLaunchRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (onDiscard != null) const SizedBox(width: _discardButtonSize),
+                if (trailingAction != null) const SizedBox(width: _discardButtonSize),
                 Icon(Icons.chevron_right, size: _chevronSize, color: foreground),
               ],
             ),
@@ -859,7 +870,7 @@ class _PickerLaunchRow extends StatelessWidget {
     );
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: onDiscard == null
+      child: trailingAction == null
           ? row
           : Stack(
               children: [
@@ -871,11 +882,11 @@ class _PickerLaunchRow extends StatelessWidget {
                   width: _discardButtonSize,
                   child: Center(
                     child: IconButton(
-                      icon: const Icon(Icons.delete_outline),
+                      icon: Icon(trailingAction!.icon),
                       iconSize: 20,
                       color: foreground,
-                      tooltip: 'Discard exam',
-                      onPressed: onDiscard,
+                      tooltip: trailingAction!.tooltip,
+                      onPressed: trailingAction!.onPressed,
                     ),
                   ),
                 ),
@@ -883,6 +894,24 @@ class _PickerLaunchRow extends StatelessWidget {
             ),
     );
   }
+}
+
+typedef _RowAction = ({IconData icon, String tooltip, VoidCallback onPressed});
+
+Future<void> _showExamFailure(BuildContext context, String failure) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: const Text('The exam could not be generated'),
+      content: SingleChildScrollView(child: SelectableText(failure)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialog).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
 }
 
 const double _discardButtonSize = 48;

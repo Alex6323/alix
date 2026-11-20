@@ -258,7 +258,7 @@ void main() {
     bool due = false,
     bool filterable = false,
     PickerExamAction action = PickerExamAction.generate,
-    bool failed = false,
+    String? failure,
     DateTime? preparingSince,
     ValueChanged<bool>? onStart,
     VoidCallback? onCancel,
@@ -270,7 +270,7 @@ void main() {
     due: due,
     filterable: filterable,
     action: action,
-    failed: failed,
+    failure: failure,
     preparingSince: preparingSince,
     onStart: onStart ?? (_) {},
     onCancel: onCancel,
@@ -434,12 +434,41 @@ void main() {
   ) async {
     final starts = <bool>[];
     await tester.pumpWidget(
-      _sheet((_) {}, exam: offer(failed: true, onStart: starts.add)),
+      _sheet(
+        (_) {},
+        exam: offer(
+          failure: "'claude' timed out after 600s",
+          onStart: starts.add,
+        ),
+      ),
     );
 
-    expect(find.text('the last preparation failed'), findsOneWidget);
+    expect(find.text("failed: 'claude' timed out after 600s"), findsOneWidget);
+    await tester.tap(find.byTooltip('Why it failed'));
+    await tester.pumpAndSettle();
+    expect(find.text('The exam could not be generated'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text("'claude' timed out after 600s"),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+
     await tester.tap(find.text('Generate exam'));
     expect(starts, [false]);
+  });
+
+  testWidgets('a row without a failure has no Why it failed button', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_sheet((_) {}, exam: offer()));
+
+    expect(find.byTooltip('Why it failed'), findsNothing);
+    expect(find.text('graded by your paired desktop'), findsOneWidget);
   });
 
   testWidgets('Take exam opens the ready sitting and is filled', (

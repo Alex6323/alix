@@ -1070,7 +1070,7 @@ class _PickerScreenState extends State<PickerScreen> {
           final record = deckId == null
               ? null
               : _sittings?.forDeck(root, deckId);
-          final (:action, :failed) = examActionFor(
+          final (:action, :failure) = examActionFor(
             held: held.value.held,
             heldHasResult: held.value.hasResult,
             record: record,
@@ -1096,7 +1096,7 @@ class _PickerScreenState extends State<PickerScreen> {
                     due: entry.examDue,
                     filterable: entry.examFilter != 'none',
                     action: action,
-                    failed: failed,
+                    failure: failure,
                     notice: notice?.deck == deckName ? notice?.text : null,
                     preparingSince: action == PickerExamAction.preparing
                         ? polled.polledAt.subtract(elapsed)

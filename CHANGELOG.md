@@ -992,6 +992,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mobile: the exam row on the deck sheet now shows why the paired desktop
+  could not generate an exam (`failed: <reason>`), and a Why it failed button
+  opens the whole text, instead of only saying that it failed.
+
 - Mobile: the exam's Continue later sits between Back and Next instead of on
   a row of its own, leaving more room for the question, above all in
   landscape.

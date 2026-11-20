@@ -2055,9 +2055,9 @@ void main() {
       await tick(tester);
       await openDeck(tester);
       expect(
-        find.text('the last preparation failed'),
+        find.text('failed: the generation failed'),
         findsOneWidget,
-        reason: 'step 1: the failed generation shows on the row',
+        reason: 'step 1: the failed generation shows its reason on the row',
       );
 
       await tapGenerate(tester);
