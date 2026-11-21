@@ -49,14 +49,19 @@ class DependabotPolicyTests(unittest.TestCase):
             "multi-ecosystem-groups:\n"
             "  flutter-rust-bridge:\n"
             "    schedule:\n"
-            '      interval: "monthly"',
+            '      interval: "monthly"\n'
+            "    open-pull-requests-limit: 1",
             self.text,
         )
 
         for key, block in self.blocks.items():
             with self.subTest(root=key):
-                self.assertIn("open-pull-requests-limit: 1", block)
-                if "multi-ecosystem-group:" not in block:
+                if "multi-ecosystem-group:" in block:
+                    # GitHub rejects the whole file when a group member sets these.
+                    self.assertNotIn("open-pull-requests-limit:", block)
+                    self.assertNotIn("schedule:", block)
+                else:
+                    self.assertIn("open-pull-requests-limit: 1", block)
                     self.assertIn('interval: "monthly"', block)
 
     def test_mobile_rust_and_pub_updates_are_one_lockstep_group(self):

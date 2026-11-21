@@ -4,6 +4,7 @@ multi-ecosystem-groups:
   flutter-rust-bridge:
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 1
 
 updates:
   # Action revisions are executable code. Keep them in one human-reviewed PR.
@@ -36,7 +37,6 @@ updates:
     patterns:
       - "*"
     multi-ecosystem-group: "flutter-rust-bridge"
-    open-pull-requests-limit: 1
 
   - package-ecosystem: "cargo"
     directory: "/test-support"
@@ -61,7 +61,6 @@ updates:
     patterns:
       - "*"
     multi-ecosystem-group: "flutter-rust-bridge"
-    open-pull-requests-limit: 1
 
   - package-ecosystem: "pub"
     directory: "/mobile/alix/rust_builder/cargokit/build_tool"
