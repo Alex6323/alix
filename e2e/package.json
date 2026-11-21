@@ -8,6 +8,6 @@
     "unit": "node --test unit/*.test.mjs shots/*.test.cjs"
   },
   "devDependencies": {
-    "@playwright/test": "~1.61.1"
+    "@playwright/test": "~1.65.1"
   }
 }
