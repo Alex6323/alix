@@ -183,10 +183,17 @@ Widget runsOrText(
   bool contextHoles = false,
   AlixTokens? tokens,
   AskedHoleSpanBuilder? askedHoleSpanBuilder,
+  int? maxLines,
 }) {
   final effectiveStyle = style ?? const TextStyle();
   if (runs == null) {
-    return Text(text, style: effectiveStyle, textAlign: textAlign);
+    return Text(
+      text,
+      style: effectiveStyle,
+      textAlign: textAlign,
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
+    );
   }
   return InlineRuns(
     runs: runs,
@@ -196,6 +203,7 @@ Widget runsOrText(
     blankColor: tokens?.boltHi,
     mutedBlankColor: tokens?.dim,
     askedHoleSpanBuilder: askedHoleSpanBuilder,
+    maxLines: maxLines,
   );
 }
 

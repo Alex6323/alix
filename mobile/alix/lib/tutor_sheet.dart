@@ -11,13 +11,28 @@ import 'package:flutter/material.dart';
 
 import 'package:alix_mobile/review/unit_widgets.dart';
 import 'package:alix_mobile/server_client.dart';
+import 'package:alix_mobile/shared/inline_models.dart';
 import 'package:alix_mobile/theme.dart';
 import 'package:alix_mobile/tutor_conversation.dart';
 
+Future<void> showTutorSheet(
+  BuildContext context,
+  TutorConversation conversation, {
+  List<InlineRunModel>? frontRuns,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => TutorSheet(conversation: conversation, frontRuns: frontRuns),
+  );
+}
+
 class TutorSheet extends StatefulWidget {
-  const TutorSheet({super.key, required this.conversation});
+  const TutorSheet({super.key, required this.conversation, this.frontRuns});
 
   final TutorConversation conversation;
+  final List<InlineRunModel>? frontRuns;
 
   @override
   State<TutorSheet> createState() => _TutorSheetState();
@@ -133,11 +148,13 @@ class _TutorSheetState extends State<TutorSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
+            runsOrText(
+              widget.frontRuns,
               conversation.card.front,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium,
+              contextHoles: true,
+              tokens: tokens,
+              maxLines: 2,
             ),
             const SizedBox(height: 12),
             Flexible(

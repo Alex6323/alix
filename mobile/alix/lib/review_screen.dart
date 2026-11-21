@@ -212,10 +212,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
     if (client == null) return;
     final conversation = _tutorFor(tutor, client);
     _tutorSheetOpen = true;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => TutorSheet(conversation: conversation),
+    showTutorSheet(
+      context,
+      conversation,
+      frontRuns: _controller.state.card?.frontRuns,
     ).whenComplete(() => _tutorSheetOpen = false);
   }
 

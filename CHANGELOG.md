@@ -1000,6 +1000,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mobile: the tutor sheet no longer rises under the status bar when a long
+  answer fills it, and its title shows the card's inline code and other
+  styling as the card does, instead of raw backticks.
 - Mobile: the exam row on the deck sheet now shows why the paired desktop
   could not generate an exam (`failed: <reason>`), and a Why it failed button
   opens the whole text, instead of only saying that it failed.

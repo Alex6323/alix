@@ -72,11 +72,7 @@ void main() {
         body: Builder(
           builder: (context) => Center(
             child: ElevatedButton(
-              onPressed: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                builder: (_) => TutorSheet(conversation: harness.conversation),
-              ),
+              onPressed: () => showTutorSheet(context, harness.conversation),
               child: const Text('open'),
             ),
           ),

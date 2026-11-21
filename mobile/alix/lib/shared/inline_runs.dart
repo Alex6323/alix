@@ -34,6 +34,7 @@ class InlineRuns extends StatelessWidget {
     this.blankColor,
     this.mutedBlankColor,
     this.askedHoleSpanBuilder,
+    this.maxLines,
   });
 
   final List<InlineRunModel> runs;
@@ -43,6 +44,7 @@ class InlineRuns extends StatelessWidget {
   final Color? blankColor;
   final Color? mutedBlankColor;
   final AskedHoleSpanBuilder? askedHoleSpanBuilder;
+  final int? maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -96,6 +98,8 @@ class InlineRuns extends StatelessWidget {
       ),
       textAlign: textAlign,
       softWrap: true,
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
     );
   }
 
