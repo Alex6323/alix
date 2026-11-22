@@ -23,12 +23,12 @@ Source: https://github.com/EkType/Baloo2
 Math rendering
 --------------
 
-RaTeX 0.1.13
+RaTeX 0.1.16
 Licensed under the MIT License.
 Source: https://github.com/erweixin/RaTeX
 
 KaTeX fonts embedded by RaTeX
 Licensed under the SIL Open Font License, Version 1.1.
-Full upstream notice: assets/licenses/ratex-katex-fonts-0.1.13-FONT_NOTICE.txt
-Full license text: assets/licenses/ratex-katex-fonts-0.1.13-OFL.txt
+Full upstream notice: assets/licenses/ratex-katex-fonts-0.1.16-FONT_NOTICE.txt
+Full license text: assets/licenses/ratex-katex-fonts-0.1.16-OFL.txt
 Source: https://github.com/KaTeX/KaTeX

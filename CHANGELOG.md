@@ -288,6 +288,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Math renders with RaTeX 0.1.16 (was 0.1.13): `\slashed` and `\centernot`
+  now render, and limits under `\sum` and `\lim`, the brace of `\underbrace`,
+  and the rows of `aligned` sit slightly tighter. `\dots` picks low or
+  centered dots from the symbol after it, as LaTeX does (`1, 2, \dots, n` now
+  shows low dots), and `\cdots` and `\dotso` add a thin space before
+  punctuation or a closing delimiter. Because these three now look at the
+  next token, which alix cannot prove they leave alone, a blank on a scripted
+  brace group right after one (`{x}^2` in `\cdots {x}^2`) is rejected.
+
 - Graphemes follow Unicode 17 (was 16). A span's `position:` anchor counts
   graphemes, so where the rules changed before a span (a ZWJ between two
   symbols Unicode 17 no longer counts as pictographic, such as U+2388 HELM

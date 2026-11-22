@@ -1344,13 +1344,13 @@ mod tests {
             ("\\substack", 1),
             ("\\boxed", 1),
             ("\\colon", 0),
-            ("\\dots", 0),
-            ("\\cdots", 0),
+            ("\\dots", usize::MAX),
+            ("\\cdots", usize::MAX),
             ("\\dotsb", 0),
             ("\\dotsm", 0),
             ("\\dotsi", 0),
             ("\\dotsx", 0),
-            ("\\dotso", 0),
+            ("\\dotso", usize::MAX),
             ("\\DOTSI", 0),
             ("\\DOTSB", 0),
             ("\\DOTSX", 0),
@@ -1556,6 +1556,59 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+
+    fn arity_snapshot_row(name: &str) -> String {
+        use ratex_parser::macro_expander::{MacroDefinition, MacroExpander};
+        let definition = if ratex_parser::functions::FUNCTIONS.contains_key(name) {
+            "function"
+        } else {
+            match MacroExpander::new("", ratex_parser::Mode::Math).get_macro(name) {
+                Some(MacroDefinition::Text(_)) => "text",
+                Some(MacroDefinition::Tokens { .. }) => "tokens",
+                Some(MacroDefinition::Function(_)) => "code",
+                None => "none",
+            }
+        };
+        let arity = match command_brace_arity(name) {
+            usize::MAX => "all".to_string(),
+            arity => arity.to_string(),
+        };
+        format!("{name}\t{definition}\t{arity}")
+    }
+
+    #[test]
+    fn every_renderer_command_keeps_its_recorded_brace_arity() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/ratex-arities.tsv"
+        );
+        let recorded_text = std::fs::read_to_string(path).unwrap();
+        let recorded: std::collections::BTreeMap<&str, &str> = recorded_text
+            .lines()
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(|line| (line.split('\t').next().unwrap_or(line), line))
+            .collect();
+        // The renderer's macro table is private: new macros enter the fixture
+        // by hand, while every registered function is enumerated here.
+        let names: std::collections::BTreeSet<&str> = recorded
+            .keys()
+            .copied()
+            .chain(ratex_parser::functions::FUNCTIONS.keys().copied())
+            .collect();
+        let drift: Vec<String> = names
+            .into_iter()
+            .filter_map(|name| {
+                let actual = arity_snapshot_row(name);
+                let expected = recorded.get(name).copied().unwrap_or("(not recorded)");
+                (expected != actual).then(|| format!("recorded: {expected}\n  actual: {actual}"))
+            })
+            .collect();
+        assert!(
+            drift.is_empty(),
+            "renderer brace arities moved; review each change, then update {path}:\n{}",
+            drift.join("\n")
+        );
     }
 
     fn parse_custom_text_macro(
