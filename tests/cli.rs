@@ -4968,6 +4968,42 @@ fn generate_builds_checkpoints_into_an_existing_trace_stub() {
 }
 
 #[test]
+fn a_generated_deck_ending_in_a_code_block_keeps_its_closing_fence_and_initializes() {
+    let dir = TempDir::new().unwrap();
+    let decks = dir.path().join("decks");
+    std::fs::create_dir_all(&decks).unwrap();
+    let cli = fake_claude(
+        dir.path(),
+        "## Which line binds x?\nThis one:\n```rust\nlet x = 1;\n```\n",
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("decks_dir = {decks:?}\n[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let out = alix(&[
+        "deck",
+        "generate",
+        "https://example.invalid/page",
+        "--output",
+        "fenced",
+        "--yes",
+        "--config",
+        &config,
+    ]);
+    assert!(out.status.success(), "generate: {}", stderr(&out));
+    let deck = std::fs::read_to_string(decks.join("fenced.md")).unwrap();
+    assert!(
+        deck.contains("let x = 1;\n```\n"),
+        "the closing fence survives: {deck}"
+    );
+    assert!(
+        deck.contains("<!-- id: card-"),
+        "the deck initialized: {deck}"
+    );
+}
+
+#[test]
 fn a_trace_build_without_a_cite_root_is_refused_before_the_backend() {
     let dir = TempDir::new().unwrap();
     let stub = write(dir.path(), "t.md", "---\ntrace: how it works\n---\n");

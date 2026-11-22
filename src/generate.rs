@@ -841,14 +841,32 @@ fn clean_output(raw: &str) -> String {
         return raw.trim().to_string();
     };
     let body = &lines[start..];
-    let last_kept = body
+    let end = match unclosed_fence_opener(body) {
+        Some(opener) if body[opener + 1..].iter().all(|line| line.trim().is_empty()) => opener,
+        _ => body.len(),
+    };
+    let last_kept = body[..end]
         .iter()
-        .rposition(|line| {
-            let t = line.trim();
-            !(t.is_empty() || t.starts_with("```"))
-        })
+        .rposition(|line| !line.trim().is_empty())
         .unwrap_or(0);
     space_cards(&body[..=last_kept])
+}
+
+fn unclosed_fence_opener(lines: &[&str]) -> Option<usize> {
+    let mut open: Option<(usize, char, usize)> = None;
+    for (index, &line) in lines.iter().enumerate() {
+        match open {
+            Some((_, ch, width)) => {
+                if crate::parser::closes_fence(line, ch, width) {
+                    open = None;
+                }
+            }
+            None => {
+                open = crate::parser::fence_opener(line).map(|(ch, width)| (index, ch, width));
+            }
+        }
+    }
+    open.map(|(index, _, _)| index)
 }
 
 fn space_cards(lines: &[&str]) -> String {
@@ -1919,6 +1937,27 @@ mod tests {
     fn clean_strips_commentary_and_fence_together() {
         let raw = "Here is your deck:\n```text\n---\nlink: u\n---\n## Q\nA\n```";
         assert_eq!("---\nlink: u\n---\n## Q\nA", clean_output(raw));
+    }
+
+    #[test]
+    fn clean_keeps_the_closing_fence_of_a_code_block_ending_the_deck() {
+        for (step, raw) in [
+            ("bare reply", "## Q\nA\n```rust\nlet x = 1;\n```\n"),
+            (
+                "wrapped reply",
+                "```markdown\n## Q\nA\n```rust\nlet x = 1;\n```\n```\n",
+            ),
+            (
+                "four-backtick wrapper",
+                "````text\n## Q\nA\n```rust\nlet x = 1;\n```\n````",
+            ),
+        ] {
+            assert_eq!(
+                "## Q\nA\n```rust\nlet x = 1;\n```",
+                clean_output(raw),
+                "{step}: {raw:?}"
+            );
+        }
     }
 
     #[test]

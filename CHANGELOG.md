@@ -1016,6 +1016,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `alix deck generate` no longer fails, and discards the generated deck,
+  when its last card ends in a code block: the block's closing fence was cut
+  as if it wrapped the reply.
+
 - Mobile: the tutor sheet no longer rises under the status bar when a long
   answer fills it, and its title shows the card's inline code and other
   styling as the card does, instead of raw backticks.
