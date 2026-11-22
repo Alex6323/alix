@@ -7,6 +7,7 @@ skip = [
     { crate = "hashbrown@0.16.1", reason = "yaml-rust2 and indexmap use different families" },
     { crate = "rand_core@0.6.4", reason = "ratex uses the rand 0.8 core family" },
     { crate = "roxmltree@0.20.0", reason = "fontconfig-parser has not moved to roxmltree 0.21" },
+    { crate = "syn@2.0.117", reason = "serde_derive moved to syn 3; the other proc-macro crates have not" },
     { crate = "thiserror@1.0.69", reason = "ratex still uses thiserror 1" },
     { crate = "thiserror-impl@1.0.69", reason = "ratex still uses thiserror 1" },
     { crate = "wit-bindgen@0.51.0", reason = "the accepted getrandom families reach two WASI generations" },
