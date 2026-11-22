@@ -110,11 +110,11 @@ fn joins_pictographs(text: &str, zwj_at: usize) -> bool {
 }
 
 /// Asked of the segmenter itself: `c` is GB11-joinable exactly when inserting
-/// a ZWJ merges `U+2388 c` (two graphemes) into one.
+/// a ZWJ merges `c c` (two graphemes) into one.
 fn gb11_joins(c: char) -> bool {
     use unicode_segmentation::UnicodeSegmentation;
-    let bare: String = ['\u{2388}', c].into_iter().collect();
-    let joined: String = ['\u{2388}', '\u{200D}', c].into_iter().collect();
+    let bare: String = [c, c].into_iter().collect();
+    let joined: String = [c, '\u{200D}', c].into_iter().collect();
     bare.graphemes(true).count() == 2 && joined.graphemes(true).count() == 1
 }
 
@@ -222,10 +222,10 @@ mod tests {
                 "a variation selector between the ZWJ and its base is transparent",
             ),
             (
-                "\u{2388}\u{200D}\u{2388}",
+                "\u{1F02C}\u{200D}\u{1F02C}",
                 &[],
                 0,
-                "extended pictographs that are not Emoji=Yes still join: GB11, one grapheme",
+                "reserved Extended_Pictographic code points, not Emoji=Yes, still join: GB11, one grapheme",
             ),
             (
                 "\u{1F468}\u{200D}\u{FE0F}\u{1F469}",

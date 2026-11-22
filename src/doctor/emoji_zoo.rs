@@ -85,8 +85,8 @@ fn the_emoji_zoo_flags_only_invisibles_outside_well_formed_sequences() {
             anomaly: true,
         },
         Row {
-            label: "ZWJ between Extended_Pictographic symbols outside Emoji=Yes",
-            text: "\u{2388}\u{200d}\u{2388}",
+            label: "ZWJ between reserved Extended_Pictographic code points outside Emoji=Yes",
+            text: "\u{1f02c}\u{200d}\u{1f02c}",
             target: Target::Zwj,
             anomaly: false,
         },

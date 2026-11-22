@@ -288,6 +288,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Graphemes follow Unicode 17 (was 16). A span's `position:` anchor counts
+  graphemes, so where the rules changed before a span (a ZWJ between two
+  symbols Unicode 17 no longer counts as pictographic, such as U+2388 HELM
+  SYMBOL, is now two graphemes), `alix doctor` warns that the span binds at a
+  different position than its anchor says. The span still binds to the same
+  text; `alix doctor --repair-positions` rewrites the anchor.
+
 - Phone exam: each question fills the screen above a one-line answer box that
   grows to four lines, and a hairline under the question marks where it ends,
   as on review cards; the question counter moves into the header, and Back
@@ -1003,6 +1010,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Mobile: the tutor sheet no longer rises under the status bar when a long
   answer fills it, and its title shows the card's inline code and other
   styling as the card does, instead of raw backticks.
+
 - Mobile: the exam row on the deck sheet now shows why the paired desktop
   could not generate an exam (`failed: <reason>`), and a Why it failed button
   opens the whole text, instead of only saying that it failed.
