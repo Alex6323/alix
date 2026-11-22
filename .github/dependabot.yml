@@ -61,6 +61,13 @@ updates:
     patterns:
       - "*"
     multi-ecosystem-group: "flutter-rust-bridge"
+    # freezed 4 needs Dart 3.13, above the pinned Flutter's; build_runner
+    # 2.17 needs freezed 4's analyzer.
+    ignore:
+      - dependency-name: "freezed"
+        versions: [">=4"]
+      - dependency-name: "build_runner"
+        versions: [">=2.17"]
 
   - package-ecosystem: "pub"
     directory: "/mobile/alix/rust_builder/cargokit/build_tool"

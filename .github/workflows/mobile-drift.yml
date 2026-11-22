@@ -55,7 +55,7 @@ jobs:
       # second compatibility dimension. toolchain-check keeps this copy aligned
       # with the Dart and Rust pins.
       - name: Install the pinned flutter_rust_bridge_codegen
-        run: cargo install --locked --version 2.12.0 flutter_rust_bridge_codegen
+        run: cargo install --locked --version 2.13.0 flutter_rust_bridge_codegen
 
       # In this disposable checkout, replace the release NDK pin with current
       # Flutter's NDK. That preserves an exact production pin while this one

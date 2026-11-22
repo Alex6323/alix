@@ -80,7 +80,7 @@ jobs:
             mobile/alix/rust
 
       - name: Install the pinned flutter_rust_bridge_codegen
-        run: cargo install --locked --version 2.12.0 flutter_rust_bridge_codegen
+        run: cargo install --locked --version 2.13.0 flutter_rust_bridge_codegen
 
       - name: Install the app-pinned NDK
         run: |
