@@ -675,10 +675,9 @@ def run_land_phase(state: RunState) -> None:
     if state.phase != "LAND":
         raise ValueError("land phase requires LAND state")
     scores = _load_scores(Path(state.run_dir) / "scores.json")
-    winner_name = recommend(scores)
-    if winner_name not in AGENT_NAMES:
+    winner = recommend(scores)
+    if winner not in AGENT_NAMES:
         raise RuntimeError("landing requires one passing machine recommendation")
-    winner = cast(AgentName, winner_name)
     repo = Path(state.repo)
     started_wall = _now()
     started = time.monotonic()
