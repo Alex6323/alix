@@ -4,10 +4,7 @@ wildcards = "deny"
 allow-wildcard-paths = true
 skip = [
     { crate = "getrandom@0.2.17", reason = "directories still requires the older family" },
-    { crate = "getrandom@0.3.4", reason = "rand 0.9 has not moved to getrandom 0.4" },
     { crate = "hashbrown@0.16.1", reason = "yaml-rust2 and indexmap use different families" },
-    { crate = "r-efi@5.3.0", reason = "the accepted getrandom families require both r-efi versions" },
-    { crate = "rand@0.8.7", reason = "ratex uses the rand 0.8 phf family" },
     { crate = "rand_core@0.6.4", reason = "ratex uses the rand 0.8 core family" },
     { crate = "roxmltree@0.20.0", reason = "fontconfig-parser has not moved to roxmltree 0.21" },
     { crate = "thiserror@1.0.69", reason = "ratex still uses thiserror 1" },
