@@ -10343,6 +10343,41 @@ enum ExampleKind {
     Diagram,
 }
 
+#[test]
+fn the_guide_fences_nothing_the_example_law_cannot_see() {
+    let guide = alix::authoring_guide::part(alix::authoring_guide::Part::Guide);
+    let lines: Vec<&str> = guide.lines().collect();
+    let mut tagged = Vec::new();
+    let mut at = 0;
+    while at < lines.len() {
+        assert!(
+            !lines[at].trim_start().starts_with("~~~"),
+            "line {}: a tilde fence hides its content from the example law: {}",
+            at + 1,
+            lines[at]
+        );
+        let ticks = lines[at].chars().take_while(|c| *c == '`').count();
+        if ticks < 3 {
+            at += 1;
+            continue;
+        }
+        let run = &lines[at][..ticks];
+        if lines[at].len() > ticks {
+            tagged.push(&lines[at][ticks..]);
+        }
+        at += 1;
+        while lines[at] != run {
+            at += 1;
+        }
+        at += 1;
+    }
+    assert_eq!(
+        vec!["sh"],
+        tagged,
+        "a tagged top-level fence is skipped by the example law; only the shell block may be tagged"
+    );
+}
+
 fn guide_deck_examples() -> Vec<String> {
     let guide = alix::authoring_guide::part(alix::authoring_guide::Part::Guide);
     let lines: Vec<&str> = guide.lines().collect();
