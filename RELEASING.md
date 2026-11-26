@@ -151,7 +151,7 @@ at. **crates.io is not automated.**
    `python3 scripts/calibrate_matrix.py <log> --tree <candidate> --run <when>`,
    so the per-backend verdicts stay comparable release over release.
 4b. **Card-shape evaluation.** Run `make shape-eval` when the deck generator,
-   its prompt, or `docs/include/card-shapes.md` changed. Deterministic tests prove the
+   its prompt, or `docs/include/deck-authoring-guide.md` changed. Deterministic tests prove the
    rule reaches the prompt; only this proves the rule still steers a real
    model, which is the failure a prompt that reads well can hide. Costed,
    non-deterministic, authenticated, manual, and judged under the same rule as

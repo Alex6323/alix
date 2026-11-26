@@ -404,7 +404,7 @@ exam-probes:
 	cargo test --lib exam_probes -- --ignored --nocapture --test-threads=1
 
 # Does the shape rule actually STEER the generator? A deterministic test can
-# prove docs/include/card-shapes.md reached the prompt; only a real call proves a
+# prove docs/include/deck-authoring-guide.md reached the prompt; only a real call proves a
 # prompt that reads well does not steer badly. Costed and non-deterministic,
 # so it is a release gate beside calibrate, never CI.
 shape-eval:

@@ -22,7 +22,7 @@ use crate::{
 pub const DEFAULT_GOAL: &str = "understand the whole source";
 pub const RANGED_FILE_LINES: usize = 400;
 pub(crate) const SOURCES_MARKER: &str = "=== sources ===";
-const CARD_SHAPE_FILE: &str = include_str!("../docs/include/card-shapes.md");
+const CARD_SHAPE_FILE: &str = include_str!("../docs/include/deck-authoring-guide.md");
 
 // The file opens with a human-facing preamble that must reach neither the
 // prompt nor the book; both consumers take only the anchored span.
@@ -1149,7 +1149,7 @@ mod tests {
         let guide = card_shape_guide();
         assert_ne!(
             CARD_SHAPE_FILE, guide,
-            "the strip did nothing; the anchors are gone from docs/include/card-shapes.md"
+            "the strip did nothing; the anchors are gone from docs/include/deck-authoring-guide.md"
         );
         assert!(
             guide.starts_with("Which card shape suits which material."),

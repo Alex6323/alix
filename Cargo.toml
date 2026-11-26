@@ -22,7 +22,7 @@ include = [
     "src/**",
     "assets/decks/**",
     "assets/licenses/**",
-    "docs/include/card-shapes.md",
+    "docs/include/deck-authoring-guide.md",
     "web/**",
     "/README.md",
     "/CHANGELOG.md",
