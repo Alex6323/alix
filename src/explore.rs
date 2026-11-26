@@ -941,7 +941,45 @@ mod tests {
             language: None,
             audience: None,
             card_style: crate::config::GenerateCardStyle::Mixed,
+            diagrams: false,
         }
+    }
+
+    #[test]
+    fn switching_diagrams_on_leaves_the_explore_prompts_unchanged() {
+        let off = spec("understand the repo");
+        let on = GenerationSpec {
+            diagrams: true,
+            ..spec("understand the repo")
+        };
+        let config = TraceConfig::default();
+        let root = crate::cite::GeneratedRoot {
+            key: "code".into(),
+            path_prefix: String::new(),
+            declare: None,
+        };
+        let items = vec![Item {
+            num: 1,
+            kind: Kind::Deck,
+            title: "Facts".to_string(),
+            requires: Vec::new(),
+            source: "notes.md".to_string(),
+        }];
+        assert_eq!(
+            explore_prompt(".", &off, false, &config),
+            explore_prompt(".", &on, false, &config),
+            "the explore prompt"
+        );
+        assert_eq!(
+            trace_prompt(".", &off, &Citing::Lines(&root), &config),
+            trace_prompt(".", &on, &Citing::Lines(&root), &config),
+            "the trace prompt"
+        );
+        assert_eq!(
+            fill_prompt(&items, &off),
+            fill_prompt(&items, &on),
+            "the fill prompt"
+        );
     }
 
     #[test]
@@ -1059,6 +1097,7 @@ mod tests {
             language: Some("German".to_string()),
             audience: Some("new voters".to_string()),
             card_style: crate::config::GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
 
         let p = fill_prompt(&items, &spec);
@@ -1095,6 +1134,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: crate::config::GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
         let filled = HashMap::from([
             (1, "## Plain fact\nplain answer".to_string()),

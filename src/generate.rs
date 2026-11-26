@@ -39,6 +39,7 @@ pub struct GenerationSpec {
     pub language: Option<String>,
     pub audience: Option<String>,
     pub card_style: GenerateCardStyle,
+    pub diagrams: bool,
 }
 
 impl GenerationSpec {
@@ -48,6 +49,7 @@ impl GenerationSpec {
             language: config.language.clone(),
             audience: config.audience.clone(),
             card_style: config.card_style,
+            diagrams: false,
         }
     }
 
@@ -1005,6 +1007,39 @@ mod tests {
     }
 
     #[test]
+    fn generation_spec_from_config_leaves_diagrams_off() {
+        assert!(!spec().diagrams);
+    }
+
+    #[test]
+    fn switching_diagrams_on_leaves_every_prompt_unchanged() {
+        let off = spec();
+        let on = GenerationSpec {
+            diagrams: true,
+            ..spec()
+        };
+        let source_root = src_root();
+        for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+            assert_eq!(
+                build_prompt("notes", root, &cfg(10), &off),
+                build_prompt("notes", root, &cfg(10), &on),
+                "the generation prompt for {name}"
+            );
+        }
+        assert_eq!(
+            build_review_prompt("## Q\nA\n", &off),
+            build_review_prompt("## Q\nA\n", &on),
+            "the review prompt"
+        );
+        assert_eq!(off.requirements(), on.requirements(), "the requirements");
+        assert_eq!(
+            off.learner_requirements(),
+            on.learner_requirements(),
+            "the learner requirements"
+        );
+    }
+
+    #[test]
     fn only_the_exact_default_generation_spec_is_default() {
         let cases = [
             ("the exact default", spec(), true),
@@ -1457,6 +1492,7 @@ mod tests {
             language: Some("German".to_string()),
             audience: Some("German high-school students".to_string()),
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
         let p = build_prompt("u", None, &cfg(10), &spec);
 
@@ -1477,6 +1513,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
 
         let prompt = build_prompt("https://example.org", None, &cfg(10), &spec);
@@ -1512,6 +1549,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
         let following_the_prompt = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n<!-- choices: single -->\n";
         let without_the_invocation = "---\nlink: https://example.org\n\n---\n## Pick one\n- [x] Right\n- [ ] Wrong A\n- [ ] Wrong B\n";
@@ -1534,6 +1572,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
 
         let prompt = build_prompt(".", Some(&src_root()), &cfg(10), &spec);
@@ -1613,6 +1652,7 @@ mod tests {
             language: Some("de".to_string()),
             audience: Some("beginners".to_string()),
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
         let p = build_review_prompt("## Frage\n- [x] Ja\n- [ ] Nein\n", &spec);
 
@@ -1650,6 +1690,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
 
         let reviewed = review_deck(
@@ -1676,6 +1717,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
 
         let err = generate_deck(
@@ -1704,6 +1746,7 @@ mod tests {
                 language: None,
                 audience: None,
                 card_style,
+                diagrams: false,
             };
             let error = validate_card_style(malformed, &spec).unwrap_err();
             assert!(
@@ -1722,6 +1765,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
         };
 
         let too_few = validate_card_style("## Pick one\n- [x] Right\n- [ ] Wrong\n", &spec);
@@ -1744,6 +1788,7 @@ mod tests {
                 language: None,
                 audience: None,
                 card_style,
+                diagrams: false,
             };
             let error = validate_card_style(deck, &spec).unwrap_err();
 
@@ -1774,6 +1819,7 @@ mod tests {
                 language: None,
                 audience: None,
                 card_style,
+                diagrams: false,
             };
             validate_card_style(deck, &spec).unwrap();
         }
@@ -1788,6 +1834,7 @@ mod tests {
             language: None,
             audience: None,
             card_style,
+            diagrams: false,
         };
         validate_card_style(deck, &spec(GenerateCardStyle::Cloze))
             .expect("a span blank IS the requested cloze shape");
@@ -1804,6 +1851,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::Cloze,
+            diagrams: false,
         };
 
         let error = validate_card_style("## Question\nAnswer\n", &spec).unwrap_err();
@@ -1818,6 +1866,7 @@ mod tests {
             language: None,
             audience: None,
             card_style: GenerateCardStyle::Plain,
+            diagrams: false,
         };
 
         let cloze = validate_card_style(
