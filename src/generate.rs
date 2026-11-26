@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     ask,
+    authoring_guide::{Part, part, part_without},
     backend::{ensure_source_reachable, supports_structured_progress},
     choice,
     cite::GeneratedRoot,
@@ -22,16 +23,6 @@ use crate::{
 pub const DEFAULT_GOAL: &str = "understand the whole source";
 pub const RANGED_FILE_LINES: usize = 400;
 pub(crate) const SOURCES_MARKER: &str = "=== sources ===";
-const CARD_SHAPE_FILE: &str = include_str!("../docs/include/deck-authoring-guide.md");
-
-// The file opens with a human-facing preamble that must reach neither the
-// prompt nor the book; both consumers take only the anchored span.
-fn card_shape_guide() -> &'static str {
-    CARD_SHAPE_FILE
-        .split_once("<!-- ANCHOR: guide -->\n")
-        .and_then(|(_, rest)| rest.split_once("<!-- ANCHOR_END: guide -->"))
-        .map_or(CARD_SHAPE_FILE, |(guide, _)| guide)
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenerationSpec {
@@ -89,7 +80,15 @@ impl GenerationSpec {
 }
 
 pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
-    let guide = card_shape_guide();
+    card_format_with_shapes(style, part(Part::Shapes))
+}
+
+pub(crate) fn card_format_without_diagram_row(style: GenerateCardStyle) -> Cow<'static, str> {
+    card_format_with_shapes(style, part_without(Part::Shapes, Part::ShapesDiagramRow))
+}
+
+fn card_format_with_shapes(style: GenerateCardStyle, shapes: String) -> Cow<'static, str> {
+    let guide = format!("{shapes}\n{}", part(Part::CardRules));
     match style {
         GenerateCardStyle::Mixed => Cow::Owned(format!(
             "- Choose each card's shape from the shared guide according to the material. Do \
@@ -667,7 +666,7 @@ fn run_config(
 
 fn build_review_prompt(deck: &str, spec: &GenerationSpec) -> String {
     let review = REVIEW_PROMPT.replace("{mapping_review}", review_mapping(spec.card_style));
-    let card_format = card_format(spec.card_style);
+    let card_format = card_format_without_diagram_row(spec.card_style);
     format!(
         "{review}{}\n\nNOTE SAFETY:\n- {}\n\n{}\n\nThe deck to review:\n\n{deck}",
         spec.requirements(),
@@ -1145,44 +1144,27 @@ mod tests {
     }
 
     #[test]
-    fn the_card_shape_guide_is_the_anchored_span_without_the_preamble() {
-        let guide = card_shape_guide();
-        assert_ne!(
-            CARD_SHAPE_FILE, guide,
-            "the strip did nothing; the anchors are gone from docs/include/deck-authoring-guide.md"
-        );
-        assert!(
-            guide.starts_with("Which card shape suits which material."),
-            "the guide must open with the first rule, not the preamble"
-        );
-        assert!(
-            !guide.contains("ANCHOR") && !guide.contains("consumed twice"),
-            "no anchor marker or preamble text may reach the prompt"
-        );
-    }
-
-    #[test]
     fn the_card_shape_guide_teaches_the_current_review_key() {
-        let guide = card_shape_guide();
         assert!(
-            !guide.contains("`order:`"),
-            "the production generator guide teaches an `order:` key the format does not define: {guide}"
+            part(Part::Shapes).contains("`review:`"),
+            "the shapes part omits the `review:` key"
         );
         assert!(
-            guide.contains("`review:`"),
-            "the production generator guide omits the replacement `review:` key: {guide}"
+            !part(Part::Guide).contains("`order:`"),
+            "the guide teaches an `order:` key the format does not define"
         );
     }
 
     #[test]
     fn mixed_prompt_embeds_the_shared_card_shape_guide_and_its_syntax() {
         let prompt = build_prompt("https://example.org/page", None, &cfg(12), &spec());
-        let guide = card_shape_guide();
 
-        assert!(
-            prompt.contains(guide),
-            "the mixed prompt must carry the shared authoring guide"
-        );
+        for which in [Part::Shapes, Part::CardRules] {
+            assert!(
+                prompt.contains(&part(which)),
+                "the mixed prompt must carry the guide part {which:?}"
+            );
+        }
         for syntax in [
             "| front | back | note |",
             "<!-- reveal: line -->",
@@ -1197,8 +1179,25 @@ mod tests {
     }
 
     #[test]
+    fn the_review_prompt_for_mixed_style_omits_the_diagram_row_while_generation_keeps_it() {
+        let row_start = "A process that branches";
+        assert!(part(Part::Shapes).contains(row_start));
+        let generation = build_prompt("https://example.org/page", None, &cfg(12), &spec());
+        assert!(generation.contains(row_start), "generation lost the row");
+        let review = build_review_prompt("## front\nback\n", &spec());
+        assert!(
+            !review.contains(row_start),
+            "the review prompt carries the row"
+        );
+        assert!(
+            review.contains("| Ordered steps in one straight line"),
+            "the review prompt lost the other shape rows"
+        );
+    }
+
+    #[test]
     fn each_explicit_card_style_keeps_its_override_contract() {
-        let guide = card_shape_guide();
+        let guide = part(Part::Shapes);
         let cases = [
             (
                 GenerateCardStyle::Plain,
@@ -1227,7 +1226,7 @@ mod tests {
                 card_style.as_str()
             );
             assert!(
-                !prompt.contains(guide),
+                !prompt.contains(&guide),
                 "{} must not receive conflicting mixed-shape guidance",
                 card_style.as_str()
             );
@@ -1430,7 +1429,10 @@ mod tests {
             GenerateCardStyle::Cloze,
             GenerateCardStyle::AuthoredChoices,
         ];
-        crate::testutil::assert_teaches_answerless_cloze("card shape guide", card_shape_guide());
+        crate::testutil::assert_teaches_answerless_cloze(
+            "deck-authoring guide",
+            &part(Part::Guide),
+        );
         for card_style in styles {
             let style_spec = GenerationSpec {
                 card_style,

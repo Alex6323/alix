@@ -38,6 +38,8 @@ pub mod augment;
 #[cfg(feature = "full")]
 pub mod augment_ai;
 #[cfg(feature = "full")]
+pub mod authoring_guide;
+#[cfg(feature = "full")]
 pub mod backend;
 #[cfg(feature = "full")]
 pub mod bug_report;

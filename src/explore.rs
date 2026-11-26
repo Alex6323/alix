@@ -360,7 +360,7 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          `=== item ===` line.\n\n\
          {requirements}\n\n\
          The plan:\n{list}",
-        card_format = generate::card_format(spec.card_style),
+        card_format = generate::card_format_without_diagram_row(spec.card_style),
         requirements = spec.requirements(),
         marker = generate::SOURCES_MARKER,
         ranged = generate::RANGED_FILE_LINES,
@@ -1081,6 +1081,30 @@ mod tests {
         assert!(p.contains("starts with `src:`"));
         assert!(p.contains("enumeration"));
         assert!(p.contains("split it"));
+    }
+
+    #[test]
+    fn the_fill_prompt_for_mixed_style_omits_the_diagram_row() {
+        let items = vec![Item {
+            num: 1,
+            kind: Kind::Deck,
+            title: "Institutions".to_string(),
+            requires: Vec::new(),
+            source: "notes.md".to_string(),
+        }];
+        let prompt = fill_prompt(&items, &spec("understand the institutions"));
+        assert!(
+            crate::authoring_guide::part(crate::authoring_guide::Part::Shapes)
+                .contains("A process that branches")
+        );
+        assert!(
+            !prompt.contains("A process that branches"),
+            "the fill prompt carries the row"
+        );
+        assert!(
+            prompt.contains("| Ordered steps in one straight line"),
+            "the fill prompt lost the other shape rows"
+        );
     }
 
     #[test]
