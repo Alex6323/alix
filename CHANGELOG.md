@@ -288,6 +288,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `alix deck generate` builds its prompt from the deck-authoring guide
+  (`docs/include/deck-authoring-guide.md`) instead of its own format and quality
+  rules: the deck format and authoring practice for every card style, and the
+  shape table for the default mixed style. The prompt now asks for cards grouped
+  under `#` sections with a short prose paragraph each, also for a web page or a
+  single file. For the mixed style, the `--review` pass and
+  `alix workspace generate` carry the guide's shape table and shared card rules
+  as before, without the line asking for varied card shapes.
+
 - Math renders with RaTeX 0.1.16 (was 0.1.13): `\slashed` and `\centernot`
   now render, and limits under `\sum` and `\lim`, the brace of `\underbrace`,
   and the rows of `aligned` sit slightly tighter. `\dots` picks low or

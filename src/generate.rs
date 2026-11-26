@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     path::{Path, PathBuf},
     sync::mpsc::Receiver,
 };
@@ -79,57 +78,95 @@ impl GenerationSpec {
     }
 }
 
-pub(crate) fn card_format(style: GenerateCardStyle) -> Cow<'static, str> {
-    card_format_with_shapes(style, part(Part::Shapes))
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FormatConsumer {
+    Generation,
+    ReviewAndFill,
 }
 
-pub(crate) fn card_format_without_diagram_row(style: GenerateCardStyle) -> Cow<'static, str> {
-    card_format_with_shapes(style, part_without(Part::Shapes, Part::ShapesDiagramRow))
+const PRECEDENCE_LINE: &str = "Where the instructions around this guide differ from it (the \
+     frontmatter block, topic headings and the sources list, `at:` locators, the card style, \
+     the output), those instructions win; a topic heading is a `# ` section and still gets its \
+     prose paragraph.";
+
+const CARD_SHAPE_SYNTAX: &str = "\
+     - A plain card puts short answer lines below its `## ` front. Do not prefix \
+     answers with bullets or dashes.\n\
+     - A cloze card has no answer section: write the whole sentence on the `## ` \
+     line and hide each span with a `<!-- blank: span hidden=\"...\" -->` comment on \
+     its own line directly below it. The hidden text must appear verbatim in that \
+     sentence; if it repeats there, add `occurrence=N` (1-based) to pick which one. \
+     Never write a separate question above the sentence, an answer line, or `---` on \
+     a cloze card. Example:\n\
+     ## When the owner leaves scope, the value is dropped.\n\
+     <!-- blank: span hidden=\"dropped\" -->\n\
+     - An authored-choice card puts 3-5 GitHub task-list options directly below its \
+     front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
+     distractors, then `<!-- choices: single -->` on the line directly below the last \
+     option. Without that line the options stay a literal checklist instead of \
+     becoming a card. Add a `> [!NOTE]` note explaining their mistaken premises.\n\
+     - A card table starts with `| front | back | note |`, then \
+     `| --- | --- | --- |`, then one row per pair, then `<!-- cards -->` on the \
+     line DIRECTLY below the last row, with no blank line between. Omit the note \
+     column when it is unused. A card table's note is that column: a \
+     blockquote below a table does not parse.\n\
+     - For ordered steps, write one step per answer line and put `<!-- reveal: line -->` below the \
+     last answer line.\n\
+     - For a card needed in both directions, put `<!-- direction: both -->` after \
+     its answer.\n\
+     - For an answer the learner must sketch, put `<!-- input: draw -->` after its \
+     answer.";
+
+pub(crate) fn card_format(spec: &GenerationSpec, consumer: FormatConsumer) -> String {
+    let rule = style_rule(spec.card_style);
+    match consumer {
+        FormatConsumer::Generation => {
+            let parts = match rule {
+                Some(_) => vec![part(Part::Format), part(Part::Practice)],
+                None if spec.diagrams => vec![
+                    part(Part::Format),
+                    part(Part::Shapes),
+                    part(Part::Diagrams),
+                    part(Part::Practice),
+                ],
+                None => vec![
+                    part(Part::Format),
+                    part_without(Part::Shapes, Part::ShapesDiagramRow),
+                    part(Part::Practice),
+                ],
+            };
+            let mut text = format!(
+                "DECK-AUTHORING GUIDE:\n\n{}\n{PRECEDENCE_LINE}",
+                parts.join("\n")
+            );
+            if let Some(rule) = rule {
+                text.push_str("\n\n");
+                text.push_str(rule);
+            }
+            text
+        }
+        FormatConsumer::ReviewAndFill => match rule {
+            Some(rule) => rule.to_string(),
+            None => format!(
+                "CARD SHAPE GUIDE:\n{}\n{}\nCARD SHAPE SYNTAX:\n{CARD_SHAPE_SYNTAX}",
+                part_without(Part::Shapes, Part::ShapesDiagramRow),
+                part(Part::CardRules)
+            ),
+        },
+    }
 }
 
-fn card_format_with_shapes(style: GenerateCardStyle, shapes: String) -> Cow<'static, str> {
-    let guide = format!("{shapes}\n{}", part(Part::CardRules));
+fn style_rule(style: GenerateCardStyle) -> Option<&'static str> {
     match style {
-        GenerateCardStyle::Mixed => Cow::Owned(format!(
-            "- Choose each card's shape from the shared guide according to the material. Do \
-             not default every card to one shape.\n\n\
-             CARD SHAPE GUIDE:\n{guide}\n\
-             CARD SHAPE SYNTAX:\n\
-             - A plain card puts short answer lines below its `## ` front. Do not prefix \
-             answers with bullets or dashes.\n\
-             - A cloze card has no answer section: write the whole sentence on the `## ` \
-             line and hide each span with a `<!-- blank: span hidden=\"...\" -->` comment on \
-             its own line directly below it. The hidden text must appear verbatim in that \
-             sentence; if it repeats there, add `occurrence=N` (1-based) to pick which one. \
-             Never write a separate question above the sentence, an answer line, or `---` on \
-             a cloze card. Example:\n\
-             ## When the owner leaves scope, the value is dropped.\n\
-             <!-- blank: span hidden=\"dropped\" -->\n\
-             - An authored-choice card puts 3-5 GitHub task-list options directly below its \
-             front: exactly one checked `- [x]` answer and at least two unchecked `- [ ]` \
-             distractors, then `<!-- choices: single -->` on the line directly below the last \
-             option. Without that line the options stay a literal checklist instead of \
-             becoming a card. Add a `> [!NOTE]` note explaining their mistaken premises.\n\
-             - A card table starts with `| front | back | note |`, then \
-             `| --- | --- | --- |`, then one row per pair, then `<!-- cards -->` on the \
-             line DIRECTLY below the last row, with no blank line between. Omit the note \
-             column when it is unused. A card table's note is that column: a \
-             blockquote below a table does not parse.\n\
-             - For ordered steps, write one step per answer line and put `<!-- reveal: line -->` below the \
-             last answer line.\n\
-             - For a card needed in both directions, put `<!-- direction: both -->` after \
-             its answer.\n\
-             - For an answer the learner must sketch, put `<!-- input: draw -->` after its \
-             answer."
-        )),
-        GenerateCardStyle::Plain => Cow::Borrowed(
+        GenerateCardStyle::Mixed => None,
+        GenerateCardStyle::Plain => Some(
             "- Write every card as a plain question and answer. The plain unindented lines \
              BELOW the front are the answer/back. EVERY card MUST have at least one short \
              answer line. Do not prefix answers with bullets or dashes. Do not use \
              `blank:` span comments or task-list choices. Split mappings into one card \
              per pair.",
         ),
-        GenerateCardStyle::Cloze => Cow::Borrowed(
+        GenerateCardStyle::Cloze => Some(
             "- Write EVERY card as cloze. A cloze card has no answer section: write the \
              whole sentence on the `## ` line, and give every hidden span a \
              `<!-- blank: span hidden=\"...\" -->` comment on its own line directly below \
@@ -140,7 +177,7 @@ fn card_format_with_shapes(style: GenerateCardStyle, shapes: String) -> Cow<'sta
              below it, and the blank span comments directly below those lines, each hiding a \
              recalled half. The title must not contain any hidden text.",
         ),
-        GenerateCardStyle::AuthoredChoices => Cow::Borrowed(
+        GenerateCardStyle::AuthoredChoices => Some(
             "- Write EVERY card as authored multiple-choice. Directly below the `## ` front, \
              write 3-5 GitHub task-list options: exactly one checked `- [x]` correct answer \
              and at least two unchecked `- [ ]` plausible distractors. On the line directly \
@@ -157,30 +194,10 @@ fn card_format_with_shapes(style: GenerateCardStyle, shapes: String) -> Cow<'sta
 
 const DEFAULT_PROMPT: &str = "\
 You are an expert at creating spaced-repetition flashcards. Read the web page \
-at {url} — use the WebFetch tool to fetch it (once) — and turn its content \
-into a flashcard deck.
+at {url} (use the WebFetch tool to fetch it, once) and turn its content into a \
+flashcard deck, aiming for at most {max_cards} cards.
 
-OUTPUT FORMAT — a Markdown deck, one card after another:
-- A block card starts with `## ` at column 0, followed by the question/front on the \
-same line. Never indent a card front.
 {card_format}
-- A `> [!NOTE]` line opens a note shown AFTER answering, and each note line \
-goes on its own `> ` line below it. Add a note to most cards: a \
-brief elaboration, a concrete example, a mnemonic, or why it matters, one or \
-two short lines, never just restating the answer. The note goes last, below \
-the answer lines. A blockquote whose first line is NOT one of `[!NOTE]`, \
-`[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` is a QUOTATION and \
-belongs to the answer, so never write a bare `> ` note.
-- Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
-content line, with NO blank line between them, and never above an answer line, \
-an option list, or a table.
-- An invocation binds the block directly above it, so it sits on the line \
-immediately below the last option or row. \
-`<!-- cards -->` takes card directives after it, an `at:` locator or a reveal \
-mode, but never a blockquote: a card table's note is its note column. \
-`<!-- choices: single -->` takes a `> [!NOTE]` note after it.
-- To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
-code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
 Begin the file with exactly this frontmatter block:
 ---
@@ -189,83 +206,16 @@ link: {url}
 ---
 The `link:` key lets the learner ask follow-up questions against the source.
 
-PEDAGOGY — produce a balanced deck aiming for at most {max_cards} cards, spread across \
-four layers of understanding:
-  1. Facts & terminology: definitions and key terms.
-  2. Concepts & mechanisms: \"why\" and \"how\" questions.
-  3. Application: \"given X, what happens / what would you do?\"
-  4. Connections — how ideas relate, contrast, or build on each other.
-Apply the required card-style instructions throughout all four layers.
-
-CARD QUALITY:
-- One idea per card (minimum-information principle); split compound facts.
-- The answer must cover exactly what the front asks, no more. If it includes a \
-fact the question did not ask for, either narrow the answer to the question, \
-widen the question to cover the whole answer, or split into separate cards. \
-Extra context goes in the `> [!NOTE]` note, not the answer.
-- Do not cram an enumeration into one prose answer. If the answer is a list of \
-several items, split it into several one-idea cards instead — one card per item \
-or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with one item per answer line and a \
-`<!-- reveal: line -->` line below the last item.
-- Give non-choice answers and notes clean structure when the content has it \
-(short lines, one point per line); keep an atomic answer atomic; \
-never pad a one-word answer into a list.
-- Format the question for readability, but never let its layout leak the answer \
-(don't hint how many items the answer has).
-- NO TWO CARDS MAY TEST THE SAME FACT. If a point is already covered, do not \
-add another card for it — vary what each card asks rather than rephrasing the \
-same question.
-- Fronts must be unambiguous and answerable from memory; avoid yes/no questions.
-- Write original questions and answers in your own words; do not copy long \
-passages verbatim.
-- Give most cards a `> [!NOTE]` note that adds something beyond the answer \
-(context, an example, a caveat, or a memory hook).
-- Order cards from foundational to advanced.
-
-REVISE before finishing: re-read the entire draft as a set and merge or delete \
-any cards that overlap or test the same idea, so every remaining card is \
-distinct. A shorter, non-repetitive deck is better than a long one with \
-duplicates.
-
-Output ONLY the final, deduplicated deck text — no markdown code fences, no \
-preamble, no closing remarks.";
+Output ONLY the final deck text: no markdown code fences, no preamble, no \
+closing remarks.";
 
 const DEFAULT_SOURCE_PROMPT: &str = "\
 You are an expert at creating spaced-repetition flashcards. Explore the source at \
-{source} — your working directory is its root; use the Read, Glob and Grep tools \
-(read-only, no write or shell access) — and turn its key facts into a flashcard \
-deck.
+{source} (your working directory is its root; use the Read, Glob and Grep tools, \
+read-only, no write or shell access) and turn its key facts into a flashcard \
+deck, aiming for at most {max_cards} cards.
 
-OUTPUT FORMAT — a Markdown deck, one card after another:
-- A block card starts with `## ` at column 0, followed by the question/front on the \
-same line. Never indent a card front.
 {card_format}
-- A `> [!NOTE]` line opens a note shown AFTER answering, and each note line \
-goes on its own `> ` line below it. Add a note to most cards: a \
-brief elaboration, a concrete example, a mnemonic, or why it matters, one or \
-two short lines, never just restating the answer. A blockquote whose first \
-line is NOT one of `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, \
-`[!CAUTION]` is a QUOTATION and belongs to the answer, so never write a bare \
-`> ` note.
-- A `<!-- at: ... -->` line under a card cites where its answer lives in the \
-source. Its locator is `{locator}`, e.g. `<!-- at: {locator_example} -->`, where \
-`<file>` is relative to the source root (your working directory) and everything \
-around it is written exactly as given; a path containing a space is wrapped in \
-double quotes, e.g. `{locator_spaced}`. Add one to every card \
-whose answer maps to a specific, contiguous range of lines — read the real \
-lines, never guess the numbers — so the learner can flip the card to its \
-source on reveal. Omit it for a card that synthesizes across several places.
-- Every `<!-- ... -->` line TRAILS its card: put it below the card's LAST \
-content line, with NO blank line between them, and never above an answer line, \
-an option list, or a table.
-- An invocation binds the block directly above it, so it sits on the line \
-immediately below the last option or row. \
-`<!-- cards -->` takes card directives after it, an `at:` locator or a reveal \
-mode, but never a blockquote: a card table's note is its note column. \
-`<!-- choices: single -->` takes a `> [!NOTE]` note after it.
-- To start an answer line with a literal `## `, `> `, `---`, `<!--`, or a \
-code-fence marker, escape it with a leading backslash (e.g. `\\## `).
 
 Begin the file with exactly this frontmatter block:
 ---
@@ -273,42 +223,17 @@ choices: single
 
 ---
 
-PEDAGOGY — produce a balanced deck aiming for at most {max_cards} cards, spread across \
-four layers of understanding:
-  1. Facts & terminology: definitions and key terms.
-  2. Concepts & mechanisms: \"why\" and \"how\" questions.
-  3. Application: \"given X, what happens / what would you do?\"
-  4. Connections — how the pieces relate, contrast, or build on each other.
-Apply the required card-style instructions throughout all four layers.
+- A `<!-- at: ... -->` line under a card cites where its answer lives in the \
+source. Its locator is `{locator}`, e.g. `<!-- at: {locator_example} -->`, where \
+`<file>` is relative to the source root (your working directory) and everything \
+around it is written exactly as given; a path containing a space is wrapped in \
+double quotes, e.g. `{locator_spaced}`. Add one to every card \
+whose answer maps to a specific, contiguous range of lines (read the real \
+lines, never guess the numbers) so the learner can flip the card to its \
+source on reveal. Omit it for a card that synthesizes across several places.
 
-CARD QUALITY:
-- One idea per card (minimum-information principle); split compound facts.
-- The answer must cover exactly what the front asks, no more. If it includes a \
-fact the question did not ask for, either narrow the answer to the question, \
-widen the question to cover the whole answer, or split into separate cards. \
-Extra context goes in the `> [!NOTE]` note, not the answer.
-- Do not cram an enumeration into one prose answer. If the answer is a list of \
-several items, split it into several one-idea cards instead — one card per item \
-or group. Only when the ordered list ITSELF is the thing to learn (steps, a \
-sequence) keep it as one card with one item per answer line and a \
-`<!-- reveal: line -->` line below the last item.
-- Give non-choice answers and notes clean structure when the content has it \
-(short lines, one point per line); keep an atomic answer atomic; \
-never pad a one-word answer into a list.
-- Format the question for readability, but never let its layout leak the answer \
-(don't hint how many items the answer has).
-- NO TWO CARDS MAY TEST THE SAME FACT — vary what each card asks rather than \
-rephrasing the same question.
-- Ground every card in what the source actually shows; do not invent details \
-it doesn't contain. Fronts must be answerable from memory; avoid yes/no questions.
-- Give most cards a `> [!NOTE]` note that adds something beyond the answer.
-- Order cards from foundational to advanced.
-
-REVISE before finishing: re-read the whole draft and merge or delete any cards \
-that overlap or test the same idea, so every remaining card is distinct.
-
-Output ONLY the final, deduplicated deck text — no markdown code fences, no \
-preamble, no closing remarks.";
+Output ONLY the final deck text: no markdown code fences, no preamble, no \
+closing remarks.";
 
 const REVIEW_PROMPT: &str = "\
 You are reviewing a spaced-repetition flashcard deck for quality, then \
@@ -666,7 +591,7 @@ fn run_config(
 
 fn build_review_prompt(deck: &str, spec: &GenerationSpec) -> String {
     let review = REVIEW_PROMPT.replace("{mapping_review}", review_mapping(spec.card_style));
-    let card_format = card_format_without_diagram_row(spec.card_style);
+    let card_format = card_format(spec, FormatConsumer::ReviewAndFill);
     format!(
         "{review}{}\n\nNOTE SAFETY:\n- {}\n\n{}\n\nThe deck to review:\n\n{deck}",
         spec.requirements(),
@@ -713,7 +638,7 @@ fn build_prompt(
         None => DEFAULT_PROMPT,
         Some(_) => DEFAULT_SOURCE_PROMPT,
     });
-    let card_format = card_format(spec.card_style);
+    let card_format = card_format(spec, FormatConsumer::Generation);
     let has_card_format = template.contains("{card_format}");
     let locator = |file: &str, range: &str| root.map(|root| root.locator(file, range));
     let mut prompt = template
@@ -732,7 +657,7 @@ fn build_prompt(
             &locator("my notes.md", "3-4").unwrap_or_default(),
         )
         .replace("{max_cards}", &cfg.max_cards.to_string())
-        .replace("{card_format}", card_format.as_ref());
+        .replace("{card_format}", &card_format);
     if let Some(extra) = cfg
         .extra
         .as_deref()
@@ -747,7 +672,7 @@ fn build_prompt(
         prompt.push_str(&spec.requirements());
         if !has_card_format {
             prompt.push_str("\n\n");
-            prompt.push_str(card_format.as_ref());
+            prompt.push_str(&card_format);
         }
     }
     prompt.push_str("\n\nNOTE SAFETY:\n- ");
@@ -982,6 +907,48 @@ mod tests {
         GenerationSpec::from_config(DEFAULT_GOAL, &GenerateDeckConfig::default())
     }
 
+    const STYLES: [GenerateCardStyle; 4] = [
+        GenerateCardStyle::Mixed,
+        GenerateCardStyle::Plain,
+        GenerateCardStyle::Cloze,
+        GenerateCardStyle::AuthoredChoices,
+    ];
+
+    fn styled(card_style: GenerateCardStyle) -> GenerationSpec {
+        GenerationSpec {
+            card_style,
+            ..spec()
+        }
+    }
+
+    fn fill(spec: &GenerationSpec) -> String {
+        crate::explore::fill_prompt(
+            &[crate::explore::Item {
+                num: 1,
+                kind: crate::explore::Kind::Deck,
+                title: "Facts".to_string(),
+                requires: Vec::new(),
+                source: "notes.md".to_string(),
+            }],
+            spec,
+        )
+    }
+
+    fn whole_lines(text: &str) -> std::collections::HashSet<&str> {
+        text.lines().map(str::trim_end).collect()
+    }
+
+    fn lines_unique_to(texts: &[String], excluded: &[String]) -> Vec<String> {
+        let excluded: std::collections::HashSet<&str> =
+            excluded.iter().flat_map(|text| whole_lines(text)).collect();
+        texts
+            .iter()
+            .flat_map(|text| text.lines().map(str::trim_end))
+            .filter(|line| !line.is_empty() && !excluded.contains(line))
+            .map(str::to_string)
+            .collect()
+    }
+
     #[test]
     fn run_config_prefers_the_generate_model_and_falls_back_to_the_ask_model() {
         let ask = AskConfig {
@@ -1011,31 +978,326 @@ mod tests {
     }
 
     #[test]
-    fn switching_diagrams_on_leaves_every_prompt_unchanged() {
-        let off = spec();
-        let on = GenerationSpec {
-            diagrams: true,
-            ..spec()
-        };
+    fn the_diagrams_switch_reaches_only_the_mixed_generation_prompt() {
         let source_root = src_root();
-        for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+        for card_style in STYLES {
+            let off = styled(card_style);
+            let on = GenerationSpec {
+                diagrams: true,
+                ..styled(card_style)
+            };
+            let style = card_style.as_str();
+            for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+                let prompt_off = build_prompt("notes", root, &cfg(10), &off);
+                let prompt_on = build_prompt("notes", root, &cfg(10), &on);
+                if card_style == GenerateCardStyle::Mixed {
+                    assert_ne!(
+                        prompt_off, prompt_on,
+                        "{style} generation prompt for {name} ignores the diagrams switch"
+                    );
+                    assert!(
+                        prompt_on.contains(&part(Part::Diagrams)),
+                        "{style} generation prompt for {name}, diagrams on, lacks the diagrams part"
+                    );
+                    assert!(
+                        !prompt_off.contains(&part(Part::Diagrams)),
+                        "{style} generation prompt for {name}, diagrams off, carries the diagrams part"
+                    );
+                } else {
+                    assert_eq!(
+                        prompt_off, prompt_on,
+                        "{style} generation prompt for {name} follows the diagrams switch"
+                    );
+                }
+            }
             assert_eq!(
-                build_prompt("notes", root, &cfg(10), &off),
-                build_prompt("notes", root, &cfg(10), &on),
-                "the generation prompt for {name}"
+                build_review_prompt("## Q\nA\n", &off),
+                build_review_prompt("## Q\nA\n", &on),
+                "{style} review prompt follows the diagrams switch"
+            );
+            assert_eq!(
+                off.requirements(),
+                on.requirements(),
+                "{style} requirements"
+            );
+            assert_eq!(
+                off.learner_requirements(),
+                on.learner_requirements(),
+                "{style} learner requirements"
             );
         }
-        assert_eq!(
-            build_review_prompt("## Q\nA\n", &off),
-            build_review_prompt("## Q\nA\n", &on),
-            "the review prompt"
+    }
+
+    #[test]
+    fn the_mixed_generation_prompt_carries_format_shapes_and_practice_in_order_and_never_workflow_or_sources()
+     {
+        let never = lines_unique_to(
+            &[part(Part::Workflow), part(Part::Sources)],
+            &[
+                part(Part::Format),
+                part(Part::Shapes),
+                part(Part::Diagrams),
+                part(Part::Practice),
+            ],
         );
-        assert_eq!(off.requirements(), on.requirements(), "the requirements");
-        assert_eq!(
-            off.learner_requirements(),
-            on.learner_requirements(),
-            "the learner requirements"
+        assert!(
+            !never.is_empty(),
+            "the workflow and sources parts have no line of their own"
         );
+        let source_root = src_root();
+        for diagrams in [true, false] {
+            let carried = if diagrams {
+                vec![
+                    ("format", part(Part::Format)),
+                    ("shapes", part(Part::Shapes)),
+                    ("diagrams", part(Part::Diagrams)),
+                    ("practice", part(Part::Practice)),
+                ]
+            } else {
+                vec![
+                    ("format", part(Part::Format)),
+                    (
+                        "shapes without the diagram row",
+                        part_without(Part::Shapes, Part::ShapesDiagramRow),
+                    ),
+                    ("practice", part(Part::Practice)),
+                ]
+            };
+            for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+                let prompt = build_prompt(
+                    "notes",
+                    root,
+                    &cfg(12),
+                    &GenerationSpec { diagrams, ..spec() },
+                );
+                let mut from = 0;
+                for (part_name, text) in &carried {
+                    let found = prompt[from..].find(text.as_str());
+                    assert!(
+                        found.is_some(),
+                        "Mixed generation prompt for {name}, diagrams {diagrams}: the {part_name} \
+                         part is missing or out of order: {prompt}"
+                    );
+                    from += found.unwrap_or_default() + text.len();
+                }
+                let lines = whole_lines(&prompt);
+                for line in &never {
+                    assert!(
+                        !lines.contains(line.as_str()),
+                        "Mixed generation prompt for {name}, diagrams {diagrams}: carries the \
+                         workflow or sources line {line:?}"
+                    );
+                }
+                if !diagrams {
+                    assert!(
+                        !prompt.contains("A process that branches"),
+                        "Mixed generation prompt for {name}, diagrams off: carries the diagram row"
+                    );
+                    assert!(
+                        !prompt.contains(&part(Part::Diagrams)),
+                        "Mixed generation prompt for {name}, diagrams off: carries the diagrams part"
+                    );
+                    for row in [
+                        "| Ordered steps in one straight line",
+                        "| An answer that cannot be typed",
+                    ] {
+                        assert!(
+                            prompt.contains(row),
+                            "Mixed generation prompt for {name}, diagrams off: lost the row {row:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_precedence_line_reaches_every_generation_prompt_and_never_review_or_fill() {
+        let source_root = src_root();
+        for card_style in STYLES {
+            let style = card_style.as_str();
+            for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+                assert!(
+                    build_prompt("notes", root, &cfg(12), &styled(card_style))
+                        .contains(PRECEDENCE_LINE),
+                    "{style} generation prompt for {name} lacks the precedence line"
+                );
+            }
+            assert!(
+                !build_review_prompt("## Q\nA\n", &styled(card_style)).contains(PRECEDENCE_LINE),
+                "{style} review prompt carries the precedence line"
+            );
+            assert!(
+                !fill(&styled(card_style)).contains(PRECEDENCE_LINE),
+                "{style} fill prompt carries the precedence line"
+            );
+        }
+        let custom = |template: &str| GenerateDeckConfig {
+            prompt: Some(template.to_string()),
+            ..cfg(5)
+        };
+        let with_placeholder = custom("Cards from {url}.\n\n{card_format}\n");
+        let without_placeholder = custom("Cards from {url}.");
+        let plain = styled(GenerateCardStyle::Plain);
+        for (case, config, spec, expected) in [
+            (
+                "a custom template with the placeholder",
+                &with_placeholder,
+                spec(),
+                true,
+            ),
+            (
+                "a custom template without the placeholder, non-default spec",
+                &without_placeholder,
+                plain,
+                true,
+            ),
+            (
+                "a custom template without the placeholder, default spec",
+                &without_placeholder,
+                spec(),
+                false,
+            ),
+        ] {
+            assert_eq!(
+                expected,
+                build_prompt("u", None, config, &spec).contains(PRECEDENCE_LINE),
+                "{case}: precedence line expected {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_and_fill_carry_shapes_card_rules_and_the_syntax_block_and_nothing_else_of_the_guide()
+    {
+        let shapes = part_without(Part::Shapes, Part::ShapesDiagramRow);
+        let card_rules = part(Part::CardRules);
+        let format_outside_card_rules = part(Part::Format).replacen(&card_rules, "", 1);
+        let never = lines_unique_to(
+            &[
+                format_outside_card_rules,
+                part(Part::Diagrams),
+                part(Part::Practice),
+            ],
+            &[
+                shapes.clone(),
+                card_rules.clone(),
+                CARD_SHAPE_SYNTAX.to_string(),
+            ],
+        );
+        assert!(
+            !never.is_empty(),
+            "format, diagrams and practice have no line of their own"
+        );
+        let mixed = spec();
+        let fill_prompt = fill(&mixed);
+        for (consumer, prompt) in [
+            ("review", build_review_prompt("## Q\nA\n", &mixed)),
+            ("fill", fill_prompt.clone()),
+        ] {
+            for (component, text) in [
+                ("shapes without the diagram row", shapes.as_str()),
+                ("card rules", card_rules.as_str()),
+                ("the syntax block", CARD_SHAPE_SYNTAX),
+            ] {
+                assert!(
+                    prompt.contains(text),
+                    "Mixed {consumer} prompt lacks {component}: {prompt}"
+                );
+            }
+            let lines = whole_lines(&prompt);
+            for line in &never {
+                assert!(
+                    !lines.contains(line.as_str()),
+                    "Mixed {consumer} prompt carries the guide line {line:?}"
+                );
+            }
+            assert!(
+                !prompt.contains(PRECEDENCE_LINE),
+                "Mixed {consumer} prompt carries the precedence line"
+            );
+        }
+        assert!(
+            whole_lines(&fill_prompt)
+                .contains("  required; a blockquote without one is a quotation and belongs to the"),
+            "Mixed fill prompt lacks the note-badge rule"
+        );
+        for card_style in STYLES
+            .into_iter()
+            .filter(|style| *style != GenerateCardStyle::Mixed)
+        {
+            let style = card_style.as_str();
+            let rule = style_rule(card_style).unwrap_or_default();
+            assert_eq!(
+                rule,
+                card_format(&styled(card_style), FormatConsumer::ReviewAndFill),
+                "{style} review and fill text is not exactly its style rule"
+            );
+            for (consumer, prompt) in [
+                (
+                    "review",
+                    build_review_prompt("## Q\nA\n", &styled(card_style)),
+                ),
+                ("fill", fill(&styled(card_style))),
+            ] {
+                assert!(
+                    prompt.contains(rule),
+                    "{style} {consumer} prompt lacks its style rule"
+                );
+                for guide_part in [Part::Shapes, Part::CardRules] {
+                    assert!(
+                        !prompt.contains(part(guide_part).lines().next().unwrap_or_default()),
+                        "{style} {consumer} prompt carries the {guide_part:?} part"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_intro_line_is_gone_from_every_consumer() {
+        let source_root = src_root();
+        for card_style in STYLES {
+            let style = card_style.as_str();
+            let mut prompts = vec![
+                (
+                    "url generation",
+                    build_prompt("u", None, &cfg(12), &styled(card_style)),
+                ),
+                (
+                    "source generation",
+                    build_prompt("src", Some(&source_root), &cfg(12), &styled(card_style)),
+                ),
+                (
+                    "review",
+                    build_review_prompt("## Q\nA\n", &styled(card_style)),
+                ),
+            ];
+            prompts.push(("fill", fill(&styled(card_style))));
+            for (consumer, prompt) in prompts {
+                for phrase in [
+                    "Do not default every card to one shape",
+                    "Choose each card's shape from the shared guide",
+                ] {
+                    assert!(
+                        !prompt.contains(phrase),
+                        "{style} {consumer} prompt carries the intro line {phrase:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_generation_prompt_carries_the_self_check_list() {
+        for card_style in [GenerateCardStyle::Mixed, GenerateCardStyle::Cloze] {
+            assert!(
+                build_prompt("u", None, &cfg(12), &styled(card_style))
+                    .contains("**Self-check before you hand it over.**"),
+                "{} generation prompt lacks the self-check list",
+                card_style.as_str()
+            );
+        }
     }
 
     #[test]
@@ -1127,17 +1389,16 @@ mod tests {
         assert!(p.contains("aiming for at most 12 cards"));
         assert!(p.contains("link: https://example.org/page"));
         assert!(p.contains("## "));
-        assert!(p.contains("four layers"));
+        assert!(p.contains("Cover the material at four levels"));
         assert!(!p.contains("{url}"));
         assert!(!p.contains("{max_cards}"));
         assert!(p.contains("blank: span hidden="));
         assert!(p.contains("hidden=\"dropped\""));
         assert!(p.contains("A cloze card has no answer section"));
         assert!(p.contains("Every card except a cloze card needs at least one answer line"));
-        assert!(p.contains("Add a note to most cards"));
-        assert!(p.contains("Give most cards a `> [!NOTE]` note"));
-        assert!(p.contains("NO TWO CARDS MAY TEST THE SAME FACT"));
-        assert!(p.contains("REVISE before finishing"));
+        assert!(p.contains("Most cards deserve a `> [!NOTE]` note"));
+        assert!(p.contains("No two cards may test the same fact."));
+        assert!(p.contains("**Revise before finishing.**"));
         assert!(p.contains("cover exactly what the front asks"));
         assert!(p.contains("one row per pair"));
         assert!(!p.contains("indented answer"));
@@ -1156,15 +1417,13 @@ mod tests {
     }
 
     #[test]
-    fn mixed_prompt_embeds_the_shared_card_shape_guide_and_its_syntax() {
+    fn the_mixed_generation_prompt_embeds_the_format_part_and_its_syntax() {
         let prompt = build_prompt("https://example.org/page", None, &cfg(12), &spec());
 
-        for which in [Part::Shapes, Part::CardRules] {
-            assert!(
-                prompt.contains(&part(which)),
-                "the mixed prompt must carry the guide part {which:?}"
-            );
-        }
+        assert!(
+            prompt.contains(&part(Part::Format)),
+            "the mixed prompt must carry the guide part Format"
+        );
         for syntax in [
             "| front | back | note |",
             "<!-- reveal: line -->",
@@ -1179,25 +1438,40 @@ mod tests {
     }
 
     #[test]
-    fn the_review_prompt_for_mixed_style_omits_the_diagram_row_while_generation_keeps_it() {
+    fn the_review_prompt_for_mixed_style_omits_the_diagram_row_while_generation_keeps_it_only_with_diagrams_on()
+     {
         let row_start = "A process that branches";
         assert!(part(Part::Shapes).contains(row_start));
-        let generation = build_prompt("https://example.org/page", None, &cfg(12), &spec());
-        assert!(generation.contains(row_start), "generation lost the row");
-        let review = build_review_prompt("## front\nback\n", &spec());
-        assert!(
-            !review.contains(row_start),
-            "the review prompt carries the row"
-        );
-        assert!(
-            review.contains("| Ordered steps in one straight line"),
-            "the review prompt lost the other shape rows"
-        );
+        for diagrams in [true, false] {
+            let switched = GenerationSpec { diagrams, ..spec() };
+            let generation = build_prompt("https://example.org/page", None, &cfg(12), &switched);
+            assert_eq!(
+                diagrams,
+                generation.contains(row_start),
+                "Mixed generation, diagrams {diagrams}: the row is expected only with diagrams on"
+            );
+            let review = build_review_prompt("## front\nback\n", &switched);
+            assert!(
+                !review.contains(row_start),
+                "Mixed review, diagrams {diagrams}: the review prompt carries the row"
+            );
+            assert!(
+                review.contains("| Ordered steps in one straight line"),
+                "Mixed review, diagrams {diagrams}: the review prompt lost the other shape rows"
+            );
+        }
     }
 
     #[test]
     fn each_explicit_card_style_keeps_its_override_contract() {
-        let guide = part(Part::Shapes);
+        let withheld = lines_unique_to(
+            &[part(Part::Shapes), part(Part::Diagrams)],
+            &[part(Part::Format), part(Part::Practice)],
+        );
+        assert!(
+            !withheld.is_empty(),
+            "the shapes and diagrams parts have no line of their own"
+        );
         let cases = [
             (
                 GenerateCardStyle::Plain,
@@ -1209,27 +1483,51 @@ mod tests {
                 "Write EVERY card as authored multiple-choice",
             ),
         ];
+        let source_root = src_root();
 
         for (card_style, contract) in cases {
-            let prompt = build_prompt(
-                "https://example.org/page",
-                None,
-                &cfg(12),
-                &GenerationSpec {
-                    card_style,
-                    ..spec()
-                },
-            );
-            assert!(
-                prompt.contains(contract),
-                "{} must keep its override contract",
-                card_style.as_str()
-            );
-            assert!(
-                !prompt.contains(&guide),
-                "{} must not receive conflicting mixed-shape guidance",
-                card_style.as_str()
-            );
+            let style = card_style.as_str();
+            for diagrams in [false, true] {
+                for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+                    let prompt = build_prompt(
+                        "notes",
+                        root,
+                        &cfg(12),
+                        &GenerationSpec {
+                            card_style,
+                            diagrams,
+                            ..spec()
+                        },
+                    );
+                    let case = format!("{style}, {name}, diagrams {diagrams}");
+                    assert!(
+                        prompt.contains(contract),
+                        "{case}: must keep its override contract"
+                    );
+                    assert!(
+                        matches!(
+                            (prompt.find(PRECEDENCE_LINE), prompt.find(contract)),
+                            (Some(line), Some(rule)) if line < rule
+                        ),
+                        "{case}: the style rule must follow the precedence line"
+                    );
+                    for (part_name, which) in
+                        [("format", Part::Format), ("practice", Part::Practice)]
+                    {
+                        assert!(
+                            prompt.contains(&part(which)),
+                            "{case}: lacks the {part_name} part"
+                        );
+                    }
+                    let lines = whole_lines(&prompt);
+                    for line in &withheld {
+                        assert!(
+                            !lines.contains(line.as_str()),
+                            "{case}: carries the mixed-shape line {line:?}"
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -1439,17 +1737,30 @@ mod tests {
                 ..spec()
             };
             for url in [true, false] {
-                let prompt =
-                    build_prompt("src", (!url).then(src_root).as_ref(), &cfg(12), &style_spec);
-                crate::testutil::assert_teaches_answerless_cloze(
-                    &format!("{} generate prompt (url {url})", card_style.as_str()),
-                    &prompt,
-                );
+                for diagrams in [false, true] {
+                    let switched = GenerationSpec {
+                        diagrams,
+                        ..style_spec.clone()
+                    };
+                    let prompt =
+                        build_prompt("src", (!url).then(src_root).as_ref(), &cfg(12), &switched);
+                    crate::testutil::assert_teaches_answerless_cloze(
+                        &format!(
+                            "{} generate prompt (url {url}, diagrams {diagrams})",
+                            card_style.as_str()
+                        ),
+                        &prompt,
+                    );
+                }
             }
             let review = build_review_prompt("## Q\nA\n", &style_spec);
             crate::testutil::assert_teaches_answerless_cloze(
                 &format!("{} review prompt", card_style.as_str()),
                 &review,
+            );
+            crate::testutil::assert_teaches_answerless_cloze(
+                &format!("{} fill prompt", card_style.as_str()),
+                &fill(&style_spec),
             );
         }
     }
@@ -1531,16 +1842,18 @@ mod tests {
     /// `choices:` default, so a taught shape without it is a checklist.
     #[test]
     fn every_card_style_teaching_task_list_options_also_teaches_the_invocation() {
-        for style in [GenerateCardStyle::Mixed, GenerateCardStyle::AuthoredChoices] {
-            let format = card_format(style);
-            if !format.contains("- [x]") {
-                continue;
+        for style in STYLES {
+            for consumer in [FormatConsumer::Generation, FormatConsumer::ReviewAndFill] {
+                let format = card_format(&styled(style), consumer);
+                if !format.contains("- [x]") {
+                    continue;
+                }
+                assert!(
+                    format.contains("<!-- choices: single -->"),
+                    "{style:?} for {consumer:?} teaches task-list options without the \
+                     trailing invocation, so its output parses as a literal checklist: {format}"
+                );
             }
-            assert!(
-                format.contains("<!-- choices: single -->"),
-                "{style:?} teaches task-list options without the trailing invocation, \
-                 so its output parses as a literal checklist: {format}"
-            );
         }
     }
 
@@ -1569,7 +1882,8 @@ mod tests {
             );
         }
 
-        let rule = card_format(GenerateCardStyle::AuthoredChoices);
+        let rule = style_rule(GenerateCardStyle::AuthoredChoices)
+            .expect("the authored-choices style has a rule");
         let (before, _) = rule
             .split_once(" GitHub task-list options")
             .expect("the authored-choices rule names its task-list options");
@@ -1940,7 +2254,8 @@ mod tests {
         let p = build_prompt("U", None, &g, &spec());
         assert!(p.starts_with("Make 5 cards from U."));
         assert!(p.contains(choice::NOTE_POSITION_INSTRUCTION));
-        assert!(!p.contains("four layers"));
+        assert!(!p.contains("**Make the learner think.**"));
+        assert!(!p.contains(PRECEDENCE_LINE));
     }
 
     #[test]

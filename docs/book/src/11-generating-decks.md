@@ -32,12 +32,15 @@ See [the web app](15-the-web-app.md).
 
 ## What you get
 
-The model reads the source and returns a deck spread across **four layers of
-understanding** (facts → concepts → application → connections) using
-cloze cards for terminology. The prompt has it draft, then re-read the whole set
-and merge or drop cards that test the same fact, so the deck doesn't repeat
-itself. `alix` validates the text it gets back (it only ever accepts cards, never a
-write or shell command) and writes it to `~/decks/<slug>.md`.
+The prompt carries parts of the deck-authoring guide: the deck format and the
+authoring practice for every card style, and, for the default mixed style, the
+table of which card shape suits which material. It asks for cards grouped under
+`#` sections with a short prose paragraph each, also when the source is a web
+page or a single file. It asks for cards that apply an idea to a case, ask for a
+prediction, or contrast two ideas, and asks the model to merge cards with the
+same answer before finishing. `alix` validates the text it gets back (it only
+ever accepts cards, never a write or shell command) and writes it to
+`~/decks/<slug>.md`.
 
 How the source is recorded depends on its kind, and it matters later:
 

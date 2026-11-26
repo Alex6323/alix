@@ -307,7 +307,7 @@ fn validate_filled_card_styles(
     Ok(())
 }
 
-fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
+pub(crate) fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
     let mut list = String::new();
     for item in items {
         let kind = match item.kind {
@@ -360,7 +360,7 @@ fn fill_prompt(items: &[Item], spec: &GenerationSpec) -> String {
          `=== item ===` line.\n\n\
          {requirements}\n\n\
          The plan:\n{list}",
-        card_format = generate::card_format_without_diagram_row(spec.card_style),
+        card_format = generate::card_format(spec, generate::FormatConsumer::ReviewAndFill),
         requirements = spec.requirements(),
         marker = generate::SOURCES_MARKER,
         ranged = generate::RANGED_FILE_LINES,
@@ -1084,7 +1084,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fill_prompt_for_mixed_style_omits_the_diagram_row() {
+    fn the_fill_prompt_for_mixed_style_omits_the_diagram_row_whatever_the_diagrams_switch() {
         let items = vec![Item {
             num: 1,
             kind: Kind::Deck,
@@ -1092,19 +1092,27 @@ mod tests {
             requires: Vec::new(),
             source: "notes.md".to_string(),
         }];
-        let prompt = fill_prompt(&items, &spec("understand the institutions"));
         assert!(
             crate::authoring_guide::part(crate::authoring_guide::Part::Shapes)
                 .contains("A process that branches")
         );
-        assert!(
-            !prompt.contains("A process that branches"),
-            "the fill prompt carries the row"
-        );
-        assert!(
-            prompt.contains("| Ordered steps in one straight line"),
-            "the fill prompt lost the other shape rows"
-        );
+        for diagrams in [false, true] {
+            let prompt = fill_prompt(
+                &items,
+                &GenerationSpec {
+                    diagrams,
+                    ..spec("understand the institutions")
+                },
+            );
+            assert!(
+                !prompt.contains("A process that branches"),
+                "Mixed fill, diagrams {diagrams}: the fill prompt carries the row"
+            );
+            assert!(
+                prompt.contains("| Ordered steps in one straight line"),
+                "Mixed fill, diagrams {diagrams}: the fill prompt lost the other shape rows"
+            );
+        }
     }
 
     #[test]
