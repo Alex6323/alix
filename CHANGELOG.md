@@ -296,6 +296,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   single file. For the mixed style, the `--review` pass and
   `alix workspace generate` carry the guide's shape table and shared card rules
   as before, without the line asking for varied card shapes.
+  `alix deck generate` also asks for mermaid diagram cards when the deck lands
+  in
+  a workspace and `sekien` is found; `--print`, a deck outside a workspace, and
+  a machine without `sekien` get no diagram instructions.
 
 - Math renders with RaTeX 0.1.16 (was 0.1.13): `\slashed` and `\centernot`
   now render, and limits under `\sum` and `\lim`, the brace of `\underbrace`,

@@ -10504,3 +10504,102 @@ fn a_url_generation_whose_reply_has_sections_initializes() {
         "sectioned URL reply: the `# Ownership` section carries no topic id: {deck}"
     );
 }
+
+enum GenerationTarget {
+    Workspace,
+    Printed,
+    Standalone,
+}
+
+const DIAGRAMS_PART_LEAD: &str =
+    "**Diagrams.** A fenced code block whose info string is `mermaid` holds a";
+
+fn generation_prompt_for(target: GenerationTarget, with_sekien: bool) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let (cli, request) = passage_echoing_claude(dir.path(), "## Q\nA\n");
+    let decks = dir.path().join("plain-decks");
+    std::fs::create_dir_all(&decks).unwrap();
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!(
+            "decks_dir = {:?}\n[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n",
+            decks.as_os_str()
+        ),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let sekien = bin.join("sekien");
+    std::fs::write(&sekien, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&sekien, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = if with_sekien {
+        format!("{}:/usr/bin:/bin", bin.display())
+    } else {
+        "/usr/bin:/bin".to_string()
+    };
+
+    let mut args = vec![
+        "deck",
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--output",
+        "drawn",
+    ];
+    match target {
+        GenerationTarget::Workspace => args.extend(["--into", ws.to_str().unwrap()]),
+        GenerationTarget::Printed => args.push("--print"),
+        GenerationTarget::Standalone => {}
+    }
+    let out = alix_env(&args, dir.path(), &[("PATH", &path)]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    std::fs::read_to_string(&request).unwrap()
+}
+
+#[test]
+fn a_workspace_generation_with_sekien_found_asks_for_diagrams() {
+    let prompt = generation_prompt_for(GenerationTarget::Workspace, true);
+
+    assert!(
+        prompt.contains(&alix::authoring_guide::part(
+            alix::authoring_guide::Part::Diagrams
+        )),
+        "workspace target, sekien found: the prompt lacks the diagrams part"
+    );
+}
+
+#[test]
+fn a_printed_generation_never_asks_for_diagrams_even_with_sekien_found() {
+    let prompt = generation_prompt_for(GenerationTarget::Printed, true);
+
+    assert!(
+        !prompt.contains(DIAGRAMS_PART_LEAD),
+        "--print, sekien found: the prompt carries the diagrams part"
+    );
+}
+
+#[test]
+fn a_standalone_generation_never_asks_for_diagrams_even_with_sekien_found() {
+    let prompt = generation_prompt_for(GenerationTarget::Standalone, true);
+
+    assert!(
+        !prompt.contains(DIAGRAMS_PART_LEAD),
+        "standalone target, sekien found: the prompt carries the diagrams part"
+    );
+}
+
+#[test]
+fn a_workspace_generation_without_sekien_never_asks_for_diagrams() {
+    let prompt = generation_prompt_for(GenerationTarget::Workspace, false);
+
+    assert!(
+        !prompt.contains(DIAGRAMS_PART_LEAD),
+        "workspace target, no sekien: the prompt carries the diagrams part"
+    );
+}

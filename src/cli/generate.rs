@@ -333,6 +333,13 @@ fn generate_single_deck(
         Some(facts_root(&deck_path, &source)?)
     };
 
+    let spec = &generate::GenerationSpec {
+        diagrams: destination
+            .as_ref()
+            .is_some_and(|(dir, _)| generate::diagrams_drawn_in(dir)),
+        ..spec.clone()
+    };
+
     preflight_source(&source, config.ask.preflight_threshold, args.common.yes)?;
     eprintln!("Generating a deck from {source} (this can take a minute)…");
     let mut reply = generate::generate_deck(&source, root.as_ref(), &gen_cfg, &config.ask, spec)?;

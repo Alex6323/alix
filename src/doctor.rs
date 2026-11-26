@@ -297,15 +297,18 @@ pub fn check_decks(decks_dir: &Path) -> Finding {
 }
 
 /// Spawns `<cmd> --version` only (no network, no cost).
-pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) -> Finding {
-    let found = Command::new(cmd)
+pub fn command_found(cmd: &str) -> bool {
+    Command::new(cmd)
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .is_ok();
-    if found {
+        .is_ok()
+}
+
+pub fn check_binary(name: &'static str, cmd: &str, purpose: &str, remedy: &str) -> Finding {
+    if command_found(cmd) {
         Finding::ok(name, format!("`{cmd}` found: {purpose}"))
     } else {
         Finding::bad(

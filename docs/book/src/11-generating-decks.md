@@ -42,6 +42,12 @@ same answer before finishing. `alix` validates the text it gets back (it only
 ever accepts cards, never a write or shell command) and writes it to
 `~/decks/<slug>.md`.
 
+When the deck lands in a workspace and the optional `sekien` renderer is found
+on this machine, the prompt also carries the guide's diagrams part, so the
+model may write mermaid diagram cards. With `--print`, for a deck outside a
+workspace, or on a machine without `sekien`, the prompt has no diagram
+instructions.
+
 How the source is recorded depends on its kind, and it matters later:
 
 - A **web page** is read with the `WebFetch` tool, and the deck opens with a

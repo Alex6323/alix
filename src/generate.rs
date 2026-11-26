@@ -514,6 +514,11 @@ impl GeneratedDeck {
     }
 }
 
+pub fn diagrams_drawn_in(dir: &Path) -> bool {
+    crate::workspace::root_for_member_dir(dir).is_some()
+        && crate::doctor::command_found(crate::diagram::COMMAND)
+}
+
 pub fn spawn(
     source: String,
     cfg: GenerateDeckConfig,
