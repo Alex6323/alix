@@ -13,7 +13,7 @@ mod progress;
 mod share;
 mod source;
 
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 use alix::config::{self, Config};
 use anyhow::{Context, Result, bail};
@@ -556,6 +556,9 @@ enum DeckAction {
     Generate(GenerateDeckArgs),
     /// Initialize a hand-authored Markdown file as an Alix deck.
     Init(DeckInitArgs),
+    /// Print the deck-authoring guide this alix validates against, to hand to
+    /// another AI with your source.
+    Guide,
     /// Copy a workspace deck and its shareable files into another workspace.
     Copy(DeckTransferArgs),
     /// Move a workspace deck, its shareable files, and its progress.
@@ -777,6 +780,10 @@ fn main() -> Result<()> {
         Some(Command::Deck(action)) => match action {
             DeckAction::Generate(args) => generate::deck_cmd(args),
             DeckAction::Init(args) => deck::init_cmd(args),
+            DeckAction::Guide => {
+                let guide = alix::authoring_guide::part(alix::authoring_guide::Part::Guide);
+                Ok(std::io::stdout().lock().write_all(guide.as_bytes())?)
+            }
             DeckAction::Copy(args) => deck::copy_cmd(args),
             DeckAction::Move(args) => deck::move_cmd(args),
             DeckAction::Augment(args) => deck::augment_cmd(args),

@@ -127,3 +127,17 @@ A generated deck is just a plain-text deck like any other: read it, edit it, cut
 the weak cards, add your own. Treat the output as a strong first draft, not
 gospel. The point is to skip the blank page, not to outsource judgment. That's
 the same division the whole tool runs on (see [how `alix` was made](how-alix-was-made.md)).
+
+## Writing decks with another AI
+
+Use the guide when you would rather write the deck with an AI you already use,
+such as a chat assistant or a coding agent, or when the source is one
+`alix deck generate` cannot reach. alix's own generator reads most of the same
+text.
+
+`alix deck guide > guide.md` saves the guide that matches the installed alix.
+Hand that file and your source to the AI and ask for a deck, then follow the
+guide's last steps (`alix deck init`, then `alix doctor`). The same text
+follows.
+
+{{#include ../../include/deck-authoring-guide.md:guide}}

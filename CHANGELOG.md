@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `alix deck guide` prints the deck-authoring guide built into this alix (the
+  deck format, card shapes, diagrams, authoring practice, the init and doctor
+  steps, and exam sources), for handing to another AI together with a source;
+  the book's chapter 11 includes the same text.
+
 - Walk with cram: with cram ticked (web Depth menu, phone deck sheet), a walk
   serves every card in deck order, starting after the card walked last and
   wrapping around. `POST /api/walk` takes an optional `cram`.

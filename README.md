@@ -96,6 +96,7 @@ grading and card identity keep using the source text.
 | `alix deck generate <source>` | Draft one deck from a page, a file, or a folder (`--trace` for a trace) |
 | `alix workspace generate <dir>` | Explore a folder for a learning plan and build a workspace |
 | `alix deck init <deck>` | Initialize a hand-written deck once (mints its stable ids) |
+| `alix deck guide` | Print the deck-authoring guide to hand to another AI |
 | `alix deck augment <deck> --target …` | Add distractors, notes, or key points |
 | `alix deck source add\|list\|… <deck>` | Freeze local text files as a workspace deck's exam material, bound to topics |
 | `alix deck copy\|move <deck> <workspace>` | Transfer one deck and its owned files between workspaces |

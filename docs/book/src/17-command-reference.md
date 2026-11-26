@@ -147,6 +147,7 @@ The rest of the AI-and-deck surface:
   discovery and never stamped merely because they contain `##` headings, and a
   `<deck>.local.md` is refused outright: it belongs to the deck beside it
   and never gets an `id:` of its own.
+- `alix deck guide`: print the deck-authoring guide that matches this alix, to hand to another AI with a source ([chapter 11](11-generating-decks.md#writing-decks-with-another-ai)).
 - `alix deck augment <deck> --target <...>`: precompute AI augmentations
   (choices, notes, questions, keypoints, format, order). The augmentation
   document stays beside the deck; private progress is read from the deck's

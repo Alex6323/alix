@@ -10691,3 +10691,45 @@ fn a_workspace_generation_without_sekien_never_asks_for_diagrams() {
         "workspace target, no sekien: the prompt carries the diagrams part"
     );
 }
+
+#[test]
+fn deck_guide_prints_the_guide_anchor_without_anchor_lines() {
+    let source = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/include/deck-authoring-guide.md"),
+    )
+    .unwrap();
+    let mut expected = String::new();
+    let mut inside = false;
+    for line in source.lines() {
+        if line == "<!-- ANCHOR_END: guide -->" {
+            break;
+        }
+        if inside && !line.starts_with("<!-- ANCHOR") {
+            expected.push_str(line);
+            expected.push('\n');
+        }
+        if line == "<!-- ANCHOR: guide -->" {
+            inside = true;
+        }
+    }
+    let out = alix(&["deck", "guide"]);
+    assert!(out.status.success(), "deck guide failed: {}", stderr(&out));
+    let printed = stdout(&out);
+    assert!(
+        !printed.contains("ANCHOR"),
+        "the printed guide carries an anchor line"
+    );
+    assert_eq!(printed, expected, "stdout differs from the guide anchor");
+}
+
+#[test]
+fn the_printed_guide_fits_its_size_budget() {
+    let out = alix(&["deck", "guide"]);
+    assert!(out.status.success(), "deck guide failed: {}", stderr(&out));
+    let budget = 30_000;
+    assert!(
+        out.stdout.len() <= budget,
+        "the printed guide is {} bytes, over the {budget} budget",
+        out.stdout.len()
+    );
+}
