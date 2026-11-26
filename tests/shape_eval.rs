@@ -192,7 +192,11 @@ mod census {
         let mut counts = Census {
             mermaid_fences: deck
                 .lines()
-                .filter(|line| line.trim_start().starts_with("```mermaid"))
+                .filter(|line| {
+                    line.trim_start()
+                        .strip_prefix("```")
+                        .is_some_and(|info| info.trim() == "mermaid")
+                })
                 .count(),
             at_lines: deck
                 .lines()
@@ -216,6 +220,22 @@ mod census {
         counts
     }
 
+    pub fn sources_verdict(
+        source: &std::path::Path,
+        root: &alix::cite::GeneratedRoot,
+        reply: &alix::generate::DeckReply,
+    ) -> String {
+        match alix::generate::generated_sources(
+            &source.display().to_string(),
+            root,
+            reply,
+            &reply.text,
+        ) {
+            Ok(_) => "accepted".into(),
+            Err(error) => format!("refused: {error:#}"),
+        }
+    }
+
     fn count_cards(counts: &mut Census, cards: &[alix::card::Card]) {
         use alix::{answer::Input, card::Direction, depth::Reveal};
 
@@ -225,7 +245,7 @@ mod census {
                 counts.cloze += 1;
             } else if card.block_line != card.line {
                 counts.table_rows += 1;
-            } else if !card.authored_distractors.is_empty() && card.multiple_choice {
+            } else if card.multiple_choice {
                 counts.choice_multiple += 1;
             } else if !card.authored_distractors.is_empty() {
                 counts.choice_single += 1;
@@ -400,6 +420,32 @@ Answer.
         }
 
         #[test]
+        fn a_non_mermaid_fence_with_a_mermaid_prefix_is_not_counted() {
+            let deck = "\
+## Flow
+```mermaid-js
+graph TD
+  a --> b
+```
+";
+            assert_eq!(0, census(deck).mermaid_fences);
+        }
+
+        #[test]
+        fn a_select_all_with_no_unchecked_options_is_still_counted_as_multiple_choice() {
+            let deck = "\
+## Which statements hold?
+- [x] first
+- [x] second
+<!-- choices: multiple -->
+";
+            let counts = census(deck);
+            assert!(counts.parses, "the fixture deck must parse");
+            assert_eq!(1, counts.choice_multiple, "{counts:?}");
+            assert_eq!(0, counts.plain, "{counts:?}");
+        }
+
+        #[test]
         fn an_unbadged_blockquote_closing_an_answer_is_counted() {
             let deck = "\
 ## Quoted
@@ -463,6 +509,19 @@ A.
         }
 
         #[test]
+        fn a_reply_whose_deck_does_not_parse_is_reported_as_a_refused_sources_list() {
+            let dir = tempfile::tempdir().unwrap();
+            let source = dir.path().join("source.md");
+            std::fs::write(&source, "Some source text.\n").unwrap();
+            let reply = alix::generate::DeckReply {
+                text: "## Q\n".into(),
+                sources: None,
+            };
+            let verdict = sources_verdict(&source, &crate::src_root(dir.path()), &reply);
+            assert!(verdict.starts_with("refused:"), "{verdict}");
+        }
+
+        #[test]
         fn a_deck_that_does_not_parse_reports_parse_false() {
             let deck = "\
 ---
@@ -501,6 +560,11 @@ fn run_census(fixture_name: &str) {
         .join(&arm)
         .join(stem);
     std::fs::create_dir_all(&dir).unwrap();
+    assert!(
+        std::fs::read_dir(&dir).unwrap().next().is_none(),
+        "{} already holds a census run; move it away before running this arm again",
+        dir.display()
+    );
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/shape-eval")
         .join(fixture_name);
@@ -508,11 +572,14 @@ fn run_census(fixture_name: &str) {
     std::fs::copy(&fixture, &source).unwrap();
 
     let root = src_root(&dir);
-    let runs: Vec<Result<String, String>> = (0..CENSUS_RUNS)
+    let runs: Vec<Result<(String, String), String>> = (0..CENSUS_RUNS)
         .map(|_| {
             let reply =
                 generate_mixed(&source, &dir, true).map_err(|error| format!("{error:#}"))?;
-            generate::declare_root(&reply.text, &root).map_err(|error| format!("{error:#}"))
+            let verdict = census::sources_verdict(&source, &root, &reply);
+            let deck =
+                generate::declare_root(&reply.text, &root).map_err(|error| format!("{error:#}"))?;
+            Ok((deck, verdict))
         })
         .collect();
 
@@ -526,10 +593,10 @@ fn run_census(fixture_name: &str) {
     for (index, run) in runs.iter().enumerate() {
         let number = index + 1;
         match run {
-            Ok(deck) => {
+            Ok((deck, verdict)) => {
                 let c = census::census(deck);
                 println!(
-                    "{number} | generated | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | n/a | {}",
+                    "{number} | generated | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {verdict} | {}",
                     c.parses,
                     c.cards,
                     c.plain,
@@ -556,14 +623,79 @@ fn run_census(fixture_name: &str) {
     let mut failures = Vec::new();
     for (index, run) in runs.iter().enumerate() {
         match run {
-            Ok(deck) if !census::census(deck).parses => {
+            Ok((deck, _)) if !census::census(deck).parses => {
                 failures.push(format!("run {} does not parse", index + 1));
+            }
+            Ok((_, verdict)) if verdict.starts_with("refused") => {
+                failures.push(format!("run {} sources list {verdict}", index + 1));
             }
             Ok(_) => {}
             Err(error) => failures.push(format!("run {} failed: {error}", index + 1)),
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[cfg(unix)]
+#[test]
+fn rerunning_one_arm_on_the_same_day_is_refused_and_keeps_its_prior_decks() {
+    use std::{ffi::OsString, os::unix::fs::PermissionsExt};
+
+    struct EnvGuard(Vec<(&'static str, Option<OsString>)>);
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in self.0.drain(..) {
+                match value {
+                    Some(value) => unsafe { std::env::set_var(key, value) },
+                    None => unsafe { std::env::remove_var(key) },
+                }
+            }
+        }
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _lock = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+    let original = ["HOME", "PATH", "SHAPE_CENSUS_ARM"].map(|key| (key, std::env::var_os(key)));
+    let _guard = EnvGuard(original.into());
+    let temp = tempfile::tempdir().unwrap();
+    let bin = temp.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let cli = bin.join("claude");
+    let calls = temp.path().join("calls");
+    std::fs::write(
+        &cli,
+        format!(
+            "#!/bin/sh\n/usr/bin/cat >/dev/null\nn=$(( $(/usr/bin/cat {calls} 2>/dev/null || echo 0) + 1 ))\necho $n > {calls}\nprintf '{{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"## Q\\\\nanswer %s\\\\n\"}}\\n' \"$n\"\n",
+            calls = calls.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    unsafe {
+        std::env::set_var("HOME", temp.path());
+        std::env::set_var("PATH", path);
+        std::env::set_var("SHAPE_CENSUS_ARM", "baseline");
+    }
+
+    run_census("conceptual.md");
+    let date = chrono::Local::now().format("%Y-%m-%d");
+    let first_path = temp
+        .path()
+        .join("tmp")
+        .join(format!("shape-census-{date}"))
+        .join("baseline/conceptual/run-1.md");
+    let first = std::fs::read_to_string(&first_path).unwrap();
+    let rerun = std::panic::catch_unwind(|| run_census("conceptual.md"));
+    let after = std::fs::read_to_string(&first_path).unwrap();
+
+    assert!(rerun.is_err(), "a rerun into a used folder was not refused");
+    assert_eq!(first, after, "a rerun replaced the first census deck");
 }
 
 #[test]
