@@ -406,9 +406,11 @@ exam-probes:
 # Does the shape rule actually STEER the generator? A deterministic test can
 # prove docs/include/deck-authoring-guide.md reached the prompt; only a real call proves a
 # prompt that reads well does not steer badly. Costed and non-deterministic,
-# so it is a release gate beside calibrate, never CI.
+# so it is a release gate beside calibrate, never CI. The census tests write
+# their decks under a folder named by SHAPE_CENSUS_ARM and refuse a folder
+# that already holds a run.
 shape-eval:
-	cargo test --test shape_eval -- --ignored --nocapture --test-threads=1
+	SHAPE_CENSUS_ARM=$${SHAPE_CENSUS_ARM:-gate} cargo test --test shape_eval -- --ignored --nocapture --test-threads=1
 
 # Run the binary, e.g. `make run ARGS="stats mydeck.md"`.
 run:
