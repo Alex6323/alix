@@ -89,6 +89,11 @@ const PRECEDENCE_LINE: &str = "Where the instructions around this guide differ f
      the output), those instructions win; a topic heading is a `# ` section and still gets its \
      prose paragraph.";
 
+const SELECT_ALL_LINE: &str = "Where several items of a set share a property and the rest do \
+     not, write a select-all card for that property even when a card table already pairs each \
+     item with its kind: judging the whole set at once is a different question from recalling \
+     one row.";
+
 const CARD_SHAPE_SYNTAX: &str = "\
      - A plain card puts short answer lines below its `## ` front. Do not prefix \
      answers with bullets or dashes.\n\
@@ -139,10 +144,8 @@ pub(crate) fn card_format(spec: &GenerationSpec, consumer: FormatConsumer) -> St
                 "DECK-AUTHORING GUIDE:\n\n{}\n{PRECEDENCE_LINE}",
                 parts.join("\n")
             );
-            if let Some(rule) = rule {
-                text.push_str("\n\n");
-                text.push_str(rule);
-            }
+            text.push_str("\n\n");
+            text.push_str(rule.unwrap_or(SELECT_ALL_LINE));
             text
         }
         FormatConsumer::ReviewAndFill => match rule {
@@ -1115,6 +1118,31 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_select_all_line_reaches_mixed_generation_prompts_only() {
+        let source_root = src_root();
+        for card_style in STYLES {
+            let style = card_style.as_str();
+            let mixed = card_style == GenerateCardStyle::Mixed;
+            for (name, root) in [("a url", None), ("a source root", Some(&source_root))] {
+                assert_eq!(
+                    build_prompt("notes", root, &cfg(12), &styled(card_style))
+                        .contains(SELECT_ALL_LINE),
+                    mixed,
+                    "{style} generation prompt for {name}: select-all line present must be {mixed}"
+                );
+            }
+            assert!(
+                !build_review_prompt("## Q\nA\n", &styled(card_style)).contains(SELECT_ALL_LINE),
+                "{style} review prompt carries the select-all line"
+            );
+            assert!(
+                !fill(&styled(card_style)).contains(SELECT_ALL_LINE),
+                "{style} fill prompt carries the select-all line"
+            );
         }
     }
 
