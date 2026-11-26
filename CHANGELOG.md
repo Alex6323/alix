@@ -300,6 +300,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in
   a workspace and `sekien` is found; `--print`, a deck outside a workspace, and
   a machine without `sekien` get no diagram instructions.
+  A deck generated from a single file now lists the line ranges each section
+  rests on, or the whole file, so its exam asks per section. A single-file
+  generation into a workspace now fails, keeping no deck, when the model's
+  sources list is missing, malformed, or names another file, as folder
+  generation already does for a missing or malformed list.
 
 - Math renders with RaTeX 0.1.16 (was 0.1.13): `\slashed` and `\centernot`
   now render, and limits under `\sum` and `\lim`, the brace of `\underbrace`,

@@ -5804,6 +5804,59 @@ fn folder_generation_refuses_when_the_model_omits_a_deck_topic_from_its_sources_
     );
 }
 
+#[test]
+fn a_single_file_given_relative_binds_when_the_reply_names_it_relative_or_with_a_dot() {
+    let dir = TempDir::new().unwrap();
+    let source = dir.path().join("source");
+    std::fs::create_dir_all(&source).unwrap();
+    write(&source, "notes.md", "first line\nsecond line\n");
+    let reply = "# Notes\n\n## First?\nFirst line.\n\n=== sources ===\n[{\"topic\":\"Notes\",\"sources\":[{\"path\":\"./notes.md\",\"lines\":\"1\"}]}]\n";
+    let cli = fake_claude(dir.path(), reply);
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let workspace = dir.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("decks")).unwrap();
+    std::fs::write(workspace.join("alix.toml"), "").unwrap();
+    let home = TempDir::new().unwrap();
+
+    let out = alix_in(
+        &source,
+        home.path(),
+        &[
+            "deck",
+            "generate",
+            "notes.md",
+            "--config",
+            &config,
+            "--into",
+            workspace.to_str().unwrap(),
+            "--output",
+            "notes",
+        ],
+    );
+
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let deck = alix::deck::Deck::load(workspace.join("decks/notes.md")).unwrap();
+    let topic = deck.topic_ids()[1].clone().unwrap();
+    let sources = alix::sources::load_verified(&workspace, deck.deck_token.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    let rows: Vec<(String, Vec<String>)> = sources
+        .manifest
+        .sources
+        .values()
+        .map(|row| (row.path.clone(), row.bound_to.clone()))
+        .collect();
+    assert_eq!(
+        vec![("src:notes.md".to_string(), vec![format!("1|{topic}")])],
+        rows,
+        "the one file freezes once, bound to the topic with the named line"
+    );
+}
+
 const REVIEWED_DRAFT: &str = "# Alpha\n\n## Alpha?\nAlpha.\n<!-- at: src:a.md:1 -->\n\n# Beta\n\n## Beta?\nBeta.\n<!-- at: src:b.md:1 -->\n\n=== sources ===\n[{\"topic\":\"Alpha\",\"sources\":[{\"path\":\"a.md\"}]},{\"topic\":\"Beta\",\"sources\":[{\"path\":\"b.md\"}]}]\n";
 const REVIEWED_SWAP: &str = "# Alpha\n\n## Beta moved here?\nBeta.\n<!-- at: src:b.md:1 -->\n\n# Beta\n\n## Alpha moved here?\nAlpha.\n<!-- at: src:a.md:1 -->\n";
 

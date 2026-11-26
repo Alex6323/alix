@@ -666,7 +666,7 @@ fn rerunning_one_arm_on_the_same_day_is_refused_and_keeps_its_prior_decks() {
     std::fs::write(
         &cli,
         format!(
-            "#!/bin/sh\n/usr/bin/cat >/dev/null\nn=$(( $(/usr/bin/cat {calls} 2>/dev/null || echo 0) + 1 ))\necho $n > {calls}\nprintf '{{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"## Q\\\\nanswer %s\\\\n\"}}\\n' \"$n\"\n",
+            "#!/bin/sh\n/usr/bin/cat >/dev/null\nn=$(( $(/usr/bin/cat {calls} 2>/dev/null || echo 0) + 1 ))\necho $n > {calls}\nprintf '{{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"# T\\\\n\\\\n## Q\\\\nanswer %s\\\\n\\\\n=== sources ===\\\\n[{{\\\\\"topic\\\\\":\\\\\"T\\\\\",\\\\\"sources\\\\\":[{{\\\\\"path\\\\\":\\\\\"conceptual.md\\\\\"}}]}}]\\\\n\"}}\\n' \"$n\"\n",
             calls = calls.display()
         ),
     )

@@ -287,10 +287,15 @@ pub fn generate_deck(
         let (base_dir, _) = resolve_source(None, Some(source));
         Some(base_dir)
     };
-    let lists_sources = root.is_some() && !Path::new(source).is_file();
+    let lists_sources = root.is_some();
+    let single_file = Path::new(source)
+        .is_file()
+        .then(|| Path::new(source).file_name())
+        .flatten()
+        .map(|name| name.to_string_lossy().into_owned());
     let mut prompt = build_prompt(source, root, cfg, spec);
     if lists_sources {
-        prompt.push_str(&sources_instruction());
+        prompt.push_str(&sources_instruction(single_file.as_deref()));
     }
     let raw = ask::run(&run_config(cfg, ask_cfg, url, cwd), &prompt, &[])?;
     let (deck_part, sources) = if lists_sources {
@@ -309,7 +314,13 @@ pub fn generate_deck(
     })
 }
 
-fn sources_instruction() -> String {
+fn sources_instruction(single_file: Option<&str>) -> String {
+    let only_that_file = single_file.map_or_else(String::new, |name| {
+        format!(
+            "\n- The deck comes from one file, so every `path` may name only `{name}`; a \
+             reply naming any other file is refused."
+        )
+    });
     format!(
         "\n\nTOPICS AND SOURCES:\n\
          - Group the cards under `# ` topic headings at column 0, one per subject area; \
@@ -321,7 +332,8 @@ fn sources_instruction() -> String {
          - For a file longer than {RANGED_FILE_LINES} lines, give `lines`: the line ranges \
          the topic's cards rest on, ascending and non-overlapping, e.g. `12-40,88,90-120`. \
          For a shorter file, omit `lines`; the whole file is bound.\n\
-         - Name only files you read, never a directory; the learner is examined on them."
+         - Name only files you read, never a directory; the learner is examined on them.\
+         {only_that_file}"
     )
 }
 
@@ -467,15 +479,15 @@ pub fn generated_sources(
     text: &str,
 ) -> Result<(GeneratedDeck, (String, PathBuf))> {
     let input = Path::new(source);
+    let Some(sources) = &reply.sources else {
+        bail!("the model returned no `{SOURCES_MARKER}` list of the files it drew on");
+    };
     let (input_dir, deck) = if input.is_file() {
-        (
-            input.parent().unwrap_or(input),
-            GeneratedDeck::whole_file(text, input)?,
-        )
+        let input_dir = input.parent().unwrap_or(input);
+        let deck = parse_generated(text, sources, input_dir)?;
+        bind_only_the_source_file(&deck, input)?;
+        (input_dir, deck)
     } else {
-        let Some(sources) = &reply.sources else {
-            bail!("the model returned no `{SOURCES_MARKER}` list of the files it drew on");
-        };
         (input, parse_generated(text, sources, input)?)
     };
     let depth = root.path_prefix.matches('/').count();
@@ -489,29 +501,19 @@ pub fn generated_sources(
     Ok((deck, (root.key.clone(), folder.to_path_buf())))
 }
 
-impl GeneratedDeck {
-    pub fn whole_file(text: &str, file: &Path) -> Result<Self> {
-        let parsed = parser::parse("generated.md", &parser::normalize(text)).map_err(|error| {
-            anyhow::anyhow!(
-                "the generated deck does not parse ({error}), so its source cannot be bound"
-            )
-        })?;
-        let topic_sources = parsed
-            .topics
-            .iter()
-            .enumerate()
-            .filter(|(index, topic)| {
-                topic.heading.is_some()
-                    || parsed.cards.iter().any(|card| card.topic == *index)
-                    || parsed.topics.len() == 1
-            })
-            .map(|(index, _)| (index, vec![(file.to_path_buf(), None)]))
-            .collect();
-        Ok(Self {
-            text: text.to_string(),
-            topic_sources,
-        })
+fn bind_only_the_source_file(deck: &GeneratedDeck, file: &Path) -> Result<()> {
+    let source = std::fs::canonicalize(file)
+        .with_context(|| format!("cannot resolve the source file `{}`", file.display()))?;
+    for (listed, _) in deck.topic_sources.iter().flat_map(|(_, files)| files) {
+        if std::fs::canonicalize(listed).ok().as_ref() != Some(&source) {
+            bail!(
+                "the model listed `{}`, but a deck generated from one file may bind only `{}`",
+                listed.display(),
+                file.display()
+            );
+        }
     }
+    Ok(())
 }
 
 pub fn diagrams_drawn_in(dir: &Path) -> bool {
@@ -2512,6 +2514,10 @@ mod tests {
                 && prompt.contains(&format!("longer than {RANGED_FILE_LINES} lines")),
             "prompt: a folder generation asks for the sources list and its ranges rule"
         );
+        assert!(
+            !prompt.contains("may name only"),
+            "prompt: a folder generation carries no one-file restriction"
+        );
         let (placed, report) = placed.expect("binding: the returned files bind");
         assert_eq!(2, report.added.len(), "binding: {:?}", report.added);
         let (ids, rows) = bound(&decks, &placed.path);
@@ -2722,30 +2728,182 @@ mod tests {
         }
     }
 
+    const SINGLE_FILE_DECK: &str =
+        "---\nchoices: single\n---\n# One\n\n## Q1\nA1\n\n# Two\n\n## Q2\nA2\n";
+
+    fn single_file_reply(one: &str, two: &str) -> String {
+        format!(
+            "{SINGLE_FILE_DECK}{SOURCES_MARKER}\n[{{\"topic\": \"One\", \"sources\": [{one}]}}, {{\"topic\": \"Two\", \"sources\": [{two}]}}]\n"
+        )
+    }
+
+    fn listed(path: &str, lines: Option<&str>) -> String {
+        let path = serde_json::to_string(path).unwrap();
+        match lines {
+            Some(lines) => format!("{{\"path\": {path}, \"lines\": \"{lines}\"}}"),
+            None => format!("{{\"path\": {path}}}"),
+        }
+    }
+
+    fn single_file_folder() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let (temp, decks, folder) = generation_workspace();
+        std::fs::write(folder.join("notes.md"), "line one\nline two\n").unwrap();
+        std::fs::write(folder.join("other.md"), "another file\n").unwrap();
+        (temp, decks, folder)
+    }
+
     #[test]
-    fn single_file_generation_binds_the_file_to_every_topic() {
+    fn single_file_generation_binds_each_topic_to_what_the_reply_names() {
         let _guard = crate::testutil::exec_lock();
-        let (_temp, decks, folder) = generation_workspace();
-        let file = folder.join("notes.md");
-        std::fs::write(&file, "line one\nline two\n").unwrap();
-        let reply = "---\nchoices: single\n---\n# One\n\n## Q1\nA1\n\n# Two\n\n## Q2\nA2\n";
-
-        let (placed, prompt) = generate_into(&decks, &file, reply);
-
-        assert!(
-            !prompt.contains(SOURCES_MARKER),
-            "prompt: a single file asks for no sources list"
+        fn ranged(path: String) -> (String, String) {
+            (listed(&path, Some("1")), listed(&path, Some("2")))
+        }
+        type Row = (
+            &'static str,
+            Box<dyn Fn(&Path) -> (String, String)>,
+            Vec<&'static str>,
         );
-        let (placed, _) = placed.expect("the file binds");
-        let (ids, rows) = bound(&decks, &placed.path);
-        assert_eq!(
-            vec![(
-                "src:notes.md".to_string(),
-                vec![ids[1].clone().unwrap(), ids[2].clone().unwrap()]
-            )],
-            rows,
-            "the one file binds whole to every topic"
-        );
+        let mut rows: Vec<Row> = vec![
+            (
+                "per-section ranges",
+                Box::new(|_| ranged("notes.md".into())),
+                vec!["1|One", "2|Two"],
+            ),
+            (
+                "lines omitted",
+                Box::new(|_| (listed("notes.md", None), listed("notes.md", None))),
+                vec!["One", "Two"],
+            ),
+            (
+                "a leading dot",
+                Box::new(|_| ranged("./notes.md".into())),
+                vec!["1|One", "2|Two"],
+            ),
+            (
+                "the absolute path",
+                Box::new(|folder| ranged(folder.join("notes.md").display().to_string())),
+                vec!["1|One", "2|Two"],
+            ),
+            (
+                "up and back into the folder",
+                Box::new(|folder| {
+                    let name = folder.file_name().unwrap().to_string_lossy();
+                    ranged(format!("../{name}/notes.md"))
+                }),
+                vec!["1|One", "2|Two"],
+            ),
+        ];
+        #[cfg(unix)]
+        rows.push((
+            "a symlink to the source file",
+            Box::new(|folder| {
+                std::os::unix::fs::symlink(folder.join("notes.md"), folder.join("link.md"))
+                    .unwrap();
+                ranged("link.md".into())
+            }),
+            vec!["1|One", "2|Two"],
+        ));
+        for (row, sources, expected) in rows {
+            let (_temp, decks, folder) = single_file_folder();
+            let (one, two) = sources(&folder);
+            let (placed, prompt) = generate_into(
+                &decks,
+                &folder.join("notes.md"),
+                &single_file_reply(&one, &two),
+            );
+            assert!(
+                prompt.contains(SOURCES_MARKER)
+                    && prompt.contains("every `path` may name only `notes.md`"),
+                "{row}: the prompt asks for the list and names the one file"
+            );
+            let (placed, _) = placed.unwrap_or_else(|error| panic!("{row}: {error:#}"));
+            let (ids, bound_rows) = bound(&decks, &placed.path);
+            let topics = [
+                (ids[1].clone().unwrap(), "One"),
+                (ids[2].clone().unwrap(), "Two"),
+            ];
+            let named: Rows = bound_rows
+                .into_iter()
+                .map(|(path, entries)| {
+                    let entries = entries
+                        .into_iter()
+                        .map(|entry| {
+                            topics.iter().fold(entry, |entry, (id, topic)| {
+                                entry.replace(id.as_str(), topic)
+                            })
+                        })
+                        .collect();
+                    (path, entries)
+                })
+                .collect();
+            assert_eq!(
+                vec![(
+                    "src:notes.md".to_string(),
+                    expected.iter().map(|entry| entry.to_string()).collect()
+                )],
+                named,
+                "{row}: only the source file binds, with the named lines"
+            );
+        }
+    }
+
+    #[test]
+    fn single_file_generation_refuses_another_file_or_a_missing_list_and_keeps_nothing() {
+        let _guard = crate::testutil::exec_lock();
+        let one = listed("notes.md", None);
+        type Row<'a> = (&'a str, Box<dyn Fn(&Path) -> String + 'a>, &'a str);
+        let mut rows: Vec<Row> = vec![
+            (
+                "a sibling file that exists",
+                Box::new(|_| single_file_reply(&one, &listed("other.md", None))),
+                "other.md",
+            ),
+            (
+                "a path that does not exist",
+                Box::new(|_| single_file_reply(&one, &listed("missing.md", None))),
+                "missing.md",
+            ),
+            (
+                "no sources list",
+                Box::new(|_| SINGLE_FILE_DECK.to_string()),
+                SOURCES_MARKER,
+            ),
+        ];
+        #[cfg(unix)]
+        rows.push((
+            "a symlink to a sibling file",
+            Box::new(|folder| {
+                std::os::unix::fs::symlink(folder.join("other.md"), folder.join("link.md"))
+                    .unwrap();
+                single_file_reply(&one, &listed("link.md", None))
+            }),
+            "link.md",
+        ));
+        for (row, reply, named) in rows {
+            let (_temp, decks, folder) = single_file_folder();
+            let reply = reply(&folder);
+            let (placed, _) = generate_into(&decks, &folder.join("notes.md"), &reply);
+            let message = format!(
+                "{:#}",
+                placed.expect_err(&format!("{row}: the reply is refused"))
+            );
+            assert!(
+                message.contains(named),
+                "{row}: the error names `{named}`: {message}"
+            );
+            assert_eq!(
+                0,
+                std::fs::read_dir(&decks).unwrap().count(),
+                "{row}: no deck file is left"
+            );
+            let workspace = decks.parent().unwrap();
+            for kept in ["sources", "assets"] {
+                assert!(
+                    !workspace.join(kept).exists(),
+                    "{row}: no `{kept}/` folder is left"
+                );
+            }
+        }
     }
 
     #[test]

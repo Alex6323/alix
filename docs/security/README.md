@@ -176,6 +176,10 @@ Generation freezes the files the model names through the same add step
 resolve inside the deck's `cite:` root, so a model reply cannot copy a file
 from outside that root into `sources/`; any refusal removes the freshly
 placed deck and the folders it created (`src/library.rs`, `src/explore.rs`).
+A deck generated from one file freezes only that file, with the line ranges
+the model names: every listed path must canonicalize to the source file, and
+any other path, a missing one, or a link to another file refuses the reply
+before anything is placed (`src/generate.rs`).
 `alix doctor` reports every verified-load refusal as an error and is
 otherwise read-only on sources. `alix doctor --repair-sources` refreezes a
 changed live file through the same open, validation and commit, only from a
@@ -841,6 +845,9 @@ The most relevant deterministic checks currently live beside their controls:
 - `src/ask.rs`: the tutor's browse grant, pinned as an exact table over the
   tool grant and the tool root (the deck's sources folder, never a parent
   working folder or `cite:` root) for every way the tutor reads sources;
+- `src/generate.rs`: a deck generated from one file binds only that file, and
+  any other listed path refuses the reply with nothing placed
+  (`single_file_generation_refuses_another_file_or_a_missing_list_and_keeps_nothing`);
 - `src/trace_ai.rs`: generated snapshot provenance; and
 - `src/math.rs` and renderer tests: validation and sanitization of generated
   math SVG.

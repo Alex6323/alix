@@ -57,12 +57,14 @@ How the source is recorded depends on its kind, and it matters later:
   the deck lands in a workspace (`--into <workspace>`), alix freezes the
   files it was generated from as the deck's
   [sources](12-the-ai-exam.md#sources), which the **AI exam** reads. For a
-  folder, the model groups the cards under `#` topics and lists, per topic,
+  folder or a single file, the model groups the cards under `#` topics and lists, per topic,
   the files it drew on; for a file longer than 400 lines it also gives the
   line ranges the cards rest on, and a shorter file is bound whole. Every
   topic holding cards must be listed once with at least one file, and no card
   may sit before the first `#` heading; a `--review` pass returns its own list
-  for the deck it rewrites. A single file is bound whole to every topic. The
+  for the deck it rewrites. A deck generated from a single file may list only
+  that file; a missing or malformed list, or one naming another file, stops
+  the generation and keeps no deck, as for a folder. The
   `cite:` root the source is cited through (normally `src`, see below) is
   saved for the deck's sources on this machine only. Any file that cannot be
   frozen (not text, empty, outside that root, a range past its end) stops the

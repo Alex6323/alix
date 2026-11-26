@@ -49,6 +49,10 @@ has a permanent id, a `<!-- id: topic-<token> -->` line in the deck file
 command takes any unique prefix of a deck, topic or source id, as
 `topic-3whz` does below.
 
+A deck [generated](11-generating-decks.md) from a single file binds each
+section to the line ranges the model named, so the exam examines each
+section on its own lines.
+
 ```
 alix deck source add decks/rust.md ../sdk/src/lib.rs --root sdk=../sdk --topic topic-3whz
 alix deck source list decks/rust.md
