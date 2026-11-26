@@ -647,10 +647,12 @@ Three HTML spellings do render, each with a fixed meaning:
   `&Aopf;_x_` italicizes `x`. Grading compares the decoded text, and the
   deck file keeps the entity exactly as you wrote it.
 
-The usual protections apply on top: inline code, fenced blocks, and math
-bodies keep every one of these spellings literal, a whole-line `<!-- -->`
-comment protects its interior, and a complete image destination in angle
-brackets (`![diagram](<a b.png>)`) is an address, not a tag.
+The usual protections apply on top: inline code and fenced blocks keep every
+one of these spellings literal, a whole-line `<!-- -->` comment protects its
+interior, and a complete image destination in angle brackets
+(`![diagram](<a b.png>)`) is an address, not a tag. Math bodies are not
+protected from the tag-shape error: `$a<b$` fails to load, `$a < b$` is fine,
+and `\<` escapes the bracket.
 
 ## Title, and deck-wide settings
 
@@ -712,6 +714,9 @@ block it maps, so a second below the first fails the same way.
 Because `##`, `>`, a break line of any spelling, and the fence markers are
 structural, an answer line that must *start* with one literally is escaped
 with a leading backslash: `\##`, `\>`, `\---`, `\***`. The backslash is consumed; the line displays without it.
+The same applies to an answer line that starts with a literal comment opener
+(`\<!--`) or a literal triple backtick (`` \``` ``), which would otherwise
+read as a directive or open a code fence.
 For a break line of any spelling, `<!-- plain -->` on the line below keeps it as
 content too.
 
