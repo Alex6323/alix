@@ -10459,3 +10459,48 @@ fn every_deck_example_in_the_guide_parses_as_its_declared_kind_and_doctor_finds_
         );
     }
 }
+
+#[test]
+fn a_url_generation_whose_reply_has_sections_initializes() {
+    let dir = TempDir::new().unwrap();
+    let cli = fake_claude(
+        dir.path(),
+        "---\nlink: https://example.org/page\n---\n\n# Ownership\n\nWho frees a value.\n\n## What frees a value?\nIts owner going out of scope.\n",
+    );
+    let config = write(
+        dir.path(),
+        "config.toml",
+        &format!("[ask]\ncommand = \"{cli}\"\ntimeout_secs = 10\n"),
+    );
+    let ws = dir.path().join("ws");
+    std::fs::create_dir_all(ws.join("decks")).unwrap();
+    std::fs::write(ws.join("alix.toml"), "").unwrap();
+
+    let out = alix(&[
+        "deck",
+        "generate",
+        "https://example.org/page",
+        "--config",
+        &config,
+        "--into",
+        ws.to_str().unwrap(),
+        "--output",
+        "sectioned",
+    ]);
+
+    let deck = std::fs::read_to_string(ws.join("decks/sectioned.md")).unwrap_or_default();
+    assert!(
+        out.status.success(),
+        "sectioned URL reply: exit {:?}\nstderr: {}\ndeck:\n{deck}",
+        out.status.code(),
+        stderr(&out)
+    );
+    assert!(
+        deck.contains("<!-- id: card-"),
+        "sectioned URL reply: the card carries no id: {deck}"
+    );
+    assert!(
+        deck.contains("# Ownership\n\nWho frees a value.\n<!-- id: topic-"),
+        "sectioned URL reply: the `# Ownership` section carries no topic id: {deck}"
+    );
+}
