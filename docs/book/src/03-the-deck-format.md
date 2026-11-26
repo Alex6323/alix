@@ -650,9 +650,10 @@ Three HTML spellings do render, each with a fixed meaning:
 The usual protections apply on top: inline code and fenced blocks keep every
 one of these spellings literal, a whole-line `<!-- -->` comment protects its
 interior, and a complete image destination in angle brackets
-(`![diagram](<a b.png>)`) is an address, not a tag. Math bodies are not
+(`![diagram](<a b.png>)`) is an address, not a tag. Inline math is not
 protected from the tag-shape error: `$a<b$` fails to load, `$a < b$` is fine,
-and `\<` escapes the bracket.
+and `\<` escapes the bracket. A `$$` block on its own lines keeps its
+interior as written.
 
 ## Title, and deck-wide settings
 
