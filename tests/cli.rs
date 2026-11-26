@@ -10329,3 +10329,133 @@ fn deck_source_commands_resolve_the_deck_by_unique_id_prefix_and_refuse_an_ambig
         stderr(&out)
     );
 }
+
+#[derive(Clone, Debug, PartialEq)]
+enum ExampleKind {
+    Plain,
+    Cloze,
+    ChoiceSingle,
+    ChoiceMultiple,
+    Table,
+    LineReveal,
+    Draw,
+    Both,
+    Diagram,
+}
+
+fn guide_deck_examples() -> Vec<String> {
+    let guide = alix::authoring_guide::part(alix::authoring_guide::Part::Guide);
+    let lines: Vec<&str> = guide.lines().collect();
+    let mut examples = Vec::new();
+    let mut at = 0;
+    while at < lines.len() {
+        let ticks = lines[at].chars().take_while(|c| *c == '`').count();
+        if ticks < 3 {
+            at += 1;
+            continue;
+        }
+        let run = &lines[at][..ticks];
+        let bare = lines[at].len() == ticks;
+        let mut body = Vec::new();
+        at += 1;
+        while lines[at] != run {
+            body.push(lines[at]);
+            at += 1;
+        }
+        if bare {
+            examples.push(body.join("\n") + "\n");
+        }
+        at += 1;
+    }
+    examples
+}
+
+fn kinds_of(card: &alix::card::Card) -> Vec<ExampleKind> {
+    let mut kinds = Vec::new();
+    if card.is_blank_card() {
+        kinds.push(ExampleKind::Cloze);
+    }
+    if !card.authored_distractors.is_empty() && !card.multiple_choice {
+        kinds.push(ExampleKind::ChoiceSingle);
+    }
+    if card.multiple_choice {
+        kinds.push(ExampleKind::ChoiceMultiple);
+    }
+    if card.row.is_some() {
+        kinds.push(ExampleKind::Table);
+    }
+    if card.reveal == Some(alix::depth::Reveal::Line) {
+        kinds.push(ExampleKind::LineReveal);
+    }
+    if card.input == Some(alix::answer::Input::Draw) {
+        kinds.push(ExampleKind::Draw);
+    }
+    if card.direction == Some(alix::card::Direction::Both) {
+        kinds.push(ExampleKind::Both);
+    }
+    let diagram = if card.is_blank_card() {
+        !card.answer_fences.is_empty()
+    } else {
+        card.front.contains("```mermaid")
+    };
+    if diagram {
+        kinds.push(ExampleKind::Diagram);
+    }
+    if kinds.is_empty() {
+        kinds.push(ExampleKind::Plain);
+    }
+    kinds
+}
+
+#[test]
+fn every_deck_example_in_the_guide_parses_as_its_declared_kind_and_doctor_finds_no_error() {
+    use ExampleKind::*;
+    // A table row carries `row` only once stamped, so kinds are read after `deck init`.
+    // A masked label keeps its fence in both `front` and `answer_fences`.
+    let declared: Vec<Vec<Vec<ExampleKind>>> = vec![
+        vec![vec![Plain]],
+        vec![vec![Plain]],
+        vec![vec![Cloze]],
+        vec![vec![ChoiceSingle]],
+        vec![vec![ChoiceMultiple]],
+        vec![vec![Table, Both]; 4],
+        vec![vec![LineReveal], vec![Both], vec![Draw]],
+        vec![vec![Diagram]],
+        vec![vec![Cloze, Diagram]],
+    ];
+    let examples = guide_deck_examples();
+    assert_eq!(
+        declared.len(),
+        examples.len(),
+        "the kind table needs one row per guide example"
+    );
+    let dir = TempDir::new().unwrap();
+    for (index, (example, expected)) in examples.iter().zip(&declared).enumerate() {
+        let row = index + 1;
+        let first_line = example.lines().next().unwrap_or_default();
+        let file = write(dir.path(), &format!("example-{row}.md"), example);
+        let initialized = alix(&["deck", "init", &file]);
+        assert!(
+            initialized.status.success(),
+            "row {row} ({first_line}): init failed: {}",
+            stderr(&initialized)
+        );
+        let stamped = std::fs::read_to_string(&file).unwrap();
+        let cards = alix::parser::parse_str("example", &stamped).unwrap();
+        let actual: Vec<Vec<ExampleKind>> = cards.iter().map(kinds_of).collect();
+        assert_eq!(
+            expected, &actual,
+            "row {row} ({first_line}): kinds per card"
+        );
+        let doctor = alix(&["doctor", &file]);
+        let report = stderr(&doctor);
+        assert!(
+            doctor.status.success(),
+            "row {row} ({first_line}): doctor failed: {report}"
+        );
+        assert!(
+            !report.lines().any(|line| line.starts_with("error:")),
+            "row {row} ({first_line}): doctor reported an error: {report}"
+        );
+    }
+}

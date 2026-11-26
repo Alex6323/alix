@@ -1545,6 +1545,55 @@ mod tests {
     }
 
     #[test]
+    fn the_guides_distractor_count_sits_inside_every_second_source() {
+        assert!(
+            part(Part::Practice).contains("two or three distractors"),
+            "the guide's practice part must state its distractor count"
+        );
+
+        let spec = GenerationSpec {
+            goal: "learn it".to_string(),
+            language: None,
+            audience: None,
+            card_style: GenerateCardStyle::AuthoredChoices,
+            diagrams: false,
+        };
+        for distractors in [2, 3] {
+            let options: String = (0..distractors)
+                .map(|n| format!("- [ ] Wrong {n}\n"))
+                .collect();
+            let deck = format!("## Pick one\n- [x] Right\n{options}<!-- choices: single -->\n");
+            assert!(
+                validate_card_style(&deck, &spec).is_ok(),
+                "validate_card_style must accept {distractors} distractors"
+            );
+        }
+
+        let rule = card_format(GenerateCardStyle::AuthoredChoices);
+        let (before, _) = rule
+            .split_once(" GitHub task-list options")
+            .expect("the authored-choices rule names its task-list options");
+        let range = before.rsplit(' ').next().unwrap_or_default();
+        let (low, high) = range
+            .split_once('-')
+            .and_then(|(low, high)| Some((low.parse::<usize>().ok()?, high.parse::<usize>().ok()?)))
+            .expect("the rule's option count reads as low-high");
+        let options = low..=high;
+        for distractors in [2, 3] {
+            assert!(
+                options.contains(&(distractors + 1)),
+                "the rule's option range {range:?} must contain {distractors} distractors plus the answer"
+            );
+        }
+
+        let configured = crate::config::AiConfig::default().distractor_count;
+        assert!(
+            (2..=3).contains(&configured),
+            "the default distractor_count {configured} must be two or three"
+        );
+    }
+
+    #[test]
     fn authored_choice_prompt_contract_url_shape_survives_the_validator() {
         let spec = GenerationSpec {
             goal: "learn it".to_string(),
