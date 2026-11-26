@@ -88,15 +88,17 @@ pub(crate) fn assert_teaches_answerless_cloze(name: &str, prompt: &str) {
         if !line.starts_with("<!-- blank:") {
             continue;
         }
-        let above = index.checked_sub(1).map_or("", |above| lines[above]);
-        assert!(
-            above.starts_with("## ") || above.starts_with("<!-- blank:"),
-            "{name} puts a line between a cloze card's `##` sentence and its blank ({above:?}): {prompt}"
-        );
         let sentence_line = lines[..index]
             .iter()
             .rposition(|candidate| candidate.starts_with("## "))
-            .expect("a blank line sits under a `##` line, checked above");
+            .unwrap_or_else(|| panic!("{name} puts a blank under no `##` line: {prompt}"));
+        let above = index.checked_sub(1).map_or("", |above| lines[above]);
+        assert!(
+            above.starts_with("## ")
+                || above.starts_with("<!-- blank:")
+                || closes_a_fence_opened_after(&lines, sentence_line, index - 1),
+            "{name} puts a line between a cloze card's `##` sentence and its blank ({above:?}): {prompt}"
+        );
         let example = lines[sentence_line..=index].join("\n");
         let cards = crate::parser::parse_str("prompt-example.md", &example)
             .unwrap_or_else(|error| panic!("{name} teaches an unparseable cloze: {error}"));
@@ -105,6 +107,14 @@ pub(crate) fn assert_teaches_answerless_cloze(name: &str, prompt: &str) {
             "{name} teaches a cloze example that is not a cloze card: {example}"
         );
     }
+}
+
+fn closes_a_fence_opened_after(lines: &[&str], after: usize, closing: usize) -> bool {
+    let opener = lines[after + 1..closing]
+        .iter()
+        .rev()
+        .find_map(|line| crate::parser::fence_opener(line));
+    opener.is_some_and(|(ch, open)| crate::parser::closes_fence(lines[closing], ch, open))
 }
 
 #[cfg(test)]
@@ -123,6 +133,16 @@ mod tests {
             (
                 "an unparseable example",
                 "## alpha beta\n<!-- blank: span hidden=\"gamma\" -->",
+                true,
+            ),
+            (
+                "a masked label under its card's closing fence",
+                "## Name the hidden step.\n```mermaid\nflowchart LR\n  A --> B[Store it]\n```\n<!-- blank: span hidden=\"Store it\" -->",
+                false,
+            ),
+            (
+                "a blank under a fence that closes above the card line",
+                "```\ncode\n```\n## alpha beta\nmore\n<!-- blank: span hidden=\"alpha\" -->",
                 true,
             ),
             (
