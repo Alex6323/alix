@@ -24,12 +24,13 @@ or after it. How you hand it over follows the request you were given.
 Write `title:` (the deck's name). Optional keys: `description:` (one line),
 `authors:` (a list naming the people and any AI that helped), `license:`,
 `created-at:`, `link:` (a web page the in-app tutor, an AI the learner can
-question about a card, may consult; the exam, described in the last part
-of this guide, ignores it), and deck-wide
+question about a card, may consult; the exam, an AI test of the
+learner's understanding, ignores it), and deck-wide
 defaults for the card keys below: `choices: single` (every task list is a
 choice card, so the per-card line may be left out), `reveal: line`,
 `direction: both`, `input: draw`, `review: sequential` (serve the cards in
-file order instead of by schedule) and `sampling: off` (see card tables).
+file order instead of by schedule) and `sampling: off` (a card table's
+rows stop serving as each other's wrong options; see card tables).
 Never write an `id:` key. Any other key draws a warning and is ignored.
 
 **Topics.** A line starting with `# ` (one hash, a space, a title) opens a
@@ -63,14 +64,15 @@ the answer and reveals with it.
 **Hints.** A `> [!TIP]` block between the front and the `---` line is a
 hint instead of a note: offered while the learner answers, and a review in
 which the learner opened it counts as at best partly right. A card with a
-hint always has the `---` line, with a blank line above it.
+hint always has the `---` line, with a blank line above it. The order is
+then: front, hint, a blank line, `---`, answer, note.
 
 **Comment lines.** Every `<!-- ... -->` line is alix machinery, never
 prose. Each sits on its own line directly below the block it belongs to
 (the last answer line, the last option, the last table row, or a cloze
 card's sentence), with no blank line between, and above the card's note.
 Several comment lines stack directly below one another. Write only the
-comments this guide shows, unless the request around this guide asks for
+comments this guide shows, unless the request you were given asks for
 others.
 
 **Text inside cards.** `**bold**`, `*italic*`, inline `` `code` ``, fenced
@@ -162,7 +164,8 @@ distractors and may also say why the answer is right.
 
 A select-all choice card: a `- [x]` on every correct option, closed by
 `<!-- choices: multiple -->`. The same warning applies: without that line
-it is a plain checklist.
+it is a plain checklist. On either kind, a `direction:`, `reveal:` or
+`input:` line below the invocation is ignored without a warning.
 
 ```
 ## Which of these are Rust integer types?
@@ -182,7 +185,8 @@ below the last row. The header row is never shown, so its names are free;
 it has as many cells as the table has columns, two or three. Column widths
 need not line up. A `## ` line directly above the table, with no answer
 lines of its own, is the question every row asks, so under
-`direction: both` it must make sense both ways. Other directives for all
+`direction: both` it must make sense both ways. Without that line, each
+row's front is its first cell alone. Other directives for all
 rows go on their own lines below `<!-- cards -->`, as `sampling: off` does
 for a table whose rows are not alike enough to serve as each other's wrong
 options.
@@ -243,7 +247,8 @@ Rules that hold whatever the shape:
 - An invocation binds the block directly above it, so it sits on the line
   immediately below the last option or row. `<!-- cards -->` takes card
   directives after it (`direction:`, `reveal:`, `sampling:`, or an `at:`
-  locator when the request around this guide asks for one), but never a
+  locator in the form the request gives, when the request you were given
+  asks for one), but never a
   blockquote. `<!-- choices: single -->` and `<!-- choices: multiple -->`
   take a `> [!NOTE]` note after them.
 - One idea per card. Split compound facts rather than nesting them.
@@ -278,13 +283,16 @@ served, not what a card asks.
 <!-- ANCHOR: diagrams -->
 **Diagrams.** A fenced code block whose info string is `mermaid` holds a
 diagram. alix draws it as a picture only in a deck inside a workspace (a
-folder alix manages, see below), on
-a machine where the optional `sekien` renderer is installed; everywhere
-else the learner sees the fence as a code block. Write each fence so it
+folder alix manages, created with `alix workspace init`), on
+a machine where the optional `sekien` renderer, a separate program, is
+installed; everywhere else the learner sees the fence as a code block. You
+need not know which the learner gets: write each fence so it
 also reads sensibly as source text. Material that describes a process
 with a branch or a way back, a lifecycle, or an exchange between parties
 gets at least one diagram card, besides its other cards; other material
 gets a diagram only where a picture teaches a relation better than text.
+One branch or one way back is enough; steps in one line with neither suit
+`reveal: line` instead.
 
 - Draw only steps and arrows the source states. Add no step, order or
   branch of your own.
@@ -320,7 +328,8 @@ A masked label: the card shows the diagram with one label hidden and asks
 for it. This is the one exception to the cloze rules above: the `## ` line
 is a question rather than the sentence, the fence sits below it, and the
 `<!-- blank: span hidden="..." -->` line goes directly below the closing
-fence. A card may hide one label this way. The hidden text must be one
+fence. Like a cloze card, it needs no answer line. A card may hide one
+label this way. The hidden text must be one
 complete visible label, never a label split by `<br/>`.
 
 ````
@@ -340,7 +349,9 @@ under `# ` topics, one per coherent part of the material. Under each
 heading write a short paragraph, the way a textbook paragraph precedes its
 exercises: what the thing is, why it exists, the words the cards will use,
 and the problem the cards below resolve. Pose the problem and stop; never
-state an answer a card asks for. A bare heading is not context, and neither
+state an answer a card asks for: "two threads can update one counter at
+once" poses the problem, "so a lock guards it" states the answer. A bare
+heading is not context, and neither
 is a list of the subjects the cards touch. The heading itself is a short
 phrase naming what its cards cover, not the deck's title. A deck of a few
 cards takes one topic; a long deck takes one per group of related cards.
@@ -410,7 +421,8 @@ card's answer in a few words beside it. Two cards with the same answer
 test the same fact, whatever their fronts say, and the same answer in
 other words is the same answer: merge or delete one. A select-all card
 tests each of its options. Two cards whose answers differ are two angles,
-not a repeat, even when they concern one idea. The repeat that slips
+not a repeat, even when they concern one idea. Two answers differ when a
+learner who knows one could still miss the other. The repeat that slips
 through is a case card whose answer is the fact another card already asks:
 "how long is the wait?" (48 hours), then a case that ends in "the full 48
 hours". Delete the plain fact card and keep the case, or change the case
@@ -482,7 +494,9 @@ under that folder need no `--root`. `--topic` takes one or more topic ids,
 separated by spaces. To bind only some lines, write
 `--topic '10-80,120|<topic-id>'`: line numbers counted from 1, a range
 inclusive, a single number one line, ascending and not overlapping, quoted
-because `|` means something to the shell. A deck without `# ` topics omits
+because `|` means something to the shell. Each id takes its own lines,
+and ranged and plain ids mix: `--topic '1-5|<id-a>' '10-20|<id-b>' <id-c>`.
+A deck without `# ` topics omits
 `--topic`. A source must be a local UTF-8 text file; to use a web page,
 save it as a file first.
 
@@ -490,7 +504,8 @@ save it as a file first.
 command-line tool alix calls. Every exam call carries a topic's sources
 whole, and each backend refuses a prompt past its own limit.
 `alix deck source list <deck>` shows each sourced topic's size against every backend's
-limit and marks the ones it exceeds. To fix one, split the topic into two
+limit and marks the ones it exceeds; if you cannot run it, give the
+learner this step. To fix one, split the topic into two
 `# ` topics, or bind only the lines the topic needs.
 
 **What to tell the learner.** If the learner asks which files and line
