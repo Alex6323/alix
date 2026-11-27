@@ -29,8 +29,7 @@ learner's understanding, ignores it), and deck-wide
 defaults for the card keys below: `choices: single` (every task list is a
 choice card, so the per-card line may be left out), `reveal: line`,
 `direction: both`, `input: draw`, `review: sequential` (serve the cards in
-file order instead of by schedule) and `sampling: off` (a card table's
-rows stop serving as each other's wrong options; see card tables).
+file order instead of by schedule) and `sampling: off` (see card tables).
 Never write an `id:` key. Any other key draws a warning and is ignored.
 
 **Topics.** A line starting with `# ` (one hash, a space, a title) opens a
@@ -185,8 +184,7 @@ below the last row. The header row is never shown, so its names are free;
 it has as many cells as the table has columns, two or three. Column widths
 need not line up. A `## ` line directly above the table, with no answer
 lines of its own, is the question every row asks, so under
-`direction: both` it must make sense both ways. Without that line, each
-row's front is its first cell alone. Other directives for all
+`direction: both` it must make sense both ways. Other directives for all
 rows go on their own lines below `<!-- cards -->`, as `sampling: off` does
 for a table whose rows are not alike enough to serve as each other's wrong
 options.
@@ -421,8 +419,7 @@ card's answer in a few words beside it. Two cards with the same answer
 test the same fact, whatever their fronts say, and the same answer in
 other words is the same answer: merge or delete one. A select-all card
 tests each of its options. Two cards whose answers differ are two angles,
-not a repeat, even when they concern one idea. Two answers differ when a
-learner who knows one could still miss the other. The repeat that slips
+not a repeat, even when they concern one idea. The repeat that slips
 through is a case card whose answer is the fact another card already asks:
 "how long is the wait?" (48 hours), then a case that ends in "the full 48
 hours". Delete the plain fact card and keep the case, or change the case
