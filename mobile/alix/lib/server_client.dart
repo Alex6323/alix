@@ -663,6 +663,8 @@ class RemoteGenerate {
 /// over `/api/remote/*`. Behind an interface so the tutor and exam screens
 /// (built on top of this) can fake it in tests, the same seam
 /// [PlatformAccess] plays for platform channels.
+enum DeadlineCall { saved, refused, unreachable, expired }
+
 abstract class ServerClient {
   /// The paired server's version and root identity (`GET /api/version`), or
   /// null if it cannot be reached or does not answer with JSON.
@@ -725,6 +727,9 @@ abstract class ServerClient {
 
   /// `POST /api/remote/generate/close`: drops the server's generation slot.
   Future<void> generateClose();
+
+  /// `POST /api/workspace/deadline`; a null [date] clears it.
+  Future<DeadlineCall> setWorkspaceDeadline(String name, String? date);
 
   /// Releases any held resources (the underlying HTTP client).
   void close();
@@ -948,6 +953,19 @@ class HttpServerClient implements ServerClient {
   @override
   Future<void> generateClose() async {
     await _post('/api/remote/generate/close');
+  }
+
+  @override
+  Future<DeadlineCall> setWorkspaceDeadline(String name, String? date) async {
+    final bytes = utf8.encode(jsonEncode({'name': name, 'date': date}));
+    try {
+      final (status, _) = await _send('POST', '/api/workspace/deadline', bytes: bytes).timeout(_requestTimeout);
+      return status == 200 ? DeadlineCall.saved : DeadlineCall.refused;
+    } on PairingExpired {
+      return DeadlineCall.expired;
+    } on Object {
+      return DeadlineCall.unreachable;
+    }
   }
 
   @override

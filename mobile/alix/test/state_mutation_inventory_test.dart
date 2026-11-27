@@ -46,11 +46,12 @@ void main() {
         'lib/picker/picker_controller.dart',
         'notifyListeners();',
       ),
-      [86, 208],
+      [87, 209],
       reason:
           'setServerReachable and _notifyIfLive own every picker mutation; '
           'listing, strip, and search transitions notify through it, and '
-          'deadline and setPairedRoot transitions reload',
+          'deadline and setPairedRoot transitions reload; the paired '
+          'deadline added an import line above both',
     );
     expect(
       _linesContaining(
@@ -93,7 +94,7 @@ void main() {
       [
         'lib/review_screen.dart:391',
         'lib/picker_screen.dart:1060',
-        'lib/picker_screen.dart:1316',
+        'lib/picker_screen.dart:1370',
         'lib/picker/generate_sheet.dart:42',
         'lib/trace_screen.dart:129',
         'lib/walk_screen.dart:226',
@@ -141,6 +142,7 @@ void main() {
           'methods above both; '
           'the exam routines checking that the picker is still mounted '
           'added lines above both; '
+          'the paired deadline added two methods above the second site; '
           'generate_sheet.dart is unchanged',
     );
   });

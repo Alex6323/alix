@@ -1039,6 +1039,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Mobile: a deadline set or cleared on a workspace pulled from a paired
+  desktop is no longer lost on the next pull. The phone now sets it on the
+  desktop first and changes its own copy only once the desktop saved it; if
+  the desktop does not answer, nothing changes and a message says why.
+
 - `alix deck generate` no longer fails, and discards the generated deck,
   when its last card ends in a code block: the block's closing fence was cut
   as if it wrapped the reply.

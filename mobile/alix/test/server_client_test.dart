@@ -1002,6 +1002,42 @@ void main() {
       }
     });
 
+    test('a workspace deadline posts name and date and maps each reply', () async {
+      for (final (date, status, expected) in [
+        ('2027-01-01', 200, DeadlineCall.saved),
+        (null, 200, DeadlineCall.saved),
+        ('2027-01-01', 400, DeadlineCall.refused),
+        ('2027-01-01', 500, DeadlineCall.refused),
+        ('2027-01-01', 401, DeadlineCall.expired),
+      ]) {
+        String? path;
+        Object? body;
+        final s = await startServer((request) async {
+          path = request.uri.path;
+          body = jsonDecode(await utf8.decoder.bind(request).join());
+          await respondRaw(request, status, '{"decks":[]}');
+        });
+        final client = await clientFor(s);
+
+        final call = await client.setWorkspaceDeadline('ws', date);
+
+        expect(call, expected, reason: 'date $date, status $status');
+        expect(path, '/api/workspace/deadline', reason: 'date $date, status $status');
+        expect(body, {'name': 'ws', 'date': date}, reason: 'date $date is sent as an explicit key');
+        await s.close(force: true);
+      }
+    });
+
+    test('a workspace deadline with no server listening is unreachable', () async {
+      final s = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final port = s.port;
+      await s.close(force: true);
+      final client = HttpServerClient(ServerConfig(host: '127.0.0.1', port: port, token: 'x'));
+      addTearDown(client.close);
+
+      expect(await client.setWorkspaceDeadline('ws', '2027-01-01'), DeadlineCall.unreachable);
+    });
+
     test('a grading call with no server listening is no answer', () async {
       final s = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final port = s.port;

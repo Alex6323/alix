@@ -213,3 +213,10 @@ due) and again once you drill in, the same readout as the web picker.
 in the workspace's own `alix.local.toml` (see [Workspaces](08-workspaces.md));
 the phone's own offline sessions bend their scheduling toward the date
 exactly as the desktop does.
+
+A workspace pulled from a paired desktop takes its deadline from there: a
+pull replaces the phone's `alix.local.toml` with the desktop's. So for such
+a workspace the phone sets the date on the desktop first and writes its own
+copy only once the desktop has saved it. If the desktop does not answer, the
+deadline is left unchanged and a message says so. The phone's own
+workspaces need no desktop.

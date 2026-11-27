@@ -441,6 +441,15 @@ class FakeServerClient implements ServerClient {
   @override
   Future<void> generateClose() async => generateCloseCalls++;
 
+  DeadlineCall deadlineReply = DeadlineCall.saved;
+  final List<(String, String?)> deadlineCalls = [];
+
+  @override
+  Future<DeadlineCall> setWorkspaceDeadline(String name, String? date) async {
+    deadlineCalls.add((name, date));
+    return deadlineReply;
+  }
+
   @override
   void close() => closed = true;
 }

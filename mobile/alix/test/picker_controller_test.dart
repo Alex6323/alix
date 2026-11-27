@@ -7,6 +7,7 @@ import 'package:alix_mobile/picker/picker_controller.dart';
 import 'package:alix_mobile/profile.dart';
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
+import 'package:alix_mobile/server_client.dart';
 
 void main() {
   test(
@@ -121,6 +122,41 @@ void main() {
     expect(port.deadlineWrites.last, ('/decks/workspace', null));
     expect(controller.deadline, isNull);
     expect(notifications, 2);
+  });
+
+  test('a paired deadline reaches the desktop before the phone, and only '
+      'a saved one is written', () async {
+    final port = _FakePickerPort();
+    final controller = PickerController(port: port, root: '/decks');
+    addTearDown(controller.dispose);
+    await pumpEventQueue();
+
+    for (final refusal in [
+      DeadlineCall.refused,
+      DeadlineCall.unreachable,
+      DeadlineCall.expired,
+    ]) {
+      final result = await controller.setPairedDeadline(
+        dir: '/paired/ws',
+        date: '2026-08-20',
+        onDesktop: () async => refusal,
+      );
+      expect(result, refusal, reason: '$refusal is handed back');
+      expect(port.deadlineWrites, isEmpty, reason: '$refusal writes nothing');
+    }
+
+    var writesSeenByDesktop = -1;
+    final saved = await controller.setPairedDeadline(
+      dir: '/paired/ws',
+      date: null,
+      onDesktop: () async {
+        writesSeenByDesktop = port.deadlineWrites.length;
+        return DeadlineCall.saved;
+      },
+    );
+    expect(saved, DeadlineCall.saved);
+    expect(writesSeenByDesktop, 0, reason: 'the desktop is asked first');
+    expect(port.deadlineWrites, [('/paired/ws', null)]);
   });
 
   test(

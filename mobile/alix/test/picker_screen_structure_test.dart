@@ -2340,6 +2340,65 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'a paired workspace deadline is cleared on the desktop first, and kept '
+    'on the phone when the desktop does not answer',
+    (tester) async {
+      final local = tempDir('alix-picker-paired-deadline-');
+      final support = tempDir('alix-picker-paired-deadline-support-');
+      await savePairing(pairing(pairedRootId), support: support);
+      final paired = pairedWorkspace(support, pairedRootId);
+      final localToml = File('${paired.path}/ws/alix.local.toml');
+      localToml.writeAsStringSync('[review]\ndeadline = "2099-01-01"\n');
+      final desk = FakeServerClient(versionReply: minServerVersion);
+      await pumpPicker(
+        tester,
+        root: local,
+        support: support,
+        buildClient: (_) => desk,
+        buildSyncPort: (_, _) =>
+            FakeSyncPort(rootId: pairedRootId, rootDir: paired.path),
+      );
+      await settlePicker(
+        tester,
+        until: () => find.text('ws').evaluate().isNotEmpty,
+      );
+
+      Future<void> clearDeadline({required int untilCalls}) async {
+        await tester.longPress(find.text('ws'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Clear deadline'));
+        await settlePicker(
+          tester,
+          until: () => desk.deadlineCalls.length == untilCalls,
+        );
+      }
+
+      desk.deadlineReply = DeadlineCall.unreachable;
+      await clearDeadline(untilCalls: 1);
+      expect(desk.deadlineCalls, [('ws', null)], reason: 'unreachable: asked');
+      expect(
+        localToml.readAsStringSync(),
+        contains('2099-01-01'),
+        reason: 'unreachable: the phone keeps its deadline',
+      );
+      expect(
+        find.textContaining('the desktop is unreachable'),
+        findsOneWidget,
+        reason: 'unreachable: the refusal is shown',
+      );
+
+      desk.deadlineReply = DeadlineCall.saved;
+      await clearDeadline(untilCalls: 2);
+      expect(desk.deadlineCalls.length, 2, reason: 'saved: asked again');
+      expect(
+        localToml.readAsStringSync(),
+        isNot(contains('2099-01-01')),
+        reason: 'saved: the phone clears its deadline too',
+      );
+    },
+  );
 }
 
 class _FakeAccess implements PlatformAccess {
@@ -2440,6 +2499,10 @@ class _DeskHandle implements ServerClient {
 
   @override
   Future<void> generateClose() => desk.generateClose();
+
+  @override
+  Future<DeadlineCall> setWorkspaceDeadline(String name, String? date) =>
+      desk.setWorkspaceDeadline(name, date);
 
   @override
   void close() => closed = true;

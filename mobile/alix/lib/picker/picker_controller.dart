@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:alix_mobile/picker/picker_models.dart';
 import 'package:alix_mobile/picker/picker_port.dart';
 import 'package:alix_mobile/profile.dart';
+import 'package:alix_mobile/server_client.dart';
 
 
 class PickerController extends ChangeNotifier {
@@ -216,6 +217,20 @@ class PickerController extends ChangeNotifier {
   void setDeadline({required String dir, required String date}) {
     _port.setWorkspaceDeadline(dir: dir, date: date);
     reload();
+  }
+
+  /// [onDesktop] runs first; the phone's file is written only once the
+  /// desktop saved the same value, so the next pull finds both sides equal.
+  Future<DeadlineCall> setPairedDeadline({
+    required String dir,
+    required String? date,
+    required Future<DeadlineCall> Function() onDesktop,
+  }) async {
+    final call = await onDesktop();
+    if (call != DeadlineCall.saved || _disposed) return call;
+    _port.setWorkspaceDeadline(dir: dir, date: date);
+    reload();
+    return call;
   }
 
   Future<void> _load() async {

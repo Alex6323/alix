@@ -1169,7 +1169,61 @@ class _PickerScreenState extends State<PickerScreen> {
       '-${value.month.toString().padLeft(2, '0')}'
       '-${value.day.toString().padLeft(2, '0')}';
 
-  Future<void> _deadlineSheet(PickerEntry entry) async {
+  Future<void> _pairedDeadlineSheet(PickerEntry entry) =>
+      _deadlineSheet(entry, paired: true);
+
+  Future<void> _setDeadline(
+    PickerEntry entry,
+    String? date, {
+    required bool paired,
+  }) async {
+    final pairedDir = _pairedDir;
+    if (!paired || pairedDir == null) {
+      if (date == null) {
+        _controller.clearDeadline(entry.path);
+      } else {
+        _controller.setDeadline(dir: entry.path, date: date);
+      }
+      return;
+    }
+    final support = await _support();
+    if (!mounted) return;
+    final config = readActivePairing(support);
+    if (config == null) {
+      _snack('Deadline not set: this phone is no longer paired.');
+      return;
+    }
+    final name = entry.path
+        .substring(pairedDir.length)
+        .replaceAll(Platform.pathSeparator, '/')
+        .replaceFirst(RegExp('^/+'), '');
+    final client = (widget.buildClient ?? HttpServerClient.new)(config);
+    final DeadlineCall call;
+    try {
+      call = await _controller.setPairedDeadline(
+        dir: entry.path,
+        date: date,
+        onDesktop: () => client.setWorkspaceDeadline(name, date),
+      );
+    } finally {
+      client.close();
+    }
+    switch (call) {
+      case DeadlineCall.saved:
+        return;
+      case DeadlineCall.unreachable:
+        _snack(
+          'Deadline not set: the desktop is unreachable, and a paired '
+          'workspace takes its deadline from there.',
+        );
+      case DeadlineCall.refused:
+        _snack('Deadline not set: the desktop refused it.');
+      case DeadlineCall.expired:
+        _snack('Deadline not set: pair this phone again first.');
+    }
+  }
+
+  Future<void> _deadlineSheet(PickerEntry entry, {bool paired = false}) async {
     final current = entry.deadline;
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -1181,7 +1235,7 @@ class _PickerScreenState extends State<PickerScreen> {
     );
     if (!mounted) return;
     if (action == 'clear') {
-      _controller.clearDeadline(entry.path);
+      await _setDeadline(entry, null, paired: paired);
       return;
     }
     if (action != 'pick') return;
@@ -1199,7 +1253,7 @@ class _PickerScreenState extends State<PickerScreen> {
       lastDate: today.add(const Duration(days: 5 * 365)),
     );
     if (picked == null || !mounted) return;
-    _controller.setDeadline(dir: entry.path, date: _ymd(picked));
+    await _setDeadline(entry, _ymd(picked), paired: paired);
   }
 
   void _openEntry(PickerEntry entry) =>
@@ -1350,7 +1404,9 @@ class _PickerScreenState extends State<PickerScreen> {
               ? _controller.pairedRootEntries
               : const [],
           onOpenPairedEntry: isPairedRootScreen ? _openPairedEntry : null,
-          onLongPressPairedEntry: isPairedRootScreen ? _deadlineSheet : null,
+          onLongPressPairedEntry: isPairedRootScreen
+              ? _pairedDeadlineSheet
+              : null,
           onSyncAll: syncController != null && isPairedRootScreen
               ? _syncAll
               : null,
