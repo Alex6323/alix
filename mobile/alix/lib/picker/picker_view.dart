@@ -214,7 +214,7 @@ class PickerView extends StatelessWidget {
     PickerEntry entry,
     ValueChanged<PickerEntry>? onWorkspace,
   ) {
-    if (entry.isWorkspace) return () => onWorkspace?.call(entry);
+    if (entry.canSetDeadline) return () => onWorkspace?.call(entry);
     if (entry.isTrace) return null;
     // Claimed so the gesture arena does not resolve it as a tap.
     return () {};

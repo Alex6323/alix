@@ -102,6 +102,7 @@ PickerEntry _entry(listing_bridge.DeckEntry entry) {
     title: entry.title,
     path: entry.path,
     isWorkspace: entry.isWorkspace,
+    canSetDeadline: entry.canSetDeadline,
     due: entry.due,
     canRecognize: entry.canRecognize,
     isTrace: entry.isTrace,

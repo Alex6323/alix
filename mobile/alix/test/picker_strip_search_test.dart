@@ -173,6 +173,7 @@ void main() {
         title: title,
         path: '/decks/$title.md',
         isWorkspace: false,
+        canSetDeadline: false,
         due: true,
         canRecognize: true,
         isTrace: false,

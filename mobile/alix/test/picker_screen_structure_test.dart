@@ -2351,6 +2351,8 @@ void main() {
       final paired = pairedWorkspace(support, pairedRootId);
       final localToml = File('${paired.path}/ws/alix.local.toml');
       localToml.writeAsStringSync('[review]\ndeadline = "2099-01-01"\n');
+      Directory('${paired.path}/plain').createSync();
+      writeTestDeck('${paired.path}/plain/p.md', '## q?\na\n');
       final desk = FakeServerClient(versionReply: minServerVersion);
       await pumpPicker(
         tester,
@@ -2363,6 +2365,14 @@ void main() {
       await settlePicker(
         tester,
         until: () => find.text('ws').evaluate().isNotEmpty,
+      );
+
+      await tester.longPress(find.text('plain'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Ready by…'),
+        findsNothing,
+        reason: 'a plain folder of decks offers no deadline menu',
       );
 
       Future<void> clearDeadline({required int untilCalls}) async {

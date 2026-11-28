@@ -209,7 +209,8 @@ phone's own; the phone's own decks stay listed whichever desktop is active.
 A workspace's personal "ready by" date shows on its row (date, days left,
 and ready percent, colored to flag urgency inside the last week or past
 due) and again once you drill in, the same readout as the web picker.
-**Long-press the workspace row** to set, move, or clear it. The date lives
+**Long-press the workspace row** to set, move, or clear it. A plain folder
+of decks has no deadline and offers no such menu. The date lives
 in the workspace's own `alix.local.toml` (see [Workspaces](08-workspaces.md));
 the phone's own offline sessions bend their scheduling toward the date
 exactly as the desktop does.

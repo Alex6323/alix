@@ -89,6 +89,7 @@ class DeckEntry {
   final String title;
   final String path;
   final bool isWorkspace;
+  final bool canSetDeadline;
   final bool due;
   final bool canRecognize;
   final bool isTrace;
@@ -110,6 +111,7 @@ class DeckEntry {
     required this.title,
     required this.path,
     required this.isWorkspace,
+    required this.canSetDeadline,
     required this.due,
     required this.canRecognize,
     required this.isTrace,
@@ -133,6 +135,7 @@ class DeckEntry {
       title.hashCode ^
       path.hashCode ^
       isWorkspace.hashCode ^
+      canSetDeadline.hashCode ^
       due.hashCode ^
       canRecognize.hashCode ^
       isTrace.hashCode ^
@@ -158,6 +161,7 @@ class DeckEntry {
           title == other.title &&
           path == other.path &&
           isWorkspace == other.isWorkspace &&
+          canSetDeadline == other.canSetDeadline &&
           due == other.due &&
           canRecognize == other.canRecognize &&
           isTrace == other.isTrace &&

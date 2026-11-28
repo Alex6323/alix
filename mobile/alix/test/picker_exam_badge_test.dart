@@ -8,6 +8,7 @@ PickerEntry _entry({required bool examChanged}) => PickerEntry(
   title: 'rust',
   path: 'rust.md',
   isWorkspace: false,
+  canSetDeadline: false,
   due: false,
   canRecognize: false,
   isTrace: false,

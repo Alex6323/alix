@@ -1044,6 +1044,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   desktop first and changes its own copy only once the desktop saved it; if
   the desktop does not answer, nothing changes and a message says why.
 
+- Mobile: a long press on a plain folder of decks no longer offers the
+  deadline menu. Only a workspace has a deadline; the list never showed a
+  date set on a plain folder.
+
 - `alix deck generate` no longer fails, and discards the generated deck,
   when its last card ends in a code block: the block's closing fence was cut
   as if it wrapped the reply.

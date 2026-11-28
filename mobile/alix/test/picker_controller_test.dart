@@ -586,6 +586,7 @@ PickerEntry _entry(
     title: title,
     path: isWorkspace ? '/decks/$title' : '/decks/$title.md',
     isWorkspace: isWorkspace,
+    canSetDeadline: isWorkspace,
     due: true,
     canRecognize: true,
     isTrace: false,

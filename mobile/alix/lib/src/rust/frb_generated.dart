@@ -3225,28 +3225,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   DeckEntry dco_decode_deck_entry(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 19)
-      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
+    if (arr.length != 20)
+      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
     return DeckEntry(
       title: dco_decode_String(arr[0]),
       path: dco_decode_String(arr[1]),
       isWorkspace: dco_decode_bool(arr[2]),
-      due: dco_decode_bool(arr[3]),
-      canRecognize: dco_decode_bool(arr[4]),
-      isTrace: dco_decode_bool(arr[5]),
-      mastered: dco_decode_bool(arr[6]),
-      passed: dco_decode_bool(arr[7]),
-      examBadge: dco_decode_opt_String(arr[8]),
-      examFilter: dco_decode_String(arr[9]),
-      examChanged: dco_decode_bool(arr[10]),
-      examDue: dco_decode_bool(arr[11]),
-      examable: dco_decode_bool(arr[12]),
-      locked: dco_decode_bool(arr[13]),
-      progressError: dco_decode_bool(arr[14]),
-      icon: dco_decode_opt_String(arr[15]),
-      indent: dco_decode_u_32(arr[16]),
-      tree: dco_decode_String(arr[17]),
-      deadline: dco_decode_opt_box_autoadd_deadline(arr[18]),
+      canSetDeadline: dco_decode_bool(arr[3]),
+      due: dco_decode_bool(arr[4]),
+      canRecognize: dco_decode_bool(arr[5]),
+      isTrace: dco_decode_bool(arr[6]),
+      mastered: dco_decode_bool(arr[7]),
+      passed: dco_decode_bool(arr[8]),
+      examBadge: dco_decode_opt_String(arr[9]),
+      examFilter: dco_decode_String(arr[10]),
+      examChanged: dco_decode_bool(arr[11]),
+      examDue: dco_decode_bool(arr[12]),
+      examable: dco_decode_bool(arr[13]),
+      locked: dco_decode_bool(arr[14]),
+      progressError: dco_decode_bool(arr[15]),
+      icon: dco_decode_opt_String(arr[16]),
+      indent: dco_decode_u_32(arr[17]),
+      tree: dco_decode_String(arr[18]),
+      deadline: dco_decode_opt_box_autoadd_deadline(arr[19]),
     );
   }
 
@@ -4796,6 +4797,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_title = sse_decode_String(deserializer);
     var var_path = sse_decode_String(deserializer);
     var var_isWorkspace = sse_decode_bool(deserializer);
+    var var_canSetDeadline = sse_decode_bool(deserializer);
     var var_due = sse_decode_bool(deserializer);
     var var_canRecognize = sse_decode_bool(deserializer);
     var var_isTrace = sse_decode_bool(deserializer);
@@ -4816,6 +4818,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       title: var_title,
       path: var_path,
       isWorkspace: var_isWorkspace,
+      canSetDeadline: var_canSetDeadline,
       due: var_due,
       canRecognize: var_canRecognize,
       isTrace: var_isTrace,
@@ -6793,6 +6796,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.title, serializer);
     sse_encode_String(self.path, serializer);
     sse_encode_bool(self.isWorkspace, serializer);
+    sse_encode_bool(self.canSetDeadline, serializer);
     sse_encode_bool(self.due, serializer);
     sse_encode_bool(self.canRecognize, serializer);
     sse_encode_bool(self.isTrace, serializer);

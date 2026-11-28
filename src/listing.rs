@@ -23,6 +23,7 @@ pub struct DeckSummary {
     pub title: String,
     pub path: PathBuf,
     pub is_workspace: bool,
+    pub has_manifest: bool,
     pub due: bool,
     pub can_recognize: bool,
     pub ready: bool,
@@ -93,7 +94,7 @@ pub fn list_root_with(
     cache: &mut DeckCache,
 ) -> Vec<DeckSummary> {
     if workspace::is_workspace(root) {
-        return vec![folder_summary(root, root, review, now_ms, cache)];
+        return vec![folder_summary(root, root, true, review, now_ms, cache)];
     }
     let (root_store, health) = open_listing_store(&workspace::root_store_path(root));
     let augment = AugmentCache::open_for_workspace(root).ok();
@@ -114,11 +115,19 @@ pub fn list_root_with(
         if name.starts_with('.') {
             continue;
         }
+        let has_manifest = path.is_dir() && workspace::is_workspace(&path);
         if path.is_dir()
-            && (workspace::is_workspace(&path) || workspace::has_decks(&path))
+            && (has_manifest || workspace::has_decks(&path))
             && offered.first_visit(&path)
         {
-            out.push(folder_summary(root, &path, review, now_ms, cache));
+            out.push(folder_summary(
+                root,
+                &path,
+                has_manifest,
+                review,
+                now_ms,
+                cache,
+            ));
         } else if path.is_file()
             && path.extension().is_some_and(|e| e == "md")
             && !workspace::is_conventional_non_deck(name)
@@ -430,6 +439,7 @@ fn member_store(root: &Path, dir: &Path) -> (Option<Store>, ProgressHealth) {
 fn folder_summary(
     root: &Path,
     dir: &Path,
+    has_manifest: bool,
     review: &ReviewConfig,
     now_ms: u64,
     cache: &mut DeckCache,
@@ -455,6 +465,7 @@ fn folder_summary(
         title,
         path: dir.to_path_buf(),
         is_workspace: true,
+        has_manifest,
         due,
         can_recognize,
         ready: false,
@@ -548,6 +559,7 @@ fn deck_summary(
         title: if title.is_empty() { stem } else { title },
         path: path.to_path_buf(),
         is_workspace: false,
+        has_manifest: false,
         due: due && !progress_error,
         can_recognize,
         ready: ready && !progress_error,
@@ -1063,16 +1075,16 @@ mod tests {
         write(&root.join("README.md"), "# A Readme\nprose\n");
 
         let rows = list_root(root, &ReviewConfig::default(), T0);
-        let names: Vec<(&str, bool)> = rows
+        let names: Vec<(&str, bool, bool)> = rows
             .iter()
-            .map(|r| (r.title.as_str(), r.is_workspace))
+            .map(|r| (r.title.as_str(), r.is_workspace, r.has_manifest))
             .collect();
         assert_eq!(
             names,
             [
-                ("My Workspace", true),
-                ("Loose Deck", false),
-                ("c-plain", true),
+                ("My Workspace", true, true),
+                ("Loose Deck", false, false),
+                ("c-plain", true, false),
             ]
         );
     }

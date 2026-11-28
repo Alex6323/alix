@@ -3668,6 +3668,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
         let mut var_title = <String>::sse_decode(deserializer);
         let mut var_path = <String>::sse_decode(deserializer);
         let mut var_isWorkspace = <bool>::sse_decode(deserializer);
+        let mut var_canSetDeadline = <bool>::sse_decode(deserializer);
         let mut var_due = <bool>::sse_decode(deserializer);
         let mut var_canRecognize = <bool>::sse_decode(deserializer);
         let mut var_isTrace = <bool>::sse_decode(deserializer);
@@ -3688,6 +3689,7 @@ impl SseDecode for crate::api::listing::DeckEntry {
             title: var_title,
             path: var_path,
             is_workspace: var_isWorkspace,
+            can_set_deadline: var_canSetDeadline,
             due: var_due,
             can_recognize: var_canRecognize,
             is_trace: var_isTrace,
@@ -5755,6 +5757,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::listing::DeckEntry {
             self.title.into_into_dart().into_dart(),
             self.path.into_into_dart().into_dart(),
             self.is_workspace.into_into_dart().into_dart(),
+            self.can_set_deadline.into_into_dart().into_dart(),
             self.due.into_into_dart().into_dart(),
             self.can_recognize.into_into_dart().into_dart(),
             self.is_trace.into_into_dart().into_dart(),
@@ -7132,6 +7135,7 @@ impl SseEncode for crate::api::listing::DeckEntry {
         <String>::sse_encode(self.title, serializer);
         <String>::sse_encode(self.path, serializer);
         <bool>::sse_encode(self.is_workspace, serializer);
+        <bool>::sse_encode(self.can_set_deadline, serializer);
         <bool>::sse_encode(self.due, serializer);
         <bool>::sse_encode(self.can_recognize, serializer);
         <bool>::sse_encode(self.is_trace, serializer);

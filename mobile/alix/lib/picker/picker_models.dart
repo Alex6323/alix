@@ -36,6 +36,7 @@ class PickerEntry {
     required this.title,
     required this.path,
     required this.isWorkspace,
+    required this.canSetDeadline,
     required this.due,
     required this.canRecognize,
     required this.isTrace,
@@ -57,6 +58,7 @@ class PickerEntry {
   final String title;
   final String path;
   final bool isWorkspace;
+  final bool canSetDeadline;
   final bool due;
   final bool canRecognize;
   final bool isTrace;

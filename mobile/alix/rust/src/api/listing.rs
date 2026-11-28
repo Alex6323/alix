@@ -6,6 +6,7 @@ pub struct DeckEntry {
     pub title: String,
     pub path: String,
     pub is_workspace: bool,
+    pub can_set_deadline: bool,
     pub due: bool,
     pub can_recognize: bool,
     pub is_trace: bool,
@@ -48,6 +49,7 @@ impl From<alix::listing::DeckSummary> for DeckEntry {
             title: s.title,
             path: s.path.to_string_lossy().into_owned(),
             is_workspace: s.is_workspace,
+            can_set_deadline: s.has_manifest,
             due: s.due,
             can_recognize: s.can_recognize,
             is_trace: s.is_trace,
@@ -614,11 +616,21 @@ mod tests {
                 fetched.total,
             )
         );
+        std::fs::create_dir_all(root.join("plain")).unwrap();
+        write_deck(root.join("plain/p.md"), "## q\na\n");
         let rows = list_root(root_s.clone(), Some(T0), false).entries;
-        let row = rows.iter().find(|r| r.is_workspace).unwrap();
+        let row = rows.iter().find(|r| r.can_set_deadline).unwrap();
         assert_eq!(
             Some(date_s.as_str()),
             row.deadline.as_ref().map(|d| d.date.as_str())
+        );
+        let offers: Vec<(bool, bool)> = rows
+            .iter()
+            .map(|r| (r.is_workspace, r.can_set_deadline))
+            .collect();
+        assert!(
+            offers.contains(&(true, false)),
+            "a plain folder of decks is a folder row without the deadline menu: {offers:?}"
         );
 
         assert!(set_workspace_deadline(ws_s.clone(), Some("someday".into())).is_err());

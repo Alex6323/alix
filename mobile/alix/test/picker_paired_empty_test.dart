@@ -10,6 +10,7 @@ PickerEntry _entry(String title) => PickerEntry(
   title: title,
   path: '/desktop/$title.md',
   isWorkspace: false,
+  canSetDeadline: false,
   due: true,
   canRecognize: true,
   isTrace: false,
